@@ -18,7 +18,7 @@ uv run ansible-galaxy collection install -r requirements.yml
 Run the read-only OPNsense smoke test with credentials injected at runtime:
 
 ```bash
-op run --env-file ../.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense-readonly.yml
+op run --env-file ../.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/readonly.yml
 ```
 
 Do not commit plaintext vault passwords, private keys, API keys, or environment-specific secrets.
