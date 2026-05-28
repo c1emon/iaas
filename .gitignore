@@ -1,0 +1,50 @@
+# macOS
+.DS_Store
+
+# Local environment files
+.env
+.env.*
+!.env.example
+.envrc
+
+# Secrets and private keys
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.csr
+*.kubeconfig
+vault-password.txt
+secrets.yml
+*.secret.*
+
+# Terraform
+**/.terraform/*
+.terraformrc
+terraform.rc
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+*.auto.tfvars
+*.auto.tfvars.json
+*.tfoverride
+*.tfplan
+crash.log
+crash.*.log
+
+# Ansible
+*.retry
+
+# Python / tooling caches
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Generated artifacts
+dist/
+build/
+tmp/
