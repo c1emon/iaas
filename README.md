@@ -1,6 +1,6 @@
-# Homelab Infrastructure
+# Astra Infrastructure
 
-This repository is being re-initialized as the source of truth for homelab infrastructure automation.
+This repository is being re-initialized as the source of truth for Astra infrastructure automation.
 
 Current scope:
 
@@ -14,3 +14,16 @@ Planned areas:
 - `terraform/` — infrastructure resources such as Proxmox VMs and DNS records.
 - `ansible/` — host configuration, service deployment, and low-risk network automation.
 - `scripts/` — local helper scripts only when needed.
+
+## Python toolchain
+
+Python-based tooling is managed with `uv`.
+
+```bash
+uv sync
+uv run ansible --version
+uv run ansible-lint --version
+uv run yamllint --version
+```
+
+Commit `pyproject.toml` and `uv.lock`; do not commit `.venv/`.

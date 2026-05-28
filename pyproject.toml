@@ -1,0 +1,13 @@
+[project]
+name = "iaas"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "ansible>=13.7.0",
+    "ansible-lint>=26.4.0",
+    "httpx>=0.28.1",
+    "yamllint>=1.38.0",
+]

@@ -1,0 +1,33 @@
+---
+- name: Create OPNsense configuration snapshot
+  hosts: opnsense
+  gather_facts: false
+  connection: local
+
+  module_defaults:
+    group/oxlorg.opnsense.all:
+      firewall: "{{ opnsense_api_host }}"
+      api_key: "{{ opnsense_api_key }}"
+      api_secret: "{{ opnsense_api_secret }}"
+      ssl_verify: "{{ opnsense_ssl_verify }}"
+
+  tasks:
+    - name: Assert OPNsense API credentials are provided by environment
+      ansible.builtin.assert:
+        that:
+          - opnsense_api_key | length > 0
+          - opnsense_api_secret | length > 0
+        fail_msg: "Set OPNSENSE_API_KEY and OPNSENSE_API_SECRET before running this playbook."
+
+    - name: Create configuration snapshot before managed changes
+      oxlorg.opnsense.snapshot:
+        firewall: "{{ opnsense_api_host }}"
+        api_key: "{{ opnsense_api_key }}"
+        api_secret: "{{ opnsense_api_secret }}"
+        ssl_verify: "{{ opnsense_ssl_verify }}"
+        name: "ansible-pre-change"
+      register: opnsense_snapshot
+
+    - name: Show snapshot result
+      ansible.builtin.debug:
+        var: opnsense_snapshot

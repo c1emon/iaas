@@ -1,0 +1,35 @@
+---
+- name: Read-only OPNsense API smoke test
+  hosts: opnsense
+  gather_facts: false
+  connection: local
+
+  module_defaults:
+    group/oxlorg.opnsense.all:
+      firewall: "{{ opnsense_api_host }}"
+      api_key: "{{ opnsense_api_key }}"
+      api_secret: "{{ opnsense_api_secret }}"
+      ssl_verify: "{{ opnsense_ssl_verify }}"
+
+  tasks:
+    - name: Assert OPNsense API credentials are provided by environment
+      ansible.builtin.assert:
+        that:
+          - opnsense_api_key | length > 0
+          - opnsense_api_secret | length > 0
+        fail_msg: >-
+          Set OPNSENSE_API_KEY and OPNSENSE_API_SECRET before running this playbook.
+          Prefer injecting them with 1Password CLI and .env.opnsense.tpl.
+
+    - name: List configured firewall aliases without changing OPNsense
+      oxlorg.opnsense.list:
+        firewall: "{{ opnsense_api_host }}"
+        api_key: "{{ opnsense_api_key }}"
+        api_secret: "{{ opnsense_api_secret }}"
+        ssl_verify: "{{ opnsense_ssl_verify }}"
+        target: alias
+      register: opnsense_aliases
+
+    - name: Show alias query result
+      ansible.builtin.debug:
+        var: opnsense_aliases

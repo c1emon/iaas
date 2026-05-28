@@ -5,6 +5,7 @@
 .env
 .env.*
 !.env.example
+!.env.*.tpl
 .envrc
 
 # Secrets and private keys

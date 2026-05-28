@@ -1,0 +1,4 @@
+---
+collections:
+  - name: oxlorg.opnsense
+  - name: community.general
