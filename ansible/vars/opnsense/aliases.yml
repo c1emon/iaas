@@ -24,6 +24,16 @@ opnsense_aliases:
     description: Hole's gateway address
     enabled: true
     state: present
+  - name: HOLE_VIPS
+    type: host
+    content:
+      - 10.1.0.253
+      - 10.10.0.253
+      - 10.50.0.253
+      - 192.168.99.253
+    description: Hole's VIP addresses
+    enabled: true
+    state: present
   - name: HOLE_PORTS
     type: port
     content:
@@ -32,7 +42,7 @@ opnsense_aliases:
     description: Hole's dns and http/socks proxy port
     enabled: true
     state: present
-  - name: FAKEIP_NETS
+  - name: HOLE_FAKEIP_NETS
     type: network
     content:
       - 198.18.0.10/15
