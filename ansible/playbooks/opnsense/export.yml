@@ -41,14 +41,8 @@
         description: DHCPv6 prefix lease facts
 
   tasks:
-    - name: Assert OPNsense API credentials are provided by environment
-      ansible.builtin.assert:
-        that:
-          - opnsense_api_key | length > 0
-          - opnsense_api_secret | length > 0
-        fail_msg: >-
-          Set OPNSENSE_API_KEY and OPNSENSE_API_SECRET before running this playbook.
-          Prefer injecting them with 1Password CLI and .env.opnsense.tpl.
+    - name: Run OPNsense API credential preflight
+      ansible.builtin.import_tasks: tasks/api-credential-preflight.yml
 
     - name: Create local OPNsense export directory
       ansible.builtin.file:

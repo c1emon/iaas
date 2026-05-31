@@ -55,6 +55,10 @@ First-stage declarative-management candidates in the export are:
 - Unbound host overrides
 - Unbound forwarding entries
 
+Exported firewall aliases are observed live state. They may help review or prepare future desired state, but the alias
+management workflow does not read `exports/opnsense/firewall-aliases.json` directly. Edit the hand-written
+`ansible/vars/opnsense/aliases.yml` source instead.
+
 Observed-only facts in the export are:
 
 - DHCPv4 leases
@@ -80,9 +84,26 @@ Before any future write playbook:
 op run --env-file ../.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/snapshot.yml
 ```
 
+Additively apply reviewed firewall aliases from `ansible/vars/opnsense/aliases.yml`:
+
+```bash
+op run --env-file ../.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/manage-aliases.yml
+```
+
+Validate the alias management files before applying:
+
+```bash
+uv run ansible-playbook --syntax-check playbooks/opnsense/manage-aliases.yml
+uv run yamllint vars/opnsense/aliases.yml playbooks/opnsense/manage-aliases.yml
+uv run ansible-lint playbooks/opnsense/manage-aliases.yml
+```
+
 ## Safety rules
 
 - Use `--check --diff` whenever supported.
+- `manage-aliases.yml` creates or updates only aliases listed in `aliases.yml`; unlisted aliases are not deleted,
+  disabled, or purged.
+- Alias type changes are not automatically migrated by delete/recreate; handle type migrations explicitly after review.
 - Prefer `alias_multi` / `rule_multi` for coherent bulk changes later.
 - Use OPNsense savepoints before firewall/NAT changes.
 - Do not mix manual and Ansible ownership for the same rule set without a migration plan.

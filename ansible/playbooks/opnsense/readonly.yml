@@ -12,14 +12,8 @@
       ssl_verify: "{{ opnsense_ssl_verify }}"
 
   tasks:
-    - name: Assert OPNsense API credentials are provided by environment
-      ansible.builtin.assert:
-        that:
-          - opnsense_api_key | length > 0
-          - opnsense_api_secret | length > 0
-        fail_msg: >-
-          Set OPNSENSE_API_KEY and OPNSENSE_API_SECRET before running this playbook.
-          Prefer injecting them with 1Password CLI and .env.opnsense.tpl.
+    - name: Run OPNsense API credential preflight
+      ansible.builtin.import_tasks: tasks/api-credential-preflight.yml
 
     - name: List configured firewall aliases without changing OPNsense
       oxlorg.opnsense.list:

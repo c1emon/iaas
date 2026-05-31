@@ -66,6 +66,49 @@ exports/opnsense/
 op run --env-file ../.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/export.yml
 ```
 
+## `manage-aliases.yml`
+
+从手写 YAML 文件增量管理 OPNsense firewall aliases。
+
+输入文件：
+
+```text
+vars/opnsense/aliases.yml
+```
+
+用途：
+
+- 创建或更新 `aliases.yml` 中列出的 aliases。
+- 对未列出的 aliases 不执行删除、禁用或 purge。
+- 仅在 alias 创建或更新成功后 reload alias target 一次。
+
+安全边界：
+
+- 这是写入型 playbook；首次运行前先执行 `snapshot.yml`。
+- API 凭据只通过 `OPNSENSE_API_KEY` 和 `OPNSENSE_API_SECRET` 环境变量注入，不写入仓库。
+- `exports/opnsense/firewall-aliases.json` 是 live state 观察结果，不是此 playbook 的直接输入。
+- alias `type` 变更不会自动通过删除/重建迁移；需要操作者显式处理。
+- 此 playbook 不管理 firewall rules、NAT、interfaces、DHCP 或 Unbound。
+
+命令：
+
+```bash
+op run --env-file ../.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/manage-aliases.yml
+```
+
+语法检查：
+
+```bash
+uv run ansible-playbook --syntax-check playbooks/opnsense/manage-aliases.yml
+```
+
+Lint：
+
+```bash
+uv run yamllint vars/opnsense/aliases.yml playbooks/opnsense/manage-aliases.yml
+uv run ansible-lint playbooks/opnsense/manage-aliases.yml
+```
+
 ## 当前安全边界
 
 这些 playbook 当前不管理：
