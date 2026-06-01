@@ -10,7 +10,7 @@ Initially managed by Ansible:
 - read-only configuration queries
 - configuration snapshots
 - local exports for first-stage review of aliases and Unbound configuration
-- hand-written firewall aliases and IP Alias VIP desired state
+- hand-written firewall aliases, IP Alias VIPs, and PBR gateway desired state
 - later: aliases, Unbound overrides/forwarding, DHCP reservations, syslog, monitoring
 
 Initially not managed by automation:
@@ -19,6 +19,7 @@ Initially not managed by automation:
 - WAN / PPPoE
 - VLAN interfaces
 - CARP, Proxy ARP, and Other Virtual IP modes
+- static routes and gateway groups
 - management access rules
 - firewall rules
 - DNAT and NAT
@@ -65,6 +66,9 @@ management workflow does not read `exports/opnsense/firewall-aliases.json` direc
 
 IP Alias VIP desired state is also hand-written in `ansible/vars/opnsense/vips.yml`. It is not generated from export
 artifacts, and the VIP workflow does not read raw exports as apply input.
+
+PBR gateway desired state is hand-written in `ansible/vars/opnsense/gateways.yml`. It is not generated from export
+artifacts, and the gateway workflow does not read raw exports as apply input.
 
 Observed-only facts in the export are:
 
@@ -119,6 +123,24 @@ uv run yamllint vars/opnsense/vips.yml playbooks/opnsense/manage-vips.yml
 uv run ansible-lint playbooks/opnsense/manage-vips.yml
 ```
 
+Additively apply reviewed PBR gateways from `ansible/vars/opnsense/gateways.yml`:
+
+```bash
+op run --env-file ../.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/manage-gateways.yml
+```
+
+Validate the PBR gateway management files before applying:
+
+```bash
+uv run ansible-playbook --syntax-check playbooks/opnsense/manage-gateways.yml
+uv run yamllint vars/opnsense/gateways.yml playbooks/opnsense/manage-gateways.yml
+uv run ansible-lint playbooks/opnsense/manage-gateways.yml
+```
+
+For the FakeIP PBR design, aliases and IP Alias VIPs are prerequisites. PBR gateway objects provide a next-hop such as
+`GW_PROXY` for future firewall rules to reference. The firewall PBR rules themselves remain outside this gateway
+workflow and are a separate future capability.
+
 ## Safety rules
 
 - Use `--check --diff` whenever supported.
@@ -126,10 +148,17 @@ uv run ansible-lint playbooks/opnsense/manage-vips.yml
   disabled, or purged.
 - `manage-vips.yml` creates, updates, or removes only IP Alias VIPs listed in `vips.yml`; unlisted VIPs are not deleted,
   disabled, or purged.
+- `manage-gateways.yml` creates, updates, or removes only PBR gateways listed in `gateways.yml`; unlisted gateways are
+  not deleted, disabled, or purged.
+- Gateway entries must set `default_gw: false`; this workflow does not manage default-route ownership.
 - VIP entries use OPNsense interface identifiers / network port values such as `lan`, `wan`, or `opt1`, not UI display
   names or custom labels such as `LAN` or `MGMT`.
+- Gateway entries also use OPNsense interface identifiers / network port values such as `lan`, `wan`, or `opt1`, not UI
+  display names or custom labels.
 - VIP desired state is hand-written and reviewed; do not promote generated export artifacts directly into apply input.
-- CARP, Proxy ARP, Other VIP modes, DNAT, NAT, firewall rules, interfaces, and VLANs remain outside the managed scope.
+- Gateway desired state is hand-written and reviewed; do not promote generated export artifacts directly into apply input.
+- CARP, Proxy ARP, Other VIP modes, firewall rules, DNAT, NAT, static routes, gateway groups, interfaces, and VLANs
+  remain outside the managed scope.
 - Alias type changes are not automatically migrated by delete/recreate; handle type migrations explicitly after review.
 - Prefer `alias_multi` / `rule_multi` for coherent bulk changes later.
 - Use OPNsense savepoints before firewall/NAT changes.
