@@ -38,7 +38,7 @@ opnsense_vips:
       expand: true
       state: present
     - description: Hole VIP for APP
-      interface: opt1
+      interface: opt4
       address: 10.50.0.253/32
       bind: false
       expand: true
