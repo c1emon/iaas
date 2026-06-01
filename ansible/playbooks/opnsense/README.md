@@ -109,6 +109,52 @@ uv run yamllint vars/opnsense/aliases.yml playbooks/opnsense/manage-aliases.yml
 uv run ansible-lint playbooks/opnsense/manage-aliases.yml
 ```
 
+## `manage-vips.yml`
+
+从手写 YAML 文件增量管理 OPNsense IP Alias Virtual IPs。
+
+输入文件：
+
+```text
+vars/opnsense/vips.yml
+```
+
+用途：
+
+- 创建、更新或删除 `vips.yml` 中显式列出的 IP Alias VIPs。
+- 对未列出的 VIPs 不执行删除、禁用或 purge。
+- 强制使用 `mode: ipalias`，不从输入文件接受 CARP、Proxy ARP 或 Other VIP modes。
+- `interface` 必须写 OPNsense interface identifier / network port value，例如 `lan`、`wan`、`opt1`；
+  不写 UI display name 或自定义名称，例如 `LAN`、`MGMT`。
+- 仅在声明的 VIP 创建、更新或删除成功后 reload `interface_vip` target 一次。
+
+安全边界：
+
+- 这是写入型 playbook；首次运行前先执行 `snapshot.yml`。
+- API 凭据只通过 `OPNSENSE_API_KEY` 和 `OPNSENSE_API_SECRET` 环境变量注入，不写入仓库。
+- `vars/opnsense/vips.yml` 是手写 desired state，不由 `exports/opnsense/` 下的导出文件生成。
+- 删除必须通过在 `opnsense_vips` 中显式声明 `state: absent` 完成；未列出的 VIPs 保持不变。
+- 此 playbook 不管理 CARP、Proxy ARP、Other VIP modes、DNAT、NAT、firewall rules、interfaces 或 VLANs。
+
+命令：
+
+```bash
+op run --env-file ../.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/manage-vips.yml
+```
+
+语法检查：
+
+```bash
+uv run ansible-playbook --syntax-check playbooks/opnsense/manage-vips.yml
+```
+
+Lint：
+
+```bash
+uv run yamllint vars/opnsense/vips.yml playbooks/opnsense/manage-vips.yml
+uv run ansible-lint playbooks/opnsense/manage-vips.yml
+```
+
 ## 当前安全边界
 
 这些 playbook 当前不管理：
@@ -119,3 +165,4 @@ uv run ansible-lint playbooks/opnsense/manage-aliases.yml
 - firewall rules
 - NAT
 - WAN / PPPoE
+- CARP / Proxy ARP / Other VIP modes
