@@ -229,6 +229,49 @@ if f not in simple:
 upstream 修复。已知有类似 upstream issue 模式，例如缺失 API 字段导致 translation failure，但未找到专门针对
 `gateway` + `far_gw` 的 issue。
 
+## `manage-dnat.yml`
+
+DNAT / port-forward 管理占位 playbook。
+
+输入文件：
+
+```text
+vars/opnsense/dnat.yml
+```
+
+用途：
+
+- 为未来 hand-written DNAT desired state 保留与 aliases、VIPs、gateways 类似的位置。
+- 当前只加载并校验 `opnsense_dnat_rules` 是 sequence。
+- 随后明确失败并提示 DNAT 管理尚未实现。
+- 不调用 OPNsense API，不创建、更新或删除任何 NAT / firewall 对象。
+
+原因：
+
+- 当前仓库使用的 `oxlorg.opnsense` collection 暂无稳定的 dedicated Destination NAT / port-forward module。
+- 不在此占位 workflow 中使用 raw API workaround；如需 raw API 或未来 native module 支持，应单独设计和评审。
+
+命令：
+
+```bash
+uv run ansible-playbook playbooks/opnsense/manage-dnat.yml
+```
+
+预期结果：playbook 在读取 `vars/opnsense/dnat.yml` 后失败，并输出 DNAT 管理未实现的提示。
+
+语法检查：
+
+```bash
+uv run ansible-playbook --syntax-check playbooks/opnsense/manage-dnat.yml
+```
+
+Lint：
+
+```bash
+uv run yamllint vars/opnsense/dnat.yml playbooks/opnsense/manage-dnat.yml
+uv run ansible-lint playbooks/opnsense/manage-dnat.yml
+```
+
 ## 当前安全边界
 
 这些 playbook 当前不管理：
@@ -237,7 +280,7 @@ upstream 修复。已知有类似 upstream issue 模式，例如缺失 API 字�
 - DHCPv6 / prefix delegation
 - interfaces / VLANs
 - firewall rules
-- NAT
+- NAT / DNAT / port-forward
 - static routes
 - gateway groups
 - WAN / PPPoE

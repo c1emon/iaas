@@ -70,6 +70,10 @@ artifacts, and the VIP workflow does not read raw exports as apply input.
 PBR gateway desired state is hand-written in `ansible/vars/opnsense/gateways.yml`. It is not generated from export
 artifacts, and the gateway workflow does not read raw exports as apply input.
 
+DNAT desired state has a placeholder file at `ansible/vars/opnsense/dnat.yml`, but DNAT management is intentionally not
+implemented yet. The placeholder playbook fails before any API write because the current `oxlorg.opnsense` collection
+does not provide a stable dedicated Destination NAT / port-forward module in this repository.
+
 Observed-only facts in the export are:
 
 - DHCPv4 leases
@@ -141,6 +145,15 @@ For the FakeIP PBR design, aliases and IP Alias VIPs are prerequisites. PBR gate
 `GW_PROXY` for future firewall rules to reference. The firewall PBR rules themselves remain outside this gateway
 workflow and are a separate future capability.
 
+DNAT / port-forward management is represented only by a failing placeholder:
+
+```bash
+uv run ansible-playbook playbooks/opnsense/manage-dnat.yml
+```
+
+The placeholder loads `ansible/vars/opnsense/dnat.yml` for future review structure, then fails intentionally without
+calling OPNsense APIs. Raw API DNAT workarounds require a separate reviewed change.
+
 ## Safety rules
 
 - Use `--check --diff` whenever supported.
@@ -150,6 +163,7 @@ workflow and are a separate future capability.
   disabled, or purged.
 - `manage-gateways.yml` creates, updates, or removes only PBR gateways listed in `gateways.yml`; unlisted gateways are
   not deleted, disabled, or purged.
+- `manage-dnat.yml` is a placeholder only; it intentionally fails before any API write because DNAT is not managed yet.
 - Gateway entries must set `default_gw: false`; this workflow does not manage default-route ownership.
 - VIP entries use OPNsense interface identifiers / network port values such as `lan`, `wan`, or `opt1`, not UI display
   names or custom labels such as `LAN` or `MGMT`.
@@ -157,8 +171,8 @@ workflow and are a separate future capability.
   display names or custom labels.
 - VIP desired state is hand-written and reviewed; do not promote generated export artifacts directly into apply input.
 - Gateway desired state is hand-written and reviewed; do not promote generated export artifacts directly into apply input.
-- CARP, Proxy ARP, Other VIP modes, firewall rules, DNAT, NAT, static routes, gateway groups, interfaces, and VLANs
-  remain outside the managed scope.
+- CARP, Proxy ARP, Other VIP modes, firewall rules, DNAT, NAT, port-forward, static routes, gateway groups, interfaces,
+  and VLANs remain outside the managed scope.
 - Alias type changes are not automatically migrated by delete/recreate; handle type migrations explicitly after review.
 - Prefer `alias_multi` / `rule_multi` for coherent bulk changes later.
 - Use OPNsense savepoints before firewall/NAT changes.
