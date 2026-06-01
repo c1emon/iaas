@@ -45,7 +45,7 @@ opnsense_aliases:
   - name: HOLE_FAKEIP_NETS
     type: network
     content:
-      - 198.18.0.10/15
+      - 198.18.0.0/15
       - fc00::/18
     description: Hole's fake IP networks
     enabled: true
