@@ -64,7 +64,7 @@ opnsense_gateways:
       gateway: 10.40.0.253
       default_gw: false
       far_gw: false
-      monitor_disable: true
+      monitor_disable: false
       monitor_noroute: false
       monitor: 10.40.0.253
       force_down: false
