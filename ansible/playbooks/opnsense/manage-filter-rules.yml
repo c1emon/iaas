@@ -90,6 +90,21 @@
       loop_control:
         label: "{{ item }}"
 
+    - name: Assert deny rules do not include their own interfaces as destinations
+      ansible.builtin.assert:
+        that:
+          - >-
+            item.action not in ['block', 'reject']
+            or item.destination_net is string
+            or item.interface | intersect(item.destination_net) | length == 0
+        fail_msg: >-
+          Rule {{ item.scope }}:{{ item.slug }} denies traffic to its own interface.
+          Remove {{ item.interface | intersect(item.destination_net) | join(', ') }}
+          from destination_net.
+      loop: "{{ opnsense_filter_rules }}"
+      loop_control:
+        label: "{{ item.scope }}:{{ item.slug }}"
+
     - name: Initialize generated OPNsense new filter rule apply list
       ansible.builtin.set_fact:
         opnsense_filter_rule_apply_rules: []
