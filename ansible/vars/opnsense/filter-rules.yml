@@ -71,7 +71,7 @@ opnsense_filter_rules:
     slug: allow-local-dns
     state: present
     enabled: false
-    sequence: 1
+    sequence: 10
     interface: []
     direction: in
     action: pass
@@ -87,7 +87,7 @@ opnsense_filter_rules:
     slug: forward-ingress-to-nginx
     state: present
     enabled: false
-    sequence: 11
+    sequence: 200
     interface:
       - wan
     direction: in
@@ -104,7 +104,7 @@ opnsense_filter_rules:
     slug: resudesk-server
     state: present
     enabled: false
-    sequence: 21
+    sequence: 210
     interface:
       - wan
     direction: in
@@ -121,7 +121,7 @@ opnsense_filter_rules:
     slug: qbittorrent
     state: present
     enabled: false
-    sequence: 31
+    sequence: 220
     interface:
       - wan
     direction: in
@@ -138,7 +138,7 @@ opnsense_filter_rules:
     slug: rustdesk-web-client
     state: present
     enabled: false
-    sequence: 41
+    sequence: 230
     interface:
       - wan
     direction: in
@@ -155,39 +155,39 @@ opnsense_filter_rules:
     slug: default-allow-lan-to-any
     state: present
     enabled: false
-    sequence: 51
+    sequence: 900
     interface:
       - lan
     direction: in
     action: pass
     quick: true
-    ip_protocol: inet
+    ip_protocol: inet46
     protocol: any
     source_net: lan
     destination_net: any
     log: false
 
-  - scope: lan
-    slug: default-allow-lan-ipv6-to-any
-    state: present
-    enabled: false
-    sequence: 61
-    interface:
-      - lan
-    direction: in
-    action: pass
-    quick: true
-    ip_protocol: inet6
-    protocol: any
-    source_net: lan
-    destination_net: any
-    log: false
+  # - scope: lan
+  #   slug: default-allow-lan-ipv6-to-any
+  #   state: present
+  #   enabled: false
+  #   sequence: 910
+  #   interface:
+  #     - lan
+  #   direction: in
+  #   action: pass
+  #   quick: true
+  #   ip_protocol: inet6
+  #   protocol: any
+  #   source_net: lan
+  #   destination_net: any
+  #   log: false
 
   - scope: mgmt
     slug: pass-any-ipv4
     state: present
     enabled: false
-    sequence: 71
+    sequence: 920
     interface:
       - opt1
     direction: in
@@ -202,7 +202,7 @@ opnsense_filter_rules:
     slug: pass-to-wan-app
     state: present
     enabled: false
-    sequence: 81
+    sequence: 240
     interface:
       - opt2
     direction: in
@@ -220,7 +220,7 @@ opnsense_filter_rules:
     slug: reject-to-lan-mgmt-mem-ts
     state: present
     enabled: false
-    sequence: 91
+    sequence: 300
     interface:
       - opt2
     direction: in
@@ -240,7 +240,7 @@ opnsense_filter_rules:
     slug: pass-any
     state: present
     enabled: false
-    sequence: 100
+    sequence: 930
     interface:
       - opt8
     direction: in
@@ -256,7 +256,7 @@ opnsense_filter_rules:
     slug: pass-any
     state: present
     enabled: false
-    sequence: 101
+    sequence: 940
     interface:
       - opt2
     direction: in
@@ -272,7 +272,7 @@ opnsense_filter_rules:
     slug: block-to-tailnet-lan-mgmt-dev-mem
     state: present
     enabled: false
-    sequence: 111
+    sequence: 310
     interface:
       - opt4
     direction: in
@@ -293,7 +293,7 @@ opnsense_filter_rules:
     slug: allow-internet
     state: present
     enabled: false
-    sequence: 121
+    sequence: 950
     interface:
       - opt4
     direction: in
