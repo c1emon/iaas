@@ -83,6 +83,23 @@ opnsense_filter_rules:
     destination_port: "53"
     log: false
 
+  - scope: floating
+    slug: route-fakeip-to-hole
+    state: present
+    enabled: true
+    sequence: 100
+    interface: []
+    direction: in
+    action: pass
+    quick: true
+    ip_protocol: inet46
+    protocol: any
+    source_net: any
+    destination_net:
+      - HOLE_FAKEIP_NETS
+    gateway: HOLE
+    log: false
+
   # - scope: wan-telnet
   #   slug: forward-ingress-to-nginx
   #   state: present
