@@ -229,6 +229,65 @@ if f not in simple:
 upstream 修复。已知有类似 upstream issue 模式，例如缺失 API 字段导致 translation failure，但未找到专门针对
 `gateway` + `far_gw` 的 issue。
 
+## `manage-filter-rules.yml`
+
+从手写 YAML 文件增量管理 OPNsense API-backed new firewall filter rules / Rules `[new]`。
+
+输入文件：
+
+```text
+vars/opnsense/filter-rules.yml
+```
+
+用途：
+
+- 创建、更新或删除 `filter-rules.yml` 中显式列出的 new filter rules。
+- 通过 `oxlorg.opnsense.rule_multi` 调用 OPNsense new filter rule API。
+- 每个 managed rule 使用 `scope` 和 `slug` 作为不可变 identity parts；playbook 会生成 OPNsense
+  `description`：`iaas:opnsense:filter:<scope>:<slug>`。
+- 不要在 `opnsense_filter_rules` 中直接声明 `description`；直接声明会在写入前失败。
+- OPNsense 侧仍使用生成的 `description` 作为不可变 machine identity，并通过
+  `match_fields: ['description']` 匹配既有 rule。例如 `scope: lan` 和 `slug: allow-dns-to-hole` 会生成
+  `iaas:opnsense:filter:lan:allow-dns-to-hole`。
+- `sequence` 控制规则顺序，但不是 rule identity；修改 `sequence` 应视为同一个 rule 的排序更新。
+- `source_net` 和 `destination_net` 可以写字符串或 YAML list；list 会在调用 `rule_multi` 前转换为逗号分隔字符串。
+- `source_port` 和 `destination_port` 可省略，省略时表示任意端口；需要限制端口时可写字符串或 YAML list。
+  list 会在调用 `rule_multi` 前转换为逗号分隔字符串，例如 `["53", 21115-21117, HOLE_PORTS]`。
+- `source_invert` 和 `destination_invert` 可省略，省略时默认为 `false`；只有需要反向匹配时声明为 `true`。
+- 建议 sequence blocks：`1-99` essential rules，`100-199` routing-policy rules，`200-499` special rules，
+  `900+` broad default allow rules。
+- 仅在声明的 filter rule 创建、更新或删除成功后 reload `rule` target 一次。
+
+安全边界：
+
+- 这是写入型 playbook；首次运行前先执行 `snapshot.yml`。
+- API 凭据只通过 `OPNSENSE_API_KEY` 和 `OPNSENSE_API_SECRET` 环境变量注入，不写入仓库。
+- `vars/opnsense/filter-rules.yml` 是手写 desired state，不由 `download_rules.csv` 或
+  `exports/opnsense/` 下的导出文件生成。
+- 删除必须通过在 `opnsense_filter_rules` 中显式声明 `state: absent` 完成；未列出的 rules 保持不变。
+- 此 playbook 只管理 API-backed new filter rules；不管理 legacy firewall rules。
+- 此 workflow 不使用 `setRule/{uuid}` 创建 caller-supplied UUID identity；future UUID identity 是后续单独能力。
+- 此 playbook 不管理 NAT、DNAT / port-forward、static routes、gateway groups、interfaces 或 VLANs。
+
+命令：
+
+```bash
+op run --env-file ../.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/manage-filter-rules.yml
+```
+
+语法检查：
+
+```bash
+uv run ansible-playbook --syntax-check playbooks/opnsense/manage-filter-rules.yml
+```
+
+Lint：
+
+```bash
+uv run yamllint vars/opnsense/filter-rules.yml playbooks/opnsense/manage-filter-rules.yml
+uv run ansible-lint playbooks/opnsense/manage-filter-rules.yml
+```
+
 ## `manage-dnat.yml`
 
 DNAT / port-forward 管理占位 playbook。
@@ -279,7 +338,7 @@ uv run ansible-lint playbooks/opnsense/manage-dnat.yml
 - ISC DHCP
 - DHCPv6 / prefix delegation
 - interfaces / VLANs
-- firewall rules
+- legacy firewall rules
 - NAT / DNAT / port-forward
 - static routes
 - gateway groups

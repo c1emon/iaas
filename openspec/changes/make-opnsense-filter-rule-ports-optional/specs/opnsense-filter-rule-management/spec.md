@@ -1,0 +1,20 @@
+## MODIFIED Requirements
+
+### Requirement: Explicit rule fields and states
+The system SHALL require each declared managed filter rule to define explicit `scope`, `slug`, `state`, `enabled`, `sequence`, interface, action, IP protocol, protocol, source, and destination fields, SHALL allow `source_net` and `destination_net` to be declared either as strings or YAML lists, SHALL default omitted `source_invert` and `destination_invert` fields to `false`, and SHALL default omitted `source_port` and `destination_port` fields to empty strings.
+
+#### Scenario: Declared port fields are omitted
+- **WHEN** a declared filter rule omits `source_port` or `destination_port`
+- **THEN** the workflow generates module input with the omitted port field set to an empty string
+
+#### Scenario: Declared port field is explicit
+- **WHEN** a declared filter rule sets `source_port` or `destination_port` to a port, range, or alias
+- **THEN** the workflow preserves the explicit value in generated module input
+
+#### Scenario: Declared filter rule is missing required fields
+- **WHEN** any declared filter rule omits a required field other than optional invert or port fields
+- **THEN** the workflow fails before attempting OPNsense API write calls and reports the missing field requirement
+
+#### Scenario: Declared filter rule uses invalid state
+- **WHEN** a declared filter rule sets `state` to a value other than `present` or `absent`
+- **THEN** the workflow fails before attempting OPNsense API write calls and reports the allowed states

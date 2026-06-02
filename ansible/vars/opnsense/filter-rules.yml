@@ -1,0 +1,306 @@
+---
+# Hand-written desired state for additive OPNsense new firewall filter rule management.
+#
+# This file is intentionally empty by default. Add reviewed API-backed Rules [new]
+# entries to opnsense_filter_rules before running manage-filter-rules.yml.
+#
+# Do not generate this file from download_rules.csv or raw artifacts under
+# exports/opnsense/. Those files are migration/review inputs only and are not
+# read by the apply workflow.
+#
+# scope and slug are immutable identity parts. This workflow generates the
+# OPNsense description as iaas:opnsense:filter:<scope>:<slug> and uses
+# match_fields: ['description']. Do not declare description directly in
+# opnsense_filter_rules; direct description input is rejected.
+#
+# sequence controls rule order, but is not part of rule identity. Recommended
+# sequence blocks:
+#   1-99: essential allow/block rules
+#   100-199: selective gateway or routing-policy rules
+#   200-499: special allow/block rules
+#   900+: broad default allow rules
+#
+# source_net and destination_net accept either a string or a YAML list. Lists
+# are normalized to comma-separated strings before rule_multi is called. Port
+# fields remain strings so ranges like 21115-21117 are not confused with lists.
+# source_invert and destination_invert may be omitted when false. Declare them
+# only when inverted matching is needed, or when an explicit true/false override
+# helps review.
+# source_port and destination_port may be omitted when unrestricted. They accept
+# a string or YAML list of port numbers, port aliases, or ranges. Lists are
+# normalized to comma-separated strings before rule_multi is called.
+#
+# Example entries:
+# opnsense_filter_rules:
+#   - scope: lan
+#     slug: allow-dns-to-hole
+#     state: present
+#     enabled: true
+#     sequence: 100
+#     interface:
+#       - lan
+#     direction: in
+#     action: pass
+#     quick: true
+#     ip_protocol: inet46
+#     protocol: TCP/UDP
+#     source_net: any
+#     destination_net:
+#       - HOLE_VIPS
+#     destination_port:
+#       - "53"
+#       - 21115-21117
+#       - HOLE_PORTS
+#     gateway: ""
+#   - scope: lan
+#     slug: remove-old-example
+#     state: absent
+#     enabled: false
+#     sequence: 900
+#     interface:
+#       - lan
+#     direction: in
+#     action: pass
+#     quick: true
+#     ip_protocol: inet
+#     protocol: any
+#     source_net: any
+#     destination_net: any
+opnsense_filter_rules:
+  - scope: floating
+    slug: allow-local-dns
+    state: present
+    enabled: false
+    sequence: 1
+    interface: []
+    direction: in
+    action: pass
+    quick: true
+    ip_protocol: inet46
+    protocol: UDP
+    source_net: any
+    destination_net: (self)
+    destination_port: "53"
+    log: false
+
+  - scope: wan-telnet
+    slug: forward-ingress-to-nginx
+    state: present
+    enabled: false
+    sequence: 11
+    interface:
+      - wan
+    direction: in
+    action: pass
+    quick: true
+    ip_protocol: inet
+    protocol: TCP/UDP
+    source_net: any
+    destination_net: 10.50.0.254
+    destination_port: "883"
+    log: false
+
+  - scope: wan-telnet
+    slug: resudesk-server
+    state: present
+    enabled: false
+    sequence: 21
+    interface:
+      - wan
+    direction: in
+    action: pass
+    quick: true
+    ip_protocol: inet
+    protocol: TCP/UDP
+    source_net: any
+    destination_net: 10.50.0.10
+    destination_port: 21115-21117
+    log: false
+
+  - scope: wan-telnet
+    slug: qbittorrent
+    state: present
+    enabled: false
+    sequence: 31
+    interface:
+      - wan
+    direction: in
+    action: pass
+    quick: true
+    ip_protocol: inet
+    protocol: TCP/UDP
+    source_net: any
+    destination_net: 10.50.0.112
+    destination_port: "26881"
+    log: false
+
+  - scope: wan-telnet
+    slug: rustdesk-web-client
+    state: present
+    enabled: false
+    sequence: 41
+    interface:
+      - wan
+    direction: in
+    action: pass
+    quick: true
+    ip_protocol: inet
+    protocol: TCP/UDP
+    source_net: any
+    destination_net: 10.50.0.10
+    destination_port: 21118-21119
+    log: false
+
+  - scope: lan
+    slug: default-allow-lan-to-any
+    state: present
+    enabled: false
+    sequence: 51
+    interface:
+      - lan
+    direction: in
+    action: pass
+    quick: true
+    ip_protocol: inet
+    protocol: any
+    source_net: lan
+    destination_net: any
+    log: false
+
+  - scope: lan
+    slug: default-allow-lan-ipv6-to-any
+    state: present
+    enabled: false
+    sequence: 61
+    interface:
+      - lan
+    direction: in
+    action: pass
+    quick: true
+    ip_protocol: inet6
+    protocol: any
+    source_net: lan
+    destination_net: any
+    log: false
+
+  - scope: mgmt
+    slug: pass-any-ipv4
+    state: present
+    enabled: false
+    sequence: 71
+    interface:
+      - opt1
+    direction: in
+    action: pass
+    quick: true
+    ip_protocol: inet
+    protocol: any
+    source_net: any
+    destination_net: any
+
+  - scope: dev
+    slug: pass-to-wan-app
+    state: present
+    enabled: false
+    sequence: 81
+    interface:
+      - opt2
+    direction: in
+    action: pass
+    quick: true
+    ip_protocol: inet
+    protocol: any
+    source_net: any
+    destination_net:
+      - wan
+      - opt4
+    log: false
+
+  - scope: dev
+    slug: reject-to-lan-mgmt-mem-ts
+    state: present
+    enabled: false
+    sequence: 91
+    interface:
+      - opt2
+    direction: in
+    action: reject
+    quick: true
+    ip_protocol: inet
+    protocol: any
+    source_net: any
+    destination_net:
+      - lan
+      - opt1
+      - opt3
+      - opt6
+    log: false
+
+  - scope: hole
+    slug: pass-any
+    state: present
+    enabled: false
+    sequence: 100
+    interface:
+      - opt8
+    direction: in
+    action: pass
+    quick: true
+    ip_protocol: inet46
+    protocol: any
+    source_net: any
+    destination_net: any
+    log: false
+
+  - scope: dev
+    slug: pass-any
+    state: present
+    enabled: false
+    sequence: 101
+    interface:
+      - opt2
+    direction: in
+    action: pass
+    quick: true
+    ip_protocol: inet46
+    protocol: any
+    source_net: any
+    destination_net: any
+    log: false
+
+  - scope: app
+    slug: block-to-tailnet-lan-mgmt-dev-mem
+    state: present
+    enabled: false
+    sequence: 111
+    interface:
+      - opt4
+    direction: in
+    action: block
+    quick: true
+    ip_protocol: inet
+    protocol: any
+    source_net: any
+    destination_net:
+      - tailnet
+      - lan
+      - opt1
+      - opt2
+      - opt3
+    log: false
+
+  - scope: app
+    slug: allow-internet
+    state: present
+    enabled: false
+    sequence: 121
+    interface:
+      - opt4
+    direction: in
+    action: pass
+    quick: true
+    ip_protocol: inet46
+    protocol: any
+    source_net: any
+    destination_net: any
+    log: false
