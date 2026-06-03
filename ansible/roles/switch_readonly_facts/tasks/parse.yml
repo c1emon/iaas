@@ -1,0 +1,29 @@
+---
+- name: Normalize collected command outputs  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.set_fact:
+    switch_normalized_outputs: >-
+      {{ switch_read_command_plan | switch_cli_output_map(switch_cli_raw_outputs) }}
+  no_log: true
+
+- name: Set named switch command outputs
+  ansible.builtin.set_fact:
+    switch_command_outputs:  # noqa: var-naming[no-role-prefix]
+      show_version: "{{ switch_normalized_outputs.show_version | default('') }}"
+      show_vlan: "{{ switch_normalized_outputs.show_vlan | default('') }}"
+      show_vlan_brief: "{{ switch_normalized_outputs.show_vlan_brief | default('') }}"
+      show_running_config: "{{ switch_normalized_outputs.show_running_config | default('') }}"
+  no_log: true
+
+- name: Build structured switch facts  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.set_fact:
+    switch_facts: >-  # noqa: var-naming[no-role-prefix]
+      {{ switch_command_outputs | switch_parse_facts(
+        switch_platform_profile,
+        switch_readonly_gather_subset,
+        inventory_hostname
+      ) }}
+    switch_redacted_running_config: >-  # noqa: var-naming[no-role-prefix]
+      {{ switch_command_outputs.show_running_config | redact_switch_running_config }}
+    switch_raw_export_items: >-  # noqa: var-naming[no-role-prefix]
+      {{ switch_read_command_plan | switch_raw_export_plan(switch_normalized_outputs, switch_platform_profile) }}
+  no_log: true

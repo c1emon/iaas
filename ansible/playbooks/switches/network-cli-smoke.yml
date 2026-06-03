@@ -1,0 +1,56 @@
+---
+- name: Smoke test switch SSH network_cli support
+  hosts: switches
+  gather_facts: false
+  connection: ansible.netcommon.network_cli
+
+  vars:
+    ansible_connection: ansible.netcommon.network_cli
+    ansible_network_os: cisco.ios.ios
+    ansible_user: "{{ lookup('env', 'SWITCH_SSH_USER') }}"
+    ansible_password: "{{ lookup('env', 'SWITCH_SSH_PASSWORD') }}"
+    ansible_port: "{{ lookup('env', 'SWITCH_SSH_PORT') | default('22', true) }}"
+    ansible_command_timeout: 30
+    switch_network_cli_smoke_commands:
+      - terminal length 0
+      - show version
+      - show vlan
+      - show vlan brief
+      - show running-config
+
+  tasks:
+    - name: Validate switch SSH credentials are supplied
+      ansible.builtin.assert:
+        that:
+          - ansible_user | length > 0
+          - ansible_password | length > 0
+        fail_msg: >-
+          Supply SWITCH_SSH_USER and SWITCH_SSH_PASSWORD at runtime before testing
+          network_cli.
+
+    - name: Run read-only commands over network_cli
+      ansible.netcommon.cli_command:
+        command: "{{ item }}"
+      loop: "{{ switch_network_cli_smoke_commands }}"
+      loop_control:
+        label: "{{ item }}"
+      register: switch_network_cli_smoke_results
+      changed_when: false
+      no_log: "{{ not (switch_network_cli_smoke_show_output | default(false) | bool) }}"
+
+    - name: Show network_cli smoke-test result summary
+      ansible.builtin.debug:
+        msg: >-
+          network_cli SSH command '{{ item.item }}' succeeded for {{ inventory_hostname }};
+          output length: {{ item.stdout | default('') | length }}
+      loop: "{{ switch_network_cli_smoke_results.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Show network_cli smoke-test command output when enabled
+      ansible.builtin.debug:
+        msg: "{{ item.stdout | default('') }}"
+      loop: "{{ switch_network_cli_smoke_results.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: switch_network_cli_smoke_show_output | default(false) | bool

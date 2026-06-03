@@ -7,7 +7,7 @@ Current scope:
 - OPNsense API bootstrap scaffolding.
 - Read-only OPNsense API smoke test.
 - OPNsense configuration snapshot playbook.
-- Read-only SKS8300 switch facts collection over Telnet.
+- Read-only SKS8300 switch facts collection over SSH `network_cli`.
 
 Install dependencies:
 

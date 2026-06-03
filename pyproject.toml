@@ -9,5 +9,6 @@ dev = [
     "ansible>=13.7.0",
     "ansible-lint>=26.4.0",
     "httpx>=0.28.1",
+    "paramiko>=3.5.1",
     "yamllint>=1.38.0",
 ]

@@ -1,23 +1,7 @@
 ---
-switch_telnet_port: 23
-switch_telnet_username: "{{ lookup('env', 'SWITCH_TELNET_USER') }}"
-switch_telnet_password: "{{ lookup('env', 'SWITCH_TELNET_PASSWORD') }}"
-switch_telnet_login_prompt: "(?i)(login|username): ?"
-switch_telnet_password_prompt: "(?i)password: ?"
-switch_telnet_prompts:
-  - "Switch[#>] ?$"
-
-switch_cli_pagination_command: terminal length 0
-switch_cli_show_commands:
-  - show version
-  - show vlan
-  - show vlan brief
-  - show running-config
-switch_cli_commands: "{{ [switch_cli_pagination_command] + switch_cli_show_commands }}"
-
-switch_export_formats:
-  - yaml
-  - json
-switch_export_save_raw: false
-switch_export_dir: "{{ playbook_dir }}/../../../exports/switches/{{ inventory_hostname }}"
-switch_raw_output_dir: "{{ switch_export_dir }}/raw-output"
+ansible_connection: ansible.netcommon.network_cli
+ansible_network_os: cisco.ios.ios
+ansible_user: "{{ lookup('env', 'SWITCH_SSH_USER') }}"
+ansible_password: "{{ lookup('env', 'SWITCH_SSH_PASSWORD') }}"
+ansible_port: "{{ lookup('env', 'SWITCH_SSH_PORT') | default('22', true) }}"
+ansible_command_timeout: 30

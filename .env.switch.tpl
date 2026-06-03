@@ -1,2 +1,3 @@
-SWITCH_TELNET_USER=op://Astra/SW_CORE/username
-SWITCH_TELNET_PASSWORD=op://Astra/SW_CORE/password
+SWITCH_SSH_USER=op://Astra/SW_CORE/username
+SWITCH_SSH_PASSWORD=op://Astra/SW_CORE/password
+SWITCH_SSH_PORT=22

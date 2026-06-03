@@ -1,0 +1,16 @@
+---
+- name: Collect read-only switch command output over SSH network_cli
+  ansible.netcommon.cli_command:
+    command: "{{ item.command }}"
+  loop: "{{ switch_read_command_plan }}"
+  loop_control:
+    label: "{{ item.id }}"
+  register: switch_cli_command_results  # noqa: var-naming[no-role-prefix]
+  changed_when: false
+  no_log: true
+
+- name: Select raw SSH CLI output payload  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.set_fact:
+    switch_cli_raw_outputs: >-
+      {{ switch_cli_command_results.results | default([]) | map(attribute='stdout') | list }}
+  no_log: true
