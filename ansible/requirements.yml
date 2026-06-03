@@ -2,3 +2,4 @@
 collections:
   - name: oxlorg.opnsense
   - name: community.general
+  - name: ansible.netcommon

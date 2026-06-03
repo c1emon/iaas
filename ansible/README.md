@@ -7,6 +7,7 @@ Current scope:
 - OPNsense API bootstrap scaffolding.
 - Read-only OPNsense API smoke test.
 - OPNsense configuration snapshot playbook.
+- Read-only SKS8300 switch facts collection over Telnet.
 
 Install dependencies:
 
@@ -19,6 +20,12 @@ Run the read-only OPNsense smoke test with credentials injected at runtime:
 
 ```bash
 op run --env-file ../.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/readonly.yml
+```
+
+Run the read-only switch facts collection with credentials injected at runtime:
+
+```bash
+op run --env-file ../.env.switch.tpl -- uv run ansible-playbook playbooks/switches/readonly-facts.yml
 ```
 
 Do not commit plaintext vault passwords, private keys, API keys, or environment-specific secrets.

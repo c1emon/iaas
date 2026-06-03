@@ -1,0 +1,170 @@
+---
+- name: Collect read-only switch CLI facts
+  hosts: switches
+  gather_facts: false
+  connection: local
+
+  vars:
+    switch_expected_cli_commands:
+      - terminal length 0
+      - show version
+      - show vlan
+      - show vlan brief
+      - show running-config
+    switch_mutating_command_pattern: "(?i)^(config|configure|write|copy|reload|delete|clear|format)\\b"
+
+  tasks:
+    - name: Validate switch runtime credentials and read-only command list
+      ansible.builtin.assert:
+        that:
+          - switch_telnet_username | length > 0
+          - switch_telnet_password | length > 0
+          - switch_cli_pagination_command == 'terminal length 0'
+          - switch_cli_commands == switch_expected_cli_commands
+          - switch_cli_commands | select('regex', switch_mutating_command_pattern) | list | length == 0
+          - switch_export_formats | length > 0
+          - switch_export_formats | difference(['yaml', 'json']) | length == 0
+        fail_msg: >-
+          Supply SWITCH_TELNET_USER and SWITCH_TELNET_PASSWORD at runtime and keep
+          switch_cli_commands equal to the approved read-only command list.
+
+    - name: Create local switch export directory
+      ansible.builtin.file:
+        path: "{{ switch_export_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Create raw output directory when enabled
+      ansible.builtin.file:
+        path: "{{ switch_raw_output_dir }}"
+        state: directory
+        mode: "0700"
+      when: switch_export_save_raw | bool
+
+    - name: Collect read-only switch command output over Telnet
+      ansible.netcommon.telnet:
+        host: "{{ ansible_host }}"
+        port: "{{ switch_telnet_port }}"
+        user: "{{ switch_telnet_username }}"
+        password: "{{ switch_telnet_password }}"
+        login_prompt: "{{ switch_telnet_login_prompt }}"
+        password_prompt: "{{ switch_telnet_password_prompt }}"
+        prompts: "{{ switch_telnet_prompts }}"
+        command: "{{ switch_cli_commands }}"
+      register: switch_telnet_result
+      changed_when: false
+      no_log: true
+
+    - name: Select raw Telnet output payload
+      ansible.builtin.set_fact:
+        switch_telnet_raw_outputs: >-
+          {{ switch_telnet_result.output | default([])
+            if switch_telnet_result.output is defined and switch_telnet_result.output | length > 0
+            else [
+              switch_telnet_result.stdout | default(switch_telnet_result.stdout_lines | default([]) | join('\n'))
+            ] }}
+
+    - name: Normalize collected command outputs
+      ansible.builtin.set_fact:
+        switch_normalized_outputs: >-
+          {{ switch_cli_commands | normalize_switch_telnet_outputs(switch_telnet_raw_outputs) }}
+      no_log: true
+
+    - name: Set named switch command outputs
+      ansible.builtin.set_fact:
+        switch_command_outputs:
+          show_version: "{{ switch_normalized_outputs.show_version | default('') }}"
+          show_vlan: "{{ switch_normalized_outputs.show_vlan | default('') }}"
+          show_vlan_brief: "{{ switch_normalized_outputs.show_vlan_brief | default('') }}"
+          running_config: "{{ switch_normalized_outputs.show_running_config | default('') }}"
+      no_log: true
+
+    - name: Write raw output summary when raw output export is enabled
+      ansible.builtin.copy:
+        dest: "{{ switch_raw_output_dir }}/telnet-output-summary.json"
+        mode: "0600"
+        content: |
+          {{ {
+            "telnet_result_keys": switch_telnet_result.keys() | list | sort,
+            "telnet_output_count": switch_telnet_result.output | default([]) | length,
+            "telnet_stdout_count": switch_telnet_result.stdout | default([]) | length,
+            "telnet_stdout_lines_count": switch_telnet_result.stdout_lines | default([]) | length,
+            "telnet_msg_length": switch_telnet_result.msg | default('') | string | length,
+            "normalized_output_lengths": {
+              "show_version": switch_command_outputs.show_version | length,
+              "show_vlan": switch_command_outputs.show_vlan | length,
+              "show_vlan_brief": switch_command_outputs.show_vlan_brief | length,
+              "running_config": switch_command_outputs.running_config | length
+            }
+          } | to_nice_json }}
+      when: switch_export_save_raw | bool
+
+    - name: Build structured switch facts
+      ansible.builtin.set_fact:
+        switch_facts: "{{ switch_command_outputs | switch_cli_facts(inventory_hostname) }}"
+        switch_redacted_running_config: "{{ switch_command_outputs.running_config | redact_switch_running_config }}"
+      no_log: true
+
+    - name: Write structured YAML switch facts
+      ansible.builtin.copy:
+        dest: "{{ switch_export_dir }}/facts.yml"
+        mode: "0600"
+        content: |
+          {{ switch_facts | to_nice_yaml(indent=2, sort_keys=false) }}
+      when: "'yaml' in switch_export_formats"
+
+    - name: Write structured JSON switch facts
+      ansible.builtin.copy:
+        dest: "{{ switch_export_dir }}/facts.json"
+        mode: "0600"
+        content: |
+          {{ switch_facts | to_nice_json }}
+      when: "'json' in switch_export_formats"
+
+    - name: Save redacted running configuration when raw output export is enabled
+      ansible.builtin.copy:
+        dest: "{{ switch_raw_output_dir }}/show-running-config.txt"
+        mode: "0600"
+        content: "{{ switch_redacted_running_config }}"
+      when: switch_export_save_raw | bool
+
+    - name: Save non-sensitive raw command outputs when enabled
+      ansible.builtin.copy:
+        dest: "{{ switch_raw_output_dir }}/{{ item.name }}.txt"
+        mode: "0600"
+        content: "{{ item.content }}"
+      loop:
+        - name: show-version
+          content: "{{ switch_command_outputs.show_version }}"
+        - name: show-vlan
+          content: "{{ switch_command_outputs.show_vlan }}"
+        - name: show-vlan-brief
+          content: "{{ switch_command_outputs.show_vlan_brief }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when: switch_export_save_raw | bool
+      no_log: true
+
+    - name: Write switch export README
+      ansible.builtin.copy:
+        dest: "{{ switch_export_dir }}/README.md"
+        mode: "0600"
+        content: |
+          # Switch read-only export for {{ inventory_hostname }}
+
+          This directory contains read-only SKS8300 switch facts generated from Telnet CLI output.
+
+          Structured exports:
+          {% if 'yaml' in switch_export_formats %}
+          - `facts.yml`
+          {% endif %}
+          {% if 'json' in switch_export_formats %}
+          - `facts.json`
+          {% endif %}
+
+          Raw output export is {{ 'enabled' if switch_export_save_raw | bool else 'disabled' }}.
+          When enabled, `raw-output/show-running-config.txt` is redacted before writing.
+
+    - name: Show switch export location
+      ansible.builtin.debug:
+        msg: "Wrote read-only switch facts for {{ inventory_hostname }} to {{ switch_export_dir }}"
