@@ -1,0 +1,20 @@
+---
+# Hand-written desired state for additive SKS8300 VLAN configuration management.
+#
+# This file is intentionally plan-only by default through
+# playbooks/switches/config-plan.yml (`switch_config_apply: false`). Review the
+# generated plan before setting `switch_config_apply=true`.
+#
+# The switch_config role supports declarative VLAN resources only. Do not place
+# raw CLI commands here; arbitrary command lists are rejected by the workflow.
+#
+# Example entry shape:
+# switch_config_intent:
+#   vlans:
+#     - id: 3999
+#       name: ansible-test
+#       state: present
+#     - id: 3998
+#       state: absent
+switch_config_intent:
+  vlans: []
