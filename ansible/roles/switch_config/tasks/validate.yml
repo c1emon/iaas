@@ -1,0 +1,38 @@
+---
+- name: Validate switch configuration runtime settings
+  ansible.builtin.assert:
+    that:
+      - ansible_user | length > 0
+      - ansible_password | length > 0
+      - ansible_port | string | length > 0
+      - ansible_connection == 'ansible.netcommon.network_cli'
+      - ansible_network_os == 'cisco.ios.ios'
+      - switch_platform_profile | length > 0
+      - switch_config_intent is mapping
+      - switch_config_allowed_operations | length > 0
+      - switch_config_commands is not defined
+    fail_msg: >-
+      Supply runtime network_cli credentials from inventory or runtime variables,
+      set a supported switch_platform_profile, and provide declarative
+      switch_config_intent. Raw switch_config_commands are not supported.
+
+- name: Build profile-driven config current-state command plan  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.set_fact:
+    switch_config_collect_command_plan: >-  # noqa: var-naming[no-role-prefix]
+      {{ switch_config_intent | switch_config_collect_command_plan(switch_platform_profile) }}
+    switch_config_gather_subsets: >-  # noqa: var-naming[no-role-prefix]
+      {{ switch_config_intent | switch_config_gather_subsets(switch_platform_profile) }}
+  no_log: true
+
+- name: Validate config collection command policy
+  ansible.builtin.assert:
+    that:
+      - switch_config_collect_command_plan | length > 0
+      - switch_config_collect_command_plan | selectattr('read_only', 'equalto', false) | list | length == 0
+      - >-
+        switch_config_collect_command_plan | map(attribute='command') |
+        select('regex', '(?i)^(config|configure|write|copy|reload|delete|clear|erase|format|reset|boot\s+system)\b') |
+        list | length == 0
+    fail_msg: >-
+      Profile config current-state planning produced an unsafe or empty command
+      plan for {{ switch_platform_profile }}.

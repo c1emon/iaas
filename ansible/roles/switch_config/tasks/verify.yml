@@ -1,0 +1,53 @@
+---
+- name: Re-collect switch state after apply for verification
+  ansible.netcommon.cli_command:
+    command: "{{ item.command }}"
+  loop: "{{ switch_config_collect_command_plan }}"
+  loop_control:
+    label: "{{ item.id }}"
+  register: switch_config_verify_collect_results  # noqa: var-naming[no-role-prefix]
+  changed_when: false
+  when: switch_config_apply | bool
+  no_log: true
+
+- name: Normalize post-apply command outputs  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.set_fact:
+    switch_config_verify_outputs: >-  # noqa: var-naming[no-role-prefix]
+      {{ switch_config_collect_command_plan | switch_cli_output_map(
+        switch_config_verify_collect_results.results | default([]) | map(attribute='stdout') | list
+      ) }}
+  when: switch_config_apply | bool
+  no_log: true
+
+- name: Parse post-apply switch state  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.set_fact:
+    switch_config_verify_facts: >-  # noqa: var-naming[no-role-prefix]
+      {{ switch_config_verify_outputs | switch_parse_facts(
+        switch_platform_profile,
+        switch_config_gather_subsets,
+        inventory_hostname
+      ) }}
+  when: switch_config_apply | bool
+  no_log: true
+
+- name: Verify post-apply switch state against declared intent  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.set_fact:
+    switch_config_verify_report: >-  # noqa: var-naming[no-role-prefix]
+      {{ switch_config_verify_facts | switch_config_verify(switch_config_intent, switch_platform_profile) }}
+  when: switch_config_apply | bool
+  no_log: true
+
+- name: Record skipped verification for plan-only runs  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.set_fact:
+    switch_config_verify_report:  # noqa: var-naming[no-role-prefix]
+      ok: true
+      status: not_run
+      failures: []
+  when: not switch_config_apply | bool
+
+- name: Fail when post-apply verification does not satisfy intent
+  ansible.builtin.assert:
+    that:
+      - switch_config_verify_report.ok | bool
+    fail_msg: "Switch configuration verification failed: {{ switch_config_verify_report.failures }}"
+  when: switch_config_apply | bool

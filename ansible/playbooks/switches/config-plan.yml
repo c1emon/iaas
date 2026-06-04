@@ -1,0 +1,24 @@
+---
+- name: Plan SKS8300 declarative switch configuration
+  hosts: switches
+  gather_facts: false
+  connection: ansible.netcommon.network_cli
+
+  vars:
+    ansible_connection: ansible.netcommon.network_cli
+    ansible_network_os: cisco.ios.ios
+    switch_platform_profile: sks8300
+    switch_config_apply: false
+    switch_config_allowed_operations:
+      - create
+      - update
+      - remove
+      - no-op
+    switch_config_intent:
+      vlans:
+        - id: 10
+          name: users
+          state: present
+
+  roles:
+    - switch_config

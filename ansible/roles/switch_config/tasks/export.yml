@@ -1,0 +1,19 @@
+---
+- name: Export switch configuration change report  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.set_fact:
+    switch_config_change_report: >-  # noqa: var-naming[no-role-prefix]
+      {{ switch_config_plan_report | combine({
+        'apply': {
+          'enabled': switch_config_apply | bool,
+          'status': switch_config_apply_status | default('not_requested')
+        },
+        'verify': switch_config_verify_report | default({'status': 'not_run', 'ok': true, 'failures': []})
+      }) }}
+  no_log: true
+
+- name: Report switch configuration change status
+  ansible.builtin.debug:
+    msg: >-
+      switch_config status={{ switch_config_apply_status | default('not_requested') }},
+      verify={{ switch_config_verify_report.status | default('not_run') }},
+      changed={{ switch_config_plan_report.changed | bool }}.

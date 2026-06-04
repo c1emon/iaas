@@ -1,0 +1,26 @@
+---
+- name: Normalize current-state command outputs  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.set_fact:
+    switch_config_normalized_outputs: >-  # noqa: var-naming[no-role-prefix]
+      {{ switch_config_collect_command_plan | switch_cli_output_map(switch_config_cli_raw_outputs) }}
+  no_log: true
+
+- name: Parse current switch state through profile parsers  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.set_fact:
+    switch_config_current_facts: >-  # noqa: var-naming[no-role-prefix]
+      {{ switch_config_normalized_outputs | switch_parse_facts(
+        switch_platform_profile,
+        switch_config_gather_subsets,
+        inventory_hostname
+      ) }}
+  no_log: true
+
+- name: Build declarative switch configuration plan  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.set_fact:
+    switch_config_plan_report: >-  # noqa: var-naming[no-role-prefix]
+      {{ switch_config_current_facts | switch_config_plan(
+        switch_config_intent,
+        switch_config_allowed_operations,
+        switch_platform_profile
+      ) }}
+  no_log: true

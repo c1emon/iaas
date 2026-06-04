@@ -1,4 +1,4 @@
-"""SKS8300 read-only profile implementation."""
+"""SKS8300 profile implementation."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from .commands import COMMANDS, CommandDefinition
 from .parsers import parse_switch_interfaces, parse_switch_show_version, parse_switch_vlans
 from .read_subsets import DEFAULT_SETUP_COMMANDS, READ_SUBSETS
 from .redaction import redact_switch_running_config
+from .resources import build_plan, collect_subsets_for_intent, config_gather_subsets_for_intent, verify_intent
 
 
 @dataclass(frozen=True)
@@ -109,6 +110,27 @@ class SKS8300Profile:
                 }
             )
         return export_items
+
+    def build_config_collect_command_plan(self, intent: Any) -> list[dict[str, Any]]:
+        """Build read-only commands needed for declarative config planning."""
+        return self.build_read_command_plan(collect_subsets_for_intent(intent))
+
+    def config_gather_subsets_for_intent(self, intent: Any) -> list[str]:
+        """Return parser gather subsets needed for declared configuration intent."""
+        return config_gather_subsets_for_intent(intent)
+
+    def build_config_plan(
+        self,
+        current_facts: Mapping[str, Any],
+        intent: Any,
+        allowed_operations: Sequence[str] | None = None,
+    ) -> dict[str, Any]:
+        """Validate SKS8300 config intent and return a redacted plan/diff report."""
+        return build_plan(current_facts, intent, allowed_operations)
+
+    def verify_config_intent(self, current_facts: Mapping[str, Any], intent: Any) -> dict[str, Any]:
+        """Verify SKS8300 current state against declared config intent."""
+        return verify_intent(current_facts, intent)
 
 
 PROFILE = SKS8300Profile()

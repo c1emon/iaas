@@ -1,0 +1,15 @@
+---
+- name: Export switch configuration diff facts  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.set_fact:
+    switch_config_diff: "{{ switch_config_plan_report.diff }}"  # noqa: var-naming[no-role-prefix]
+    switch_config_rendered_commands: >-  # noqa: var-naming[no-role-prefix]
+      {{ switch_config_plan_report.rendered_commands }}
+    switch_config_changed: "{{ switch_config_plan_report.changed }}"  # noqa: var-naming[no-role-prefix]
+  no_log: true
+
+- name: Report plan-only status
+  ansible.builtin.debug:
+    msg: >-
+      Planned {{ switch_config_rendered_commands | length }} rendered command(s)
+      for {{ inventory_hostname }}. switch_config_apply={{ switch_config_apply | bool }}.
+      No mutating commands are sent unless switch_config_apply is true.

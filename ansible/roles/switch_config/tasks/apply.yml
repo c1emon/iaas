@@ -1,0 +1,30 @@
+---
+- name: Keep default configuration runs non-mutating
+  ansible.builtin.debug:
+    msg: >-
+      Plan-only run complete. Set switch_config_apply=true to apply validated
+      profile-rendered commands.
+  when: not switch_config_apply | bool
+
+- name: Apply validated switch configuration commands
+  ansible.netcommon.cli_command:
+    command: |-
+      config
+      {% for rendered_command in switch_config_rendered_commands %}
+      {{ rendered_command }}
+      {% endfor %}
+      exit
+  register: switch_config_apply_result  # noqa: var-naming[no-role-prefix]
+  changed_when: true
+  no_log: true
+  when:
+    - switch_config_apply | bool
+    - switch_config_rendered_commands | length > 0
+
+- name: Record apply status  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.set_fact:
+    switch_config_apply_status: >-
+      {{ 'applied' if (switch_config_apply | bool and switch_config_rendered_commands | length > 0)
+         else 'not_requested' if not switch_config_apply | bool
+         else 'no_changes' }}
+  no_log: true

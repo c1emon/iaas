@@ -11,6 +11,12 @@ if str(ANSIBLE_DIR) not in sys.path:
     sys.path.insert(0, str(ANSIBLE_DIR))
 
 try:
+    from ansible.module_utils.switch_profiles.config import (
+        build_config_collect_command_plan,
+        build_config_plan,
+        config_gather_subsets_for_intent,
+        verify_config_intent,
+    )
     from ansible.module_utils.switch_profiles.read import (
         build_raw_export_plan,
         build_read_command_plan,
@@ -18,6 +24,12 @@ try:
         parse_read_facts,
     )
 except ModuleNotFoundError:
+    from module_utils.switch_profiles.config import (
+        build_config_collect_command_plan,
+        build_config_plan,
+        config_gather_subsets_for_intent,
+        verify_config_intent,
+    )
     from module_utils.switch_profiles.read import (
         build_raw_export_plan,
         build_read_command_plan,
@@ -55,6 +67,35 @@ def switch_raw_export_plan(
     return build_raw_export_plan(command_plan, outputs, profile)
 
 
+def switch_config_collect_command_plan(intent: Any, profile: str = "sks8300") -> list[dict[str, Any]]:
+    """Build the read-only command plan required for configuration planning."""
+    return build_config_collect_command_plan(intent, profile)
+
+
+def switch_config_plan(
+    current_facts: dict[str, Any],
+    intent: Any,
+    allowed_operations: Any = None,
+    profile: str = "sks8300",
+) -> dict[str, Any]:
+    """Build a validated declarative config plan/diff report."""
+    return build_config_plan(current_facts, intent, allowed_operations, profile)
+
+
+def switch_config_gather_subsets(intent: Any, profile: str = "sks8300") -> list[str]:
+    """Return parser gather subsets needed for declared configuration intent."""
+    return config_gather_subsets_for_intent(intent, profile)
+
+
+def switch_config_verify(
+    current_facts: dict[str, Any],
+    intent: Any,
+    profile: str = "sks8300",
+) -> dict[str, Any]:
+    """Verify post-change state against declared config intent."""
+    return verify_config_intent(current_facts, intent, profile)
+
+
 class FilterModule:
     """Ansible filter entrypoint."""
 
@@ -64,4 +105,8 @@ class FilterModule:
             "switch_cli_output_map": switch_cli_output_map,
             "switch_parse_facts": switch_parse_facts,
             "switch_raw_export_plan": switch_raw_export_plan,
+            "switch_config_collect_command_plan": switch_config_collect_command_plan,
+            "switch_config_gather_subsets": switch_config_gather_subsets,
+            "switch_config_plan": switch_config_plan,
+            "switch_config_verify": switch_config_verify,
         }

@@ -1,0 +1,16 @@
+---
+- name: Collect current switch state for configuration planning
+  ansible.netcommon.cli_command:
+    command: "{{ item.command }}"
+  loop: "{{ switch_config_collect_command_plan }}"
+  loop_control:
+    label: "{{ item.id }}"
+  register: switch_config_collect_results  # noqa: var-naming[no-role-prefix]
+  changed_when: false
+  no_log: true
+
+- name: Select current-state raw SSH CLI output  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.set_fact:
+    switch_config_cli_raw_outputs: >-  # noqa: var-naming[no-role-prefix]
+      {{ switch_config_collect_results.results | default([]) | map(attribute='stdout') | list }}
+  no_log: true
