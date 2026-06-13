@@ -6,7 +6,7 @@
       - ansible_password | length > 0
       - ansible_port | string | length > 0
       - ansible_connection == 'ansible.netcommon.network_cli'
-      - ansible_network_os == 'cisco.ios.ios'
+      - ansible_network_os == 'c1emon.xikeos.xikeos'
       - switch_platform_profile | length > 0
       - switch_config_intent is mapping
       - switch_config_allowed_operations | length > 0

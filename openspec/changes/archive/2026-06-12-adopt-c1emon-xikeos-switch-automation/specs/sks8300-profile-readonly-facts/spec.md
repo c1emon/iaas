@@ -19,7 +19,7 @@ The system SHALL expose SKS8300/XikeOS-series read-only facts through a gather s
 - **THEN** the workflow SHALL fail before command collection
 - **AND** the failure SHALL identify the invalid profile or subset value
 
-### Requirement: Thin Ansible facade and reusable fact adaptation
+### Requirement: Thin Ansible filter facade and reusable profile core
 The system SHALL expose Ansible-facing read-only switch fact operations through a thin facade that can delegate to native collection modules or compatibility SKS8300 profile utilities.
 
 #### Scenario: Build collection through facade

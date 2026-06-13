@@ -6,10 +6,10 @@
       - ansible_password | length > 0
       - ansible_port | string | length > 0
       - ansible_connection == 'ansible.netcommon.network_cli'
-      - ansible_network_os == 'cisco.ios.ios'
+      - ansible_network_os == 'c1emon.xikeos.xikeos'
       - switch_platform_profile | length > 0
       - switch_readonly_gather_subset | length > 0
     fail_msg: >-
       Supply SWITCH_SSH_USER and SWITCH_SSH_PASSWORD at runtime, keep
-      network_cli configured with the cisco.ios.ios terminal adapter, configure
-      a supported switch_platform_profile and switch_readonly_gather_subset.
+      network_cli configured with the c1emon.xikeos.xikeos native platform,
+      configure a supported switch_platform_profile and switch_readonly_gather_subset.

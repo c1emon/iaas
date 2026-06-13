@@ -1,10 +1,7 @@
 ---
-- name: Re-collect switch state after apply for verification
-  ansible.netcommon.cli_command:
-    command: "{{ item.command }}"
-  loop: "{{ switch_config_collect_command_plan }}"
-  loop_control:
-    label: "{{ item.id }}"
+- name: Re-collect switch state after apply for verification through native XikeOS collection
+  c1emon.xikeos.xikeos_command:
+    commands: "{{ switch_config_collect_command_plan | map(attribute='command') | list }}"
   register: switch_config_verify_collect_results  # noqa: var-naming[no-role-prefix]
   changed_when: false
   when: switch_config_apply | bool
@@ -14,7 +11,7 @@
   ansible.builtin.set_fact:
     switch_config_verify_outputs: >-  # noqa: var-naming[no-role-prefix]
       {{ switch_config_collect_command_plan | switch_cli_output_map(
-        switch_config_verify_collect_results.results | default([]) | map(attribute='stdout') | list
+        switch_config_verify_collect_results.stdout | default([])
       ) }}
   when: switch_config_apply | bool
   no_log: true

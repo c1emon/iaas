@@ -51,7 +51,7 @@
         "gather_subset": switch_readonly_gather_subset,
         "planned_command_ids": switch_read_command_plan | map(attribute='id') | list,
         "cli_result_keys": switch_cli_command_results.keys() | list | sort,
-        "cli_result_count": switch_cli_command_results.results | default([]) | length,
+        "cli_result_count": switch_cli_command_results.stdout | default([]) | length,
         "cli_stdout_count": switch_cli_raw_outputs | length,
         "normalized_output_lengths": {
           "show_version": switch_command_outputs.show_version | length,

@@ -7,7 +7,7 @@ Current scope:
 - OPNsense API bootstrap scaffolding.
 - Read-only OPNsense API smoke test.
 - OPNsense configuration snapshot playbook.
-- Read-only SKS8300 switch facts collection over SSH `network_cli`.
+- SKS8300/XikeOS switch facts and configuration planning over SSH `network_cli` using `c1emon.xikeos`.
 
 Install dependencies:
 
@@ -15,6 +15,14 @@ Install dependencies:
 uv sync
 uv run ansible-galaxy collection install -r requirements.yml
 ```
+
+The switch workflow installs the native Galaxy collection `c1emon.xikeos` through
+`requirements.yml`; use the repository requirements command above instead of an
+out-of-band collection install so all Ansible dependencies stay reproducible.
+Collection installation does not install Python parser libraries, so ensure the
+control environment has collection runtime parser dependencies such as `ttp` and
+`textfsm` available when collection-backed facts or resource modules require
+them.
 
 Run the read-only OPNsense smoke test with credentials injected at runtime:
 

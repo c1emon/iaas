@@ -1,8 +1,20 @@
 # Switch Playbooks
 
-These playbooks collect read-only facts from the `SW_CORE` SKS8300-12X switch over encrypted SSH using Ansible `network_cli`. SSH credentials are supplied at runtime and must not be committed.
+These playbooks collect read-only facts from the `SW_CORE` SKS8300-12X switch over encrypted SSH using Ansible `network_cli` and the native `c1emon.xikeos` collection. SSH credentials are supplied at runtime and must not be committed.
 
 Run commands from the `ansible/` directory.
+
+Install repository Ansible collections before running switch workflows:
+
+```bash
+uv run ansible-galaxy collection install -r requirements.yml
+```
+
+This installs the native Galaxy collection `c1emon.xikeos` alongside the other
+repository collection dependencies. Ansible collection installation does not
+install Python packages, so keep the control environment synchronized with
+`uv sync` and ensure parser libraries used by collection-backed facts/resources,
+including `ttp` and `textfsm`, are available.
 
 ## Workflow layout
 
@@ -14,7 +26,7 @@ workflow:
 - `roles/switch_readonly_facts/tasks/main.yml`
 - `roles/switch_readonly_facts/tasks/validate.yml`
 - `roles/switch_readonly_facts/tasks/plan.yml`
-- `roles/switch_readonly_facts/tasks/collect.yml`
+- `roles/switch_readonly_facts/tasks/collect.yml` (native `c1emon.xikeos.xikeos_command`)
 - `roles/switch_readonly_facts/tasks/parse.yml`
 - `playbooks/switches/tasks/export-readonly-facts.yml`
 
@@ -46,7 +58,10 @@ SWITCH_SSH_PORT=22
 Adjust `.env.switch.tpl` if the 1Password item or field names differ.
 
 The Ansible control environment uses `paramiko` as the Python SSH backend for `network_cli`.
-The playbook sets `ansible_network_os: cisco.ios.ios` only as a terminal adapter for this SKS8300-12X prompt. Do not use Cisco IOS configuration/resource modules or `cli_config` for this workflow.
+Switch inventory and playbooks set `ansible_network_os: c1emon.xikeos.xikeos` so
+terminal and cliconf behavior comes from the native XikeOS collection. Do not use
+the former Cisco IOS terminal adapter, Cisco IOS configuration/resource modules,
+or generic `cli_config` for this workflow.
 
 The supported operator interface is profile and gather-subset selection:
 
@@ -69,12 +84,14 @@ Current subsets:
 - `vlans`: VLAN facts from VLAN tables and redacted running config parsing
 - `interfaces`: interface VLAN membership facts from running config parsing
 
-Only `terminal length 0` is supported for pagination setup. Do not add fallback pagination commands such as `screen-rows per-page 0`.
+Only `terminal length 0` is supported for pagination setup when the compatibility
+profile needs explicit pagination handling. Do not add fallback pagination
+commands such as `screen-rows per-page 0`.
 
 Safety boundary:
 
 - The role builds and validates the command plan from the selected profile and gather subsets before command collection.
-- It does not enter configuration mode.
+- It collects through `c1emon.xikeos.xikeos_command` and does not enter configuration mode.
 - It does not create export directories or write files; file persistence is owned by `playbooks/switches/tasks/export-readonly-facts.yml`.
 - The profile rejects non-read-only command definitions and mutating command prefixes including `config`, `configure`, `write`, `copy`, `reload`, `delete`, `clear`, and `format`.
 - Raw `show running-config` output is redacted in the role-generated export plan before the playbook export workflow saves it.
@@ -84,6 +101,33 @@ the user-facing fact selector, the SKS8300 command catalog owns CLI strings and
 export policy, the profile core in `module_utils/switch_profiles/` owns parsing
 and redaction, and future configuration resources should use a separate workflow
 rather than this read-only facts role.
+
+## `config-plan.yml`
+
+The configuration workflow is separate from read-only facts. It validates
+declarative `switch_config_intent`, collects current state through
+`c1emon.xikeos.xikeos_command`, computes the repository diff/report, and maps
+supported resources to lifecycle-safe native collection modules:
+
+- VLAN create/update/remove intent maps to `c1emon.xikeos.xikeos_vlans` with
+  `merged` or `deleted` states.
+- L2 interface access, trunk, and hybrid intent maps to
+  `c1emon.xikeos.xikeos_l2_interfaces` with `merged` state.
+- Unsupported interface/resource gaps fail before apply and must be documented
+  before any fallback is added.
+
+`switch_config_apply` remains `false` by default. Plan-only runs may execute
+collection check-mode previews and current-state gathering, but do not send
+mutating configuration. When `switch_config_apply=true`, the role invokes native
+collection resource modules only after `switch_config_allowed_operations` and
+destructive-command checks pass. The repository does not use
+`c1emon.xikeos.xikeos_config` as the primary declarative interface; raw config is
+reserved for future, explicitly documented gaps and must keep the same allowed
+operation and destructive-command guardrails.
+
+Change reports continue to include current state, desired intent, repository
+diff/rendered command summaries, native collection module previews/results,
+apply status, and verification outcome.
 
 Export options are defined at playbook scope and can be overridden at runtime:
 
@@ -96,11 +140,29 @@ Smoke-test and validation commands:
 
 ```bash
 uv run ansible-playbook --syntax-check playbooks/switches/readonly-facts.yml
+uv run ansible-playbook --syntax-check playbooks/switches/config-plan.yml
 uv run yamllint inventories/homelab.yml inventories/group_vars/switches.yml roles/switch_readonly_facts/defaults/main.yml roles/switch_readonly_facts/tasks/main.yml roles/switch_readonly_facts/tasks/validate.yml roles/switch_readonly_facts/tasks/plan.yml roles/switch_readonly_facts/tasks/collect.yml roles/switch_readonly_facts/tasks/parse.yml playbooks/switches/readonly-facts.yml playbooks/switches/tasks/export-readonly-facts.yml
-uv run ansible-lint playbooks/switches/readonly-facts.yml roles/switch_readonly_facts
+uv run ansible-lint playbooks/switches/readonly-facts.yml roles/switch_readonly_facts playbooks/switches/config-plan.yml roles/switch_config
+uv run python -m unittest tests/test_xikeos_migration.py
 uv run python -m compileall filter_plugins module_utils
 op run --env-file ../.env.switch.tpl -- uv run ansible-playbook playbooks/switches/network-cli-smoke.yml
 ```
+
+Live validation should start with `network-cli-smoke.yml` and
+`readonly-facts.yml`. Do not run apply-enabled `config-plan.yml` until those
+read-only native XikeOS collection paths pass against the target switch.
+
+## Current native collection gaps and follow-up notes
+
+- `switch_config` currently maps VLAN intent to `xikeos_vlans` and L2
+  access/trunk/hybrid interface intent to `xikeos_l2_interfaces` only.
+- Base interface, L3 interface, and LAG resource modules exist in the collection
+  but are not exposed through this repository's `switch_config_intent` schema yet.
+- The compatibility SKS8300 parsers remain in use to preserve the existing
+  `switch_facts` output shape and verification behavior until equivalent native
+  gathered resource schemas are validated live.
+- `xikeos_config` remains a documented fallback only for future unsupported gaps;
+  it is not invoked by the repository workflow.
 
 ## Migration for direct role callers
 

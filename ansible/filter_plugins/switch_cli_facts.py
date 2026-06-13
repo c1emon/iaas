@@ -11,14 +11,14 @@ if str(ANSIBLE_DIR) not in sys.path:
     sys.path.insert(0, str(ANSIBLE_DIR))
 
 try:
-    from ansible.module_utils.switch_profiles.common import command_key, normalize_cli_result
-    from ansible.module_utils.switch_profiles.sks8300.parsers import (
+    from ansible.module_utils.switch_profiles.common import command_key, normalize_cli_result # pyright: ignore[reportMissingImports]
+    from ansible.module_utils.switch_profiles.sks8300.parsers import ( # pyright: ignore[reportMissingImports]
         parse_switch_interfaces,
         parse_switch_show_version,
         parse_switch_vlans,
         switch_cli_facts,
     )
-    from ansible.module_utils.switch_profiles.sks8300.redaction import redact_switch_running_config
+    from ansible.module_utils.switch_profiles.sks8300.redaction import redact_switch_running_config # pyright: ignore[reportMissingImports]
 except ModuleNotFoundError:
     from module_utils.switch_profiles.common import command_key, normalize_cli_result
     from module_utils.switch_profiles.sks8300.parsers import (

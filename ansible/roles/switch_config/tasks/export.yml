@@ -5,7 +5,9 @@
       {{ switch_config_plan_report | combine({
         'apply': {
           'enabled': switch_config_apply | bool,
-          'status': switch_config_apply_status | default('not_requested')
+          'status': switch_config_apply_status | default('not_requested'),
+          'preview': switch_config_collection_preview | default({}),
+          'module_results': switch_config_module_results | default({})
         },
         'verify': switch_config_verify_report | default({'status': 'not_run', 'ok': true, 'failures': []})
       }) }}

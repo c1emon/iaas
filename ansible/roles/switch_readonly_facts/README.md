@@ -1,11 +1,14 @@
 # switch_readonly_facts
 
-Side-effect-free read-only CLI facts provider for SKS8300-series switches.
+Side-effect-free read-only CLI facts provider for SKS8300/XikeOS-series switches.
 
 The role validates inputs, plans approved read-only commands, collects CLI output
 over `network_cli`, and parses structured facts. It does not create directories
 or write export files. Callers that want persistence should run a separate
 playbook-level export workflow after the role completes.
+Inventory and playbooks use `ansible_network_os: c1emon.xikeos.xikeos` with
+`ansible.netcommon.network_cli`; the role collects approved commands through the
+native `c1emon.xikeos.xikeos_command` module.
 
 Supported user-facing inputs:
 
@@ -25,13 +28,13 @@ Phases:
 
 - validate runtime credentials and guardrails
 - plan commands from `switch_platform_profile` and `switch_readonly_gather_subset`
-- collect approved CLI output over `network_cli`
+- collect approved CLI output over `network_cli` with `c1emon.xikeos.xikeos_command`
 - parse command-ID mapped outputs into structured facts
 
 Output variables:
 
 - `switch_read_command_plan`: profile-expanded approved command plan
-- `switch_cli_command_results`: registered `cli_command` results
+- `switch_cli_command_results`: registered `xikeos_command` results
 - `switch_cli_raw_outputs`: raw stdout list selected from command results
 - `switch_command_outputs`: command-ID keyed normalized output map
 - `switch_facts`: parsed structured switch facts

@@ -3,23 +3,38 @@
   ansible.builtin.debug:
     msg: >-
       Plan-only run complete. Set switch_config_apply=true to apply validated
-      profile-rendered commands.
+      native XikeOS collection resource operations.
   when: not switch_config_apply | bool
 
-- name: Apply validated switch configuration commands
-  ansible.netcommon.cli_command:
-    command: |-
-      config
-      {% for rendered_command in switch_config_rendered_commands %}
-      {{ rendered_command }}
-      {% endfor %}
-      exit
-  register: switch_config_apply_result  # noqa: var-naming[no-role-prefix]
-  changed_when: true
+- name: Apply VLAN create and update intent through native XikeOS resource module
+  c1emon.xikeos.xikeos_vlans:
+    config: "{{ switch_config_collection_operations.vlan_merge_config }}"
+    state: merged
+  register: switch_config_vlan_merge_result  # noqa: var-naming[no-role-prefix]
   no_log: true
   when:
     - switch_config_apply | bool
-    - switch_config_rendered_commands | length > 0
+    - switch_config_collection_operations.vlan_merge_config | length > 0
+
+- name: Apply VLAN removal intent through native XikeOS resource module
+  c1emon.xikeos.xikeos_vlans:
+    config: "{{ switch_config_collection_operations.vlan_delete_config }}"
+    state: deleted
+  register: switch_config_vlan_delete_result  # noqa: var-naming[no-role-prefix]
+  no_log: true
+  when:
+    - switch_config_apply | bool
+    - switch_config_collection_operations.vlan_delete_config | length > 0
+
+- name: Apply L2 interface intent through native XikeOS resource module
+  c1emon.xikeos.xikeos_l2_interfaces:
+    config: "{{ switch_config_collection_operations.l2_interface_merge_config }}"
+    state: merged
+  register: switch_config_l2_interface_result  # noqa: var-naming[no-role-prefix]
+  no_log: true
+  when:
+    - switch_config_apply | bool
+    - switch_config_collection_operations.l2_interface_merge_config | length > 0
 
 - name: Record apply status  # noqa: var-naming[no-role-prefix]
   ansible.builtin.set_fact:
@@ -27,4 +42,22 @@
       {{ 'applied' if (switch_config_apply | bool and switch_config_rendered_commands | length > 0)
          else 'not_requested' if not switch_config_apply | bool
          else 'no_changes' }}
+    switch_config_module_results:  # noqa: var-naming[no-role-prefix]
+      vlans_merged: "{{ switch_config_vlan_merge_result | default({}) }}"
+      vlans_deleted: "{{ switch_config_vlan_delete_result | default({}) }}"
+      l2_interfaces_merged: "{{ switch_config_l2_interface_result | default({}) }}"
   no_log: true
+
+- name: Validate native collection apply command output safety
+  ansible.builtin.assert:
+    that:
+      - >-
+        (
+          (switch_config_vlan_merge_result.commands | default([])) +
+          (switch_config_vlan_delete_result.commands | default([])) +
+          (switch_config_l2_interface_result.commands | default([]))
+        ) |
+        select('regex', '(?i)(reload|erase|write erase|delete startup-config|format|factory|reset|boot system)') |
+        list | length == 0
+    fail_msg: Native collection apply output included a forbidden command.
+  when: switch_config_apply | bool

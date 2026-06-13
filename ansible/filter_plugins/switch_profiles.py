@@ -11,13 +11,13 @@ if str(ANSIBLE_DIR) not in sys.path:
     sys.path.insert(0, str(ANSIBLE_DIR))
 
 try:
-    from ansible.module_utils.switch_profiles.config import (
+    from ansible.module_utils.switch_profiles.config import ( # pyright: ignore[reportMissingImports]
         build_config_collect_command_plan,
         build_config_plan,
         config_gather_subsets_for_intent,
         verify_config_intent,
     )
-    from ansible.module_utils.switch_profiles.read import (
+    from ansible.module_utils.switch_profiles.read import ( # pyright: ignore[reportMissingImports]
         build_raw_export_plan,
         build_read_command_plan,
         map_cli_outputs,

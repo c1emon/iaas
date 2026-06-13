@@ -5,11 +5,77 @@
     switch_config_rendered_commands: >-  # noqa: var-naming[no-role-prefix]
       {{ switch_config_plan_report.rendered_commands }}
     switch_config_changed: "{{ switch_config_plan_report.changed }}"  # noqa: var-naming[no-role-prefix]
+    switch_config_collection_operations: >-  # noqa: var-naming[no-role-prefix]
+      {{ switch_config_plan_report.collection }}
   no_log: true
+
+- name: Validate collection resource module coverage and safety
+  ansible.builtin.assert:
+    that:
+      - switch_config_collection_operations.unsupported | length == 0
+      - >-
+        switch_config_collection_operations.module_command_summaries | default([]) |
+        select('regex', '(?i)(reload|erase|write erase|delete startup-config|format|factory|reset|boot system)') |
+        list | length == 0
+    fail_msg: >-
+      Switch configuration plan contains unsupported collection resource gaps or
+      forbidden rendered commands: {{ switch_config_collection_operations.unsupported | default([]) }}
+
+- name: Preview VLAN create and update intent through native XikeOS resource module
+  c1emon.xikeos.xikeos_vlans:
+    config: "{{ switch_config_collection_operations.vlan_merge_config }}"
+    state: merged
+  check_mode: true
+  register: switch_config_vlan_merge_preview  # noqa: var-naming[no-role-prefix]
+  changed_when: false
+  no_log: true
+  when: switch_config_collection_operations.vlan_merge_config | length > 0
+
+- name: Preview VLAN removal intent through native XikeOS resource module
+  c1emon.xikeos.xikeos_vlans:
+    config: "{{ switch_config_collection_operations.vlan_delete_config }}"
+    state: deleted
+  check_mode: true
+  register: switch_config_vlan_delete_preview  # noqa: var-naming[no-role-prefix]
+  changed_when: false
+  no_log: true
+  when: switch_config_collection_operations.vlan_delete_config | length > 0
+
+- name: Preview L2 interface intent through native XikeOS resource module
+  c1emon.xikeos.xikeos_l2_interfaces:
+    config: "{{ switch_config_collection_operations.l2_interface_merge_config }}"
+    state: merged
+  check_mode: true
+  register: switch_config_l2_interface_preview  # noqa: var-naming[no-role-prefix]
+  changed_when: false
+  no_log: true
+  when: switch_config_collection_operations.l2_interface_merge_config | length > 0
+
+- name: Record collection check-mode preview results  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.set_fact:
+    switch_config_collection_preview:
+      vlans_merged: "{{ switch_config_vlan_merge_preview | default({}) }}"
+      vlans_deleted: "{{ switch_config_vlan_delete_preview | default({}) }}"
+      l2_interfaces_merged: "{{ switch_config_l2_interface_preview | default({}) }}"
+  no_log: true
+
+- name: Validate collection check-mode command output safety
+  ansible.builtin.assert:
+    that:
+      - >-
+        (
+          (switch_config_vlan_merge_preview.commands | default([])) +
+          (switch_config_vlan_delete_preview.commands | default([])) +
+          (switch_config_l2_interface_preview.commands | default([]))
+        ) |
+        select('regex', '(?i)(reload|erase|write erase|delete startup-config|format|factory|reset|boot system)') |
+        list | length == 0
+    fail_msg: Native collection check-mode output included a forbidden command.
 
 - name: Report plan-only status
   ansible.builtin.debug:
     msg: >-
       Planned {{ switch_config_rendered_commands | length }} rendered command(s)
+      via native collection modules
       for {{ inventory_hostname }}. switch_config_apply={{ switch_config_apply | bool }}.
       No mutating commands are sent unless switch_config_apply is true.
