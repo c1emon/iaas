@@ -7,9 +7,23 @@
       - ansible_port | string | length > 0
       - ansible_connection == 'ansible.netcommon.network_cli'
       - ansible_network_os == 'c1emon.xikeos.xikeos'
-      - switch_platform_profile | length > 0
       - switch_readonly_gather_subset | length > 0
+      - switch_readonly_gather_network_resources | length > 0
+      - >-
+        switch_readonly_gather_subset |
+        difference(['all', 'min', 'hardware', 'config', '!hardware', '!config']) |
+        length == 0
+      - >-
+        switch_readonly_gather_network_resources |
+        difference([
+          'all', 'interfaces', 'vlans', 'l2_interfaces', 'l3_interfaces',
+          'lag_interfaces', 'static_routes', 'acls', '!interfaces', '!vlans',
+          '!l2_interfaces', '!l3_interfaces', '!lag_interfaces',
+          '!static_routes', '!acls'
+        ]) |
+        length == 0
     fail_msg: >-
       Supply SWITCH_SSH_USER and SWITCH_SSH_PASSWORD at runtime, keep
       network_cli configured with the c1emon.xikeos.xikeos native platform,
-      configure a supported switch_platform_profile and switch_readonly_gather_subset.
+      configure supported xikeos_facts gather_subset and
+      gather_network_resources values.

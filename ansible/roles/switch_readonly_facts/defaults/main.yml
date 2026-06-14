@@ -1,6 +1,13 @@
 ---
-switch_platform_profile: sks8300  # noqa: var-naming[no-role-prefix]
 switch_readonly_gather_subset:  # noqa: var-naming[no-role-prefix]
-  - device
+  - min
   - vlans
   - interfaces
+switch_readonly_gather_network_resources:  # noqa: var-naming[no-role-prefix]
+  - interfaces
+  - vlans
+  - l2_interfaces
+  - l3_interfaces
+  - lag_interfaces
+  - static_routes
+  - acls

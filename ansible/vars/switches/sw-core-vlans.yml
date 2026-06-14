@@ -5,29 +5,32 @@
 # playbooks/switches/config-plan.yml (`switch_config_apply: false`). Review the
 # generated plan before setting `switch_config_apply=true`.
 #
-# The switch_config role supports declarative VLAN and interface resources. Do
-# not place raw CLI commands here; arbitrary command lists are rejected by the
-# workflow.
+# The switch_config role supports collection-native grouped resource module
+# calls. Do not place raw CLI commands here; arbitrary command lists are
+# rejected by the workflow.
 #
 # Example entry shape:
-# switch_config_intent:
+# switch_config_allowed_states:
+#   - merged
+#   - deleted
+# switch_config_resources:
 #   vlans:
-#     - id: 3999
-#       name: ansible-test
-#       state: present
-#     - id: 3998
-#       state: absent
-#   interfaces:
-#     - name: Ethernet1/0/48
-#       mode: access
-#       access_vlan: 3999
-#     - name: Ethernet1/0/47
-#       mode: trunk
-#       tagged_vlans: [10, 20, 3999]
-#     - name: Ethernet1/0/46
-#       mode: hybrid
-#       tagged_vlans: [20, 3999]
-#       untagged_vlans: [10]
-switch_config_intent:
+#     - state: merged
+#       config:
+#         - vlan_id: 3999
+#           name: ansible-test
+#     - state: deleted
+#       config:
+#         - vlan_id: 3998
+#   l2_interfaces:
+#     - state: merged
+#       config:
+#         - name: Ethernet1/0/48
+#           mode: access
+#           access_vlan: 3999
+#         - name: Ethernet1/0/47
+#           mode: trunk
+#           trunk_allowed_vlan: 10,20,3999
+switch_config_resources:
   vlans: []
-  interfaces: []
+  l2_interfaces: []

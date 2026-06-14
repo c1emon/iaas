@@ -37,6 +37,7 @@ crash.*.log
 
 # Ansible
 *.retry
+ansible/collections/
 
 # Python / tooling caches
 __pycache__/

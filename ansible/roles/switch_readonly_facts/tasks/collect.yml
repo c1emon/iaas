@@ -1,13 +1,16 @@
 ---
-- name: Collect read-only switch command output through native XikeOS collection
-  c1emon.xikeos.xikeos_command:
-    commands: "{{ switch_read_command_plan | map(attribute='command') | list }}"
-  register: switch_cli_command_results  # noqa: var-naming[no-role-prefix]
+- name: Collect read-only switch facts through native XikeOS collection
+  c1emon.xikeos.xikeos_facts:
+    gather_subset: "{{ switch_xikeos_gather_subset }}"
+    gather_network_resources: "{{ switch_xikeos_gather_network_resources }}"
+  register: switch_xikeos_facts_result  # noqa: var-naming[no-role-prefix]
   changed_when: false
   no_log: true
 
-- name: Select raw SSH CLI output payload  # noqa: var-naming[no-role-prefix]
+- name: Expose collection-native XikeOS facts  # noqa: var-naming[no-role-prefix]
   ansible.builtin.set_fact:
-    switch_cli_raw_outputs: >-
-      {{ switch_cli_command_results.stdout | default([]) }}
+    switch_collection_facts: >-  # noqa: var-naming[no-role-prefix]
+      {{ switch_xikeos_facts_result.ansible_facts | default({}) }}
+    switch_ansible_network_resources: >-  # noqa: var-naming[no-role-prefix]
+      {{ switch_xikeos_facts_result.ansible_facts.ansible_network_resources | default({}) }}
   no_log: true

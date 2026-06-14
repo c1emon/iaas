@@ -5,29 +5,29 @@
 Provide a safe read-only SSH network CLI workflow for collecting and parsing SKS8300-12X switch version and VLAN facts without mutating switch configuration, with file export handled by caller-owned workflows.
 ## Requirements
 ### Requirement: SSH network CLI read-only switch collection
-The system SHALL collect SKS8300/XikeOS-series switch data over encrypted SSH using Ansible `network_cli` and only approved read-only command or gathered-resource operations derived from the configured switch workflow.
+The system SHALL collect XikeOS switch data over encrypted SSH using Ansible `network_cli` and the native `c1emon.xikeos` facts interface without mutating switch configuration.
 
 #### Scenario: Collect switch data without mutation over SSH
 - **WHEN** the switch facts playbook runs against a configured switch host
 - **THEN** the playbook SHALL connect over SSH using `ansible.netcommon.network_cli`
 - **AND** the playbook SHALL use the native XikeOS collection platform for switch terminal and cliconf behavior
-- **AND** the playbook SHALL build read-only collection from configured gather subsets, collection command modules, gathered resource modules, or compatibility profile planning
+- **AND** the playbook SHALL collect structured state through `c1emon.xikeos.xikeos_facts`
 - **AND** the playbook SHALL NOT enter configuration mode or run mutating commands such as `config`, `configure`, `write`, `copy`, `reload`, `delete`, `clear`, or `format`
 
 #### Scenario: Use native XikeOS terminal adapter without Cisco configuration modules
-- **WHEN** the switch facts playbook connects to the SKS8300/XikeOS switch through `network_cli`
+- **WHEN** the switch facts playbook connects to a XikeOS switch through `network_cli`
 - **THEN** it SHALL use `ansible_network_os: c1emon.xikeos.xikeos` for CLI transport compatibility
 - **AND** it SHALL NOT require the Cisco IOS terminal adapter for collecting read-only facts
 - **AND** it SHALL NOT use Cisco IOS configuration or resource modules for collecting read-only facts
 
 ### Requirement: Role-based read-only facts workflow packaging
-The system SHALL expose the SKS8300 read-only facts workflow through a reusable Ansible role that collects and parses facts without intrinsic file persistence side effects, while preserving the existing playbook entrypoint behavior through caller-owned export tasks.
+The system SHALL expose the XikeOS read-only facts workflow through a reusable Ansible role that collects collection-native facts without intrinsic file persistence side effects.
 
 #### Scenario: Run read-only facts through role entrypoint
 - **WHEN** the operator runs `ansible/playbooks/switches/readonly-facts.yml`
 - **THEN** the playbook SHALL invoke a dedicated switch read-only facts role
-- **AND** the role SHALL collect the approved SSH `network_cli` command outputs
-- **AND** the role SHALL parse structured switch facts into role output variables
+- **AND** the role SHALL collect facts with `c1emon.xikeos.xikeos_facts`
+- **AND** the role SHALL expose collection-native `ansible_net_*` and `ansible_network_resources` data to caller-owned tasks
 - **AND** file export, if desired, SHALL be performed by playbook-level or caller-owned tasks after the role completes
 
 #### Scenario: Keep host connection settings outside role defaults
@@ -47,30 +47,12 @@ The system SHALL obtain switch SSH credentials from runtime-provided SSH credent
 - **THEN** it SHALL NOT require `SWITCH_TELNET_USER` or `SWITCH_TELNET_PASSWORD`
 
 ### Requirement: Fixed pagination command
-The system SHALL disable switch CLI pagination only through the native XikeOS collection path or by using `terminal length 0` when pagination setup is required by a compatibility profile.
+The system SHALL rely on the native XikeOS collection facts path for pagination handling and SHALL only use explicit pagination commands in separate smoke or fallback command workflows.
 
 #### Scenario: Pagination setup
-- **WHEN** the switch facts workflow requires explicit pagination setup for SKS8300/XikeOS command collection
-- **THEN** it SHALL send `terminal length 0` before data collection commands unless the native collection module handles pagination internally
-- **AND** it SHALL NOT attempt alternative pagination commands such as `screen-rows per-page 0`
-
-### Requirement: Version fact parsing
-The system SHALL parse `show version` output into structured device facts.
-
-#### Scenario: Parse SKS8300 version output
-- **WHEN** `show version` output contains model, software version, BootRom version, serial number, MAC addresses, and uptime
-- **THEN** the structured facts SHALL include the device model, software version, BootRom version, serial number, CPU MAC, VLAN MAC, and uptime
-
-### Requirement: VLAN fact parsing
-The system SHALL parse VLAN definitions and interface VLAN membership into structured facts.
-
-#### Scenario: Parse VLAN definitions
-- **WHEN** collected output contains VLAN definitions such as `vlan 10` and `name dev`
-- **THEN** the structured facts SHALL include VLAN ID `10` with name `dev`
-
-#### Scenario: Parse interface VLAN membership
-- **WHEN** collected running configuration contains hybrid, trunk, or access switchport lines
-- **THEN** the structured facts SHALL include each interface's mode and VLAN membership using structured lists of VLAN IDs
+- **WHEN** the switch facts workflow uses `c1emon.xikeos.xikeos_facts`
+- **THEN** it SHALL NOT require repository-level command planning for `terminal length 0`
+- **AND** any explicit pagination command SHALL be limited to smoke, debug, or documented fallback command workflows
 
 ### Requirement: YAML and JSON exports
 The system SHALL support configurable YAML and JSON export of parsed switch facts through the playbook-level export workflow rather than through the facts role itself.

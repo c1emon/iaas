@@ -1,9 +1,5 @@
 ---
-switch_platform_profile: sks8300  # noqa: var-naming[no-role-prefix]
 switch_config_apply: false  # noqa: var-naming[no-role-prefix]
-switch_config_allowed_operations:  # noqa: var-naming[no-role-prefix]
-  - create
-  - update
-  - remove
-  - no-op
-switch_config_intent: {}  # noqa: var-naming[no-role-prefix]
+switch_config_allowed_states:  # noqa: var-naming[no-role-prefix]
+  - merged
+switch_config_resources: {}  # noqa: var-naming[no-role-prefix]

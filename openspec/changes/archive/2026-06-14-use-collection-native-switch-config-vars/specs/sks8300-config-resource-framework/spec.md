@@ -1,9 +1,5 @@
-# sks8300-config-resource-framework Specification
+## MODIFIED Requirements
 
-## Purpose
-
-Provide a safe declarative SKS8300-series configuration resource workflow that plans, diffs, applies only with explicit opt-in, verifies post-state, and remains separate from read-only facts collection.
-## Requirements
 ### Requirement: Separate SKS8300 configuration workflow
 The system SHALL provide XikeOS configuration management through a configuration workflow separate from the read-only facts workflow, using native `c1emon.xikeos` resource modules directly as the primary lifecycle engine.
 
@@ -84,7 +80,7 @@ The system SHALL delegate XikeOS configuration resource identity, fields, diff, 
 - **AND** the report SHALL NOT expose plaintext secrets
 
 ### Requirement: Configuration safety guardrails
-The system SHALL include safety guardrails for SKS8300/XikeOS configuration workflows, including when the underlying mutation is performed by `c1emon.xikeos` resource modules.
+The system SHALL include safety guardrails for XikeOS configuration workflows, including when the underlying mutation is performed by `c1emon.xikeos` resource modules.
 
 #### Scenario: Restrict allowed states
 - **WHEN** `switch_config_allowed_states` is configured

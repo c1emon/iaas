@@ -3,61 +3,93 @@
   ansible.builtin.debug:
     msg: >-
       Plan-only run complete. Set switch_config_apply=true to apply validated
-      native XikeOS collection resource operations.
+      native XikeOS collection resource calls.
   when: not switch_config_apply | bool
 
-- name: Apply VLAN create and update intent through native XikeOS resource module
+- name: Apply VLAN resources through native XikeOS resource module
   c1emon.xikeos.xikeos_vlans:
-    config: "{{ switch_config_collection_operations.vlan_merge_config }}"
-    state: merged
-  register: switch_config_vlan_merge_result  # noqa: var-naming[no-role-prefix]
+    config: "{{ item.config }}"
+    state: "{{ item.state }}"
+  loop: "{{ switch_config_resources.vlans | default([]) }}"
+  register: switch_config_vlans_apply  # noqa: var-naming[no-role-prefix]
   no_log: true
-  when:
-    - switch_config_apply | bool
-    - switch_config_collection_operations.vlan_merge_config | length > 0
+  when: switch_config_apply | bool
 
-- name: Apply VLAN removal intent through native XikeOS resource module
-  c1emon.xikeos.xikeos_vlans:
-    config: "{{ switch_config_collection_operations.vlan_delete_config }}"
-    state: deleted
-  register: switch_config_vlan_delete_result  # noqa: var-naming[no-role-prefix]
+- name: Apply base interface resources through native XikeOS resource module
+  c1emon.xikeos.xikeos_interfaces:
+    config: "{{ item.config }}"
+    state: "{{ item.state }}"
+  loop: "{{ switch_config_resources.base_interfaces | default([]) }}"
+  register: switch_config_base_interfaces_apply  # noqa: var-naming[no-role-prefix]
   no_log: true
-  when:
-    - switch_config_apply | bool
-    - switch_config_collection_operations.vlan_delete_config | length > 0
+  when: switch_config_apply | bool
 
-- name: Apply L2 interface intent through native XikeOS resource module
+- name: Apply LAG interface resources through native XikeOS resource module
+  c1emon.xikeos.xikeos_lag_interfaces:
+    config: "{{ item.config }}"
+    state: "{{ item.state }}"
+  loop: "{{ switch_config_resources.lag_interfaces | default([]) }}"
+  register: switch_config_lag_interfaces_apply  # noqa: var-naming[no-role-prefix]
+  no_log: true
+  when: switch_config_apply | bool
+
+- name: Apply L2 interface resources through native XikeOS resource module
   c1emon.xikeos.xikeos_l2_interfaces:
-    config: "{{ switch_config_collection_operations.l2_interface_merge_config }}"
-    state: merged
-  register: switch_config_l2_interface_result  # noqa: var-naming[no-role-prefix]
+    config: "{{ item.config }}"
+    state: "{{ item.state }}"
+  loop: "{{ switch_config_resources.l2_interfaces | default([]) }}"
+  register: switch_config_l2_interfaces_apply  # noqa: var-naming[no-role-prefix]
   no_log: true
-  when:
-    - switch_config_apply | bool
-    - switch_config_collection_operations.l2_interface_merge_config | length > 0
+  when: switch_config_apply | bool
 
-- name: Record apply status  # noqa: var-naming[no-role-prefix]
+- name: Apply L3 interface resources through native XikeOS resource module
+  c1emon.xikeos.xikeos_l3_interfaces:
+    config: "{{ item.config }}"
+    state: "{{ item.state }}"
+  loop: "{{ switch_config_resources.l3_interfaces | default([]) }}"
+  register: switch_config_l3_interfaces_apply  # noqa: var-naming[no-role-prefix]
+  no_log: true
+  when: switch_config_apply | bool
+
+- name: Apply static route resources through native XikeOS resource module
+  c1emon.xikeos.xikeos_static_routes:
+    config: "{{ item.config }}"
+    state: "{{ item.state }}"
+  loop: "{{ switch_config_resources.static_routes | default([]) }}"
+  register: switch_config_static_routes_apply  # noqa: var-naming[no-role-prefix]
+  no_log: true
+  when: switch_config_apply | bool
+
+- name: Apply ACL resources through native XikeOS resource module
+  c1emon.xikeos.xikeos_acls:
+    config: "{{ item.config }}"
+    state: "{{ item.state }}"
+  loop: "{{ switch_config_resources.acls | default([]) }}"
+  register: switch_config_acls_apply  # noqa: var-naming[no-role-prefix]
+  no_log: true
+  when: switch_config_apply | bool
+
+- name: Record apply status and module results  # noqa: var-naming[no-role-prefix]
   ansible.builtin.set_fact:
     switch_config_apply_status: >-
-      {{ 'applied' if (switch_config_apply | bool and switch_config_rendered_commands | length > 0)
-         else 'not_requested' if not switch_config_apply | bool
-         else 'no_changes' }}
+      {{ 'applied' if switch_config_apply | bool and switch_config_requested_calls | length > 0
+        else 'not_requested' if not switch_config_apply | bool
+        else 'no_changes' }}
     switch_config_module_results:  # noqa: var-naming[no-role-prefix]
-      vlans_merged: "{{ switch_config_vlan_merge_result | default({}) }}"
-      vlans_deleted: "{{ switch_config_vlan_delete_result | default({}) }}"
-      l2_interfaces_merged: "{{ switch_config_l2_interface_result | default({}) }}"
+      vlans: "{{ switch_config_vlans_apply | default({}) }}"
+      base_interfaces: "{{ switch_config_base_interfaces_apply | default({}) }}"
+      lag_interfaces: "{{ switch_config_lag_interfaces_apply | default({}) }}"
+      l2_interfaces: "{{ switch_config_l2_interfaces_apply | default({}) }}"
+      l3_interfaces: "{{ switch_config_l3_interfaces_apply | default({}) }}"
+      static_routes: "{{ switch_config_static_routes_apply | default({}) }}"
+      acls: "{{ switch_config_acls_apply | default({}) }}"
   no_log: true
 
 - name: Validate native collection apply command output safety
   ansible.builtin.assert:
     that:
       - >-
-        (
-          (switch_config_vlan_merge_result.commands | default([])) +
-          (switch_config_vlan_delete_result.commands | default([])) +
-          (switch_config_l2_interface_result.commands | default([]))
-        ) |
-        select('regex', '(?i)(reload|erase|write erase|delete startup-config|format|factory|reset|boot system)') |
-        list | length == 0
+        switch_config_module_results | to_json |
+        regex_search(switch_config_forbidden_command_pattern) is none
     fail_msg: Native collection apply output included a forbidden command.
   when: switch_config_apply | bool

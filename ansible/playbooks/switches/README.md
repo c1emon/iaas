@@ -1,6 +1,6 @@
 # Switch Playbooks
 
-These playbooks collect read-only facts from the `SW_CORE` SKS8300-12X switch over encrypted SSH using Ansible `network_cli` and the native `c1emon.xikeos` collection. SSH credentials are supplied at runtime and must not be committed.
+These playbooks collect read-only facts from the `SW_CORE` SKS8300-12X switch over encrypted SSH using Ansible `network_cli` and the native `c1emon.xikeos` v0.2.x collection. SSH credentials are supplied at runtime and must not be committed.
 
 Run commands from the `ansible/` directory.
 
@@ -10,11 +10,12 @@ Install repository Ansible collections before running switch workflows:
 uv run ansible-galaxy collection install -r requirements.yml
 ```
 
-This installs the native Galaxy collection `c1emon.xikeos` alongside the other
-repository collection dependencies. Ansible collection installation does not
-install Python packages, so keep the control environment synchronized with
-`uv sync` and ensure parser libraries used by collection-backed facts/resources,
-including `ttp` and `textfsm`, are available.
+This installs the native Galaxy collection `c1emon.xikeos` constrained to the
+repository's v0.2.x baseline alongside the other repository collection
+dependencies. Ansible collection installation does not install Python packages,
+so keep the control environment synchronized with `uv sync` and ensure parser
+libraries used by collection-backed facts/resources, including `ttp` and
+`textfsm`, are available.
 
 ## Workflow layout
 
@@ -26,16 +27,16 @@ workflow:
 - `roles/switch_readonly_facts/tasks/main.yml`
 - `roles/switch_readonly_facts/tasks/validate.yml`
 - `roles/switch_readonly_facts/tasks/plan.yml`
-- `roles/switch_readonly_facts/tasks/collect.yml` (native `c1emon.xikeos.xikeos_command`)
-- `roles/switch_readonly_facts/tasks/parse.yml`
+- `roles/switch_readonly_facts/tasks/collect.yml` (native `c1emon.xikeos.xikeos_facts`)
+- `roles/switch_readonly_facts/tasks/parse.yml` (fact exposure only)
 - `playbooks/switches/tasks/export-readonly-facts.yml`
 
 Operator commands stay unchanged.
 
 ## `readonly-facts.yml`
 
-Collects version and VLAN facts from the switch, parses them into structured
-output, and then the playbook-level export workflow writes exports under:
+Collects collection-native `ansible_net_*` facts and `ansible_network_resources`
+from the switch, then the playbook-level export workflow writes exports under:
 
 ```text
 exports/switches/<inventory_hostname>/
@@ -63,71 +64,91 @@ terminal and cliconf behavior comes from the native XikeOS collection. Do not us
 the former Cisco IOS terminal adapter, Cisco IOS configuration/resource modules,
 or generic `cli_config` for this workflow.
 
-The supported operator interface is profile and gather-subset selection:
+The supported operator interface is collection fact and resource subset selection:
 
 ```yaml
-switch_platform_profile: sks8300
 switch_readonly_gather_subset:
-  - device
-  - vlans
+  - min
+switch_readonly_gather_network_resources:
   - interfaces
+  - vlans
+  - l2_interfaces
+  - l3_interfaces
+  - lag_interfaces
+  - static_routes
+  - acls
 ```
 
-The `sks8300` profile expands those fact subsets into the approved read-only
-command catalog. Do not override command lists directly; add SKS8300 commands
-to the profile catalog and subset registry when new facts are needed.
+The role passes those selections to `c1emon.xikeos.xikeos_facts` as
+`gather_subset` and `gather_network_resources`. The former repository-specific
+`switch_facts` schema, command IDs, stdout mapping, and local parser filters are
+not part of the normal facts workflow.
 
-Current subsets:
+Current fact subsets:
 
-- `default`: always included for setup behavior such as pagination handling
-- `device`: device identity/version facts from `show version`
-- `vlans`: VLAN facts from VLAN tables and redacted running config parsing
-- `interfaces`: interface VLAN membership facts from running config parsing
+- `min`: baseline device facts
+- `hardware`: hardware facts when requested
+- `config`: redacted configuration facts when requested
 
-Only `terminal length 0` is supported for pagination setup when the compatibility
-profile needs explicit pagination handling. Do not add fallback pagination
-commands such as `screen-rows per-page 0`.
+Current network resource subsets:
+
+- `interfaces`
+- `vlans`
+- `l2_interfaces`
+- `l3_interfaces`
+- `lag_interfaces`
+- `static_routes`
+- `acls`
+
+Pagination handling is owned by the native XikeOS facts path. Explicit
+pagination commands such as `terminal length 0` belong only in separate smoke,
+debug, or documented fallback command workflows.
 
 Safety boundary:
 
-- The role builds and validates the command plan from the selected profile and gather subsets before command collection.
-- It collects through `c1emon.xikeos.xikeos_command` and does not enter configuration mode.
+- The role validates the selected collection subsets before facts collection.
+- It collects through `c1emon.xikeos.xikeos_facts` and does not enter configuration mode.
 - It does not create export directories or write files; file persistence is owned by `playbooks/switches/tasks/export-readonly-facts.yml`.
-- The profile rejects non-read-only command definitions and mutating command prefixes including `config`, `configure`, `write`, `copy`, `reload`, `delete`, `clear`, and `format`.
-- Raw `show running-config` output is redacted in the role-generated export plan before the playbook export workflow saves it.
+- Normal exports write collection-native facts only. Raw command output export requires a separate smoke, debug, or documented fallback workflow.
 
-The design follows the MikroTik-style separation of concerns: gather subsets are
-the user-facing fact selector, the SKS8300 command catalog owns CLI strings and
-export policy, the profile core in `module_utils/switch_profiles/` owns parsing
-and redaction, and future configuration resources should use a separate workflow
-rather than this read-only facts role.
+The design follows the MikroTik-style separation of concerns: collection subsets
+are the user-facing fact/resource selector, the collection owns parsing and
+resource state, and configuration resources use a separate workflow rather than
+this read-only facts role.
 
 ## `config-plan.yml`
 
 The configuration workflow is separate from read-only facts. It validates
-declarative `switch_config_intent`, collects current state through
-`c1emon.xikeos.xikeos_command`, computes the repository diff/report, and maps
-supported resources to lifecycle-safe native collection modules:
+collection-native `switch_config_resources` entries and calls lifecycle-safe
+native collection modules directly in this deterministic order:
 
-- VLAN create/update/remove intent maps to `c1emon.xikeos.xikeos_vlans` with
-  `merged` or `deleted` states.
-- L2 interface access, trunk, and hybrid intent maps to
-  `c1emon.xikeos.xikeos_l2_interfaces` with `merged` state.
-- Unsupported interface/resource gaps fail before apply and must be documented
-  before any fallback is added.
+- `vlans` -> `c1emon.xikeos.xikeos_vlans`
+- `base_interfaces` -> `c1emon.xikeos.xikeos_interfaces`
+- `lag_interfaces` -> `c1emon.xikeos.xikeos_lag_interfaces`
+- `l2_interfaces` -> `c1emon.xikeos.xikeos_l2_interfaces`
+- `l3_interfaces` -> `c1emon.xikeos.xikeos_l3_interfaces`
+- `static_routes` -> `c1emon.xikeos.xikeos_static_routes`
+- `acls` -> `c1emon.xikeos.xikeos_acls`
 
-`switch_config_apply` remains `false` by default. Plan-only runs may execute
-collection check-mode previews and current-state gathering, but do not send
-mutating configuration. When `switch_config_apply=true`, the role invokes native
-collection resource modules only after `switch_config_allowed_operations` and
-destructive-command checks pass. The repository does not use
-`c1emon.xikeos.xikeos_config` as the primary declarative interface; raw config is
-reserved for future, explicitly documented gaps and must keep the same allowed
-operation and destructive-command guardrails.
+Each resource group contains module call entries with `state` and `config`
+fields. The `config` shape is the installed `c1emon.xikeos` module schema, not a
+repository-translated alias schema.
 
-Change reports continue to include current state, desired intent, repository
-diff/rendered command summaries, native collection module previews/results,
-apply status, and verification outcome.
+`switch_config_apply` remains `false` by default. Plan-only runs execute the
+collection modules in check mode and do not send mutating configuration. When
+`switch_config_apply=true`, the role invokes the same native modules only after
+`switch_config_allowed_states` and destructive-command checks pass. The default
+allowed state is `merged`; opt into `deleted` or `replaced` explicitly when a
+workflow needs those module states.
+
+Legacy fields are rejected. Migrate `switch_config_intent` to
+`switch_config_resources`, VLAN `id` to `vlan_id`, `present`/`absent` to module
+states such as `merged`/`deleted`, and local L2 aliases such as `tagged_vlans` or
+`untagged_vlans` to the native collection module field names.
+
+Change reports include requested collection-native resources, allowed-state
+policy, check-mode preview results, apply results, and apply status. They no
+longer include repository-local diff/rendered command planning fields.
 
 Export options are defined at playbook scope and can be overridden at runtime:
 
@@ -154,31 +175,31 @@ read-only native XikeOS collection paths pass against the target switch.
 
 ## Current native collection gaps and follow-up notes
 
-- `switch_config` currently maps VLAN intent to `xikeos_vlans` and L2
-  access/trunk/hybrid interface intent to `xikeos_l2_interfaces` only.
-- Base interface, L3 interface, and LAG resource modules exist in the collection
-  but are not exposed through this repository's `switch_config_intent` schema yet.
-- The compatibility SKS8300 parsers remain in use to preserve the existing
-  `switch_facts` output shape and verification behavior until equivalent native
-  gathered resource schemas are validated live.
+- `switch_config` maps supported intent to lifecycle-complete v0.2.x resource
+  modules for VLANs, base interfaces, L2 interfaces, L3 interfaces, LAG
+  interfaces, static routes, and ACLs.
+- The compatibility SKS8300 parsers are not used by the normal read-only facts
+  or configuration current-state workflows.
 - `xikeos_config` remains a documented fallback only for future unsupported gaps;
   it is not invoked by the repository workflow.
 
 ## Migration for direct role callers
 
 `switch_readonly_facts` no longer writes files from inside the role. Direct role
-callers now receive in-memory facts and export-plan variables only. To keep file
+callers now receive in-memory collection-native facts only. To keep file
 exports, define caller-owned export variables such as `switch_export_formats`,
-`switch_export_save_raw`, `switch_export_dir`, and `switch_raw_output_dir`, then
-run equivalent copy/file tasks after the role. The switch playbook's
+`switch_export_dir`, and `switch_raw_output_dir`, then run equivalent copy/file
+tasks after the role. The switch playbook's
 `tasks/export-readonly-facts.yml` file can be reused as a reference workflow.
 
 After a live run, verify the generated `facts.yml` or `facts.json` contains:
 
-- `device.model`, `device.software_version`, `device.bootrom_version`, serial/MAC, and uptime fields from `show version`
-- VLAN entries under `vlans`
-- interface membership under `interfaces` with numeric `allowed_vlans`, `tagged_vlans`, and `untagged_vlans` lists
+- collection-provided `ansible_net_*` keys such as model/version/serial fields
+- `ansible_network_resources.vlans`
+- `ansible_network_resources.interfaces` and related L2/L3/LAG resource keys when requested
 
-If `switch_export_save_raw=true`, verify `raw-output/show-running-config.txt` contains no plaintext local user passwords, RADIUS/TACACS secrets, or SNMP communities.
+Normal facts export does not write raw command output. If a separately documented
+fallback raw export is introduced, verify it redacts plaintext local user
+passwords, RADIUS/TACACS secrets, and SNMP communities.
 
 VLAN write/configuration management is out of scope for this read-only facts workflow, even though limited `cli_command` write testing was performed during discovery.

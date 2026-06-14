@@ -6,9 +6,12 @@
       - switch_export_formats | difference(['yaml', 'json']) | length == 0
       - switch_export_dir | length > 0
       - switch_raw_output_dir | length > 0
+      - not switch_export_save_raw | bool
     fail_msg: >-
       Configure switch_export_formats with yaml/json values and provide
       switch_export_dir and switch_raw_output_dir before running the export workflow.
+      Raw command output export is not part of the collection-native normal
+      facts workflow; use a documented smoke/debug/fallback workflow instead.
 
 - name: Create local switch export directory
   ansible.builtin.file:
@@ -28,7 +31,7 @@
     dest: "{{ switch_export_dir }}/facts.yml"
     mode: "0600"
     content: |
-      {{ switch_facts | to_nice_yaml(indent=2, sort_keys=false) }}
+      {{ switch_native_facts | to_nice_yaml(indent=2, sort_keys=false) }}
   when: "'yaml' in switch_export_formats"
 
 - name: Write structured JSON switch facts
@@ -36,42 +39,23 @@
     dest: "{{ switch_export_dir }}/facts.json"
     mode: "0600"
     content: |
-      {{ switch_facts | to_nice_json }}
+      {{ switch_native_facts | to_nice_json }}
   when: "'json' in switch_export_formats"
 
-- name: Write raw output summary when raw output export is enabled
+- name: Write collection facts export summary
   ansible.builtin.copy:
-    dest: "{{ switch_raw_output_dir }}/cli-output-summary.json"
+    dest: "{{ switch_export_dir }}/collection-summary.json"
     mode: "0600"
     content: |
       {{ {
         "transport": "ssh-network-cli",
         "terminal_adapter": ansible_network_os,
-        "platform_profile": switch_platform_profile,
-        "gather_subset": switch_readonly_gather_subset,
-        "planned_command_ids": switch_read_command_plan | map(attribute='id') | list,
-        "cli_result_keys": switch_cli_command_results.keys() | list | sort,
-        "cli_result_count": switch_cli_command_results.stdout | default([]) | length,
-        "cli_stdout_count": switch_cli_raw_outputs | length,
-        "normalized_output_lengths": {
-          "show_version": switch_command_outputs.show_version | length,
-          "show_vlan": switch_command_outputs.show_vlan | length,
-          "show_vlan_brief": switch_command_outputs.show_vlan_brief | length,
-          "show_running_config": switch_command_outputs.show_running_config | length
-        }
+        "collection_module": switch_xikeos_facts_module,
+        "gather_subset": switch_xikeos_gather_subset,
+        "gather_network_resources": switch_xikeos_gather_network_resources,
+        "ansible_net_fact_keys": switch_native_facts.keys() | select('match', '^ansible_net_') | list | sort,
+        "network_resource_keys": switch_network_resources.keys() | list | sort
       } | to_nice_json }}
-  when: switch_export_save_raw | bool
-
-- name: Save profile-approved raw command outputs when enabled
-  ansible.builtin.copy:
-    dest: "{{ switch_raw_output_dir }}/{{ item.filename }}"
-    mode: "0600"
-    content: "{{ item.content }}"
-  loop: "{{ switch_raw_export_items }}"
-  loop_control:
-    label: "{{ item.id }}"
-  when: switch_export_save_raw | bool
-  no_log: true
 
 - name: Write switch export README
   ansible.builtin.copy:
@@ -80,7 +64,8 @@
     content: |
       # Switch read-only export for {{ inventory_hostname }}
 
-      This directory contains read-only SKS8300 switch facts generated from SSH network_cli output.
+      This directory contains collection-native read-only XikeOS switch facts
+      generated through `c1emon.xikeos.xikeos_facts` over SSH `network_cli`.
 
       Structured exports:
       {% if 'yaml' in switch_export_formats %}
@@ -90,10 +75,10 @@
       - `facts.json`
       {% endif %}
 
-      Raw output export is {{ 'enabled' if switch_export_save_raw | bool else 'disabled' }}.
-      When enabled, `raw-output/cli-output-summary.json` summarizes the collection run,
-      command-level profile policy decides which `raw-output/*.txt` files are
-      written. `raw-output/show-running-config.txt` is redacted before writing.
+      `collection-summary.json` records the collection module, requested gather subsets,
+      requested network resources, transport, and terminal adapter. The normal workflow
+      does not export raw command output or the former repository-specific `switch_facts`
+      schema.
 
 - name: Show switch export location
   ansible.builtin.debug:

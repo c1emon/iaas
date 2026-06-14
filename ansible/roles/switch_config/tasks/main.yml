@@ -2,20 +2,11 @@
 - name: Import validation phase
   ansible.builtin.import_tasks: validate.yml
 
-- name: Import current-state collection phase
-  ansible.builtin.import_tasks: collect_current.yml
-
-- name: Import planning phase
-  ansible.builtin.import_tasks: plan.yml
-
-- name: Import diff phase
+- name: Import check-mode preview phase
   ansible.builtin.import_tasks: diff.yml
 
 - name: Import apply phase
   ansible.builtin.import_tasks: apply.yml
-
-- name: Import verification phase
-  ansible.builtin.import_tasks: verify.yml
 
 - name: Import export phase
   ansible.builtin.import_tasks: export.yml

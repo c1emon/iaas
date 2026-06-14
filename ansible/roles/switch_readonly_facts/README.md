@@ -1,52 +1,55 @@
 # switch_readonly_facts
 
-Side-effect-free read-only CLI facts provider for SKS8300/XikeOS-series switches.
+Side-effect-free read-only native facts provider for SKS8300/XikeOS-series switches.
 
-The role validates inputs, plans approved read-only commands, collects CLI output
-over `network_cli`, and parses structured facts. It does not create directories
-or write export files. Callers that want persistence should run a separate
-playbook-level export workflow after the role completes.
+The role validates inputs, calls `c1emon.xikeos.xikeos_facts` over
+`network_cli`, and exposes collection-native structured facts. It does not
+create directories or write export files. Callers that want persistence should
+run a separate playbook-level export workflow after the role completes.
 Inventory and playbooks use `ansible_network_os: c1emon.xikeos.xikeos` with
-`ansible.netcommon.network_cli`; the role collects approved commands through the
-native `c1emon.xikeos.xikeos_command` module.
+`ansible.netcommon.network_cli`.
 
 Supported user-facing inputs:
 
 ```yaml
-switch_platform_profile: sks8300
 switch_readonly_gather_subset:
-  - device
+  - min
+switch_readonly_gather_network_resources:
   - vlans
   - interfaces
+  - l2_interfaces
+  - l3_interfaces
+  - lag_interfaces
+  - static_routes
+  - acls
 ```
 
-Do not override raw CLI command lists for this role. The `sks8300` profile maps
-gather subsets to approved read-only commands, parser dispatch, and raw export
-policy through `ansible/module_utils/switch_profiles/`.
+Do not override raw CLI command lists for this role. Normal fact selection maps
+directly to `xikeos_facts.gather_subset` and
+`xikeos_facts.gather_network_resources`. Use `xikeos_command` only in separate
+smoke, debug, or explicitly documented fallback workflows.
 
 Phases:
 
 - validate runtime credentials and guardrails
-- plan commands from `switch_platform_profile` and `switch_readonly_gather_subset`
-- collect approved CLI output over `network_cli` with `c1emon.xikeos.xikeos_command`
-- parse command-ID mapped outputs into structured facts
+- build a collection-native `xikeos_facts` request
+- collect native facts over `network_cli` with `c1emon.xikeos.xikeos_facts`
+- expose `ansible_net_*` facts and `ansible_network_resources` to caller-owned tasks
 
 Output variables:
 
-- `switch_read_command_plan`: profile-expanded approved command plan
-- `switch_cli_command_results`: registered `xikeos_command` results
-- `switch_cli_raw_outputs`: raw stdout list selected from command results
-- `switch_command_outputs`: command-ID keyed normalized output map
-- `switch_facts`: parsed structured switch facts
-- `switch_raw_export_items`: profile-approved raw export plan with filenames and
-  redacted content where required
-- `switch_redacted_running_config`: redacted running configuration text
+- `switch_xikeos_facts_module`: collection facts module name
+- `switch_xikeos_gather_subset`: requested collection fact subsets
+- `switch_xikeos_gather_network_resources`: requested collection resource subsets
+- `switch_native_facts`: collection-provided Ansible facts, including `ansible_net_*`
+- `switch_network_resources`: collection-provided `ansible_network_resources`
 
 Migration note: callers that previously relied on this role to write
 `facts.yml`, `facts.json`, `README.md`, or `raw-output/*` should import or copy a
 caller-owned export task file after the role. The switch playbook uses
 `playbooks/switches/tasks/export-readonly-facts.yml` for that purpose.
 
-This keeps read-only facts separate from future configuration resources: gather
-subsets select facts, the command catalog owns CLI/read-only policy, and profile
-core modules own SKS8300 parsing/redaction behavior.
+This keeps read-only facts separate from configuration resources: collection
+subsets select facts and resources, file persistence stays caller-owned, and
+the former repository-specific `switch_facts` schema is no longer emitted by the
+normal workflow.
