@@ -1,7 +1,0 @@
----
-- name: Build collection-native XikeOS facts request  # noqa: var-naming[no-role-prefix]
-  ansible.builtin.set_fact:
-    switch_xikeos_facts_module: c1emon.xikeos.xikeos_facts  # noqa: var-naming[no-role-prefix]
-    switch_xikeos_gather_subset: "{{ switch_readonly_gather_subset }}"  # noqa: var-naming[no-role-prefix]
-    switch_xikeos_gather_network_resources: >-  # noqa: var-naming[no-role-prefix]
-      {{ switch_readonly_gather_network_resources }}

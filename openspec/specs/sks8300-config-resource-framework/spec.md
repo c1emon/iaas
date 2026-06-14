@@ -5,7 +5,7 @@
 Provide a safe declarative SKS8300-series configuration resource workflow that plans, diffs, applies only with explicit opt-in, verifies post-state, and remains separate from read-only facts collection.
 ## Requirements
 ### Requirement: Separate SKS8300 configuration workflow
-The system SHALL provide XikeOS configuration management through a configuration workflow separate from the read-only facts workflow, using native `c1emon.xikeos` resource modules directly as the primary lifecycle engine.
+The system SHALL provide XikeOS configuration management through a configuration workflow separate from the read-only facts workflow, using native `c1emon.xikeos` resource modules directly as the primary lifecycle engine and repository role/playbook code only for policy orchestration.
 
 #### Scenario: Keep read-only facts separate from configuration changes
 - **WHEN** an operator runs the read-only facts playbook
@@ -20,7 +20,12 @@ The system SHALL provide XikeOS configuration management through a configuration
 #### Scenario: Preserve repository orchestration around collection modules
 - **WHEN** the configuration workflow delegates a supported resource to a `c1emon.xikeos` module
 - **THEN** repository-level apply gates, allowed-state policy, reporting, and module ordering SHALL still apply
-- **AND** repository logic SHALL NOT duplicate collection resource schemas, field validation, diffing, or command rendering
+- **AND** repository logic SHALL NOT duplicate collection resource schemas, field validation, diffing, command rendering, or platform behavior
+
+#### Scenario: Keep configuration role only as policy orchestrator
+- **WHEN** a configuration role remains in the repository
+- **THEN** it SHALL be documented and tested as a repository safety/orchestration layer
+- **AND** it SHALL not be required for operators who choose to call `c1emon.xikeos` lifecycle resource modules directly outside the repository workflow
 
 ### Requirement: Declarative configuration intent
 The system SHALL manage XikeOS configuration using collection-native resource module inputs rather than arbitrary operator-provided CLI command lists or repository-translated resource schemas.

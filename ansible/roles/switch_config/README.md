@@ -1,11 +1,11 @@
 # switch_config
 
-Collection-native SKS8300/XikeOS configuration preview and application role.
+Repository safety orchestration for collection-native SKS8300/XikeOS
+configuration preview and application.
 
-This role is separate from `switch_readonly_facts`. Read-only facts collection
-uses `c1emon.xikeos.xikeos_facts` and never mutates configuration. This role is
-the explicit configuration workflow and remains non-mutating unless
-`switch_config_apply: true` is set.
+This role keeps configuration policy separate from the native collection
+resource modules. It remains non-mutating unless `switch_config_apply: true` is
+set.
 
 ## Resource input contract
 
@@ -74,8 +74,9 @@ default allows only `merged`; operators must explicitly opt into states such as
 
 The collection modules own argspec validation, resource identity, diffing,
 command generation, before/after state, apply, and verification. This repository
-keeps only orchestration policy: apply gate, allowed states, deterministic module
-ordering, destructive-command checks, and redacted report aggregation.
+keeps only safety orchestration policy: apply gate, allowed states,
+deterministic module ordering, destructive-command checks, and redacted report
+aggregation.
 
 ## Migration from legacy intent fields
 

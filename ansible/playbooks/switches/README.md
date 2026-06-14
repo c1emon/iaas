@@ -1,6 +1,8 @@
 # Switch Playbooks
 
-These playbooks collect read-only facts from the `SW_CORE` SKS8300-12X switch over encrypted SSH using Ansible `network_cli` and the native `c1emon.xikeos` v0.2.x collection. SSH credentials are supplied at runtime and must not be committed.
+These playbooks collect read-only facts directly with
+`c1emon.xikeos.xikeos_facts` and use `switch_config` as the repository safety
+orchestration layer for native collection configuration previews and apply.
 
 Run commands from the `ansible/` directory.
 
@@ -17,26 +19,20 @@ so keep the control environment synchronized with `uv sync` and ensure parser
 libraries used by collection-backed facts/resources, including `ttp` and
 `textfsm`, are available.
 
-## Workflow layout
-
-The `readonly-facts.yml` entrypoint collects facts through the
-`roles/switch_readonly_facts/` provider role, then runs a playbook-owned export
-workflow:
-
-- `roles/switch_readonly_facts/defaults/main.yml`
-- `roles/switch_readonly_facts/tasks/main.yml`
-- `roles/switch_readonly_facts/tasks/validate.yml`
-- `roles/switch_readonly_facts/tasks/plan.yml`
-- `roles/switch_readonly_facts/tasks/collect.yml` (native `c1emon.xikeos.xikeos_facts`)
-- `roles/switch_readonly_facts/tasks/parse.yml` (fact exposure only)
-- `playbooks/switches/tasks/export-readonly-facts.yml`
-
-Operator commands stay unchanged.
-
 ## `readonly-facts.yml`
 
-Collects collection-native `ansible_net_*` facts and `ansible_network_resources`
-from the switch, then the playbook-level export workflow writes exports under:
+The supported read-only entrypoint validates runtime SSH settings, prepares the
+gather subset/resource inputs, calls `c1emon.xikeos.xikeos_facts` directly, and
+then runs the playbook-owned export workflow. The former
+`switch_readonly_facts` role has been removed because it only wrapped this
+single collection facts call.
+
+Custom callers can use the direct collection fallback: call
+`c1emon.xikeos.xikeos_facts` directly with inventory/runtime connection
+variables, then reuse the export task shape from
+`playbooks/switches/tasks/export-readonly-facts.yml` if file output is needed.
+
+Structured exports are written under:
 
 ```text
 exports/switches/<inventory_hostname>/
@@ -58,11 +54,12 @@ SWITCH_SSH_PORT=22
 
 Adjust `.env.switch.tpl` if the 1Password item or field names differ.
 
-The Ansible control environment uses `paramiko` as the Python SSH backend for `network_cli`.
-Switch inventory and playbooks set `ansible_network_os: c1emon.xikeos.xikeos` so
-terminal and cliconf behavior comes from the native XikeOS collection. Do not use
-the former Cisco IOS terminal adapter, Cisco IOS configuration/resource modules,
-or generic `cli_config` for this workflow.
+The Ansible control environment uses `paramiko` as the Python SSH backend for
+`network_cli`. Switch inventory and playbooks set
+`ansible_network_os: c1emon.xikeos.xikeos` so terminal and cliconf behavior
+comes from the native XikeOS collection. Do not use the former Cisco IOS
+terminal adapter, Cisco IOS configuration/resource modules, or generic
+`cli_config` for this workflow.
 
 The supported operator interface is collection fact and resource subset selection:
 
@@ -79,47 +76,25 @@ switch_readonly_gather_network_resources:
   - acls
 ```
 
-The role passes those selections to `c1emon.xikeos.xikeos_facts` as
+The playbook passes those selections to `c1emon.xikeos.xikeos_facts` as
 `gather_subset` and `gather_network_resources`. The former repository-specific
 `switch_facts` schema, command IDs, stdout mapping, and local parser filters are
 not part of the normal facts workflow.
 
-Current fact subsets:
-
-- `min`: baseline device facts
-- `hardware`: hardware facts when requested
-- `config`: redacted configuration facts when requested
-
-Current network resource subsets:
-
-- `interfaces`
-- `vlans`
-- `l2_interfaces`
-- `l3_interfaces`
-- `lag_interfaces`
-- `static_routes`
-- `acls`
-
-Pagination handling is owned by the native XikeOS facts path. Explicit
-pagination commands such as `terminal length 0` belong only in separate smoke,
-debug, or documented fallback command workflows.
-
 Safety boundary:
 
-- The role validates the selected collection subsets before facts collection.
+- The playbook validates the selected collection subsets before facts collection.
 - It collects through `c1emon.xikeos.xikeos_facts` and does not enter configuration mode.
-- It does not create export directories or write files; file persistence is owned by `playbooks/switches/tasks/export-readonly-facts.yml`.
-- Normal exports write collection-native facts only. Raw command output export requires a separate smoke, debug, or documented fallback workflow.
-
-The design follows the MikroTik-style separation of concerns: collection subsets
-are the user-facing fact/resource selector, the collection owns parsing and
-resource state, and configuration resources use a separate workflow rather than
-this read-only facts role.
+- It does not create export directories or write files during facts collection;
+  file persistence is owned by `playbooks/switches/tasks/export-readonly-facts.yml`.
+- Normal exports write collection-native facts only. Raw command output export
+  requires a separate smoke, debug, or documented fallback workflow.
 
 ## `config-plan.yml`
 
-The configuration workflow is separate from read-only facts. It validates
-collection-native `switch_config_resources` entries and calls lifecycle-safe
+The configuration workflow is separate from read-only facts. It keeps
+`switch_config` as the repository-owned safety orchestration role, validates
+collection-native `switch_config_resources` entries, and calls lifecycle-safe
 native collection modules directly in this deterministic order:
 
 - `vlans` -> `c1emon.xikeos.xikeos_vlans`
@@ -143,8 +118,8 @@ workflow needs those module states.
 
 Legacy fields are rejected. Migrate `switch_config_intent` to
 `switch_config_resources`, VLAN `id` to `vlan_id`, `present`/`absent` to module
-states such as `merged`/`deleted`, and local L2 aliases such as `tagged_vlans` or
-`untagged_vlans` to the native collection module field names.
+states such as `merged`/`deleted`, and local L2 aliases such as `tagged_vlans`
+or `untagged_vlans` to the native collection module field names.
 
 Change reports include requested collection-native resources, allowed-state
 policy, check-mode preview results, apply results, and apply status. They no
@@ -162,8 +137,8 @@ Smoke-test and validation commands:
 ```bash
 uv run ansible-playbook --syntax-check playbooks/switches/readonly-facts.yml
 uv run ansible-playbook --syntax-check playbooks/switches/config-plan.yml
-uv run yamllint inventories/homelab.yml inventories/group_vars/switches.yml roles/switch_readonly_facts/defaults/main.yml roles/switch_readonly_facts/tasks/main.yml roles/switch_readonly_facts/tasks/validate.yml roles/switch_readonly_facts/tasks/plan.yml roles/switch_readonly_facts/tasks/collect.yml roles/switch_readonly_facts/tasks/parse.yml playbooks/switches/readonly-facts.yml playbooks/switches/tasks/export-readonly-facts.yml
-uv run ansible-lint playbooks/switches/readonly-facts.yml roles/switch_readonly_facts playbooks/switches/config-plan.yml roles/switch_config
+uv run yamllint inventories/homelab.yml inventories/group_vars/switches.yml playbooks/switches/readonly-facts.yml playbooks/switches/tasks/export-readonly-facts.yml playbooks/switches/config-plan.yml roles/switch_config/defaults/main.yml roles/switch_config/tasks/main.yml roles/switch_config/tasks/validate.yml roles/switch_config/tasks/diff.yml roles/switch_config/tasks/apply.yml roles/switch_config/tasks/export.yml
+uv run ansible-lint playbooks/switches/readonly-facts.yml playbooks/switches/config-plan.yml roles/switch_config
 uv run python -m unittest tests/test_xikeos_migration.py
 uv run python -m compileall filter_plugins module_utils
 op run --env-file ../.env.switch.tpl -- uv run ansible-playbook playbooks/switches/network-cli-smoke.yml
@@ -182,24 +157,3 @@ read-only native XikeOS collection paths pass against the target switch.
   or configuration current-state workflows.
 - `xikeos_config` remains a documented fallback only for future unsupported gaps;
   it is not invoked by the repository workflow.
-
-## Migration for direct role callers
-
-`switch_readonly_facts` no longer writes files from inside the role. Direct role
-callers now receive in-memory collection-native facts only. To keep file
-exports, define caller-owned export variables such as `switch_export_formats`,
-`switch_export_dir`, and `switch_raw_output_dir`, then run equivalent copy/file
-tasks after the role. The switch playbook's
-`tasks/export-readonly-facts.yml` file can be reused as a reference workflow.
-
-After a live run, verify the generated `facts.yml` or `facts.json` contains:
-
-- collection-provided `ansible_net_*` keys such as model/version/serial fields
-- `ansible_network_resources.vlans`
-- `ansible_network_resources.interfaces` and related L2/L3/LAG resource keys when requested
-
-Normal facts export does not write raw command output. If a separately documented
-fallback raw export is introduced, verify it redacts plaintext local user
-passwords, RADIUS/TACACS secrets, and SNMP communities.
-
-VLAN write/configuration management is out of scope for this read-only facts workflow, even though limited `cli_command` write testing was performed during discovery.

@@ -24,13 +24,17 @@ class XikeOSMigrationSmokeTest(unittest.TestCase):
         self.assertNotIn("ansible_network_os: cisco.ios.ios", group_vars)
 
     def test_readonly_workflow_uses_xikeos_facts(self) -> None:
-        collect = (ANSIBLE_DIR / "roles/switch_readonly_facts/tasks/collect.yml").read_text()
+        playbook = (ANSIBLE_DIR / "playbooks/switches/readonly-facts.yml").read_text()
         export = (ANSIBLE_DIR / "playbooks/switches/tasks/export-readonly-facts.yml").read_text()
-        self.assertIn("c1emon.xikeos.xikeos_facts", collect)
-        self.assertNotIn("ansible.netcommon.cli_command", collect)
-        self.assertNotIn("c1emon.xikeos.xikeos_command", collect)
+        self.assertIn("c1emon.xikeos.xikeos_facts", playbook)
+        self.assertNotIn("switch_readonly_facts", playbook)
         self.assertIn("switch_native_facts", export)
+        self.assertIn("switch_xikeos_facts_module", export)
         self.assertNotIn("{{ switch_facts", export)
+
+    def test_switch_readonly_facts_role_directory_is_removed(self) -> None:
+        self.assertFalse((ANSIBLE_DIR / "roles/switch_readonly_facts").exists())
+        self.assertFalse((ANSIBLE_DIR / "roles/switch_readonly_facts/README.md").exists())
 
     def test_switch_config_defaults_use_native_resource_inputs(self) -> None:
         defaults = (ANSIBLE_DIR / "roles/switch_config/defaults/main.yml").read_text()
@@ -50,9 +54,16 @@ class XikeOSMigrationSmokeTest(unittest.TestCase):
 
     def test_switch_config_main_only_imports_new_task_phases(self) -> None:
         main = (ANSIBLE_DIR / "roles/switch_config/tasks/main.yml").read_text()
-        self.assertNotIn("collect_current.yml", main)
-        self.assertNotIn("plan.yml", main)
-        self.assertNotIn("verify.yml", main)
+        self.assertIn("safety policy validation", main)
+        self.assertIn("collection preview orchestration", main)
+        self.assertIn("apply gate and orchestration", main)
+        self.assertIn("safety report export", main)
+
+    def test_switch_config_remains_safety_orchestration(self) -> None:
+        readme = (ANSIBLE_DIR / "roles/switch_config/README.md").read_text()
+        self.assertIn("safety orchestration", readme)
+        self.assertNotIn("platform/resource implementation", readme)
+        self.assertNotIn("switch_readonly_facts", readme)
 
     def test_switch_config_diff_and_apply_use_deterministic_module_order(self) -> None:
         expected_modules = [

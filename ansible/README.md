@@ -74,7 +74,7 @@ declared in `requirements.yml`. Collection installation does not install Python
 parser libraries, so keep control-node runtime dependencies such as `ttp` and
 `textfsm` available when the collection requires them.
 
-Run switch commands with SSH credentials injected at runtime:
+Run switch workflows with SSH credentials injected at runtime:
 
 ```bash
 op run --env-file ../.env.switch.tpl -- \
@@ -88,6 +88,12 @@ Common switch workflows:
 | `playbooks/switches/network-cli-smoke.yml` | Basic network CLI connectivity smoke test | Run first when validating credentials/transport. |
 | `playbooks/switches/readonly-facts.yml` | Collect collection-native read-only facts | Uses `c1emon.xikeos.xikeos_facts`; does not configure the switch. |
 | `playbooks/switches/config-plan.yml` | Preview or apply lifecycle-safe resource configuration | Defaults to non-mutating plan/check behavior. |
+
+The read-only playbook is the supported entrypoint. It calls
+`c1emon.xikeos.xikeos_facts` directly and then runs the playbook-owned export
+tasks. There is no separate read-only facts role. Custom callers that need a
+different workflow can invoke `c1emon.xikeos.xikeos_facts` directly and reuse
+the export task shape from `playbooks/switches/tasks/export-readonly-facts.yml`.
 
 ### Read-only facts
 
@@ -166,8 +172,12 @@ uv run yamllint roles/switch_config/defaults/main.yml \
   roles/switch_config/tasks/diff.yml \
   roles/switch_config/tasks/apply.yml \
   roles/switch_config/tasks/export.yml \
+  playbooks/switches/readonly-facts.yml \
+  playbooks/switches/tasks/export-readonly-facts.yml \
   playbooks/switches/config-plan.yml \
   vars/switches/sw-core-vlans.yml
+ANSIBLE_COLLECTIONS_PATH="$HOME/.ansible/collections:$PWD/collections" \
+uv run ansible-playbook --syntax-check playbooks/switches/readonly-facts.yml
 ANSIBLE_COLLECTIONS_PATH="$HOME/.ansible/collections:$PWD/collections" \
 uv run ansible-playbook --syntax-check playbooks/switches/config-plan.yml
 ```

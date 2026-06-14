@@ -1,5 +1,0 @@
----
-- name: Set collection-native switch fact outputs  # noqa: var-naming[no-role-prefix]
-  ansible.builtin.set_fact:
-    switch_native_facts: "{{ switch_collection_facts }}"  # noqa: var-naming[no-role-prefix]
-    switch_network_resources: "{{ switch_ansible_network_resources }}"  # noqa: var-naming[no-role-prefix]

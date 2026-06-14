@@ -1,11 +1,9 @@
-# switch-readonly-facts-export-workflow Specification
+## MODIFIED Requirements
 
-## Purpose
-
-Provide a caller-owned export workflow for writing collected switch facts and profile-approved raw outputs to repository files without making file persistence intrinsic to switch facts collection.
-## Requirements
 ### Requirement: Playbook-level switch facts export workflow
-The system SHALL provide a caller-owned export workflow for writing collection-native switch facts to repository files without making file persistence an intrinsic behavior of facts collection.
+The system SHALL provide a caller-owned export workflow for writing
+collection-native switch facts to repository files without making file
+persistence an intrinsic behavior of facts collection.
 
 #### Scenario: Export switch facts after collection
 - **WHEN** `playbooks/switches/readonly-facts.yml` completes read-only facts collection and export is enabled by the playbook workflow
@@ -23,7 +21,8 @@ The system SHALL provide a caller-owned export workflow for writing collection-n
 - **THEN** the export workflow SHALL write a collection summary using output variables such as collection module name, requested gather subsets, requested network resources, transport, and terminal adapter
 
 ### Requirement: Export variables are caller-owned
-The system SHALL keep export path, format, and raw-save controls outside any facts collection role or direct collection task defaults.
+The system SHALL keep export path, format, and raw-save controls outside any
+facts collection role or direct collection task defaults.
 
 #### Scenario: Configure export at playbook scope
 - **WHEN** the operator uses the switch read-only facts playbook

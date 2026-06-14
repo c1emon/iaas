@@ -21,18 +21,22 @@ The system SHALL collect XikeOS switch data over encrypted SSH using Ansible `ne
 - **AND** it SHALL NOT use Cisco IOS configuration or resource modules for collecting read-only facts
 
 ### Requirement: Role-based read-only facts workflow packaging
-The system SHALL expose the XikeOS read-only facts workflow through a reusable Ansible role that collects collection-native facts without intrinsic file persistence side effects.
+The system SHALL expose the XikeOS read-only facts workflow through the switch read-only playbook using collection-native facts without requiring a separate role when the role would only wrap `c1emon.xikeos.xikeos_facts`.
 
-#### Scenario: Run read-only facts through role entrypoint
+#### Scenario: Run read-only facts through playbook entrypoint
 - **WHEN** the operator runs `ansible/playbooks/switches/readonly-facts.yml`
-- **THEN** the playbook SHALL invoke a dedicated switch read-only facts role
-- **AND** the role SHALL collect facts with `c1emon.xikeos.xikeos_facts`
-- **AND** the role SHALL expose collection-native `ansible_net_*` and `ansible_network_resources` data to caller-owned tasks
-- **AND** file export, if desired, SHALL be performed by playbook-level or caller-owned tasks after the role completes
+- **THEN** the playbook SHALL collect facts with `c1emon.xikeos.xikeos_facts`
+- **AND** the workflow SHALL expose collection-native `ansible_net_*` and `ansible_network_resources` data to caller-owned export tasks
+- **AND** file export, if desired, SHALL be performed by playbook-level or caller-owned tasks after facts collection completes
 
-#### Scenario: Keep host connection settings outside role defaults
-- **WHEN** the role is used for a switch host
-- **THEN** host connection settings such as `ansible_connection`, `ansible_network_os`, `ansible_user`, `ansible_password`, and `ansible_port` SHALL remain supplied by inventory or runtime variables rather than being hard-coded in role tasks
+#### Scenario: Avoid redundant read-only role wrapper
+- **WHEN** read-only facts collection requires no reusable repository policy beyond runtime validation and collection module invocation
+- **THEN** the workflow SHALL NOT require a dedicated `switch_readonly_facts` role
+- **AND** direct playbook tasks SHALL make the native collection call and exported variables clear to operators
+
+#### Scenario: Keep host connection settings outside playbook implementation
+- **WHEN** the read-only facts workflow is used for a switch host
+- **THEN** host connection settings such as `ansible_connection`, `ansible_network_os`, `ansible_user`, `ansible_password`, and `ansible_port` SHALL remain supplied by inventory or runtime variables rather than being hard-coded in tasks
 
 ### Requirement: SSH credential configuration
 The system SHALL obtain switch SSH credentials from runtime-provided SSH credential variables rather than Telnet credential variables.
@@ -55,12 +59,12 @@ The system SHALL rely on the native XikeOS collection facts path for pagination 
 - **AND** any explicit pagination command SHALL be limited to smoke, debug, or documented fallback command workflows
 
 ### Requirement: YAML and JSON exports
-The system SHALL support configurable YAML and JSON export of parsed switch facts through the playbook-level export workflow rather than through the facts role itself.
+The system SHALL support configurable YAML and JSON export of parsed switch facts through the playbook-level export workflow rather than through facts collection itself.
 
 #### Scenario: Export selected formats
 - **WHEN** the playbook-level export workflow is enabled and the user configures YAML, JSON, or both output formats
 - **THEN** the export workflow SHALL write the selected structured export files from `switch_facts`
-- **AND** the `switch_readonly_facts` role SHALL remain usable without writing those files
+- **AND** facts collection SHALL remain usable without writing those files
 
 ### Requirement: Export location
 The system SHALL allow the playbook-level export workflow to write generated switch exports under the repository `exports/` directory in a switch-specific subdirectory.
@@ -68,7 +72,7 @@ The system SHALL allow the playbook-level export workflow to write generated swi
 #### Scenario: Write exports under repository exports tree
 - **WHEN** switch facts are exported for inventory host `sw-core`
 - **THEN** generated outputs SHALL be written under `exports/switches/sw-core/` or a timestamped child directory beneath it by the export workflow
-- **AND** the facts role SHALL not create export directories as part of facts collection
+- **AND** facts collection SHALL not create export directories
 
 ### Requirement: Secret redaction for raw running configuration
 The system SHALL ensure any saved raw running configuration output is redacted before being written by the playbook-level export workflow.
@@ -81,4 +85,4 @@ The system SHALL ensure any saved raw running configuration output is redacted b
 #### Scenario: Redact network management secrets
 - **WHEN** raw configuration output contains password, RADIUS secret, TACACS secret, or SNMP community lines
 - **THEN** any saved raw running configuration export SHALL redact the secret values before writing the file
-- **AND** the facts role SHALL not write raw configuration files directly
+- **AND** facts collection SHALL not write raw configuration files directly
