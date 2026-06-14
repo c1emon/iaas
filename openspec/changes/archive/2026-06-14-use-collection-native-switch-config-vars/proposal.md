@@ -21,6 +21,9 @@ The switch configuration role still carries a repository-local `xikeos_resources
 - `sks8300-config-resource-framework`: Replace repository-owned intent planning/diffing with direct collection-native resource module orchestration and allowed-state policy.
 - `xikeos-network-resources-primary`: Clarify that switch configuration inputs use collection-native resource module schemas and that repository workflows do not maintain parallel resource definitions.
 - `xikeos-collection-switch-automation`: Clarify repository preference for direct `c1emon.xikeos` resource modules over local adapters when collection modules provide lifecycle behavior.
+- `sks8300-profile-readonly-facts`: Supplemental archive sync cleaned up facts-side requirements to reflect collection-native facts instead of SKS8300 profile command planning.
+- `switch-cli-readonly-facts`: Supplemental archive sync aligned read-only switch requirements with native XikeOS facts and removed obsolete profile-parser assumptions.
+- `switch-readonly-facts-export-workflow`: Supplemental archive sync aligned export requirements with collection-native facts and removed normal-workflow raw profile export assumptions.
 
 ## Impact
 
@@ -29,3 +32,13 @@ The switch configuration role still carries a repository-local `xikeos_resources
 - Affected Python support code: remove `ansible/module_utils/xikeos_resources.py` and the associated `ansible/filter_plugins/switch_profiles.py` facade if no longer needed.
 - Affected tests: update migration/unit tests that currently import or assert the repository-local planner, and add tests that assert direct collection-native variable routing and policy checks.
 - Dependency impact: no new collection dependency; this change relies on the existing `c1emon.xikeos` v0.2.x baseline.
+
+## Archive Notes
+
+- Review after implementation found that facts-side main specs were also updated
+  while archiving prior XikeOS collection migration work. This archive records
+  those supplemental spec-sync updates so future readers do not need to infer
+  them from main spec diffs alone.
+- `ansible/module_utils/xikeos_resources.py` was already absent from committed
+  history by the time this archive was reviewed; task 4.1 represents confirming
+  no role task imports or depends on that local planner path.

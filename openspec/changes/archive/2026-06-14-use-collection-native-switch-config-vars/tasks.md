@@ -22,7 +22,7 @@
 
 ## 4. Python Helper Removal
 
-- [x] 4.1 Remove `ansible/module_utils/xikeos_resources.py` after role tasks no longer import it.
+- [x] 4.1 Confirm `ansible/module_utils/xikeos_resources.py` is absent after role tasks no longer import it.
 - [x] 4.2 Remove `ansible/filter_plugins/switch_profiles.py` after role tasks no longer use planner filters.
 - [x] 4.3 Update tests that currently import `xikeos_resources.py` to assert role variable validation, collection-native routing, and policy behavior instead.
 

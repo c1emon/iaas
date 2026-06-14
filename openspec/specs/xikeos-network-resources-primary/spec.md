@@ -1,7 +1,10 @@
 # xikeos-network-resources-primary Specification
 
 ## Purpose
-TBD - created by archiving change make-xikeos-collection-primary. Update Purpose after archive.
+
+Define `c1emon.xikeos` collection-native facts and lifecycle-complete resource
+modules as the canonical switch state and configuration contract for XikeOS
+workflows in this repository.
 ## Requirements
 ### Requirement: Collection-native switch state schema
 The system SHALL use `c1emon.xikeos` collection-native facts as the canonical switch state schema for XikeOS workflows.

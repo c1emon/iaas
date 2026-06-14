@@ -1,7 +1,10 @@
 # xikeos-collection-switch-automation Specification
 
 ## Purpose
-TBD - created by archiving change adopt-c1emon-xikeos-switch-automation. Update Purpose after archive.
+
+Define the repository's native XikeOS collection baseline, including dependency
+management, network OS selection, read-only collection behavior, lifecycle-safe
+resource module usage, and constraints for raw configuration fallbacks.
 ## Requirements
 ### Requirement: Native XikeOS collection dependency
 The system SHALL declare `c1emon.xikeos` v0.2.x as the switch automation collection dependency through the repository Ansible collection requirements workflow.

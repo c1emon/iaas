@@ -1,7 +1,10 @@
 # sks8300-profile-readonly-facts Specification
 
 ## Purpose
-TBD - created by archiving change profile-driven-sks8300-readonly-facts. Update Purpose after archive.
+
+Define how SKS8300/XikeOS read-only facts are selected and collected now that the
+normal workflow uses `c1emon.xikeos.xikeos_facts` and collection-native schemas
+instead of repository-local profile command planning.
 ## Requirements
 ### Requirement: SKS8300 profile-driven gather subset selection
 The system SHALL prefer collection-native XikeOS facts over SKS8300 compatibility profile subset planning for normal read-only facts collection.

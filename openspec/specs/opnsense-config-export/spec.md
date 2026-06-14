@@ -1,7 +1,10 @@
 # opnsense-config-export Specification
 
 ## Purpose
-TBD - created by archiving change export-opnsense-config. Update Purpose after archive.
+
+Define the OPNsense configuration export workflow, including how repository
+automation captures firewall configuration snapshots safely without embedding
+environment-specific secrets in source control.
 ## Requirements
 ### Requirement: Read-only OPNsense export
 The system SHALL provide a read-only export workflow for selected OPNsense configuration and operational facts without modifying OPNsense state.

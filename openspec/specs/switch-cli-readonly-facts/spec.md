@@ -76,7 +76,7 @@ The system SHALL ensure any saved raw running configuration output is redacted b
 #### Scenario: Redact plaintext user password
 - **WHEN** raw `show running-config` output contains a line such as `username admin privilege 15 password 0 admin`
 - **THEN** any saved raw running configuration export SHALL replace the secret value with a redacted placeholder
-- **AND** the redacted content SHALL come from the profile-generated raw export plan consumed by the export workflow
+- **AND** raw running configuration export SHALL only be produced by a separately documented smoke, debug, or fallback workflow
 
 #### Scenario: Redact network management secrets
 - **WHEN** raw configuration output contains password, RADIUS secret, TACACS secret, or SNMP community lines

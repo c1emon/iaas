@@ -1,39 +1,176 @@
-# Ansible
+# Ansible Automation
 
-This directory contains Ansible automation for Astra host and service management.
+This directory contains Ansible automation for homelab network and service
+management. Current workflows cover OPNsense API management and SKS8300/XikeOS
+switch read-only facts plus safe configuration previews.
 
-Current scope:
+## Setup
 
-- OPNsense API bootstrap scaffolding.
-- Read-only OPNsense API smoke test.
-- OPNsense configuration snapshot playbook.
-- SKS8300/XikeOS switch facts and configuration planning over SSH `network_cli` using `c1emon.xikeos`.
-
-Install dependencies:
+Install Python dependencies and Ansible collections from this directory:
 
 ```bash
+cd ansible
 uv sync
 uv run ansible-galaxy collection install -r requirements.yml
 ```
 
-The switch workflow installs the native Galaxy collection `c1emon.xikeos` through
-`requirements.yml`; use the repository requirements command above instead of an
-out-of-band collection install so all Ansible dependencies stay reproducible.
-Collection installation does not install Python parser libraries, so ensure the
-control environment has collection runtime parser dependencies such as `ttp` and
-`textfsm` available when collection-backed facts or resource modules require
-them.
-
-Run the read-only OPNsense smoke test with credentials injected at runtime:
+If Ansible cannot find locally installed collections, include the collection path
+explicitly when running a command:
 
 ```bash
-op run --env-file ../.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/readonly.yml
+ANSIBLE_COLLECTIONS_PATH="$HOME/.ansible/collections:$PWD/collections" \
+uv run ansible-playbook --syntax-check playbooks/switches/config-plan.yml
 ```
 
-Run the read-only switch facts collection with credentials injected at runtime:
+Do not commit installed Galaxy collections. They are local dependencies managed
+by `requirements.yml` and ignored by Git.
+
+## Inventory and secrets
+
+Default inventory is `inventories/homelab.yml`; `ansible.cfg` points Ansible at
+that inventory and the repository role/collection paths.
+
+Secrets are injected at runtime from 1Password environment templates:
+
+- `../.env.opnsense.tpl` for OPNsense API variables
+- `../.env.switch.tpl` for switch SSH variables
+
+Never commit plaintext vault passwords, private keys, API keys, generated
+exports, or environment-specific secrets.
+
+## OPNsense playbooks
+
+Run OPNsense commands with API credentials injected at runtime:
 
 ```bash
-op run --env-file ../.env.switch.tpl -- uv run ansible-playbook playbooks/switches/readonly-facts.yml
+op run --env-file ../.env.opnsense.tpl -- \
+uv run ansible-playbook playbooks/opnsense/readonly.yml
 ```
 
-Do not commit plaintext vault passwords, private keys, API keys, or environment-specific secrets.
+Common OPNsense workflows:
+
+| Playbook | Use case | Notes |
+| --- | --- | --- |
+| `playbooks/opnsense/readonly.yml` | Read-only API connectivity smoke test | Safe first check; no config mutation. |
+| `playbooks/opnsense/export.yml` | Export OPNsense configuration data | Writes generated files under ignored export paths. |
+| `playbooks/opnsense/snapshot.yml` | Capture a configuration snapshot | Use before risky changes. |
+| `playbooks/opnsense/manage-aliases.yml` | Manage firewall aliases | Uses OPNsense API modules. |
+| `playbooks/opnsense/manage-filter-rules.yml` | Manage firewall filter rules | Review vars and check mode before apply. |
+| `playbooks/opnsense/manage-gateways.yml` | Manage policy-based routing gateways | Requires API write privileges. |
+| `playbooks/opnsense/manage-vips.yml` | Manage virtual IPs | Requires interface/VIP API privileges. |
+| `playbooks/opnsense/manage-dnat.yml` | Manage DNAT workflows or documented fallback | Review module/API support before use. |
+
+Example syntax check:
+
+```bash
+uv run ansible-playbook --syntax-check playbooks/opnsense/readonly.yml
+```
+
+## Switch playbooks
+
+Switch hosts use `ansible.netcommon.network_cli` with
+`ansible_network_os: c1emon.xikeos.xikeos`. The native collection dependency is
+declared in `requirements.yml`. Collection installation does not install Python
+parser libraries, so keep control-node runtime dependencies such as `ttp` and
+`textfsm` available when the collection requires them.
+
+Run switch commands with SSH credentials injected at runtime:
+
+```bash
+op run --env-file ../.env.switch.tpl -- \
+uv run ansible-playbook playbooks/switches/readonly-facts.yml
+```
+
+Common switch workflows:
+
+| Playbook | Use case | Notes |
+| --- | --- | --- |
+| `playbooks/switches/network-cli-smoke.yml` | Basic network CLI connectivity smoke test | Run first when validating credentials/transport. |
+| `playbooks/switches/readonly-facts.yml` | Collect collection-native read-only facts | Uses `c1emon.xikeos.xikeos_facts`; does not configure the switch. |
+| `playbooks/switches/config-plan.yml` | Preview or apply lifecycle-safe resource configuration | Defaults to non-mutating plan/check behavior. |
+
+### Read-only facts
+
+Collect facts for one switch:
+
+```bash
+op run --env-file ../.env.switch.tpl -- \
+uv run ansible-playbook playbooks/switches/readonly-facts.yml --limit sw-core
+```
+
+Request YAML and JSON exports:
+
+```bash
+op run --env-file ../.env.switch.tpl -- \
+uv run ansible-playbook playbooks/switches/readonly-facts.yml \
+  -e '{"switch_export_formats":["yaml","json"]}'
+```
+
+### Configuration preview and apply
+
+Desired switch configuration lives in host-specific vars such as
+`vars/switches/sw-core-vlans.yml`. The `switch_config` role accepts
+collection-native grouped resource calls:
+
+```yaml
+switch_config_resources:
+  vlans:
+    - state: merged
+      config:
+        - vlan_id: 3999
+          name: ansible-test
+  l2_interfaces:
+    - state: merged
+      config:
+        - name: Ethernet1/0/48
+          mode: access
+          access_vlan: 3999
+```
+
+The default policy only allows `merged` states. Add states such as `deleted` to
+`switch_config_allowed_states` only when the intended workflow needs them.
+
+Safe preview against `sw-core`:
+
+```bash
+ANSIBLE_COLLECTIONS_PATH="$HOME/.ansible/collections:$PWD/collections" \
+op run --env-file ../.env.switch.tpl -- \
+uv run ansible-playbook playbooks/switches/config-plan.yml \
+  --check --limit sw-core -e switch_config_apply=false
+```
+
+Live apply is opt-in. Only run it after reviewing the preview output and desired
+vars:
+
+```bash
+ANSIBLE_COLLECTIONS_PATH="$HOME/.ansible/collections:$PWD/collections" \
+op run --env-file ../.env.switch.tpl -- \
+uv run ansible-playbook playbooks/switches/config-plan.yml \
+  --limit sw-core -e switch_config_apply=true
+```
+
+The role rejects legacy `switch_config_intent`, raw command lists, unknown
+resource groups, missing `state`/`config`, and states outside
+`switch_config_allowed_states`.
+
+## Validation commands
+
+Run these before committing Ansible workflow changes:
+
+```bash
+uv run python -m unittest tests/test_xikeos_migration.py
+uv run python -m compileall filter_plugins module_utils
+uv run yamllint roles/switch_config/defaults/main.yml \
+  roles/switch_config/tasks/main.yml \
+  roles/switch_config/tasks/validate.yml \
+  roles/switch_config/tasks/diff.yml \
+  roles/switch_config/tasks/apply.yml \
+  roles/switch_config/tasks/export.yml \
+  playbooks/switches/config-plan.yml \
+  vars/switches/sw-core-vlans.yml
+ANSIBLE_COLLECTIONS_PATH="$HOME/.ansible/collections:$PWD/collections" \
+uv run ansible-playbook --syntax-check playbooks/switches/config-plan.yml
+```
+
+Use live switch check-mode previews only when credentials are available and the
+target host is safe to contact.
