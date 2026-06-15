@@ -62,6 +62,8 @@ The role rejects:
 `switch_config_allowed_states` is the repository-owned safety policy. The
 default allows only `merged`; operators must explicitly opt into states such as
 `deleted` or `replaced` before the role will preview or apply those calls.
+With the v0.2.1 collection baseline, L3 interface and LAG `merged` operations
+are additive: omitted addresses or LAG members are not interpreted as removals.
 
 ## Lifecycle
 

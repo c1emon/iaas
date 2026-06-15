@@ -13,7 +13,7 @@ uv run ansible-galaxy collection install -r requirements.yml
 ```
 
 This installs the native Galaxy collection `c1emon.xikeos` constrained to the
-repository's v0.2.x baseline alongside the other repository collection
+repository's v0.2.1+ baseline alongside the other repository collection
 dependencies. Ansible collection installation does not install Python packages,
 so keep the control environment synchronized with `uv sync` and ensure parser
 libraries used by collection-backed facts/resources, including `ttp` and
@@ -114,7 +114,9 @@ collection modules in check mode and do not send mutating configuration. When
 `switch_config_apply=true`, the role invokes the same native modules only after
 `switch_config_allowed_states` and destructive-command checks pass. The default
 allowed state is `merged`; opt into `deleted` or `replaced` explicitly when a
-workflow needs those module states.
+workflow needs those module states. With the v0.2.1 collection baseline, L3 and
+LAG `merged` calls are additive: omitted addresses or LAG members are not treated
+as removals.
 
 Legacy fields are rejected. Migrate `switch_config_intent` to
 `switch_config_resources`, VLAN `id` to `vlan_id`, `present`/`absent` to module
@@ -150,7 +152,7 @@ read-only native XikeOS collection paths pass against the target switch.
 
 ## Current native collection gaps and follow-up notes
 
-- `switch_config` maps supported intent to lifecycle-complete v0.2.x resource
+- `switch_config` maps supported intent to lifecycle-complete v0.2.1+ resource
   modules for VLANs, base interfaces, L2 interfaces, L3 interfaces, LAG
   interfaces, static routes, and ACLs.
 - The compatibility SKS8300 parsers are not used by the normal read-only facts

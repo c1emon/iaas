@@ -15,7 +15,7 @@ class XikeOSMigrationSmokeTest(unittest.TestCase):
     def test_dependency_metadata_includes_native_collection(self) -> None:
         requirements = (ANSIBLE_DIR / "requirements.yml").read_text()
         self.assertIn("name: c1emon.xikeos", requirements)
-        self.assertIn('version: ">=0.2.0,<0.3.0"', requirements)
+        self.assertIn('version: ">=0.2.1,<0.3.0"', requirements)
 
     def test_switch_inventory_uses_native_network_os(self) -> None:
         group_vars = (ANSIBLE_DIR / "inventories/group_vars/switches.yml").read_text()

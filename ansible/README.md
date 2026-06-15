@@ -70,9 +70,10 @@ uv run ansible-playbook --syntax-check playbooks/opnsense/readonly.yml
 
 Switch hosts use `ansible.netcommon.network_cli` with
 `ansible_network_os: c1emon.xikeos.xikeos`. The native collection dependency is
-declared in `requirements.yml`. Collection installation does not install Python
-parser libraries, so keep control-node runtime dependencies such as `ttp` and
-`textfsm` available when the collection requires them.
+declared in `requirements.yml` and pinned to the v0.2.1+ baseline. Collection
+installation does not install Python parser libraries, so keep control-node
+runtime dependencies such as `ttp` and `textfsm` available when the collection
+requires them.
 
 Run switch workflows with SSH credentials injected at runtime:
 
@@ -133,8 +134,11 @@ switch_config_resources:
           access_vlan: 3999
 ```
 
-The default policy only allows `merged` states. Add states such as `deleted` to
-`switch_config_allowed_states` only when the intended workflow needs them.
+The default policy only allows `merged` states. In v0.2.1, L3 and LAG `merged`
+operations are additive and should not remove existing addresses or members that
+are omitted from the requested config. Add states such as `deleted` or
+`replaced` to `switch_config_allowed_states` only when the intended workflow
+needs non-additive behavior.
 
 Safe preview against `sw-core`:
 
