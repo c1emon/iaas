@@ -37,11 +37,18 @@ crash.*.log
 
 # Ansible
 *.retry
+ansible/collections/
+collections/
 
 # Python / tooling caches
 __pycache__/
+*.py[cod]
+*$py.class
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
 .venv/
 venv/
 
@@ -50,4 +57,5 @@ dist/
 build/
 tmp/
 exports/
+.ansible/
 .opencode

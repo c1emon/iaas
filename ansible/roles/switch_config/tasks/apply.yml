@@ -3,28 +3,93 @@
   ansible.builtin.debug:
     msg: >-
       Plan-only run complete. Set switch_config_apply=true to apply validated
-      profile-rendered commands.
+      native XikeOS collection resource calls.
   when: not switch_config_apply | bool
 
-- name: Apply validated switch configuration commands
-  ansible.netcommon.cli_command:
-    command: |-
-      config
-      {% for rendered_command in switch_config_rendered_commands %}
-      {{ rendered_command }}
-      {% endfor %}
-      exit
-  register: switch_config_apply_result  # noqa: var-naming[no-role-prefix]
-  changed_when: true
+- name: Apply VLAN resources through native XikeOS resource module
+  c1emon.xikeos.xikeos_vlans:
+    config: "{{ item.config }}"
+    state: "{{ item.state }}"
+  loop: "{{ switch_config_resources.vlans | default([]) }}"
+  register: switch_config_vlans_apply  # noqa: var-naming[no-role-prefix]
   no_log: true
-  when:
-    - switch_config_apply | bool
-    - switch_config_rendered_commands | length > 0
+  when: switch_config_apply | bool
 
-- name: Record apply status  # noqa: var-naming[no-role-prefix]
+- name: Apply base interface resources through native XikeOS resource module
+  c1emon.xikeos.xikeos_interfaces:
+    config: "{{ item.config }}"
+    state: "{{ item.state }}"
+  loop: "{{ switch_config_resources.base_interfaces | default([]) }}"
+  register: switch_config_base_interfaces_apply  # noqa: var-naming[no-role-prefix]
+  no_log: true
+  when: switch_config_apply | bool
+
+- name: Apply LAG interface resources through native XikeOS resource module
+  c1emon.xikeos.xikeos_lag_interfaces:
+    config: "{{ item.config }}"
+    state: "{{ item.state }}"
+  loop: "{{ switch_config_resources.lag_interfaces | default([]) }}"
+  register: switch_config_lag_interfaces_apply  # noqa: var-naming[no-role-prefix]
+  no_log: true
+  when: switch_config_apply | bool
+
+- name: Apply L2 interface resources through native XikeOS resource module
+  c1emon.xikeos.xikeos_l2_interfaces:
+    config: "{{ item.config }}"
+    state: "{{ item.state }}"
+  loop: "{{ switch_config_resources.l2_interfaces | default([]) }}"
+  register: switch_config_l2_interfaces_apply  # noqa: var-naming[no-role-prefix]
+  no_log: true
+  when: switch_config_apply | bool
+
+- name: Apply L3 interface resources through native XikeOS resource module
+  c1emon.xikeos.xikeos_l3_interfaces:
+    config: "{{ item.config }}"
+    state: "{{ item.state }}"
+  loop: "{{ switch_config_resources.l3_interfaces | default([]) }}"
+  register: switch_config_l3_interfaces_apply  # noqa: var-naming[no-role-prefix]
+  no_log: true
+  when: switch_config_apply | bool
+
+- name: Apply static route resources through native XikeOS resource module
+  c1emon.xikeos.xikeos_static_routes:
+    config: "{{ item.config }}"
+    state: "{{ item.state }}"
+  loop: "{{ switch_config_resources.static_routes | default([]) }}"
+  register: switch_config_static_routes_apply  # noqa: var-naming[no-role-prefix]
+  no_log: true
+  when: switch_config_apply | bool
+
+- name: Apply ACL resources through native XikeOS resource module
+  c1emon.xikeos.xikeos_acls:
+    config: "{{ item.config }}"
+    state: "{{ item.state }}"
+  loop: "{{ switch_config_resources.acls | default([]) }}"
+  register: switch_config_acls_apply  # noqa: var-naming[no-role-prefix]
+  no_log: true
+  when: switch_config_apply | bool
+
+- name: Record apply status and module results  # noqa: var-naming[no-role-prefix]
   ansible.builtin.set_fact:
     switch_config_apply_status: >-
-      {{ 'applied' if (switch_config_apply | bool and switch_config_rendered_commands | length > 0)
-         else 'not_requested' if not switch_config_apply | bool
-         else 'no_changes' }}
+      {{ 'applied' if switch_config_apply | bool and switch_config_requested_calls | length > 0
+        else 'not_requested' if not switch_config_apply | bool
+        else 'no_changes' }}
+    switch_config_module_results:  # noqa: var-naming[no-role-prefix]
+      vlans: "{{ switch_config_vlans_apply | default({}) }}"
+      base_interfaces: "{{ switch_config_base_interfaces_apply | default({}) }}"
+      lag_interfaces: "{{ switch_config_lag_interfaces_apply | default({}) }}"
+      l2_interfaces: "{{ switch_config_l2_interfaces_apply | default({}) }}"
+      l3_interfaces: "{{ switch_config_l3_interfaces_apply | default({}) }}"
+      static_routes: "{{ switch_config_static_routes_apply | default({}) }}"
+      acls: "{{ switch_config_acls_apply | default({}) }}"
   no_log: true
+
+- name: Validate native collection apply command output safety
+  ansible.builtin.assert:
+    that:
+      - >-
+        switch_config_module_results | to_json |
+        regex_search(switch_config_forbidden_command_pattern) is none
+    fail_msg: Native collection apply output included a forbidden command.
+  when: switch_config_apply | bool

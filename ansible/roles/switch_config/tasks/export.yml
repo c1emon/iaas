@@ -2,18 +2,22 @@
 - name: Export switch configuration change report  # noqa: var-naming[no-role-prefix]
   ansible.builtin.set_fact:
     switch_config_change_report: >-  # noqa: var-naming[no-role-prefix]
-      {{ switch_config_plan_report | combine({
+      {{ {
+        'requested_resources': switch_config_resources,
+        'requested_call_count': switch_config_requested_calls | length,
+        'allowed_states': switch_config_allowed_states,
+        'preview': switch_config_collection_preview | default({}),
         'apply': {
           'enabled': switch_config_apply | bool,
-          'status': switch_config_apply_status | default('not_requested')
-        },
-        'verify': switch_config_verify_report | default({'status': 'not_run', 'ok': true, 'failures': []})
-      }) }}
+          'status': switch_config_apply_status | default('not_requested'),
+          'module_results': switch_config_module_results | default({})
+        }
+      } }}
   no_log: true
 
 - name: Report switch configuration change status
   ansible.builtin.debug:
     msg: >-
       switch_config status={{ switch_config_apply_status | default('not_requested') }},
-      verify={{ switch_config_verify_report.status | default('not_run') }},
-      changed={{ switch_config_plan_report.changed | bool }}.
+      requested_calls={{ switch_config_requested_calls | length }},
+      allowed_states={{ switch_config_allowed_states | join(',') }}.

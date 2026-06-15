@@ -3,3 +3,5 @@ collections:
   - name: oxlorg.opnsense
   - name: community.general
   - name: ansible.netcommon
+  - name: c1emon.xikeos
+    version: ">=0.2.1,<0.3.0"

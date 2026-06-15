@@ -6,19 +6,15 @@
 
   vars:
     ansible_connection: ansible.netcommon.network_cli
-    ansible_network_os: cisco.ios.ios
+    ansible_network_os: c1emon.xikeos.xikeos
     switch_vlan_source: >-
       {{ ansible_project_dir }}/vars/switches/{{ inventory_hostname }}-vlans.yml
-    switch_platform_profile: sks8300
     switch_config_apply: false
-    switch_config_allowed_operations:
-      - create
-      - update
-      - remove
-      - no-op
+    switch_config_allowed_states:
+      - merged
 
   pre_tasks:
-    - name: Load desired SKS8300 VLAN configuration
+    - name: Load desired SKS8300 collection-native configuration
       ansible.builtin.include_vars:
         file: "{{ switch_vlan_source }}"
 

@@ -1,6 +1,0 @@
----
-switch_platform_profile: sks8300  # noqa: var-naming[no-role-prefix]
-switch_readonly_gather_subset:  # noqa: var-naming[no-role-prefix]
-  - device
-  - vlans
-  - interfaces

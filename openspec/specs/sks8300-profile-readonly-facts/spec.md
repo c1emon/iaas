@@ -1,76 +1,39 @@
 # sks8300-profile-readonly-facts Specification
 
 ## Purpose
-TBD - created by archiving change profile-driven-sks8300-readonly-facts. Update Purpose after archive.
+
+Define how SKS8300/XikeOS read-only facts are selected and collected now that the
+normal workflow uses `c1emon.xikeos.xikeos_facts` and collection-native schemas
+instead of repository-local profile command planning.
 ## Requirements
 ### Requirement: SKS8300 profile-driven gather subset selection
-The system SHALL expose SKS8300-series read-only facts through a platform profile and gather subset model rather than through user-supplied CLI command lists.
+The system SHALL prefer collection-native XikeOS facts over SKS8300 compatibility profile subset planning for normal read-only facts collection.
 
-#### Scenario: Select default SKS8300 facts by subset
+#### Scenario: Select default XikeOS facts through collection subsets
 - **WHEN** the operator runs the read-only facts workflow without overriding read-only fact selection
-- **THEN** the workflow SHALL use `switch_platform_profile: sks8300`
-- **AND** it SHALL collect the default configured `switch_readonly_gather_subset` values
+- **THEN** the workflow SHALL collect the default collection-backed facts and resource subsets
+- **AND** it SHALL use `c1emon.xikeos.xikeos_facts` rather than repository command-plan parsing
 - **AND** it SHALL not require the operator to provide CLI command strings
 
-#### Scenario: Select specific SKS8300 fact subsets
-- **WHEN** the operator configures `switch_readonly_gather_subset` with supported subsets such as `device`, `vlans`, and `interfaces`
-- **THEN** the workflow SHALL collect only the commands needed by those subsets plus required setup commands
-- **AND** it SHALL parse and export structured facts for the selected subsets
+#### Scenario: Select specific collection fact subsets
+- **WHEN** the operator configures read-only fact subset selection
+- **THEN** the workflow SHALL map supported selection to `xikeos_facts` `gather_subset` and `gather_network_resources` values
+- **AND** it SHALL pass through collection-native facts instead of adapting them to the old repository `switch_facts` schema
 
-#### Scenario: Reject unsupported profile or subset
-- **WHEN** the operator configures an unsupported `switch_platform_profile` or unsupported `switch_readonly_gather_subset` value
-- **THEN** the workflow SHALL fail before command collection
-- **AND** the failure SHALL identify the invalid profile or subset value
-
-### Requirement: Profile command planning and read-only policy
-The system SHALL derive switch CLI commands from the SKS8300 profile command catalog and enforce read-only command policy before collection.
-
-#### Scenario: Build command plan from SKS8300 profile
-- **WHEN** the workflow plans collection for selected gather subsets
-- **THEN** it SHALL build an ordered command plan from the SKS8300 profile command catalog
-- **AND** each planned command SHALL include a stable command ID, CLI command string, read-only flag, sensitivity flag, and raw export policy
-
-#### Scenario: Prevent mutating planned commands
-- **WHEN** the command plan is built
-- **THEN** every planned command SHALL be marked read-only
-- **AND** the workflow SHALL reject any planned command that matches known mutating prefixes such as `config`, `configure`, `write`, `copy`, `reload`, `delete`, `clear`, or `format`
-
-#### Scenario: Preserve pagination setup ordering
-- **WHEN** the command plan includes switch CLI pagination setup
-- **THEN** `terminal length 0` SHALL be planned before data collection commands
-- **AND** the pagination setup command SHALL not be exported as a structured fact source
+#### Scenario: Reject unsupported collection subset
+- **WHEN** the operator configures an unsupported collection-backed subset value
+- **THEN** the workflow SHALL fail before collection
+- **AND** the failure SHALL identify the invalid subset value
 
 ### Requirement: Thin Ansible filter facade and reusable profile core
-The system SHALL expose Ansible-facing profile operations through thin filter plugins backed by reusable Python module utilities.
+The system SHALL avoid requiring SKS8300 profile filters in the normal read-only facts path when collection-native facts provide the canonical schema.
 
-#### Scenario: Build plan through filter facade
-- **WHEN** the role needs a command plan
-- **THEN** it SHALL call an Ansible filter facade function
-- **AND** the facade SHALL delegate SKS8300 profile lookup and planning to `ansible/module_utils/switch_profiles/`
+#### Scenario: Use collection facts directly
+- **WHEN** the role needs read-only switch facts
+- **THEN** it SHALL call `c1emon.xikeos.xikeos_facts` through Ansible tasks
+- **AND** it SHALL expose native collection facts without requiring local parser or profile filters
 
-#### Scenario: Parse facts through profile core
-- **WHEN** command output has been collected
-- **THEN** the workflow SHALL map command results by stable command ID
-- **AND** it SHALL ask the SKS8300 profile core to parse selected gather subsets into structured facts
-
-#### Scenario: Keep profile logic reusable for future configuration roles
-- **WHEN** the read-only facts role uses SKS8300-specific command, parser, and redaction behavior
-- **THEN** those behaviors SHALL live outside the read-only role directory
-- **AND** they SHALL be reusable by a future configuration workflow without sharing the read-only role entrypoint
-
-### Requirement: Command-level raw export policy
-The system SHALL decide raw output export eligibility and redaction using command-level policy from the SKS8300 profile, and SHALL expose that policy as export-plan data for caller-owned export workflows.
-
-#### Scenario: Export non-sensitive raw command output
-- **WHEN** raw output export is enabled by a caller-owned export workflow and a planned command is non-sensitive with raw export allowed
-- **THEN** the profile-generated export plan SHALL include that command output with the command ID or documented filename mapping
-- **AND** the caller-owned export workflow MAY write that planned item to the raw output directory
-
-#### Scenario: Redact sensitive running configuration output
-- **WHEN** raw output export is enabled by a caller-owned export workflow and the planned command is `show_running_config`
-- **THEN** the profile-generated export plan SHALL provide only redacted running configuration output for that item
-- **AND** it SHALL NOT expose plaintext management secrets as a file-safe export item
-
-#### Scenario: Summarize command plan and collection
-- **WHEN** raw output export is enabled by a caller-owned export workflow
-- **THEN** the export workflow SHALL be able to summarize transport, terminal adapter, planned command IDs, collected result count, and normalized output lengths from role output variables
+#### Scenario: Limit compatibility helpers to fallback paths
+- **WHEN** local SKS8300 profile utilities remain in the repository
+- **THEN** they SHALL be limited to smoke, debug, migration, or explicitly documented fallback workflows
+- **AND** they SHALL NOT define the normal facts schema

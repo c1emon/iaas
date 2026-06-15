@@ -1,15 +1,98 @@
 ---
-- name: Export switch configuration diff facts  # noqa: var-naming[no-role-prefix]
-  ansible.builtin.set_fact:
-    switch_config_diff: "{{ switch_config_plan_report.diff }}"  # noqa: var-naming[no-role-prefix]
-    switch_config_rendered_commands: >-  # noqa: var-naming[no-role-prefix]
-      {{ switch_config_plan_report.rendered_commands }}
-    switch_config_changed: "{{ switch_config_plan_report.changed }}"  # noqa: var-naming[no-role-prefix]
+- name: Preview VLAN resources through native XikeOS resource module
+  c1emon.xikeos.xikeos_vlans:
+    config: "{{ item.config }}"
+    state: "{{ item.state }}"
+  loop: "{{ switch_config_resources.vlans | default([]) }}"
+  check_mode: true
+  register: switch_config_vlans_preview  # noqa: var-naming[no-role-prefix]
+  changed_when: false
   no_log: true
+
+- name: Preview base interface resources through native XikeOS resource module
+  c1emon.xikeos.xikeos_interfaces:
+    config: "{{ item.config }}"
+    state: "{{ item.state }}"
+  loop: "{{ switch_config_resources.base_interfaces | default([]) }}"
+  check_mode: true
+  register: switch_config_base_interfaces_preview  # noqa: var-naming[no-role-prefix]
+  changed_when: false
+  no_log: true
+
+- name: Preview LAG interface resources through native XikeOS resource module
+  c1emon.xikeos.xikeos_lag_interfaces:
+    config: "{{ item.config }}"
+    state: "{{ item.state }}"
+  loop: "{{ switch_config_resources.lag_interfaces | default([]) }}"
+  check_mode: true
+  register: switch_config_lag_interfaces_preview  # noqa: var-naming[no-role-prefix]
+  changed_when: false
+  no_log: true
+
+- name: Preview L2 interface resources through native XikeOS resource module
+  c1emon.xikeos.xikeos_l2_interfaces:
+    config: "{{ item.config }}"
+    state: "{{ item.state }}"
+  loop: "{{ switch_config_resources.l2_interfaces | default([]) }}"
+  check_mode: true
+  register: switch_config_l2_interfaces_preview  # noqa: var-naming[no-role-prefix]
+  changed_when: false
+  no_log: true
+
+- name: Preview L3 interface resources through native XikeOS resource module
+  c1emon.xikeos.xikeos_l3_interfaces:
+    config: "{{ item.config }}"
+    state: "{{ item.state }}"
+  loop: "{{ switch_config_resources.l3_interfaces | default([]) }}"
+  check_mode: true
+  register: switch_config_l3_interfaces_preview  # noqa: var-naming[no-role-prefix]
+  changed_when: false
+  no_log: true
+
+- name: Preview static route resources through native XikeOS resource module
+  c1emon.xikeos.xikeos_static_routes:
+    config: "{{ item.config }}"
+    state: "{{ item.state }}"
+  loop: "{{ switch_config_resources.static_routes | default([]) }}"
+  check_mode: true
+  register: switch_config_static_routes_preview  # noqa: var-naming[no-role-prefix]
+  changed_when: false
+  no_log: true
+
+- name: Preview ACL resources through native XikeOS resource module
+  c1emon.xikeos.xikeos_acls:
+    config: "{{ item.config }}"
+    state: "{{ item.state }}"
+  loop: "{{ switch_config_resources.acls | default([]) }}"
+  check_mode: true
+  register: switch_config_acls_preview  # noqa: var-naming[no-role-prefix]
+  changed_when: false
+  no_log: true
+
+- name: Record collection check-mode preview results  # noqa: var-naming[no-role-prefix]
+  ansible.builtin.set_fact:
+    switch_config_collection_preview:
+      vlans: "{{ switch_config_vlans_preview | default({}) }}"
+      base_interfaces: "{{ switch_config_base_interfaces_preview | default({}) }}"
+      lag_interfaces: "{{ switch_config_lag_interfaces_preview | default({}) }}"
+      l2_interfaces: "{{ switch_config_l2_interfaces_preview | default({}) }}"
+      l3_interfaces: "{{ switch_config_l3_interfaces_preview | default({}) }}"
+      static_routes: "{{ switch_config_static_routes_preview | default({}) }}"
+      acls: "{{ switch_config_acls_preview | default({}) }}"
+  no_log: true
+
+- name: Validate collection check-mode command output safety
+  ansible.builtin.assert:
+    that:
+      - >-
+        switch_config_collection_preview | to_json |
+        regex_search(switch_config_forbidden_command_pattern) is none
+    fail_msg: Native collection check-mode output included a forbidden command.
 
 - name: Report plan-only status
   ansible.builtin.debug:
     msg: >-
-      Planned {{ switch_config_rendered_commands | length }} rendered command(s)
-      for {{ inventory_hostname }}. switch_config_apply={{ switch_config_apply | bool }}.
+      Previewed {{ switch_config_requested_calls | length }} collection-native
+      resource call(s) via native modules for {{ inventory_hostname }}.
+      switch_config_apply={{ switch_config_apply | bool }}.
       No mutating commands are sent unless switch_config_apply is true.

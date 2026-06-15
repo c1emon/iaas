@@ -6,7 +6,7 @@
 
   vars:
     ansible_connection: ansible.netcommon.network_cli
-    ansible_network_os: cisco.ios.ios
+    ansible_network_os: c1emon.xikeos.xikeos
     ansible_user: "{{ lookup('env', 'SWITCH_SSH_USER') }}"
     ansible_password: "{{ lookup('env', 'SWITCH_SSH_PASSWORD') }}"
     ansible_port: "{{ lookup('env', 'SWITCH_SSH_PORT') | default('22', true) }}"
@@ -28,12 +28,9 @@
           Supply SWITCH_SSH_USER and SWITCH_SSH_PASSWORD at runtime before testing
           network_cli.
 
-    - name: Run read-only commands over network_cli
-      ansible.netcommon.cli_command:
-        command: "{{ item }}"
-      loop: "{{ switch_network_cli_smoke_commands }}"
-      loop_control:
-        label: "{{ item }}"
+    - name: Run read-only commands through native XikeOS collection
+      c1emon.xikeos.xikeos_command:
+        commands: "{{ switch_network_cli_smoke_commands }}"
       register: switch_network_cli_smoke_results
       changed_when: false
       no_log: "{{ not (switch_network_cli_smoke_show_output | default(false) | bool) }}"
@@ -41,16 +38,16 @@
     - name: Show network_cli smoke-test result summary
       ansible.builtin.debug:
         msg: >-
-          network_cli SSH command '{{ item.item }}' succeeded for {{ inventory_hostname }};
-          output length: {{ item.stdout | default('') | length }}
-      loop: "{{ switch_network_cli_smoke_results.results }}"
+          native XikeOS command '{{ item.0 }}' succeeded for {{ inventory_hostname }};
+          output length: {{ item.1 | default('') | length }}
+      loop: "{{ switch_network_cli_smoke_commands | zip(switch_network_cli_smoke_results.stdout | default([])) }}"
       loop_control:
-        label: "{{ item.item }}"
+        label: "{{ item.0 }}"
 
     - name: Show network_cli smoke-test command output when enabled
       ansible.builtin.debug:
-        msg: "{{ item.stdout | default('') }}"
-      loop: "{{ switch_network_cli_smoke_results.results }}"
+        msg: "{{ item.1 | default('') }}"
+      loop: "{{ switch_network_cli_smoke_commands | zip(switch_network_cli_smoke_results.stdout | default([])) }}"
       loop_control:
-        label: "{{ item.item }}"
+        label: "{{ item.0 }}"
       when: switch_network_cli_smoke_show_output | default(false) | bool
