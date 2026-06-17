@@ -1,11 +1,11 @@
 ## 0. Spike / Preflight Research
 
-- [ ] 0.1 Research and choose the Debian 13 genericcloud-to-PVE-template implementation route before coding Packer.
-- [ ] 0.2 Research the `bpg/proxmox` and Packer SSH command requirements for `pve-ops` and define a limited `NOPASSWD` sudo allowlist.
-- [ ] 0.3 Confirm first-version Packer plugin and `bpg/proxmox` provider minor-version constraints.
-- [ ] 0.4 Verify the selected `bpg/proxmox` provider supports PVE PCI resource mapping references for `hostpci` as expected.
-- [ ] 0.5 Verify OVMF/EFI disk support on the chosen storage and provider configuration.
-- [ ] 0.6 Resolve the `.gitignore` conflict for committed `infra/tofu/pve/generated.auto.tfvars.json` or change the generated tfvars strategy.
+- [x] 0.1 Research and choose the Debian 13 genericcloud-to-PVE-template implementation route before coding Packer.
+- [x] 0.2 Research the `bpg/proxmox` and Packer SSH command requirements for `pve-ops` and define a limited `NOPASSWD` sudo allowlist.
+- [x] 0.3 Confirm first-version Packer plugin and `bpg/proxmox` provider minor-version constraints.
+- [x] 0.4 Verify the selected `bpg/proxmox` provider supports PVE PCI resource mapping references for `hostpci` as expected.
+- [x] 0.5 Verify OVMF/EFI disk support on the chosen storage and provider configuration.
+- [x] 0.6 Resolve the `.gitignore` conflict for committed `infra/tofu/pve/generated.auto.tfvars.json` or change the generated tfvars strategy.
 
 ## 1. Source-of-Truth Model
 

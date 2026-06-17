@@ -30,6 +30,7 @@ terraform.rc
 *.tfvars.json
 *.auto.tfvars
 *.auto.tfvars.json
+!infra/tofu/pve/generated.auto.tfvars.json
 *.tfoverride
 *.tfplan
 crash.log

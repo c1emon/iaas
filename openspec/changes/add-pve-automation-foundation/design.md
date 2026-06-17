@@ -65,13 +65,13 @@ docs/generated/pve-vms.md
 
 Generated files must not contain passwords, password hashes, private keys, or token secrets. OpenTofu/Packer secret injection should use `op run` with a committed template env file containing 1Password references, not secret values.
 
-Because the repository currently ignores `*.auto.tfvars.json`, the implementation must either add a precise `.gitignore` exception for `infra/tofu/pve/generated.auto.tfvars.json` or change the generated tfvars strategy before generator work is considered complete. If generated files are committed, a local validation target should detect stale generated output after source YAML changes.
+Because the repository ignores `*.auto.tfvars.json`, this change adds a precise `.gitignore` exception for `infra/tofu/pve/generated.auto.tfvars.json` while keeping other local tfvars files ignored. If generated files are committed, a local validation target should detect stale generated output after source YAML changes.
 
 Alternative considered: let OpenTofu read YAML directly with `yamldecode()`. Rejected for the first design because the project also needs generated Ansible inventory and preflight validation across PVE, network, and passthrough data.
 
 ### Build the template before VM provisioning
 
-Packer should produce a Debian 13 cloud-init template before OpenTofu creates VMs. The source image should be Debian 13 `genericcloud`; the implementation must first run a spike to decide the most reliable import/build route and then pin the selected current image URL and checksum. The template should include cloud-init, enabled qemu-guest-agent, serial-console readiness, TUNA Debian apt mirrors, timezone `Asia/Shanghai`, locale `en_US.UTF-8`, baseline packages, and cleanup of unique machine state.
+Packer should produce a Debian 13 cloud-init template before OpenTofu creates VMs. The selected first route is Debian 13 `genericcloud` qcow2 image import/customization rather than installer ISO automation. The implementation must pin the selected current image URL and checksum, customize the image offline where practical, import it into PVE storage, attach cloud-init and EFI disks, set boot order, and convert the VM to a template. The template should include cloud-init, enabled qemu-guest-agent, serial-console readiness, TUNA Debian apt mirrors, timezone `Asia/Shanghai`, locale `en_US.UTF-8`, baseline packages, and cleanup of unique machine state. The ISO installer route remains a fallback only if implementation reveals a need for installer-only behavior such as custom partitioning.
 
 Packer should build on `cohe` by default and fail if that node is unavailable; operators can change the build node manually. Packer cache and downloaded image artifacts should live under `.cache/packer` and stay out of Git. Existing dated templates should be retained for rollback. If a requested template VMID/name already exists, replacement must require an explicit force mode that only allows VMIDs in `9000-9500` and names matching `debian-13-tmpl-*`.
 
@@ -170,7 +170,7 @@ pve-packer-api-token   -> pve-ops@pve!packer
 
 The OpenTofu token should use the broad initial `PVEAutomation` role at `/` and privilege separation enabled (`privsep=1`), then be reduced later after observed required privileges are known. Packer should use a separate `PVETemplateBuilder` role, also refined after the Packer spike identifies actual requirements.
 
-The Linux SSH user `pve-ops` should be provisioned on each PVE node by a bootstrap runbook plus Ansible playbook. Initial bootstrap login is provided at runtime by the operator. `pve-ops` should use SSH key authentication only, no password login, and limited `NOPASSWD` sudo. The sudo command allowlist must be based on the Packer/bpg spike rather than granting broad access by default.
+The Linux SSH user `pve-ops` should be provisioned on each PVE node by a bootstrap runbook plus Ansible playbook. Initial bootstrap login is provided at runtime by the operator. `pve-ops` should use SSH key authentication only, no password login, and limited `NOPASSWD` sudo. The preflight allowlist is limited to PVE template/image operations and supporting image tooling (`qm`, `pvesm`, `qemu-img`, `virt-customize`, `virt-sysprep`, and minimal file-management commands), preferably wrapped behind one audited script path if practical. The implementation should validate the observed command list and reduce it before finalizing the bootstrap runbook.
 
 ### Treat PVE host networks as prerequisites
 
@@ -208,7 +208,7 @@ pci_mappings:
     ha_allowed: false
 ```
 
-OpenTofu should render `hostpci` blocks using `mapping = "iGpu0"`. Passthrough VMs should require fixed node placement and HA disabled in this foundation.
+OpenTofu should render `hostpci` blocks using `mapping = "iGpu0"`, not raw PCI addresses. The selected `bpg/proxmox` provider supports PVE PCI resource mapping references in VM `hostpci` configuration; creating or modifying the cluster resource mapping itself remains a bootstrap/prerequisite concern and is not managed by this foundation. Passthrough VMs should require fixed node placement and HA disabled in this foundation.
 
 The first passthrough schema should support the core fields `device`, `mapping`, `pcie`, `rombar`, and `xvga`. PCIe passthrough VMs must not be automatically migrated; node changes require an explicit human workflow.
 
@@ -240,7 +240,9 @@ VM IDs are manually declared in YAML and validated against the reserved ranges. 
 
 PVE VM tags should combine automatically generated tags such as `managed-by-opentofu`, lifecycle, network, and role with operator-provided inventory tags. PVE pool assignment is optional per VM. PVE VM-level firewall is out of scope.
 
-OVMF requires EFI disk handling. The implementation must verify that the chosen storage and `bpg/proxmox` configuration support EFI disks on the intended datastore before the first template/VM acceptance is complete.
+OVMF requires EFI disk handling. The selected `bpg/proxmox` provider supports explicit `efi_disk` configuration with `bios = "ovmf"`; first-version configuration should use the intended datastore (`memory`) with `type = "4m"` and `raw` format unless online validation shows the storage backend requires a different choice. The implementation must verify that the chosen storage and provider configuration can create EFI disks before the first template/VM acceptance is complete.
+
+The first-version tool constraints are: Packer Proxmox plugin `hashicorp/proxmox` `~> 1.2`, `bpg/proxmox` provider `~> 0.109`, Packer CLI `>= 1.7`, and OpenTofu `>= 1.6`. Provider upgrades beyond these constraints should be deliberate because `bpg/proxmox` is pre-1.0 and can introduce breaking changes between minor versions.
 
 Existing VMs are documentation-only in this foundation and must not be imported or modified.
 
@@ -279,6 +281,6 @@ The first disposable acceptance VM should be an ephemeral dev VM on `cohe`, atta
 
 - What exact least-privilege PVE role should be assigned to `pve-ops@pve!opentofu` after provider behavior is validated?
 - What exact least-privilege PVE role should be assigned to `pve-ops@pve!packer` after Packer spike validation?
-- What exact limited `NOPASSWD` sudo allowlist should `pve-ops` receive after spike validation?
+- What exact entries can be removed from the preflight `pve-ops` `NOPASSWD` sudo allowlist after the online template spike observes actual commands?
 - What default VM domain/search domain should be configured?
 - What is the preferred future remote backend if local state becomes insufficient?
