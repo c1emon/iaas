@@ -9,30 +9,30 @@
 
 ## 1. Source-of-Truth Model
 
-- [ ] 1.1 Define `inventory/pve-cluster.yml` schema for cluster nodes, storage roles, defaults, network assumptions, templates, and PCI resource mappings.
-- [ ] 1.2 Define `inventory/vms.yml` schema for VM resources, lifecycle class, node placement, network, static IP, Ansible groups, HA placeholders, optional pool, tags, and optional passthrough.
-- [ ] 1.3 Add schema validation before generation so invalid YAML can be rejected without producing outputs.
-- [ ] 1.6 Encode reserved VM ID ranges: `9000-9500` for templates, `1000-2000` for long-lived VMs, and `500-800` for ephemeral/lab VMs.
-- [ ] 1.7 Encode default storage roles: `memory` for VM/template disks and `images` for ISO/import/snippets.
-- [ ] 1.8 Encode dev/prod networks: `br_dev` with `10.10.0.0/24` gateway/DNS `10.10.0.254`, and `br_prod` with `10.50.0.0/24` gateway/DNS `10.50.0.254`.
-- [ ] 1.9 Record PVE node `mgmt_ip`, `storage_ip`, and optional `ssh_host` while marking management/storage networks as not attachable for VMs.
-- [ ] 1.10 Encode global VM defaults: `2` cores, `2048` MiB memory, `20` GiB root disk, `host` CPU, `OVMF`, `q35`, full clone, `virtio-scsi-single`, `scsi0`, one primary NIC, and optional pool.
+- [x] 1.1 Define `inventory/pve-cluster.yml` schema for cluster nodes, storage roles, defaults, network assumptions, templates, and PCI resource mappings.
+- [x] 1.2 Define `inventory/vms.yml` schema for VM resources, lifecycle class, node placement, network, static IP, Ansible groups, HA placeholders, optional pool, tags, and optional passthrough.
+- [x] 1.3 Add schema validation before generation so invalid YAML can be rejected without producing outputs.
+- [x] 1.6 Encode reserved VM ID ranges: `9000-9500` for templates, `1000-2000` for long-lived VMs, and `500-800` for ephemeral/lab VMs.
+- [x] 1.7 Encode default storage roles: `memory` for VM/template disks and `images` for ISO/import/snippets.
+- [x] 1.8 Encode dev/prod networks: `br_dev` with `10.10.0.0/24` gateway/DNS `10.10.0.254`, and `br_prod` with `10.50.0.0/24` gateway/DNS `10.50.0.254`.
+- [x] 1.9 Record PVE node `mgmt_ip`, `storage_ip`, and optional `ssh_host` while marking management/storage networks as not attachable for VMs.
+- [x] 1.10 Encode global VM defaults: `2` cores, `2048` MiB memory, `20` GiB root disk, `host` CPU, `OVMF`, `q35`, full clone, `virtio-scsi-single`, `scsi0`, one primary NIC, and optional pool.
 
 ## 2. Generator and Validation Design
 
-- [ ] 2.1 Add a generator that reads source YAML and emits OpenTofu `generated.auto.tfvars.json`.
-- [ ] 2.2 Add Ansible inventory generation from the same VM source data.
-- [ ] 2.2a Add generated documentation output such as `docs/generated/pve-vms.md`.
-- [ ] 2.3 Validate unique VM IDs, hostnames, IP addresses, and VM names.
-- [ ] 2.4 Validate VM IPs against their declared network CIDRs and reject VM attachment to networks that are not `attach_vms: true`.
-- [ ] 2.5 Validate node, template, network, storage, lifecycle, and HA placeholder values.
-- [ ] 2.6 Validate PCI passthrough declarations by requiring the VM node to be present in the selected PCI mapping.
-- [ ] 2.7 Reject HA-enabled VMs and passthrough HA combinations until HA automation is explicitly implemented.
-- [ ] 2.8 Validate VM IDs against their lifecycle/template ranges.
-- [ ] 2.9 Ensure generated files contain no passwords, password hashes, private keys, or token secrets.
-- [ ] 2.10 Implement the generator in Python using `uv` and `passlib` for cloud-init password hash generation.
-- [ ] 2.11 Emit committed non-sensitive outputs at `infra/tofu/pve/generated.auto.tfvars.json`, `ansible/inventories/generated/pve.yml`, and `docs/generated/pve-vms.md`.
-- [ ] 2.12 Add validation that generated files are up to date with source YAML.
+- [x] 2.1 Add a generator that reads source YAML and emits OpenTofu `generated.auto.tfvars.json`.
+- [x] 2.2 Add Ansible inventory generation from the same VM source data.
+- [x] 2.2a Add generated documentation output such as `docs/generated/pve-vms.md`.
+- [x] 2.3 Validate unique VM IDs, hostnames, IP addresses, and VM names.
+- [x] 2.4 Validate VM IPs against their declared network CIDRs and reject VM attachment to networks that are not `attach_vms: true`.
+- [x] 2.5 Validate node, template, network, storage, lifecycle, and HA placeholder values.
+- [x] 2.6 Validate PCI passthrough declarations by requiring the VM node to be present in the selected PCI mapping.
+- [x] 2.7 Reject HA-enabled VMs and passthrough HA combinations until HA automation is explicitly implemented.
+- [x] 2.8 Validate VM IDs against their lifecycle/template ranges.
+- [x] 2.9 Ensure generated files contain no passwords, password hashes, private keys, or token secrets.
+- [x] 2.10 Implement the generator in Python using `uv` and `passlib` for cloud-init password hash generation.
+- [x] 2.11 Emit committed non-sensitive outputs at `infra/tofu/pve/generated.auto.tfvars.json`, `ansible/inventories/generated/pve.yml`, and `docs/generated/pve-vms.md`.
+- [x] 2.12 Add validation that generated files are up to date with source YAML.
 
 ## 3. Packer Debian 13 Template Foundation
 
@@ -63,8 +63,8 @@
 - [ ] 4.9 Use separate dedicated automation identities: API user `pve-ops@pve`, API token `pve-ops@pve!opentofu`, and SSH user `pve-ops` provisioned on PVE nodes.
 - [ ] 4.10 Document that `pve-ops@pve`, its `opentofu` token, and initial role/ACL assignments are manually bootstrapped before OpenTofu runs.
 - [ ] 4.11 Ensure OpenTofu does not manage the PVE API user, the token it uses, or its own initial ACLs in this foundation.
-- [ ] 4.12 Use the `PVEAutomation` role at `/` with token privilege separation enabled for the initial OpenTofu token, then document follow-up least-privilege reduction.
-- [ ] 4.13 Add a `pve-packer-api-token` 1Password item and use `pve-ops@pve!packer` with a separate `PVETemplateBuilder` role for Packer.
+- [ ] 4.12 Use the `AstraAutomation` role at `/` with token privilege separation enabled for the initial OpenTofu token, then document follow-up least-privilege reduction.
+- [ ] 4.13 Add a `pve-packer-api-token` 1Password item and use `pve-ops@pve!packer` with a separate `AstraTemplateBuilder` role for Packer.
 - [ ] 4.14 Use `op run` and a committed env template with `op://Astra/...` references for runtime secret injection.
 - [ ] 4.15 Add OpenTofu module structure under `infra/tofu/modules/pve-cloudinit-vm` and consume it from `infra/tofu/pve`.
 - [ ] 4.16 Add Makefile/OpenTofu helper behavior that backs up local state to `.cache/tofu-state-backups/` before and/or after apply-like operations.
@@ -74,7 +74,7 @@
 - [ ] 4B.1 Add a runbook for creating the PVE realm user `pve-ops@pve`.
 - [ ] 4B.2 Add a runbook step for creating the API token `pve-ops@pve!opentofu`.
 - [ ] 4B.3 Add a runbook step for creating the API token `pve-ops@pve!packer`.
-- [ ] 4B.4 Add a runbook step for assigning the initial `PVEAutomation` and `PVETemplateBuilder` roles/ACLs.
+- [ ] 4B.4 Add a runbook step for assigning the initial `AstraAutomation` and `AstraTemplateBuilder` roles/ACLs.
 - [ ] 4B.5 Add a runbook step for storing `username`, `token_id`, `token_secret`, `api_token`, and `endpoint` in `Astra/pve-opentofu-api-token` and `Astra/pve-packer-api-token`.
 - [ ] 4B.6 Add a note that a future change may automate bootstrap with Ansible or scripts, but not with the OpenTofu configuration that consumes the token.
 

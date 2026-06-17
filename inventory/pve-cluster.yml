@@ -1,0 +1,113 @@
+---
+# Cluster-owned source of truth for shared defaults and placement rules.
+# Edit these values when the PVE cluster topology or VM policy changes.
+schema_version: 1
+
+# Cluster identity and the default VM/template reference used by generators.
+cluster:
+  name: astra-pve
+  default_template: debian_13_genericcloud
+
+# Reserved VMID bands enforced by validation.
+reserved_vm_id_ranges:
+  templates: [9000, 9500]
+  long_lived: [1000, 2000]
+  ephemeral_lab: [500, 800]
+
+# Datastore roles are symbolic; generators map them to PVE storage names.
+storage_roles:
+  memory:
+    datastore: memory
+    purpose: vm_template_disks
+    content: [disk]
+  images:
+    datastore: images
+    purpose: iso_import_snippets
+    content: [iso, import, snippets]
+
+# Non-attachable infrastructure networks stay here for validation only.
+networks:
+  mgmt:
+    bridge: vmbr0
+    cidr: 10.1.0.0/24
+    gateway: 10.1.0.254
+    dns: 10.1.0.254
+    attach_vms: false
+  storage:
+    bridge: storage
+    cidr: 10.1.1.0/24
+    gateway: null
+    dns: null
+    attach_vms: false
+  dev:
+    bridge: br_dev
+    cidr: 10.10.0.0/24
+    gateway: 10.10.0.254
+    dns: 10.10.0.254
+    attach_vms: true
+  prod:
+    bridge: br_prod
+    cidr: 10.50.0.0/24
+    gateway: 10.50.0.254
+    dns: 10.50.0.254
+    attach_vms: true
+
+# Node-level addresses and SSH host aliases used by later automation.
+nodes:
+  cohe:
+    mgmt_ip: 10.1.0.72
+    storage_ip: 10.1.1.72
+    ssh_host: cohe
+  # Placeholder node kept for the cluster PCI mapping schema used later.
+  node3:
+    mgmt_ip: 10.1.0.73
+    storage_ip: 10.1.1.73
+    ssh_host: node3
+
+# Global VM defaults applied unless a VM overrides them later.
+vm_defaults:
+  cores: 2
+  memory_mib: 2048
+  root_disk_gib: 20
+  cpu_type: host
+  bios: ovmf
+  machine: q35
+  clone_mode: full
+  scsi_controller: virtio-scsi-single
+  primary_disk: scsi0
+  primary_nics: 1
+  pool: null
+
+# Template records are cluster-owned and VMID-restricted to the template range.
+templates:
+  debian_13_genericcloud:
+    vmid: 9001
+    name: debian-13-tmpl-20260616
+    node: cohe
+    storage_role: memory
+    source_storage_role: images
+    disk_size_gib: 20
+    cpu_type: host
+    bios: ovmf
+    machine: q35
+    clone_mode: full
+    scsi_controller: virtio-scsi-single
+    primary_disk: scsi0
+    primary_nics: 1
+
+# PCI mapping declarations are referenced by VM passthrough entries.
+pci_mappings:
+  iGpu0:
+    type: igpu
+    ha_allowed: false
+    defaults:
+      pcie: true
+      rombar: true
+      xvga: false
+    nodes:
+      cohe:
+        path: "0000:00:02.1"
+        iommu_group: 15
+      node3:
+        path: "0000:00:02.1"
+        iommu_group: 13

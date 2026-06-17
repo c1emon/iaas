@@ -1,0 +1,80 @@
+all:
+  children:
+    pve_vms:
+      hosts:
+        dev-web-01:
+          ansible_connection: ssh
+          ansible_host: 10.10.0.20
+          ansible_user: ops
+          ansible_become: true
+          ansible_become_method: sudo
+          ansible_python_interpreter: '{{ ansible_playbook_python }}'
+          pve_vmid: 500
+          pve_node: cohe
+          pve_network: dev
+          pve_bridge: br_dev
+          pve_gateway: 10.10.0.254
+          pve_dns:
+          - 10.10.0.254
+          pve_tags:
+          - dev
+          - web
+          pve_pool: null
+          pve_template: debian_13_genericcloud
+        prod-app-01:
+          ansible_connection: ssh
+          ansible_host: 10.50.0.20
+          ansible_user: ops
+          ansible_become: true
+          ansible_become_method: sudo
+          ansible_python_interpreter: '{{ ansible_playbook_python }}'
+          pve_vmid: 1000
+          pve_node: cohe
+          pve_network: prod
+          pve_bridge: br_prod
+          pve_gateway: 10.50.0.254
+          pve_dns:
+          - 10.50.0.254
+          pve_tags:
+          - prod
+          - app
+          pve_pool: null
+          pve_template: debian_13_genericcloud
+        media-lab-01:
+          ansible_connection: ssh
+          ansible_host: 10.10.0.21
+          ansible_user: ops
+          ansible_become: true
+          ansible_become_method: sudo
+          ansible_python_interpreter: '{{ ansible_playbook_python }}'
+          pve_vmid: 501
+          pve_node: cohe
+          pve_network: dev
+          pve_bridge: br_dev
+          pve_gateway: 10.10.0.254
+          pve_dns:
+          - 10.10.0.254
+          pve_tags:
+          - lab
+          - media
+          - igpu
+          pve_pool: null
+          pve_template: debian_13_genericcloud
+    dev:
+      hosts:
+        dev-web-01: {}
+    web:
+      hosts:
+        dev-web-01: {}
+    prod:
+      hosts:
+        prod-app-01: {}
+    app:
+      hosts:
+        prod-app-01: {}
+    lab:
+      hosts:
+        media-lab-01: {}
+    media:
+      hosts:
+        media-lab-01: {}

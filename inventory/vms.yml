@@ -1,0 +1,63 @@
+---
+# VM source of truth. Add one list item per VM and keep IDs/IPs unique.
+schema_version: 1
+
+vms:
+  # Ephemeral lab VM on br_dev using the default template.
+  - name: dev-web-01
+    vmid: 500
+    lifecycle_class: ephemeral_lab
+    node: cohe
+    network: dev
+    static_ip: 10.10.0.20/24
+    gateway: 10.10.0.254
+    dns: [10.10.0.254]
+    ansible_groups: [dev, web]
+    tags: [dev, web]
+    pool: null
+    ha:
+      enabled: false
+      group: null
+      state: null
+    passthrough: null
+
+  # Long-lived production VM on br_prod.
+  - name: prod-app-01
+    vmid: 1000
+    lifecycle_class: long_lived
+    node: cohe
+    network: prod
+    static_ip: 10.50.0.20/24
+    gateway: 10.50.0.254
+    dns: [10.50.0.254]
+    ansible_groups: [prod, app]
+    tags: [prod, app]
+    pool: null
+    ha:
+      enabled: false
+      group: null
+      state: null
+    passthrough: null
+
+  # Example passthrough VM; mapping must exist in pve-cluster.yml.
+  - name: media-lab-01
+    vmid: 501
+    lifecycle_class: ephemeral_lab
+    node: cohe
+    network: dev
+    static_ip: 10.10.0.21/24
+    gateway: 10.10.0.254
+    dns: [10.10.0.254]
+    ansible_groups: [lab, media]
+    tags: [lab, media, igpu]
+    pool: null
+    ha:
+      enabled: false
+      group: null
+      state: null
+    passthrough:
+      - device: hostpci0
+        mapping: iGpu0
+        pcie: true
+        rombar: true
+        xvga: false

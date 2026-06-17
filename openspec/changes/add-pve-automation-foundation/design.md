@@ -168,7 +168,7 @@ pve-opentofu-api-token -> pve-ops@pve!opentofu
 pve-packer-api-token   -> pve-ops@pve!packer
 ```
 
-The OpenTofu token should use the broad initial `PVEAutomation` role at `/` and privilege separation enabled (`privsep=1`), then be reduced later after observed required privileges are known. Packer should use a separate `PVETemplateBuilder` role, also refined after the Packer spike identifies actual requirements.
+The OpenTofu token should use the broad initial `AstraAutomation` role at `/` and privilege separation enabled (`privsep=1`), then be reduced later after observed required privileges are known. Packer should use a separate `AstraTemplateBuilder` role, also refined after the Packer spike identifies actual requirements.
 
 The Linux SSH user `pve-ops` should be provisioned on each PVE node by a bootstrap runbook plus Ansible playbook. Initial bootstrap login is provided at runtime by the operator. `pve-ops` should use SSH key authentication only, no password login, and limited `NOPASSWD` sudo. The preflight allowlist is limited to PVE template/image operations and supporting image tooling (`qm`, `pvesm`, `qemu-img`, `virt-customize`, `virt-sysprep`, and minimal file-management commands), preferably wrapped behind one audited script path if practical. The implementation should validate the observed command list and reduce it before finalizing the bootstrap runbook.
 
