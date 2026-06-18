@@ -36,19 +36,20 @@
 
 ## 3. Packer Debian 13 Template Foundation
 
-- [ ] 3.1 Decide whether the first Debian 13 template build uses installer ISO automation or Debian genericcloud image import.
-- [ ] 3.2 Define Packer variables for PVE endpoint, node, ISO/import storage `images`, VM disk storage `memory`, VM ID, template name, and credentials.
-- [ ] 3.3 Install and enable cloud-init and qemu-guest-agent in the template.
-- [ ] 3.4 Configure serial-console-compatible display behavior for cloud images.
-- [ ] 3.5 Clean machine identity, SSH host keys, cloud-init state, package cache, and temporary files before templating.
-- [ ] 3.6 Document template rebuild and versioning runbook.
-- [ ] 3.7 Pin the selected current Debian 13 genericcloud image URL and checksum at implementation time.
-- [ ] 3.8 Use `cohe` as the default Packer build node and `debian-13-tmpl-{date}` as the template naming convention.
-- [ ] 3.9 Configure TUNA Debian apt mirrors, timezone `Asia/Shanghai`, and locale `en_US.UTF-8` in the template.
-- [ ] 3.10 Store Packer cache/download artifacts under `.cache/packer` and keep them out of Git.
-- [ ] 3.11 Retain old dated templates by default and require explicit force for replacement.
-- [ ] 3.12 Restrict template force replacement to VMIDs `9000-9500` and names matching `debian-13-tmpl-*`.
-- [ ] 3.13 Keep Packer-created templates owned by Packer; OpenTofu may reference but not manage template lifecycle.
+- [x] 3.1 Decide whether the first Debian 13 template build uses installer ISO automation or Debian genericcloud image import.
+- [x] 3.2 Define Packer variables for PVE endpoint, node, ISO/import storage `images`, VM disk storage `memory`, VM ID, template name, and credentials.
+- [x] 3.3 Install and enable cloud-init and qemu-guest-agent in the template.
+- [x] 3.4 Configure serial-console-compatible display behavior for cloud images.
+- [x] 3.5 Clean machine identity, SSH host keys, cloud-init state, package cache, and temporary files before templating.
+- [x] 3.6 Document template rebuild and versioning runbook.
+- [x] 3.7 Pin the selected current Debian 13 genericcloud image URL and checksum at implementation time.
+- [x] 3.8 Use `cohe` as the default Packer build node and `debian-13-tmpl-{date}` as the template naming convention.
+- [x] 3.9 Configure TUNA Debian apt mirrors, timezone `Asia/Shanghai`, and locale `en_US.UTF-8` in the template.
+- [x] 3.10 Store Packer cache/download artifacts under `.cache/packer` and keep them out of Git.
+- [x] 3.11 Retain old dated templates by default and require explicit force for replacement.
+- [x] 3.12 Restrict template force replacement to VMIDs `9000-9500` and names matching `debian-13-tmpl-*`.
+- [x] 3.13 Keep Packer-created templates owned by Packer; OpenTofu may reference but not manage template lifecycle.
+- [x] 3.14 Execute an end-to-end Debian 13 template build on cohe and validate the resulting template.
 
 ## 4. OpenTofu PVE VM Lifecycle
 

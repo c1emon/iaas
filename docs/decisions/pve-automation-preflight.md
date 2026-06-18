@@ -78,7 +78,7 @@ Notes:
 - Creating or modifying PVE PCI hardware mappings is not included in these roles; mapping bootstrap may require an administrator/root workflow.
 - If provider behavior shows missing privileges, add the smallest additional permission and document why. If validation shows unused privileges, remove them.
 
-For the first cloud-image import/template build, the expected `pve-ops` host sudo allowlist is limited to PVE image/template commands and supporting image tooling, not `NOPASSWD: ALL`:
+For the first cloud-image import/template build, the expected `pve-ops` host sudo allowlist was a preflight/bootstrap allowance limited to PVE image/template commands and supporting image tooling, not `NOPASSWD: ALL`:
 
 ```text
 /usr/sbin/qm
@@ -96,10 +96,13 @@ For the first cloud-image import/template build, the expected `pve-ops` host sud
 Implementation guidance:
 
 - Prefer wrapping these in one audited script path if practical, then allowlist that script instead of many binaries.
+- In the final Section 3 wrapper state, reduce `pve-ops` to wrapper-only sudo for template builds.
 - Keep Packer guest provisioning sudo separate from PVE host sudo. Guest sudo applies inside temporary/template VMs; `pve-ops` host sudo applies on PVE nodes.
 - Validate the final command list during the online template spike and remove entries that are not used.
 
 Bootstrap validation on `cohe` confirmed that `pve-ops` can log in with the 1Password-managed SSH key and run `sudo -l`, `sudo pvesm status`, and `sudo qm list` without a password. `pvesm status` sees active `images`, `local`, and `memory` storage; this validates the initial SSH/sudo path for the default Packer build node.
+
+Section 3 live validation on `cohe` built `debian-13-tmpl-20260618` as VMID `9001` from the pinned Debian 13 genericcloud image. The successful template config includes `template: 1`, `bios: ovmf`, `machine: q35`, EFI and root disks on `memory`, cloud-init media on `images`, `serial0: socket`, `vga: serial0`, and `agent: enabled=1`. The live run also confirmed that Debian 13 apt sources must be rewritten as deb822 before package installation and that this PVE `virt-sysprep` version does not support a `cloud-init` operation, so cloud-init cleanup is handled with `cloud-init clean --logs` during customization.
 
 References:
 
@@ -182,3 +185,14 @@ Avoid duplicate `username` or `password` fields outside the `pam` section in the
 - Run an online OVMF EFI disk create/plan/apply test on the chosen storage.
 - Run a separate passthrough test after the first non-passthrough disposable VM succeeds.
 - Re-check `bpg/proxmox` release notes before upgrading beyond `~> 0.109`.
+
+## Future direction: CI runner image build split
+
+Do not introduce a CI runner in the initial PVE automation foundation. If template builds become frequent or need stronger auditability, prefer a dedicated management runner VM/container rather than installing a runner directly on a PVE hypervisor host.
+
+The preferred future split is:
+
+1. A dedicated runner downloads the pinned Debian cloud image, verifies the checksum, runs image customization and sysprep, and produces a finalized qcow2 artifact.
+2. The PVE node remains responsible only for host-local registration steps through the audited wrapper: receive or download the artifact, run `qm create`, `qm importdisk`, `qm set`, and `qm template`.
+
+This keeps CI execution off the hypervisor while still minimizing PVE host operations. The runner should not receive direct `qm` access; it should upload or expose the qcow2 artifact and invoke the wrapper through the existing `pve-ops` SSH/sudo boundary.
