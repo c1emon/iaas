@@ -223,6 +223,19 @@ The system SHALL use separate dedicated identities for PVE API automation and PV
 - **AND** SSH authentication SHALL use the key managed by the `pve-ssh-automation-user` 1Password item
 - **AND** the SSH identity SHALL use limited `NOPASSWD` sudo based on spike results rather than broad `NOPASSWD: ALL`
 
+#### Scenario: Deploy the audited PVE host wrapper
+- **WHEN** the PVE node bootstrap playbook runs
+- **THEN** it SHALL copy `infra/pve-node/bin/astra-pve-template-build` to `/usr/local/sbin/astra-pve-template-build`
+- **AND** the installed wrapper SHALL be owned by `root:root` with mode `0750`
+- **AND** the bootstrap SHALL validate the installed wrapper and sudoers file without mutating system state
+- **AND** the default sudoers policy SHALL be wrapper-only for `pve-ops`
+- **AND** a variable override MAY temporarily allow a broader preflight sudo allowlist
+
+#### Scenario: Keep global PVE SSHD policy out of scope
+- **WHEN** the PVE node bootstrap extension is implemented
+- **THEN** it SHALL NOT modify global PVE node SSHD policy such as password authentication or daemon configuration
+- **AND** SSH policy hardening SHALL remain a manual prerequisite handled separately
+
 #### Scenario: Avoid root and personal automation identities
 - **WHEN** OpenTofu, Packer, or provider SSH access authenticates to PVE
 - **THEN** it SHALL use dedicated `pve-ops@pve` API or `pve-ops` SSH automation identities by default

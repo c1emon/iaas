@@ -196,3 +196,35 @@ The preferred future split is:
 2. The PVE node remains responsible only for host-local registration steps through the audited wrapper: receive or download the artifact, run `qm create`, `qm importdisk`, `qm set`, and `qm template`.
 
 This keeps CI execution off the hypervisor while still minimizing PVE host operations. The runner should not receive direct `qm` access; it should upload or expose the qcow2 artifact and invoke the wrapper through the existing `pve-ops` SSH/sudo boundary.
+
+## Operator runbook: PVE identity bootstrap
+
+Before OpenTofu runs, operators bootstrap the PVE realm identity and store the resulting token material in 1Password.
+
+1. Create the realm user without a password:
+
+   ```bash
+   pveum user add pve-ops@pve --comment "Automation API user for Packer and OpenTofu"
+   ```
+
+2. Create the privilege-separated API tokens:
+
+   ```bash
+   pveum user token add pve-ops@pve opentofu --comment "OpenTofu automation token" --privsep 1
+   pveum user token add pve-ops@pve packer --comment "Packer automation token" --privsep 1
+   ```
+
+3. Assign the initial roles to the tokens, not just to the parent user:
+
+   ```bash
+   pveum role add AstraAutomation --privs "Datastore.AllocateSpace,Datastore.Audit,Mapping.Use,Sys.Audit,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.CPU,VM.Config.Cloudinit,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Console,VM.GuestAgent.Audit,VM.PowerMgmt"
+   pveum role add AstraTemplateBuilder --privs "Datastore.AllocateSpace,Datastore.AllocateTemplate,Datastore.Audit,Sys.Audit,Sys.Modify,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.CPU,VM.Config.Cloudinit,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Console,VM.GuestAgent.Audit,VM.PowerMgmt"
+   pveum aclmod / --tokens 'pve-ops@pve!opentofu' --roles AstraAutomation
+   pveum aclmod / --tokens 'pve-ops@pve!packer' --roles AstraTemplateBuilder
+   ```
+
+4. Store the API token fields in the `Astra` vault items `pve-opentofu-api-token` and `pve-packer-api-token` using these field names: `username`, `token_id`, `token_secret`, `api_token`, and `endpoint`.
+
+5. Keep the bootstrap root of trust outside OpenTofu: the OpenTofu configuration that consumes `pve-ops@pve!opentofu` must not manage `pve-ops@pve`, its tokens, or the initial ACLs in this foundation.
+
+Future automation for this bootstrap may be added separately under an existing administrator identity, but it must not be the OpenTofu stack that depends on the token being created.

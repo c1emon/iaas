@@ -163,6 +163,39 @@ The role rejects legacy `switch_config_intent`, raw command lists, unknown
 resource groups, missing `state`/`config`, and states outside
 `switch_config_allowed_states`.
 
+## PVE node bootstrap
+
+Bootstrap the `pve-ops` Linux account on PVE nodes with a runtime-supplied
+existing administrator login. The playbook expects the SSH public key from the
+`pve-ssh-automation-user` 1Password item and installs a limited sudoers entry
+that is intended to end at the wrapper-only state.
+
+Example run against a node alias:
+
+```bash
+PVE_SSH_AUTOMATION_PUBLIC_KEY="$(op read op://Astra/pve-ssh-automation-user/public_key)" \
+uv run ansible-playbook -i 'cohe,' -u <existing-admin-login> --become \
+  playbooks/pve/bootstrap-pve-ops.yml \
+  -e pve_bootstrap_authorized_key="$PVE_SSH_AUTOMATION_PUBLIC_KEY"
+```
+
+If the operator needs a temporary preflight sudo allowlist beyond the wrapper,
+override `pve_bootstrap_sudo_commands` explicitly and reduce it back to the
+wrapper-only final state after validation.
+
+The playbook creates `pve-ops`, locks its password, installs the SSH key, and
+writes a `NOPASSWD` sudoers fragment validated with `visudo`.
+
+Optional smoke checks on a live node, if the operator chooses to run them later:
+
+```bash
+ssh <existing-admin-login>@cohe 'sudo -n visudo -cf /etc/sudoers.d/astra-pve-template-build'
+ssh pve-ops@cohe 'sudo -n /usr/local/sbin/astra-pve-template-build --help'
+```
+
+These checks are documentation-only here; they are not required for repository
+validation and do not change the global node SSHD policy.
+
 ## Validation commands
 
 Run these before committing Ansible workflow changes:

@@ -1,0 +1,96 @@
+---
+- name: Bootstrap the pve-ops account on PVE nodes
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    pve_bootstrap_user: pve-ops
+    pve_bootstrap_authorized_key: ""
+    pve_bootstrap_sudo_commands:
+      - /usr/local/sbin/astra-pve-template-build
+    pve_bootstrap_wrapper_src: "{{ playbook_dir }}/../../../infra/pve-node/bin/astra-pve-template-build"
+    pve_bootstrap_wrapper_dest: /usr/local/sbin/astra-pve-template-build
+
+  tasks:
+    - name: Validate bootstrap inputs
+      ansible.builtin.assert:
+        that:
+          - pve_bootstrap_authorized_key | trim | length > 0
+          - pve_bootstrap_sudo_commands | length > 0
+        fail_msg: "Set pve_bootstrap_authorized_key and keep at least one sudo command"
+
+    - name: Create the pve-ops user
+      ansible.builtin.user:
+        name: "{{ pve_bootstrap_user }}"
+        comment: PVE automation SSH user
+        shell: /bin/bash
+        create_home: true
+        password_lock: true
+        state: present
+
+    - name: Ensure the pve-ops SSH directory exists
+      ansible.builtin.file:
+        path: "/home/{{ pve_bootstrap_user }}/.ssh"
+        state: directory
+        owner: "{{ pve_bootstrap_user }}"
+        group: "{{ pve_bootstrap_user }}"
+        mode: "0700"
+
+    - name: Install the pve-ssh-automation-user public key
+      ansible.builtin.copy:
+        dest: "/home/{{ pve_bootstrap_user }}/.ssh/authorized_keys"
+        content: "{{ pve_bootstrap_authorized_key | trim }}\n"
+        owner: "{{ pve_bootstrap_user }}"
+        group: "{{ pve_bootstrap_user }}"
+        mode: "0600"
+
+    - name: Install the limited NOPASSWD sudoers rule
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/astra-pve-template-build
+        content: |
+          # Managed by ansible/playbooks/pve/bootstrap-pve-ops.yml
+          # Keep this list limited; wrapper-only is the preferred final state.
+          {{ pve_bootstrap_user }} ALL=(root) NOPASSWD: {{ pve_bootstrap_sudo_commands | join(', ') }}
+        owner: root
+        group: root
+        mode: "0440"
+        validate: /usr/sbin/visudo -cf %s
+
+    - name: Deploy the audited template build wrapper
+      ansible.builtin.copy:
+        src: "{{ pve_bootstrap_wrapper_src }}"
+        dest: "{{ pve_bootstrap_wrapper_dest }}"
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Verify wrapper file is installed
+      ansible.builtin.stat:
+        path: "{{ pve_bootstrap_wrapper_dest }}"
+      register: pve_bootstrap_wrapper_stat
+
+    - name: Validate wrapper ownership and permissions
+      ansible.builtin.assert:
+        that:
+          - pve_bootstrap_wrapper_stat.stat.exists
+          - pve_bootstrap_wrapper_stat.stat.isreg
+          - pve_bootstrap_wrapper_stat.stat.pw_name == 'root'
+          - pve_bootstrap_wrapper_stat.stat.gr_name == 'root'
+          - pve_bootstrap_wrapper_stat.stat.mode == '0750'
+        fail_msg: "Wrapper is missing or has the wrong ownership/mode"
+
+    - name: Validate sudoers syntax non-mutating
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/visudo
+          - -cf
+          - /etc/sudoers.d/astra-pve-template-build
+      register: pve_bootstrap_sudoers_check
+      changed_when: false
+
+    - name: Assert sudoers validation succeeded
+      ansible.builtin.assert:
+        that:
+          - pve_bootstrap_sudoers_check.rc == 0
+        fail_msg: "sudoers validation failed"

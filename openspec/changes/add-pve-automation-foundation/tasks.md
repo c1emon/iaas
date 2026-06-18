@@ -72,19 +72,22 @@
 
 ## 4B. PVE Identity Bootstrap Runbook
 
-- [ ] 4B.1 Add a runbook for creating the PVE realm user `pve-ops@pve`.
-- [ ] 4B.2 Add a runbook step for creating the API token `pve-ops@pve!opentofu`.
-- [ ] 4B.3 Add a runbook step for creating the API token `pve-ops@pve!packer`.
-- [ ] 4B.4 Add a runbook step for assigning the initial `AstraAutomation` and `AstraTemplateBuilder` roles/ACLs.
-- [ ] 4B.5 Add a runbook step for storing `username`, `token_id`, `token_secret`, `api_token`, and `endpoint` in `Astra/pve-opentofu-api-token` and `Astra/pve-packer-api-token`.
-- [ ] 4B.6 Add a note that a future change may automate bootstrap with Ansible or scripts, but not with the OpenTofu configuration that consumes the token.
+- [x] 4B.1 Add a runbook for creating the PVE realm user `pve-ops@pve`.
+- [x] 4B.2 Add a runbook step for creating the API token `pve-ops@pve!opentofu`.
+- [x] 4B.3 Add a runbook step for creating the API token `pve-ops@pve!packer`.
+- [x] 4B.4 Add a runbook step for assigning the initial `AstraAutomation` and `AstraTemplateBuilder` roles/ACLs.
+- [x] 4B.5 Add a runbook step for storing `username`, `token_id`, `token_secret`, `api_token`, and `endpoint` in `Astra/pve-opentofu-api-token` and `Astra/pve-packer-api-token`.
+- [x] 4B.6 Add a note that a future change may automate bootstrap with Ansible or scripts, but not with the OpenTofu configuration that consumes the token.
 
 ## 4C. PVE Node SSH Bootstrap
 
-- [ ] 4C.1 Add a PVE node bootstrap playbook/runbook that creates `pve-ops` on each PVE node using a runtime-specified existing administrator login.
-- [ ] 4C.2 Configure `pve-ops` for SSH key authentication only, with no password login.
-- [ ] 4C.3 Install the `pve-ssh-automation-user` public key for `pve-ops` on each node.
-- [ ] 4C.4 Configure limited `NOPASSWD` sudoers for `pve-ops` based on spike results, not `NOPASSWD: ALL`.
+- [x] 4C.1 Add a PVE node bootstrap playbook/runbook that creates `pve-ops` on each PVE node using a runtime-specified existing administrator login.
+- [x] 4C.2 Configure `pve-ops` for SSH key authentication only, with no password login.
+- [x] 4C.3 Install the `pve-ssh-automation-user` public key for `pve-ops` on each node.
+- [x] 4C.4 Configure limited `NOPASSWD` sudoers for `pve-ops` based on spike results, not `NOPASSWD: ALL`.
+- [x] 4C.5 Deploy `infra/pve-node/bin/astra-pve-template-build` to `/usr/local/sbin/astra-pve-template-build` as `root:root` with mode `0750`.
+- [x] 4C.6 Add non-mutating post-bootstrap checks for wrapper presence and sudoers validation, with wrapper-only sudo as the default and a temporary override for preflight.
+- [x] 4C.7 Document that this extension does not manage global PVE node SSHD policy.
 
 ## 4A. Guest User and Secret Model
 
