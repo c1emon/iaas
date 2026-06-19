@@ -4,11 +4,8 @@ ROOT ?= $(abspath ../../../)
 STATE_FILE ?= terraform.tfstate
 BACKUP_DIR ?= $(ROOT)/.cache/tofu-state-backups
 USER_DATA_DIR ?= $(ROOT)/.cache/pve-cloud-init/user-data
-STORAGE_ID ?= images
-PVE_HOST ?= cohe
-PVE_SSH_USER ?= pve-ops
 
-.PHONY: backup-state init fmt validate render-user-data upload-user-data verify-user-data plan apply destroy
+.PHONY: backup-state init fmt validate require-storage-id require-pve-target render-user-data upload-user-data verify-user-data plan apply destroy
 
 backup-state:
 	@mkdir -p "$(BACKUP_DIR)"
@@ -23,13 +20,20 @@ fmt:
 validate: init
 	$(TOFU) validate
 
-render-user-data:
+require-storage-id:
+	@test -n "$(STORAGE_ID)" || { printf 'error: STORAGE_ID is required\n' >&2; exit 1; }
+
+require-pve-target: require-storage-id
+	@test -n "$(PVE_HOST)" || { printf 'error: PVE_HOST is required\n' >&2; exit 1; }
+	@test -n "$(PVE_SSH_USER)" || { printf 'error: PVE_SSH_USER is required\n' >&2; exit 1; }
+
+render-user-data: require-storage-id
 	$(UV) run --directory "$(ROOT)" python -m scripts.pve_inventory.cloud_init render --output-dir "$(USER_DATA_DIR)" --storage-id "$(STORAGE_ID)"
 
-upload-user-data: render-user-data
+upload-user-data: require-pve-target render-user-data
 	$(UV) run --directory "$(ROOT)" python -m scripts.pve_inventory.cloud_init upload --output-dir "$(USER_DATA_DIR)" --storage-id "$(STORAGE_ID)" --pve-host "$(PVE_HOST)" --ssh-user "$(PVE_SSH_USER)"
 
-verify-user-data: render-user-data
+verify-user-data: require-pve-target render-user-data
 	$(UV) run --directory "$(ROOT)" python -m scripts.pve_inventory.cloud_init verify --output-dir "$(USER_DATA_DIR)" --storage-id "$(STORAGE_ID)" --pve-host "$(PVE_HOST)" --ssh-user "$(PVE_SSH_USER)"
 
 plan: render-user-data

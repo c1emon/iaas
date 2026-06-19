@@ -33,11 +33,14 @@ This directory is the root module for Section 4 of `add-pve-automation-foundatio
 ```bash
 op run --env-file .env.pve-opentofu.tpl -- tofu init -backend=false
 op run --env-file .env.pve-opentofu.tpl -- tofu validate
-op run --env-file .env.pve-opentofu.tpl -- make plan
+op run --env-file .env.pve-opentofu.tpl -- make plan STORAGE_ID=images
+op run --env-file .env.pve-opentofu.tpl -- make apply STORAGE_ID=images PVE_HOST=cohe PVE_SSH_USER=pve-ops
 ```
 
 `make plan` renders local cloud-init snippets only. `make apply` uploads and
-verifies snippets before applying Terraform changes.
+verifies snippets before applying Terraform changes. `STORAGE_ID`, `PVE_HOST`,
+and `PVE_SSH_USER` are intentionally explicit inputs; the Makefile does not
+provide environment-specific defaults for them.
 
 The provider uses `bpg/proxmox` `~> 0.109.0` with `ssh { agent = true username = "pve-ops" }` and token-based API auth.
 
@@ -61,7 +64,7 @@ uploads them into isolated NFS-backed `images` snippets storage, and references 
 - File ID: `images:snippets/opentofu-vm-<vmid>-user-data.yml`
 - Retention: snippets stay in storage for the VM lifetime; do not delete them immediately after upload.
 
-Use `op run --env-file .env.pve-opentofu.tpl -- make render-user-data` to create local snippets. `make plan` stays local. `make apply` runs `upload-user-data` and `verify-user-data` before the Terraform apply.
+Use `op run --env-file .env.pve-opentofu.tpl -- make render-user-data STORAGE_ID=images` to create local snippets. `make plan` stays local. `make apply` runs `upload-user-data` and `verify-user-data` before the Terraform apply.
 
 Required runtime env vars from `op run`:
 
@@ -72,7 +75,7 @@ Required runtime env vars from `op run`:
 
 The runtime helper hashes passwords locally, writes only ignored cache files, and never logs plaintext secrets or password hashes.
 
-Snippet upload and verify use the audited host-side wrapper `/usr/local/sbin/astra-pve-snippet-upload`; it does not rely on broad `sudo install` privileges. The wrapper installs files `0600` on non-NFS snippet storage and `0644` on NFS-backed storage to remain readable when root-squash or server-side ownership mapping is in effect. This is an intentional tradeoff for the isolated `images` NFS storage; do not use this mode on broadly shared or untrusted storage. Keep `STORAGE_ID` aligned with `local.snippets_datastore`; the default is `images`.
+Snippet upload and verify use the audited host-side wrapper `/usr/local/sbin/astra-pve-snippet-upload`; it does not rely on broad `sudo install` privileges. The wrapper installs files `0600` on non-NFS snippet storage and `0644` on NFS-backed storage to remain readable when root-squash or server-side ownership mapping is in effect. This is an intentional tradeoff for the isolated `images` NFS storage; do not use this mode on broadly shared or untrusted storage. Keep `STORAGE_ID` aligned with `local.snippets_datastore`.
 
 ## Live-test notes
 

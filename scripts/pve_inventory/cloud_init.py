@@ -46,21 +46,21 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     render = subparsers.add_parser("render", help="Render local cloud-init snippets")
     render.add_argument("--tfvars", type=Path, default=DEFAULT_TFVARS, help="Path to generated.auto.tfvars.json")
     render.add_argument("--output-dir", type=Path, default=DEFAULT_USER_DATA_DIR, help="Directory for rendered snippets")
-    render.add_argument("--storage-id", default="images", help="PVE snippets storage id")
+    render.add_argument("--storage-id", required=True, help="PVE snippets storage id")
 
     upload = subparsers.add_parser("upload", help="Render and upload cloud-init snippets")
     upload.add_argument("--tfvars", type=Path, default=DEFAULT_TFVARS, help="Path to generated.auto.tfvars.json")
     upload.add_argument("--output-dir", type=Path, default=DEFAULT_USER_DATA_DIR, help="Directory for rendered snippets")
-    upload.add_argument("--storage-id", default="images", help="PVE snippets storage id")
+    upload.add_argument("--storage-id", required=True, help="PVE snippets storage id")
     upload.add_argument("--pve-host", required=True, help="Target PVE node hostname or alias")
-    upload.add_argument("--ssh-user", default="pve-ops", help="SSH user for snippet upload")
+    upload.add_argument("--ssh-user", required=True, help="SSH user for snippet upload")
 
     verify = subparsers.add_parser("verify", help="Render and verify cloud-init snippets")
     verify.add_argument("--tfvars", type=Path, default=DEFAULT_TFVARS, help="Path to generated.auto.tfvars.json")
     verify.add_argument("--output-dir", type=Path, default=DEFAULT_USER_DATA_DIR, help="Directory for rendered snippets")
-    verify.add_argument("--storage-id", default="images", help="PVE snippets storage id")
+    verify.add_argument("--storage-id", required=True, help="PVE snippets storage id")
     verify.add_argument("--pve-host", required=True, help="Target PVE node hostname or alias")
-    verify.add_argument("--ssh-user", default="pve-ops", help="SSH user for snippet verification")
+    verify.add_argument("--ssh-user", required=True, help="SSH user for snippet verification")
 
     return parser.parse_args(argv)
 
