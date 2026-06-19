@@ -61,5 +61,6 @@ exports/
 # Local Packer cache for future orchestration; the current remote wrapper
 # caches under /var/cache/astra/packer on the PVE node.
 .cache/packer/
+.cache/pve-cloud-init/
 .ansible/
 .opencode

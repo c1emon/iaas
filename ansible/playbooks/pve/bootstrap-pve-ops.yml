@@ -9,8 +9,16 @@
     pve_bootstrap_authorized_key: ""
     pve_bootstrap_sudo_commands:
       - /usr/local/sbin/astra-pve-template-build
+      - /usr/local/sbin/astra-pve-snippet-upload
+    pve_bootstrap_template_wrapper_sudoers_src: "{{ playbook_dir }}/../../../infra/pve-node/sudoers.d/astra-pve-template-build"
+    pve_bootstrap_snippet_wrapper_sudoers_src: "{{ playbook_dir }}/../../../infra/pve-node/sudoers.d/astra-pve-snippet-upload"
     pve_bootstrap_wrapper_src: "{{ playbook_dir }}/../../../infra/pve-node/bin/astra-pve-template-build"
+    pve_bootstrap_snippet_wrapper_src: "{{ playbook_dir }}/../../../infra/pve-node/bin/astra-pve-snippet-upload"
     pve_bootstrap_wrapper_dest: /usr/local/sbin/astra-pve-template-build
+    pve_bootstrap_snippet_wrapper_dest: /usr/local/sbin/astra-pve-snippet-upload
+    pve_bootstrap_default_sudo_commands:
+      - /usr/local/sbin/astra-pve-template-build
+      - /usr/local/sbin/astra-pve-snippet-upload
 
   tasks:
     - name: Validate bootstrap inputs
@@ -45,13 +53,21 @@
         group: "{{ pve_bootstrap_user }}"
         mode: "0600"
 
-    - name: Install the limited NOPASSWD sudoers rule
+    - name: Install the template build sudoers rule
       ansible.builtin.copy:
         dest: /etc/sudoers.d/astra-pve-template-build
-        content: |
-          # Managed by ansible/playbooks/pve/bootstrap-pve-ops.yml
-          # Keep this list limited; wrapper-only is the preferred final state.
-          {{ pve_bootstrap_user }} ALL=(root) NOPASSWD: {{ pve_bootstrap_sudo_commands | join(', ') }}
+        src: "{{ pve_bootstrap_template_wrapper_sudoers_src }}"
+        remote_src: false
+        owner: root
+        group: root
+        mode: "0440"
+        validate: /usr/sbin/visudo -cf %s
+
+    - name: Install the snippet upload sudoers rule
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/astra-pve-snippet-upload
+        src: "{{ pve_bootstrap_snippet_wrapper_sudoers_src }}"
+        remote_src: false
         owner: root
         group: root
         mode: "0440"
@@ -65,10 +81,23 @@
         group: root
         mode: "0750"
 
+    - name: Deploy the audited snippet upload wrapper
+      ansible.builtin.copy:
+        src: "{{ pve_bootstrap_snippet_wrapper_src }}"
+        dest: "{{ pve_bootstrap_snippet_wrapper_dest }}"
+        owner: root
+        group: root
+        mode: "0750"
+
     - name: Verify wrapper file is installed
       ansible.builtin.stat:
         path: "{{ pve_bootstrap_wrapper_dest }}"
       register: pve_bootstrap_wrapper_stat
+
+    - name: Verify snippet wrapper file is installed
+      ansible.builtin.stat:
+        path: "{{ pve_bootstrap_snippet_wrapper_dest }}"
+      register: pve_bootstrap_snippet_wrapper_stat
 
     - name: Validate wrapper ownership and permissions
       ansible.builtin.assert:
@@ -80,6 +109,16 @@
           - pve_bootstrap_wrapper_stat.stat.mode == '0750'
         fail_msg: "Wrapper is missing or has the wrong ownership/mode"
 
+    - name: Validate snippet wrapper ownership and permissions
+      ansible.builtin.assert:
+        that:
+          - pve_bootstrap_snippet_wrapper_stat.stat.exists
+          - pve_bootstrap_snippet_wrapper_stat.stat.isreg
+          - pve_bootstrap_snippet_wrapper_stat.stat.pw_name == 'root'
+          - pve_bootstrap_snippet_wrapper_stat.stat.gr_name == 'root'
+          - pve_bootstrap_snippet_wrapper_stat.stat.mode == '0750'
+        fail_msg: "Snippet wrapper is missing or has the wrong ownership/mode"
+
     - name: Validate sudoers syntax non-mutating
       ansible.builtin.command:
         argv:
@@ -89,8 +128,31 @@
       register: pve_bootstrap_sudoers_check
       changed_when: false
 
+    - name: Validate snippet sudoers syntax non-mutating
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/visudo
+          - -cf
+          - /etc/sudoers.d/astra-pve-snippet-upload
+      register: pve_bootstrap_snippet_sudoers_check
+      changed_when: false
+
+    - name: Install optional broader sudo allowlist when requested
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/astra-pve-bootstrap-override
+        content: |
+          # Managed by ansible/playbooks/pve/bootstrap-pve-ops.yml
+          # Temporary preflight override; keep it narrower than ALL.
+          {{ pve_bootstrap_user }} ALL=(root) NOPASSWD: {{ pve_bootstrap_sudo_commands | join(', ') }}
+        owner: root
+        group: root
+        mode: "0440"
+        validate: /usr/sbin/visudo -cf %s
+      when: pve_bootstrap_sudo_commands != pve_bootstrap_default_sudo_commands
+
     - name: Assert sudoers validation succeeded
       ansible.builtin.assert:
         that:
           - pve_bootstrap_sudoers_check.rc == 0
+          - pve_bootstrap_snippet_sudoers_check.rc == 0
         fail_msg: "sudoers validation failed"

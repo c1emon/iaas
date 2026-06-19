@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import yaml
 from pathlib import Path
 from typing import Any, cast
@@ -26,6 +27,17 @@ def write_text(path: Path, text: str) -> None:
     """Write a UTF-8 text file, creating parent directories."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
+
+
+def load_json(path: Path) -> Any:
+    """Load JSON from disk."""
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except json.JSONDecodeError as exc:
+        raise ValidationError(f"{path}: invalid JSON: {exc}") from exc
+    except OSError as exc:
+        raise ValidationError(f"{path}: unable to read file: {exc}") from exc
 
 
 def check_text_file(path: Path, expected_text: str) -> bool:

@@ -57,14 +57,16 @@ Do not set a password for `pve-ops@pve` unless an interactive fallback is delibe
 Initial role definitions should be explicit and treated as bootstrap defaults to reduce after online validation. PVE reserves role IDs starting with the case-insensitive `PVE` namespace, so use project-specific role IDs that do not start with `PVE`:
 
 ```bash
-pveum role add AstraAutomation --privs "Datastore.AllocateSpace,Datastore.Audit,Mapping.Use,Sys.Audit,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.CPU,VM.Config.Cloudinit,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Console,VM.GuestAgent.Audit,VM.PowerMgmt"
+pveum role add AstraAutomation --privs "Datastore.AllocateSpace,Datastore.Audit,Mapping.Use,SDN.Use,Sys.Audit,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.CPU,VM.Config.Cloudinit,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Console,VM.GuestAgent.Audit,VM.PowerMgmt"
 
 pveum role add AstraTemplateBuilder --privs "Datastore.AllocateSpace,Datastore.AllocateTemplate,Datastore.Audit,Sys.Audit,Sys.Modify,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.CPU,VM.Config.Cloudinit,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Console,VM.GuestAgent.Audit,VM.PowerMgmt"
 ```
 
-Assign the roles to the tokens, not only to the parent user, because the tokens use privilege separation:
+Assign the roles to the parent user and the tokens. PVE 9 live validation showed the privilege-separated token still failed clone checks until the parent user also had the role at `/`:
 
 ```bash
+pveum aclmod / --users 'pve-ops@pve' --roles AstraAutomation
+pveum aclmod / --users 'pve-ops@pve' --roles AstraTemplateBuilder
 pveum aclmod / --tokens 'pve-ops@pve!opentofu' --roles AstraAutomation
 pveum aclmod / --tokens 'pve-ops@pve!packer' --roles AstraTemplateBuilder
 pveum acl list
@@ -73,6 +75,7 @@ pveum acl list
 Notes:
 
 - `AstraAutomation` is for OpenTofu-managed VM lifecycle: clone/create/update new VMs, configure disks/network/cloud-init/options, power operations, and use existing PCI resource mappings.
+- `SDN.Use` is required when the target bridge is represented under PVE SDN, such as `/sdn/zones/localnetwork/br_dev`.
 - `AstraTemplateBuilder` is for Packer/template construction and starts with template/datastore permissions needed for image/template workflows.
 - PVE 9 removed the old `VM.Monitor` privilege. Use `Sys.Audit` for basic QEMU monitor access and `VM.GuestAgent.Audit` for guest-agent information. Escalate to `VM.GuestAgent.Unrestricted` only if a later online provider/Packer validation proves guest-agent command execution is required.
 - Creating or modifying PVE PCI hardware mappings is not included in these roles; mapping bootstrap may require an administrator/root workflow.
@@ -103,6 +106,15 @@ Implementation guidance:
 Bootstrap validation on `cohe` confirmed that `pve-ops` can log in with the 1Password-managed SSH key and run `sudo -l`, `sudo pvesm status`, and `sudo qm list` without a password. `pvesm status` sees active `images`, `local`, and `memory` storage; this validates the initial SSH/sudo path for the default Packer build node.
 
 Section 3 live validation on `cohe` built `debian-13-tmpl-20260618` as VMID `9001` from the pinned Debian 13 genericcloud image. The successful template config includes `template: 1`, `bios: ovmf`, `machine: q35`, EFI and root disks on `memory`, cloud-init media on `images`, `serial0: socket`, `vga: serial0`, and `agent: enabled=1`. The live run also confirmed that Debian 13 apt sources must be rewritten as deb822 before package installation and that this PVE `virt-sysprep` version does not support a `cloud-init` operation, so cloud-init cleanup is handled with `cloud-init clean --logs` during customization.
+
+Section 4/4A live validation on `cohe` created disposable VMID `500` (`dev-web-01`) from template VMID `9001`, attached it to `br_dev`, applied static IP `10.10.0.20/24`, started it, confirmed qemu-guest-agent IP reporting, confirmed SSH for both `clemon` and `ops`, and then destroyed it through targeted OpenTofu cleanup. The run exposed these operational requirements:
+
+- OpenTofu should use `tofu`, not Terraform, for live commands.
+- `pve-ops@pve` needs `AstraAutomation` on both the parent user and `pve-ops@pve!opentofu` token in this PVE 9 setup.
+- `AstraAutomation` needs `SDN.Use` for `br_dev` when PVE checks `/sdn/zones/localnetwork/br_dev`.
+- The cloud-init snippet upload wrapper must not force `root:root` ownership on NFS/root-squashed storage; path constraints and mode are the control boundary.
+- Snippets remain in shared `images` storage for VM lifetime because OpenTofu references `user_data_file_id`.
+- The 1Password SSH Agent config must include `vm-user-ops` and `vm-user-clemon` entries before broad vault catch-alls if key selection order prevents guest login.
 
 References:
 
@@ -195,7 +207,7 @@ The preferred future split is:
 1. A dedicated runner downloads the pinned Debian cloud image, verifies the checksum, runs image customization and sysprep, and produces a finalized qcow2 artifact.
 2. The PVE node remains responsible only for host-local registration steps through the audited wrapper: receive or download the artifact, run `qm create`, `qm importdisk`, `qm set`, and `qm template`.
 
-This keeps CI execution off the hypervisor while still minimizing PVE host operations. The runner should not receive direct `qm` access; it should upload or expose the qcow2 artifact and invoke the wrapper through the existing `pve-ops` SSH/sudo boundary.
+This keeps CI execution off the hypervisor while still minimizing PVE host operations. The runner should not receive direct `qm` access; it should upload or expose the qcow2 artifact and invoke the wrapper through the existing `pve-ops` SSH/sudo boundary. Section 4A snippet uploads likewise use the audited `/usr/local/sbin/astra-pve-snippet-upload` wrapper instead of broad `sudo install` access.
 
 ## Operator runbook: PVE identity bootstrap
 
@@ -217,8 +229,10 @@ Before OpenTofu runs, operators bootstrap the PVE realm identity and store the r
 3. Assign the initial roles to the tokens, not just to the parent user:
 
    ```bash
-   pveum role add AstraAutomation --privs "Datastore.AllocateSpace,Datastore.Audit,Mapping.Use,Sys.Audit,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.CPU,VM.Config.Cloudinit,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Console,VM.GuestAgent.Audit,VM.PowerMgmt"
+   pveum role add AstraAutomation --privs "Datastore.AllocateSpace,Datastore.Audit,Mapping.Use,SDN.Use,Sys.Audit,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.CPU,VM.Config.Cloudinit,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Console,VM.GuestAgent.Audit,VM.PowerMgmt"
    pveum role add AstraTemplateBuilder --privs "Datastore.AllocateSpace,Datastore.AllocateTemplate,Datastore.Audit,Sys.Audit,Sys.Modify,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.CPU,VM.Config.Cloudinit,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Console,VM.GuestAgent.Audit,VM.PowerMgmt"
+   pveum aclmod / --users 'pve-ops@pve' --roles AstraAutomation
+   pveum aclmod / --users 'pve-ops@pve' --roles AstraTemplateBuilder
    pveum aclmod / --tokens 'pve-ops@pve!opentofu' --roles AstraAutomation
    pveum aclmod / --tokens 'pve-ops@pve!packer' --roles AstraTemplateBuilder
    ```
@@ -228,3 +242,14 @@ Before OpenTofu runs, operators bootstrap the PVE realm identity and store the r
 5. Keep the bootstrap root of trust outside OpenTofu: the OpenTofu configuration that consumes `pve-ops@pve!opentofu` must not manage `pve-ops@pve`, its tokens, or the initial ACLs in this foundation.
 
 Future automation for this bootstrap may be added separately under an existing administrator identity, but it must not be the OpenTofu stack that depends on the token being created.
+
+## Operator runbook: SSH bootstrap extra-vars
+
+When passing a public SSH key to `ansible/playbooks/pve/bootstrap-pve-ops.yml`, use JSON extra-vars so spaces in the OpenSSH public key are preserved. Avoid key-value `-e pve_bootstrap_authorized_key="$KEY"`, which can truncate the key at spaces depending on shell/Ansible parsing.
+
+```bash
+export KEY="$(op read op://Astra/pve-ssh-automation-user/public_key)"
+EXTRA_VARS_JSON="$(python3 -c 'import json, os; print(json.dumps({"pve_bootstrap_authorized_key": os.environ["KEY"]}))')"
+uv run ansible-playbook ansible/playbooks/pve/bootstrap-pve-ops.yml \
+  --extra-vars "$EXTRA_VARS_JSON"
+```

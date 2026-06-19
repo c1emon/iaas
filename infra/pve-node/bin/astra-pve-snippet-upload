@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly PVESM='/usr/sbin/pvesm'
+readonly INSTALL='/usr/bin/install'
+readonly MKDIR='/bin/mkdir'
+readonly RM='/bin/rm'
+readonly MKTEMP='/usr/bin/mktemp'
+
+usage() {
+  printf 'usage: %s --storage STORAGE --filename opentofu-vm-N-user-data.yml\n' "$0" >&2
+}
+
+die() {
+  printf 'error: %s\n' "$1" >&2
+  exit 1
+}
+
+storage_id=''
+filename=''
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --storage)
+      storage_id=${2-}
+      shift 2
+      ;;
+    --filename)
+      filename=${2-}
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage
+      die "unknown argument: $1"
+      ;;
+  esac
+done
+
+[[ -n ${storage_id} ]] || die 'storage is required'
+[[ -n ${filename} ]] || die 'filename is required'
+[[ ${storage_id} =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die 'storage id must use conservative characters only'
+[[ ${filename} =~ ^opentofu-vm-[0-9]+-user-data\.yml$ ]] || die 'filename must match opentofu-vm-[0-9]+-user-data.yml'
+[[ ${filename} != *'/'* ]] || die 'filename must not contain path separators'
+
+if [[ ! -x ${PVESM} ]]; then
+  die 'pvesm is required'
+fi
+
+tmp_file=''
+trap '[[ -z ${tmp_file} ]] || "${RM}" -f "${tmp_file}"' EXIT
+tmp_file="$(${MKTEMP} /tmp/astra-pve-snippet-upload.XXXXXX)"
+
+cat >"${tmp_file}"
+
+target_path=''
+if target_path="$(${PVESM} path "${storage_id}:snippets/${filename}" 2>/dev/null)" && [[ -n ${target_path} ]]; then
+  :
+else
+  target_path="/mnt/pve/${storage_id}/snippets/${filename}"
+fi
+
+target_dir="$(dirname "${target_path}")"
+${MKDIR} -p "${target_dir}"
+# Snippets may live on shared NFS storage with root-squash enabled. Do not force
+# root ownership here; let the storage backend assign the owner while this
+# wrapper constrains the destination path and mode.
+${INSTALL} -m 0644 "${tmp_file}" "${target_path}"

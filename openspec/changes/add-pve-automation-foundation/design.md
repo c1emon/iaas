@@ -81,9 +81,9 @@ Alternative considered: start with a manually created template. Rejected for the
 
 ### Keep cloud-init user data thin and generic
 
-The Debian template should contain common packages and guest-agent readiness. VM-specific values such as hostname, static IP, gateway, DNS, and SSH keys should be provided through OpenTofu initialization rather than one unique user-data snippet per VM.
+The Debian template should contain common packages and guest-agent readiness. VM-specific values such as hostname, static IP, gateway, DNS, and SSH keys should be provided through OpenTofu initialization plus runtime-rendered user-data snippets rather than one unique manually maintained blob per VM.
 
-If future requirements need richer cloud-init content, snippets should use the shared `images` storage because it supports the `Snippets` content type and is visible cluster-wide.
+If future requirements need richer cloud-init content, snippets should use the shared `images` storage because it supports the `Snippets` content type and is visible cluster-wide. For Section 4A, the runtime helper should render snippets locally, upload them to shared `images` snippets storage via the audited host-side wrapper, reference them with `user_data_file_id`, and keep them for the VM lifetime instead of deleting them immediately.
 
 Cloud-init should not run package update or upgrade on first boot; the template build and later Ansible baseline own package maintenance. SSH password authentication should be disabled. Hostname should use the short hostname plus a configurable global default domain/search domain that individual VMs may override.
 
@@ -168,7 +168,7 @@ pve-opentofu-api-token -> pve-ops@pve!opentofu
 pve-packer-api-token   -> pve-ops@pve!packer
 ```
 
-The OpenTofu token should use the broad initial `AstraAutomation` role at `/` and privilege separation enabled (`privsep=1`), then be reduced later after observed required privileges are known. Packer should use a separate `AstraTemplateBuilder` role, also refined after the Packer spike identifies actual requirements.
+The OpenTofu token should use the broad initial `AstraAutomation` role at `/` and privilege separation enabled (`privsep=1`), then be reduced later after observed required privileges are known. Live PVE 9 validation showed the parent user `pve-ops@pve` also needs `AstraAutomation` at `/` for the token's clone checks to resolve, and `AstraAutomation` needs `SDN.Use` when using the `br_dev` SDN bridge. Packer should use a separate `AstraTemplateBuilder` role, also refined after the Packer spike identifies actual requirements.
 
 The Linux SSH user `pve-ops` should be provisioned on each PVE node by a bootstrap runbook plus Ansible playbook. Initial bootstrap login is provided at runtime by the operator. `pve-ops` should use SSH key authentication only, no password login, and limited `NOPASSWD` sudo. The bootstrap should also deploy the audited wrapper `/usr/local/sbin/astra-pve-template-build` from the repository, validate it is installed with `0750 root:root`, and install wrapper-only sudoers by default while still allowing a temporary preflight allowlist through an explicit variable override. The pre- and post-bootstrap checks should be non-mutating and verify wrapper presence plus sudoers validity. The preflight allowlist is limited to PVE template/image operations and supporting image tooling (`qm`, `pvesm`, `qemu-img`, `virt-customize`, `virt-sysprep`, and minimal file-management commands), preferably wrapped behind one audited script path if practical. The implementation should validate the observed command list and reduce it before finalizing the bootstrap runbook. Global PVE node SSHD policy remains a manual prerequisite and is intentionally out of scope for this extension.
 

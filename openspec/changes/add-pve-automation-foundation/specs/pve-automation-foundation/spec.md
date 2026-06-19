@@ -58,7 +58,7 @@ The system SHALL use OpenTofu with the `bpg/proxmox` provider to manage new PVE 
 #### Scenario: Provision a VM with static cloud-init network configuration
 - **WHEN** an operator declares a VM on an attachable logical network with a static IP address
 - **THEN** OpenTofu SHALL create or update the VM from the declared template
-- **AND** it SHALL configure hostname, IP address, gateway, DNS, and SSH access through cloud-init/OpenTofu initialization
+- **AND** it SHALL configure hostname, IP address, gateway, DNS, and SSH access through cloud-init/OpenTofu initialization or a runtime-rendered user-data snippet as appropriate
 - **AND** it SHALL attach the VM NIC to the pre-existing bridge resolved from the logical network declaration
 - **AND** it SHALL use a full clone from the Packer-managed template
 
@@ -169,6 +169,13 @@ The system SHALL create separate human and automation users in new VMs and avoid
 - **AND** it SHALL create or configure `ops` as the automation user
 - **AND** both users SHALL have sudo capability without passwordless sudo by default
 
+#### Scenario: Render Section 4A guest users at runtime
+- **WHEN** the Section 4A runtime helper renders a VM user-data snippet
+- **THEN** it SHALL create both `clemon` and `ops`
+- **AND** it SHALL set `sudo: ["ALL=(ALL) ALL"]` for both users
+- **AND** it SHALL disable direct root login, disable SSH password authentication, and disable package update/upgrade on first boot
+- **AND** it SHALL source passwords and SSH public keys from runtime 1Password-provided environment variables
+
 #### Scenario: Connect Ansible through the automation user
 - **WHEN** Ansible inventory is generated for managed VMs
 - **THEN** the inventory SHALL use `ops` as the default Ansible connection user
@@ -185,6 +192,13 @@ The system SHALL create separate human and automation users in new VMs and avoid
 - **WHEN** cloud-init initializes a new VM
 - **THEN** it SHALL NOT run package update or package upgrade by default
 - **AND** package maintenance SHALL be owned by Packer template rebuilds and Ansible baseline workflows
+
+#### Scenario: Render and retain runtime cloud-init snippets
+- **WHEN** Section 4A renders cloud-init user-data for a VM
+- **THEN** the helper SHALL create a snippet in shared `images` storage using a stable `opentofu-vm-<vmid>-user-data.yml` name
+- **AND** OpenTofu SHALL reference that snippet via `user_data_file_id`
+- **AND** the snippet SHALL remain available for the VM lifetime instead of being deleted immediately after upload
+- **AND** snippet upload SHALL use the audited host-side wrapper rather than a broad `sudo install` path
 
 ### Requirement: 1Password runtime secret conventions
 The system SHALL use the `Astra` 1Password vault as the runtime source for infrastructure secrets.
@@ -244,6 +258,8 @@ The system SHALL use separate dedicated identities for PVE API automation and PV
 #### Scenario: Bootstrap PVE API identity outside OpenTofu
 - **WHEN** the initial PVE automation identity is prepared
 - **THEN** operators SHALL create `pve-ops@pve`, create the `opentofu` API token, assign initial role/ACLs, and populate 1Password before OpenTofu runs
+- **AND** the initial `AstraAutomation` ACL SHALL be assigned to both `pve-ops@pve` and `pve-ops@pve!opentofu` for PVE 9 privilege-separated token compatibility
+- **AND** the initial `AstraAutomation` role SHALL include `SDN.Use` when VM bridges are checked through PVE SDN paths
 - **AND** the OpenTofu configuration that consumes `pve-ops@pve!opentofu` SHALL NOT manage that same API user, token, or initial ACL root of trust in this foundation
 
 #### Scenario: Document PVE identity bootstrap

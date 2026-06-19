@@ -53,22 +53,23 @@
 
 ## 4. OpenTofu PVE VM Lifecycle
 
-- [ ] 4.1 Add OpenTofu provider design using `bpg/proxmox` with API token and SSH configuration.
-- [ ] 4.2 Use local, git-ignored OpenTofu state with documented backup guidance.
-- [ ] 4.3 Define a VM module or equivalent resource structure for cloning from the Debian 13 template.
-- [ ] 4.4 Configure CPU, memory, disk on `memory`, network device bridge selection, tags, and VM startup state from generated input.
-- [ ] 4.5 Configure static cloud-init initialization for hostname, IP address, gateway, DNS, and SSH access.
-- [ ] 4.6 Protect long-lived VMs from accidental destroy by default.
-- [ ] 4.7 Keep existing VMs out of scope; do not import production VM state in this change.
-- [ ] 4.8 Store local OpenTofu state at `infra/tofu/pve/terraform.tfstate` and keep it out of Git.
-- [ ] 4.9 Use separate dedicated automation identities: API user `pve-ops@pve`, API token `pve-ops@pve!opentofu`, and SSH user `pve-ops` provisioned on PVE nodes.
-- [ ] 4.10 Document that `pve-ops@pve`, its `opentofu` token, and initial role/ACL assignments are manually bootstrapped before OpenTofu runs.
-- [ ] 4.11 Ensure OpenTofu does not manage the PVE API user, the token it uses, or its own initial ACLs in this foundation.
-- [ ] 4.12 Use the `AstraAutomation` role at `/` with token privilege separation enabled for the initial OpenTofu token, then document follow-up least-privilege reduction.
-- [ ] 4.13 Add a `pve-packer-api-token` 1Password item and use `pve-ops@pve!packer` with a separate `AstraTemplateBuilder` role for Packer.
-- [ ] 4.14 Use `op run` and a committed env template with `op://Astra/...` references for runtime secret injection.
-- [ ] 4.15 Add OpenTofu module structure under `infra/tofu/modules/pve-cloudinit-vm` and consume it from `infra/tofu/pve`.
-- [ ] 4.16 Add Makefile/OpenTofu helper behavior that backs up local state to `.cache/tofu-state-backups/` before and/or after apply-like operations.
+- [x] 4.1 Add OpenTofu provider design using `bpg/proxmox` with API token and SSH configuration.
+- [x] 4.2 Use local, git-ignored OpenTofu state with documented backup guidance.
+- [x] 4.3 Define a VM module or equivalent resource structure for cloning from the Debian 13 template.
+- [x] 4.4 Configure CPU, memory, disk on `memory`, network device bridge selection, tags, and VM startup state from generated input.
+- [x] 4.5 Configure static cloud-init initialization for hostname, IP address, gateway, DNS, and SSH access.
+- [x] 4.6 Protect long-lived VMs from accidental destroy by default.
+- [x] 4.7 Keep existing VMs out of scope; do not import production VM state in this change.
+- [x] 4.8 Store local OpenTofu state at `infra/tofu/pve/terraform.tfstate` and keep it out of Git.
+- [x] 4.9 Use separate dedicated automation identities: API user `pve-ops@pve`, API token `pve-ops@pve!opentofu`, and SSH user `pve-ops` provisioned on PVE nodes.
+- [x] 4.10 Document that `pve-ops@pve`, its `opentofu` token, and initial role/ACL assignments are manually bootstrapped before OpenTofu runs.
+- [x] 4.11 Ensure OpenTofu does not manage the PVE API user, the token it uses, or its own initial ACLs in this foundation.
+- [x] 4.12 Use the `AstraAutomation` role at `/` with token privilege separation enabled for the initial OpenTofu token, then document follow-up least-privilege reduction.
+- [x] 4.13 Add a `pve-packer-api-token` 1Password item and use `pve-ops@pve!packer` with a separate `AstraTemplateBuilder` role for Packer.
+- [x] 4.14 Use `op run` and a committed env template with `op://Astra/...` references for runtime secret injection.
+- [x] 4.15 Add OpenTofu module structure under `infra/tofu/modules/pve-cloudinit-vm` and consume it from `infra/tofu/pve`.
+- [x] 4.16 Add Makefile/OpenTofu helper behavior that backs up local state to `.cache/tofu-state-backups/` before and/or after apply-like operations.
+- [x] 4.17 Live-test disposable VM create/start/guest-agent/SSH/destroy on `cohe` with VMID `500` attached to `br_dev`.
 
 ## 4B. PVE Identity Bootstrap Runbook
 
@@ -91,14 +92,15 @@
 
 ## 4A. Guest User and Secret Model
 
-- [ ] 4A.1 Configure cloud-init to create `clemon` as the human administration user.
-- [ ] 4A.2 Configure cloud-init to create `ops` as the automation user.
-- [ ] 4A.3 Grant `clemon` and `ops` sudo capability without passwordless sudo.
-- [ ] 4A.4 Disable direct root SSH login by default.
-- [ ] 4A.5 Retrieve VM user passwords and SSH public keys from the `Astra` 1Password vault at runtime.
-- [ ] 4A.6 Generate cloud-init password hashes at runtime from plaintext passwords stored in 1Password.
-- [ ] 4A.7 Use 1Password SSH Agent or the local SSH agent for SSH private key access.
-- [ ] 4A.8 Document 1Password item naming, tags, and snake_case fields for `pve-opentofu-api-token`, `pve-ssh-automation-user`, `vm-user-clemon`, and `vm-user-ops`.
+- [x] 4A.1 Configure cloud-init to create `clemon` as the human administration user.
+- [x] 4A.2 Configure cloud-init to create `ops` as the automation user.
+- [x] 4A.3 Grant `clemon` and `ops` sudo capability without passwordless sudo.
+- [x] 4A.4 Disable direct root SSH login by default.
+- [x] 4A.5 Retrieve VM user passwords and SSH public keys from the `Astra` 1Password vault at runtime.
+- [x] 4A.6 Generate cloud-init password hashes at runtime from plaintext passwords stored in 1Password.
+- [x] 4A.7 Use 1Password SSH Agent or the local SSH agent for SSH private key access.
+- [x] 4A.8 Document 1Password item naming, tags, and snake_case fields for `pve-opentofu-api-token`, `pve-ssh-automation-user`, `vm-user-clemon`, and `vm-user-ops`.
+- [x] 4A.9 Live-test cloud-init creation of `clemon` and `ops` with sudo group membership and key-based SSH access.
 
 ## 5. PCIe Passthrough VM Support
 
