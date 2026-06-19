@@ -23,6 +23,11 @@ variable "vm" {
   description = "Single VM declaration from generated.auto.tfvars.json."
 }
 
+variable "started" {
+  type        = bool
+  description = "Whether the VM should be started after provisioning."
+}
+
 variable "tags" {
   type        = list(string)
   description = "Computed VM tags."

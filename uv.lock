@@ -408,6 +408,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "passlib" },
+    { name = "pyyaml" },
 ]
 
 [package.dev-dependencies]
@@ -420,7 +421,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "passlib", specifier = ">=1.7.4" }]
+requires-dist = [
+    { name = "passlib", specifier = ">=1.7.4" },
+    { name = "pyyaml", specifier = ">=6.0.2" },
+]
 
 [package.metadata.requires-dev]
 dev = [

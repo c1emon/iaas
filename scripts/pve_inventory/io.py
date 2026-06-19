@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 import yaml
 from pathlib import Path
 from typing import Any, cast
@@ -23,10 +25,28 @@ def load_yaml(path: Path) -> dict[str, Any]:
     return cast(dict[str, Any], data)
 
 
-def write_text(path: Path, text: str) -> None:
+def write_text(path: Path, text: str, secure: bool = False) -> None:
     """Write a UTF-8 text file, creating parent directories."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    if not secure:
+        path.write_text(text, encoding="utf-8")
+        return
+
+    path.parent.chmod(0o700)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        tmp_path.chmod(0o600)
+        tmp_path.replace(path)
+        path.chmod(0o600)
+    except Exception:
+        try:
+            tmp_path.unlink()
+        except OSError:
+            pass
+        raise
 
 
 def load_json(path: Path) -> Any:

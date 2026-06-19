@@ -22,6 +22,7 @@ module "long_lived_vms" {
   tags              = local.vm_tags[each.key]
   user_data_file_id = local.user_data_file_ids[each.key]
   prevent_destroy   = true
+  started           = true
   on_boot           = true
 }
 
@@ -37,5 +38,6 @@ module "ephemeral_vms" {
   tags              = local.vm_tags[each.key]
   user_data_file_id = local.user_data_file_ids[each.key]
   prevent_destroy   = false
+  started           = true
   on_boot           = false
 }

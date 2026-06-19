@@ -64,3 +64,4 @@ exports/
 .cache/pve-cloud-init/
 .ansible/
 .opencode
+.slim/deepwork/

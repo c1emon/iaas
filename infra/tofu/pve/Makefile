@@ -7,13 +7,12 @@ USER_DATA_DIR ?= $(ROOT)/.cache/pve-cloud-init/user-data
 STORAGE_ID ?= images
 PVE_HOST ?= cohe
 PVE_SSH_USER ?= pve-ops
-STAMP := $(shell date +%Y%m%dT%H%M%S)
 
-.PHONY: backup-state init fmt validate render-user-data upload-user-data plan apply destroy
+.PHONY: backup-state init fmt validate render-user-data upload-user-data verify-user-data plan apply destroy
 
 backup-state:
 	@mkdir -p "$(BACKUP_DIR)"
-	@if [ -f "$(STATE_FILE)" ]; then cp "$(STATE_FILE)" "$(BACKUP_DIR)/$(STAMP)-$(STATE_FILE)"; fi
+	@stamp="$$(date +%Y%m%dT%H%M%S)_$$$$"; phase="$${BACKUP_PHASE:-snapshot}"; if [ -f "$(STATE_FILE)" ]; then cp "$(STATE_FILE)" "$(BACKUP_DIR)/$${stamp}-$${phase}-$(STATE_FILE)"; fi
 
 init:
 	$(TOFU) init -backend=false
@@ -30,16 +29,20 @@ render-user-data:
 upload-user-data: render-user-data
 	$(UV) run --directory "$(ROOT)" python -m scripts.pve_inventory.cloud_init upload --output-dir "$(USER_DATA_DIR)" --storage-id "$(STORAGE_ID)" --pve-host "$(PVE_HOST)" --ssh-user "$(PVE_SSH_USER)"
 
-plan:
-	$(MAKE) backup-state
+verify-user-data: render-user-data
+	$(UV) run --directory "$(ROOT)" python -m scripts.pve_inventory.cloud_init verify --output-dir "$(USER_DATA_DIR)" --storage-id "$(STORAGE_ID)" --pve-host "$(PVE_HOST)" --ssh-user "$(PVE_SSH_USER)"
+
+plan: render-user-data
+	$(MAKE) backup-state BACKUP_PHASE=before
 	$(TOFU) plan
 
 apply:
-	$(MAKE) backup-state
+	$(MAKE) upload-user-data verify-user-data
+	$(MAKE) backup-state BACKUP_PHASE=before
 	$(TOFU) apply
-	$(MAKE) backup-state
+	$(MAKE) backup-state BACKUP_PHASE=after
 
 destroy:
-	$(MAKE) backup-state
+	$(MAKE) backup-state BACKUP_PHASE=before
 	$(TOFU) destroy
-	$(MAKE) backup-state
+	$(MAKE) backup-state BACKUP_PHASE=after

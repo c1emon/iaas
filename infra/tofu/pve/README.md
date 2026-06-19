@@ -10,6 +10,8 @@ This directory is the root module for Section 4 of `add-pve-automation-foundatio
 - `.env.pve-opentofu.tpl` sets `TF_VAR_pve_insecure=true` for the common PVE
   self-signed certificate case. Remove or override it if the cluster uses a
   trusted certificate chain.
+- Runtime snippet cache files are written with parent directories `0700` and
+  files `0600`.
 
 ## State
 
@@ -17,6 +19,14 @@ This directory is the root module for Section 4 of `add-pve-automation-foundatio
 - Backups: `.cache/tofu-state-backups/`
 - Existing VMs are intentionally out of scope.
 - VM declarations with passthrough are intentionally deferred until Section 5.
+- `lifecycle_class` changes between the protected and unprotected module
+  resources require state migration, not recreation:
+  - unprotected -> protected:
+    `tofu state mv 'module.ephemeral_vms["dev-web-01"].proxmox_virtual_environment_vm.unprotected[0]' 'module.long_lived_vms["dev-web-01"].proxmox_virtual_environment_vm.protected[0]'`
+  - protected -> unprotected:
+    `tofu state mv 'module.long_lived_vms["dev-web-01"].proxmox_virtual_environment_vm.protected[0]' 'module.ephemeral_vms["dev-web-01"].proxmox_virtual_environment_vm.unprotected[0]'`
+  - If changing lifecycle class also changes VMID ranges, plan that separately;
+    VMID changes are replacement-level changes.
 
 ## Usage
 
@@ -25,6 +35,9 @@ op run --env-file .env.pve-opentofu.tpl -- tofu init -backend=false
 op run --env-file .env.pve-opentofu.tpl -- tofu validate
 op run --env-file .env.pve-opentofu.tpl -- make plan
 ```
+
+`make plan` renders local cloud-init snippets only. `make apply` uploads and
+verifies snippets before applying Terraform changes.
 
 The provider uses `bpg/proxmox` `~> 0.109.0` with `ssh { agent = true username = "pve-ops" }` and token-based API auth.
 
@@ -35,18 +48,20 @@ The provider uses `bpg/proxmox` `~> 0.109.0` with `ssh { agent = true username =
 - Passthrough VMs are excluded from this section and left for Section 5.
 - `initialization[0].user_data_file_id` drift is ignored because the provider can otherwise churn externally managed cloud-init snippets; IP configuration and DNS remain Terraform-managed.
 - OpenTofu manages VM lifecycle only. It does not create `pve-ops@pve`, its tokens, or the bootstrap ACLs.
+- Both long-lived and ephemeral VMs are started after provisioning; only
+  `on_boot` differs (`true` for long-lived, `false` for ephemeral).
 
 ## Section 4A cloud-init flow
 
 Section 4A renders runtime cloud-init user-data snippets for each non-passthrough VM,
-uploads them into shared `images` snippets storage, and references them with
+uploads them into isolated NFS-backed `images` snippets storage, and references them with
 `user_data_file_id`.
 
 - Snippet name: `opentofu-vm-<vmid>-user-data.yml`
 - File ID: `images:snippets/opentofu-vm-<vmid>-user-data.yml`
 - Retention: snippets stay in storage for the VM lifetime; do not delete them immediately after upload.
 
-Use `op run --env-file .env.pve-opentofu.tpl -- make render-user-data` to create local snippets and `op run --env-file .env.pve-opentofu.tpl -- make upload-user-data` to push them to PVE storage before `make plan` or `make apply`.
+Use `op run --env-file .env.pve-opentofu.tpl -- make render-user-data` to create local snippets. `make plan` stays local. `make apply` runs `upload-user-data` and `verify-user-data` before the Terraform apply.
 
 Required runtime env vars from `op run`:
 
@@ -57,7 +72,7 @@ Required runtime env vars from `op run`:
 
 The runtime helper hashes passwords locally, writes only ignored cache files, and never logs plaintext secrets or password hashes.
 
-Snippet upload uses the audited host-side wrapper `/usr/local/sbin/astra-pve-snippet-upload`; it does not rely on broad `sudo install` privileges. On NFS/root-squashed snippet storage, the wrapper intentionally does not force `root:root` ownership; it constrains the target path and file mode instead.
+Snippet upload and verify use the audited host-side wrapper `/usr/local/sbin/astra-pve-snippet-upload`; it does not rely on broad `sudo install` privileges. The wrapper installs files `0600` on non-NFS snippet storage and `0644` on NFS-backed storage to remain readable when root-squash or server-side ownership mapping is in effect. This is an intentional tradeoff for the isolated `images` NFS storage; do not use this mode on broadly shared or untrusted storage. Keep `STORAGE_ID` aligned with `local.snippets_datastore`; the default is `images`.
 
 ## Live-test notes
 
@@ -65,6 +80,7 @@ Snippet upload uses the audited host-side wrapper `/usr/local/sbin/astra-pve-sni
 - PVE 9 required `AstraAutomation` on both the parent user `pve-ops@pve` and the privilege-separated token `pve-ops@pve!opentofu`.
 - `AstraAutomation` also required `SDN.Use` for the `br_dev` SDN bridge check.
 - Guest SSH for `ops` and `clemon` depends on the corresponding keys being available in the local SSH agent or 1Password SSH Agent.
+- `astra-pve-template-build` is a bootstrap transitional wrapper for host-local template registration.
 
 Example 1Password SSH Agent entries:
 
@@ -84,7 +100,7 @@ vault = "Astra"
 
 ## Manual backup helper
 
-Use `make backup-state` before or after apply-like operations. `make apply` and `make destroy` call it automatically.
+Use `make backup-state` before or after apply-like operations. `make apply` and `make destroy` call it automatically with `before`/`after` suffixes and a seconds-plus-PID timestamp to avoid collisions.
 
 ## Optional smoke checks
 

@@ -55,6 +55,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     upload.add_argument("--pve-host", required=True, help="Target PVE node hostname or alias")
     upload.add_argument("--ssh-user", default="pve-ops", help="SSH user for snippet upload")
 
+    verify = subparsers.add_parser("verify", help="Render and verify cloud-init snippets")
+    verify.add_argument("--tfvars", type=Path, default=DEFAULT_TFVARS, help="Path to generated.auto.tfvars.json")
+    verify.add_argument("--output-dir", type=Path, default=DEFAULT_USER_DATA_DIR, help="Directory for rendered snippets")
+    verify.add_argument("--storage-id", default="images", help="PVE snippets storage id")
+    verify.add_argument("--pve-host", required=True, help="Target PVE node hostname or alias")
+    verify.add_argument("--ssh-user", default="pve-ops", help="SSH user for snippet verification")
+
     return parser.parse_args(argv)
 
 
@@ -136,7 +143,7 @@ def render_snippets(tfvars_path: Path, storage_id: str) -> list[CloudInitSnippet
 def write_snippets(snippets: list[CloudInitSnippet], output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     for snippet in snippets:
-        write_text(output_dir / snippet.file_name, snippet.content)
+        write_text(output_dir / snippet.file_name, snippet.content, secure=True)
 
 
 def upload_snippets(snippets: list[CloudInitSnippet], args: argparse.Namespace) -> None:
@@ -163,6 +170,29 @@ def upload_snippets(snippets: list[CloudInitSnippet], args: argparse.Namespace) 
             raise ValidationError("ssh is required for snippet upload") from exc
 
 
+def verify_snippets(snippets: list[CloudInitSnippet], args: argparse.Namespace) -> None:
+    remote = f"{args.ssh_user}@{args.pve_host}"
+    for snippet in snippets:
+        try:
+            subprocess.run(
+                [
+                    "ssh",
+                    remote,
+                    "sudo",
+                    "-n",
+                    "/usr/local/sbin/astra-pve-snippet-upload",
+                    "--storage",
+                    args.storage_id,
+                    "--filename",
+                    snippet.file_name,
+                    "--verify",
+                ],
+                check=True,
+            )
+        except FileNotFoundError as exc:
+            raise ValidationError("ssh is required for snippet verification") from exc
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
     snippets = render_snippets(args.tfvars, args.storage_id)
@@ -171,6 +201,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "upload":
         upload_snippets(snippets, args)
         print(f"uploaded {len(snippets)} cloud-init snippets to {args.pve_host}")
+    elif args.command == "verify":
+        verify_snippets(snippets, args)
+        print(f"verified {len(snippets)} cloud-init snippets on {args.pve_host}")
     else:
         print(f"rendered {len(snippets)} cloud-init snippets to {args.output_dir}")
     return 0

@@ -8,6 +8,7 @@ resource "proxmox_virtual_environment_vm" "protected" {
   name            = var.vm.name
   node_name       = var.vm.node
   vm_id           = var.vm.vmid
+  started         = var.started
   on_boot         = var.on_boot
   bios            = var.vm_defaults.bios
   machine         = var.vm_defaults.machine
@@ -17,9 +18,10 @@ resource "proxmox_virtual_environment_vm" "protected" {
   stop_on_destroy = true
 
   clone {
-    node_name = var.default_template.node
-    vm_id     = var.default_template.vmid
-    full      = true
+    node_name    = var.default_template.node
+    vm_id        = var.default_template.vmid
+    full         = true
+    datastore_id = var.disk_datastore_id
   }
 
   cpu {
@@ -80,6 +82,7 @@ resource "proxmox_virtual_environment_vm" "unprotected" {
   name            = var.vm.name
   node_name       = var.vm.node
   vm_id           = var.vm.vmid
+  started         = var.started
   on_boot         = var.on_boot
   bios            = var.vm_defaults.bios
   machine         = var.vm_defaults.machine
@@ -89,9 +92,10 @@ resource "proxmox_virtual_environment_vm" "unprotected" {
   stop_on_destroy = true
 
   clone {
-    node_name = var.default_template.node
-    vm_id     = var.default_template.vmid
-    full      = true
+    node_name    = var.default_template.node
+    vm_id        = var.default_template.vmid
+    full         = true
+    datastore_id = var.disk_datastore_id
   }
 
   cpu {
