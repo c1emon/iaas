@@ -10,33 +10,33 @@ resource "proxmox_virtual_environment_vm" "protected" {
   vm_id           = var.vm.vmid
   started         = var.started
   on_boot         = var.on_boot
-  bios            = var.vm_defaults.bios
-  machine         = var.vm_defaults.machine
+  bios            = var.template.bios
+  machine         = var.template.machine
   tags            = var.tags
   description     = "Managed by OpenTofu for ${var.cluster_name}"
-  scsi_hardware   = var.vm_defaults.scsi_controller
+  scsi_hardware   = var.template.scsi_controller
   stop_on_destroy = true
 
   clone {
-    node_name    = var.default_template.node
-    vm_id        = var.default_template.vmid
+    node_name    = var.template.node
+    vm_id        = var.template.vmid
     full         = true
     datastore_id = var.disk_datastore_id
   }
 
   cpu {
-    cores = var.vm_defaults.cores
-    type  = var.vm_defaults.cpu_type
+    cores = var.vm.resources.cores
+    type  = var.template.cpu_type
   }
 
   memory {
-    dedicated = var.vm_defaults.memory_mib
+    dedicated = var.vm.resources.memory_mib
   }
 
   disk {
     datastore_id = var.disk_datastore_id
-    interface    = var.vm_defaults.primary_disk
-    size         = var.vm_defaults.root_disk_gib
+    interface    = var.template.primary_disk
+    size         = var.vm.resources.root_disk_gib
   }
 
   network_device {
@@ -84,33 +84,33 @@ resource "proxmox_virtual_environment_vm" "unprotected" {
   vm_id           = var.vm.vmid
   started         = var.started
   on_boot         = var.on_boot
-  bios            = var.vm_defaults.bios
-  machine         = var.vm_defaults.machine
+  bios            = var.template.bios
+  machine         = var.template.machine
   tags            = var.tags
   description     = "Managed by OpenTofu for ${var.cluster_name}"
-  scsi_hardware   = var.vm_defaults.scsi_controller
+  scsi_hardware   = var.template.scsi_controller
   stop_on_destroy = true
 
   clone {
-    node_name    = var.default_template.node
-    vm_id        = var.default_template.vmid
+    node_name    = var.template.node
+    vm_id        = var.template.vmid
     full         = true
     datastore_id = var.disk_datastore_id
   }
 
   cpu {
-    cores = var.vm_defaults.cores
-    type  = var.vm_defaults.cpu_type
+    cores = var.vm.resources.cores
+    type  = var.template.cpu_type
   }
 
   memory {
-    dedicated = var.vm_defaults.memory_mib
+    dedicated = var.vm.resources.memory_mib
   }
 
   disk {
     datastore_id = var.disk_datastore_id
-    interface    = var.vm_defaults.primary_disk
-    size         = var.vm_defaults.root_disk_gib
+    interface    = var.template.primary_disk
+    size         = var.vm.resources.root_disk_gib
   }
 
   network_device {

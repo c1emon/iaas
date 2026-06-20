@@ -69,7 +69,7 @@ def load_generated_tfvars(path: Path) -> dict[str, Any]:
     return payload
 
 
-def load_automation_cloud_init(payload: dict[str, Any], tfvars_path: Path) -> tuple[dict[str, Any], str, str, list[dict[str, Any]]]:
+def load_automation_cloud_init(payload: dict[str, Any], tfvars_path: Path) -> tuple[dict[str, Any], str, str, dict[str, Any], list[dict[str, Any]]]:
     cluster = payload.get("cluster")
     require(isinstance(cluster, dict), f"{tfvars_path}: cluster must be a mapping")
     cluster_map = cast(dict[str, Any], cluster)
@@ -80,6 +80,22 @@ def load_automation_cloud_init(payload: dict[str, Any], tfvars_path: Path) -> tu
     require(isinstance(cloud_init, dict), f"{tfvars_path}: cluster.automation.cloud_init must be a mapping")
     cloud_init_map = cast(dict[str, Any], cloud_init)
 
+    defaults = cloud_init_map.get("defaults")
+    default_values = {
+        "package_update": False,
+        "package_upgrade": False,
+        "ssh_pwauth": False,
+        "disable_root": True,
+    }
+    if defaults is not None:
+        require(isinstance(defaults, dict), f"{tfvars_path}: cluster.automation.cloud_init.defaults must be a mapping")
+        defaults_map = cast(dict[str, Any], defaults)
+        for key in default_values:
+            value = defaults_map.get(key)
+            if value is not None:
+                require(isinstance(value, bool), f"{tfvars_path}: cluster.automation.cloud_init.defaults.{key} must be a boolean")
+                default_values[key] = cast(bool, value)
+
     snippet_storage_role = cloud_init_map.get("snippet_storage_role")
     require(isinstance(snippet_storage_role, str) and snippet_storage_role, f"{tfvars_path}: cluster.automation.cloud_init.snippet_storage_role must be a non-empty string")
     snippet_storage_role_str = cast(str, snippet_storage_role)
@@ -88,7 +104,7 @@ def load_automation_cloud_init(payload: dict[str, Any], tfvars_path: Path) -> tu
     snippet_file_prefix_str = cast(str, snippet_file_prefix)
     users = cloud_init_map.get("users")
     require(isinstance(users, list) and users, f"{tfvars_path}: cluster.automation.cloud_init.users must be a non-empty list")
-    return cluster_map, snippet_storage_role_str, snippet_file_prefix_str, cast(list[dict[str, Any]], users)
+    return cluster_map, snippet_storage_role_str, snippet_file_prefix_str, default_values, cast(list[dict[str, Any]], users)
 
 
 def resolve_snippets_datastore(cluster: dict[str, Any], tfvars_path: Path, snippet_storage_role: str) -> str:
@@ -142,14 +158,14 @@ def build_cloud_init_user(user: dict[str, Any], env: dict[str, str]) -> dict[str
     }
 
 
-def build_user_data(vm: dict[str, Any], users: list[dict[str, Any]], env: dict[str, str]) -> str:
+def build_user_data(vm: dict[str, Any], users: list[dict[str, Any]], defaults: dict[str, Any], env: dict[str, str]) -> str:
     data = {
         "hostname": vm["name"],
         "preserve_hostname": False,
-        "disable_root": True,
-        "ssh_pwauth": False,
-        "package_update": False,
-        "package_upgrade": False,
+        "disable_root": defaults["disable_root"],
+        "ssh_pwauth": defaults["ssh_pwauth"],
+        "package_update": defaults["package_update"],
+        "package_upgrade": defaults["package_upgrade"],
         "users": [build_cloud_init_user(user, env) for user in users],
     }
     return "#cloud-config\n" + yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
@@ -159,7 +175,7 @@ def render_snippets(tfvars_path: Path, storage_id: str) -> list[CloudInitSnippet
     payload = load_generated_tfvars(tfvars_path)
     vms = payload.get("vms", [])
     require(isinstance(vms, list), f"{tfvars_path}: vms must be a list")
-    cluster, snippet_storage_role, snippet_file_prefix, users = load_automation_cloud_init(payload, tfvars_path)
+    cluster, snippet_storage_role, snippet_file_prefix, defaults, users = load_automation_cloud_init(payload, tfvars_path)
     snippets_datastore = resolve_snippets_datastore(cluster, tfvars_path, snippet_storage_role)
     require(storage_id == snippets_datastore, f"--storage-id {storage_id} must match cluster.automation.cloud_init snippet datastore {snippets_datastore}")
     required_env_vars = []
@@ -187,7 +203,7 @@ def render_snippets(tfvars_path: Path, storage_id: str) -> list[CloudInitSnippet
                 name=name,
                 file_name=file_name,
                 file_id=snippet_storage_path(snippets_datastore, file_name),
-                content=build_user_data(vm, users, env),
+                content=build_user_data(vm, users, defaults, env),
             )
         )
     snippets.sort(key=lambda item: (item.vmid, item.name))

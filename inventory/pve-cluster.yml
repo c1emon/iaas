@@ -10,6 +10,11 @@ cluster:
   automation:
     ansible_user: ops
     cloud_init:
+      defaults:
+        package_update: false
+        package_upgrade: false
+        ssh_pwauth: false
+        disable_root: true
       snippet_storage_role: images
       snippet_file_prefix: opentofu-vm
       users:

@@ -15,15 +15,14 @@ module "long_lived_vms" {
   for_each = local.long_lived_vms
 
   cluster_name      = local.cluster.name
-  disk_datastore_id = local.disk_datastore
-  default_template  = local.default_template
-  vm_defaults       = local.vm_defaults
+  disk_datastore_id = each.value.storage.disk_datastore_id
+  template          = each.value.template
   vm                = each.value
   tags              = local.vm_tags[each.key]
   user_data_file_id = local.user_data_file_ids[each.key]
   prevent_destroy   = true
-  started           = true
-  on_boot           = true
+  started           = each.value.boot.started
+  on_boot           = each.value.boot.on_boot
 }
 
 module "ephemeral_vms" {
@@ -31,13 +30,12 @@ module "ephemeral_vms" {
   for_each = local.ephemeral_vms
 
   cluster_name      = local.cluster.name
-  disk_datastore_id = local.disk_datastore
-  default_template  = local.default_template
-  vm_defaults       = local.vm_defaults
+  disk_datastore_id = each.value.storage.disk_datastore_id
+  template          = each.value.template
   vm                = each.value
   tags              = local.vm_tags[each.key]
   user_data_file_id = local.user_data_file_ids[each.key]
   prevent_destroy   = false
-  started           = true
-  on_boot           = false
+  started           = each.value.boot.started
+  on_boot           = each.value.boot.on_boot
 }

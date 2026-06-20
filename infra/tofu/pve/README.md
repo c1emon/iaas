@@ -57,6 +57,24 @@ The provider uses `bpg/proxmox` `~> 0.109.0` with `ssh { agent = true username =
 - Both long-lived and ephemeral VMs are started after provisioning; only
   `on_boot` differs (`true` for long-lived, `false` for ephemeral).
 
+## VM inventory fields and change risk
+
+VMs may optionally declare:
+
+- `resources.cores`, `resources.memory_mib`, `resources.root_disk_gib`
+- `storage.disk_role`
+- `boot.started`, `boot.on_boot`
+
+Risk/behavior notes:
+
+- changing `template` is replacement/high-risk
+- changing `storage.disk_role` is replacement/high-risk
+- decreasing `resources.root_disk_gib` is rejected by the generator because PVE cannot shrink disks
+- increasing `resources.root_disk_gib` is an in-place resize
+- changing `resources.cores` or `resources.memory_mib` is generally in-place
+- changing `boot.started` or `boot.on_boot` is in-place
+- cloud-init defaults affect newly initialized VMs only
+
 ## Section 4A cloud-init flow
 
 Section 4A renders runtime cloud-init user-data snippets for each non-passthrough VM,

@@ -39,6 +39,15 @@ def build_ansible_inventory(model: dict[str, Any]) -> str:
             "pve_tags": vm["tags"],
             "pve_pool": vm["pool"],
             "pve_template": vm["template"]["name"],
+            "pve_template_vmid": vm["template"]["vmid"],
+            "pve_template_node": vm["template"]["node"],
+            "pve_disk_storage_role": vm["storage"]["disk_role"],
+            "pve_disk_datastore": vm["storage"]["disk_datastore_id"],
+            "pve_started": vm["boot"]["started"],
+            "pve_on_boot": vm["boot"]["on_boot"],
+            "pve_cores": vm["resources"]["cores"],
+            "pve_memory_mib": vm["resources"]["memory_mib"],
+            "pve_root_disk_gib": vm["resources"]["root_disk_gib"],
         }
         groups.setdefault("pve_vms", {"hosts": {}})["hosts"][vm["name"]] = hostvars
         for group_name in vm["ansible_groups"]:
@@ -50,13 +59,16 @@ def build_ansible_inventory(model: dict[str, Any]) -> str:
 
 def build_markdown(model: dict[str, Any]) -> str:
     """Render a compact Markdown summary of declared VMs."""
-    lines = ["# PVE VMs", "", "| Name | VMID | Lifecycle | Node | Network | IP | Groups | Tags | Passthrough |", "|---|---:|---|---|---|---|---|---|---|"]
+    lines = ["# PVE VMs", "", "| Name | VMID | Lifecycle | Node | Network | IP | Template | Disk datastore | CPU | Memory | Disk | Started | On boot | Groups | Tags | Passthrough |", "|---|---:|---|---|---|---|---|---|---:|---:|---:|---|---|---|---|---|"]
     for vm in model["vms"]:
         passthrough = "yes" if vm["passthrough"] else "no"
         groups = ", ".join(vm["ansible_groups"])
         tags = ", ".join(vm["tags"])
+        template = f"{vm['template']['name']} ({vm['template']['vmid']})"
+        started = "yes" if vm["boot"]["started"] else "no"
+        on_boot = "yes" if vm["boot"]["on_boot"] else "no"
         lines.append(
-            f"| {vm['name']} | {vm['vmid']} | {vm['lifecycle_class']} | {vm['node']} | {vm['network']['name']} | {vm['ip_address']}/{vm['prefix_length']} | {groups} | {tags} | {passthrough} |"
+            f"| {vm['name']} | {vm['vmid']} | {vm['lifecycle_class']} | {vm['node']} | {vm['network']['name']} | {vm['ip_address']}/{vm['prefix_length']} | {template} | {vm['storage']['disk_datastore_id']} | {vm['resources']['cores']} | {vm['resources']['memory_mib']} | {vm['resources']['root_disk_gib']} | {started} | {on_boot} | {groups} | {tags} | {passthrough} |"
         )
     lines.extend(["", "## Cluster defaults", "", f"- Default template: {model['cluster']['default_template']}", f"- VM cores: {model['cluster']['vm_defaults']['cores']}", f"- VM memory MiB: {model['cluster']['vm_defaults']['memory_mib']}", f"- VM root disk GiB: {model['cluster']['vm_defaults']['root_disk_gib']}"])
     return "\n".join(lines) + "\n"

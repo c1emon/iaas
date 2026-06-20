@@ -21,6 +21,24 @@ def as_list(value: Any, context: str) -> list[Any]:
     return cast(list[Any], value)
 
 
+def require_positive_int(value: Any, context: str) -> int:
+    """Assert that a value is a positive integer and return it."""
+    require(isinstance(value, int) and value > 0, f"{context}: must be a positive integer")
+    return cast(int, value)
+
+
+def require_bool(value: Any, context: str) -> bool:
+    """Assert that a value is a boolean and return it."""
+    require(isinstance(value, bool), f"{context}: must be a boolean")
+    return cast(bool, value)
+
+
+def require_unknown_keys(mapping: dict[str, Any], allowed: set[str], context: str) -> None:
+    """Reject keys outside a strict schema."""
+    unknown = sorted(set(mapping) - allowed)
+    require(not unknown, f"{context}: unknown keys {', '.join(unknown)}")
+
+
 def parse_static_ip(value: str) -> tuple[str, int, str]:
     """Split a CIDR-style static IP into host, prefix, and network string."""
     interface = ipaddress.ip_interface(value)
@@ -35,6 +53,20 @@ def validate_automation(cluster_doc: dict[str, Any], storage_roles: dict[str, An
     require(isinstance(ansible_user, str) and ansible_user, "cluster: cluster.automation.ansible_user must be a non-empty string")
 
     cloud_init = as_mapping(automation.get("cloud_init"), "cluster.cluster.automation.cloud_init")
+    defaults = cloud_init.get("defaults")
+    default_values = {
+        "package_update": False,
+        "package_upgrade": False,
+        "ssh_pwauth": False,
+        "disable_root": True,
+    }
+    if defaults is not None:
+        defaults_map = as_mapping(defaults, "cluster.cluster.automation.cloud_init.defaults")
+        require_unknown_keys(defaults_map, set(default_values), "cluster: cluster.automation.cloud_init.defaults")
+        for key in default_values:
+            value = defaults_map.get(key)
+            if value is not None:
+                default_values[key] = require_bool(value, f"cluster.cluster.automation.cloud_init.defaults.{key}")
     snippet_storage_role = cloud_init.get("snippet_storage_role")
     require(isinstance(snippet_storage_role, str) and snippet_storage_role, "cluster: cluster.automation.cloud_init.snippet_storage_role must be a non-empty string")
     snippet_storage_role_str = cast(str, snippet_storage_role)
@@ -69,7 +101,15 @@ def validate_automation(cluster_doc: dict[str, Any], storage_roles: dict[str, An
         seen_env_vars.add(password_env)
         seen_env_vars.add(public_key_env)
 
-    return automation
+    return {
+        "ansible_user": cast(str, ansible_user),
+        "cloud_init": {
+            "defaults": default_values,
+            "snippet_storage_role": snippet_storage_role_str,
+            "snippet_file_prefix": cast(str, snippet_file_prefix),
+            "users": users,
+        },
+    }
 
 
 def validate_cluster(cluster_doc: dict[str, Any]) -> dict[str, Any]:
@@ -133,22 +173,29 @@ def validate_cluster(cluster_doc: dict[str, Any]) -> dict[str, Any]:
     require(vm_defaults.get("pool") is None, "cluster: vm_defaults.pool must be null")
 
     templates = as_mapping(cluster_doc.get("templates"), "cluster.templates")
-    require(list(templates) == ["debian_13_genericcloud"], "cluster: exactly one template is expected in section 2")
-    template = as_mapping(templates["debian_13_genericcloud"], "cluster.templates.debian_13_genericcloud")
-    vmid = template.get("vmid")
-    require(isinstance(vmid, int), "cluster.templates.debian_13_genericcloud: vmid must be an integer")
-    require(9000 <= cast(int, vmid) <= 9500, "cluster.templates.debian_13_genericcloud: vmid must be within 9000-9500")
-    require(template.get("node") in nodes, "cluster.templates.debian_13_genericcloud: node must reference a declared PVE node")
-    require(template.get("storage_role") == "memory", "cluster.templates.debian_13_genericcloud: storage_role must be memory")
-    require(template.get("source_storage_role") == "images", "cluster.templates.debian_13_genericcloud: source_storage_role must be images")
-    require(template.get("disk_size_gib") == 20, "cluster.templates.debian_13_genericcloud: disk_size_gib must be 20")
-    require(template.get("cpu_type") == "host", "cluster.templates.debian_13_genericcloud: cpu_type must be host")
-    require(template.get("bios") == "ovmf", "cluster.templates.debian_13_genericcloud: bios must be ovmf")
-    require(template.get("machine") == "q35", "cluster.templates.debian_13_genericcloud: machine must be q35")
-    require(template.get("clone_mode") == "full", "cluster.templates.debian_13_genericcloud: clone_mode must be full")
-    require(template.get("scsi_controller") == "virtio-scsi-single", "cluster.templates.debian_13_genericcloud: scsi_controller mismatch")
-    require(template.get("primary_disk") == "scsi0", "cluster.templates.debian_13_genericcloud: primary_disk must be scsi0")
-    require(template.get("primary_nics") == 1, "cluster.templates.debian_13_genericcloud: primary_nics must be 1")
+    require(cluster.get("default_template") in templates, "cluster: default_template must reference a declared template")
+    for template_name, template_value in templates.items():
+        tctx = f"cluster.templates.{template_name}"
+        template = as_mapping(template_value, tctx)
+        vmid = template.get("vmid")
+        require(isinstance(vmid, int), f"{tctx}: vmid must be an integer")
+        require(9000 <= cast(int, vmid) <= 9500, f"{tctx}: vmid must be within 9000-9500")
+        require(template.get("node") in nodes, f"{tctx}: node must reference a declared PVE node")
+
+        for field in ("name", "storage_role", "source_storage_role", "cpu_type", "bios", "machine", "clone_mode", "scsi_controller", "primary_disk"):
+            value = template.get(field)
+            require(isinstance(value, str) and value, f"{tctx}: {field} must be a non-empty string")
+
+        require_positive_int(template.get("disk_size_gib"), f"{tctx}.disk_size_gib")
+        require_positive_int(template.get("primary_nics"), f"{tctx}.primary_nics")
+
+        template_storage_role = cast(str, template["storage_role"])
+        require(template_storage_role in storage_roles, f"{tctx}: storage_role must reference a declared storage role")
+        template_storage = as_mapping(storage_roles[template_storage_role], f"cluster.storage_roles.{template_storage_role}")
+        require("disk" in as_list(template_storage.get("content"), f"cluster.storage_roles.{template_storage_role}.content"), f"{tctx}: storage_role must point to storage with disk content")
+
+        source_storage_role = cast(str, template["source_storage_role"])
+        require(source_storage_role in storage_roles, f"{tctx}: source_storage_role must reference a declared storage role")
 
     pci_mappings = as_mapping(cluster_doc.get("pci_mappings"), "cluster.pci_mappings")
     igpu = as_mapping(pci_mappings.get("iGpu0"), "cluster.pci_mappings.iGpu0")
@@ -170,6 +217,64 @@ def validate_cluster(cluster_doc: dict[str, Any]) -> dict[str, Any]:
         "templates": templates,
         "pci_mappings": pci_mappings,
     }
+
+
+def normalize_vm_resources(vm_doc: dict[str, Any], cluster_vm_defaults: dict[str, Any], ctx: str) -> dict[str, int]:
+    """Resolve effective VM resource quantities."""
+    resources = vm_doc.get("resources")
+    effective = {
+        "cores": require_positive_int(cluster_vm_defaults["cores"], "cluster.vm_defaults.cores"),
+        "memory_mib": require_positive_int(cluster_vm_defaults["memory_mib"], "cluster.vm_defaults.memory_mib"),
+        "root_disk_gib": require_positive_int(cluster_vm_defaults["root_disk_gib"], "cluster.vm_defaults.root_disk_gib"),
+    }
+    if resources is None:
+        return effective
+
+    resources_map = as_mapping(resources, f"{ctx}.resources")
+    require_unknown_keys(resources_map, {"cores", "memory_mib", "root_disk_gib"}, f"{ctx}: resources")
+    for key in effective:
+        value = resources_map.get(key)
+        if value is not None:
+            effective[key] = require_positive_int(value, f"{ctx}.resources.{key}")
+    return effective
+
+
+def normalize_vm_storage(vm_doc: dict[str, Any], template: dict[str, Any], cluster_storage_roles: dict[str, Any], ctx: str) -> dict[str, str]:
+    """Resolve effective VM disk storage."""
+    storage = vm_doc.get("storage")
+    storage_role = cast(str, template["storage_role"])
+    if storage is not None:
+        storage_map = as_mapping(storage, f"{ctx}.storage")
+        require_unknown_keys(storage_map, {"disk_role"}, f"{ctx}: storage")
+        disk_role = storage_map.get("disk_role")
+        require(isinstance(disk_role, str) and disk_role, f"{ctx}.storage.disk_role must be a non-empty string")
+        storage_role = cast(str, disk_role)
+
+    require(storage_role in cluster_storage_roles, f"{ctx}: storage role {storage_role} must reference a declared storage role")
+    role = as_mapping(cluster_storage_roles[storage_role], f"cluster.storage_roles.{storage_role}")
+    require("disk" in as_list(role.get("content"), f"cluster.storage_roles.{storage_role}.content"), f"{ctx}: storage role {storage_role} must include disk content")
+    datastore = role.get("datastore")
+    require(isinstance(datastore, str) and datastore, f"{ctx}: storage role {storage_role} must define a non-empty datastore")
+    return {"disk_role": storage_role, "disk_datastore_id": cast(str, datastore)}
+
+
+def normalize_vm_boot(vm_doc: dict[str, Any], lifecycle_class: str, ctx: str) -> dict[str, bool]:
+    """Resolve effective VM boot behavior."""
+    boot = vm_doc.get("boot")
+    effective = {
+        "started": True,
+        "on_boot": lifecycle_class == "long_lived",
+    }
+    if boot is None:
+        return effective
+
+    boot_map = as_mapping(boot, f"{ctx}.boot")
+    require_unknown_keys(boot_map, {"started", "on_boot"}, f"{ctx}: boot")
+    for key in effective:
+        value = boot_map.get(key)
+        if value is not None:
+            effective[key] = require_bool(value, f"{ctx}.boot.{key}")
+    return effective
 
 
 def validate_vms(vms_doc: dict[str, Any], cluster_state: dict[str, Any]) -> list[dict[str, Any]]:
@@ -243,6 +348,15 @@ def validate_vms(vms_doc: dict[str, Any], cluster_state: dict[str, Any]) -> list
         require(pool is None or isinstance(pool, str), f"{ctx}: pool must be null or a string")
         require(template_name in cluster_state["templates"], f"{ctx}: template must reference a declared cluster template")
         template = as_mapping(cluster_state["templates"][template_name], f"cluster.templates.{template_name}")
+        template_storage_role = cast(str, template.get("storage_role"))
+        require(template_storage_role in cluster_state["storage_roles"], f"{ctx}: template storage_role must reference a declared storage role")
+        template_storage = as_mapping(cluster_state["storage_roles"][template_storage_role], f"cluster.storage_roles.{template_storage_role}")
+        require("disk" in as_list(template_storage.get("content"), f"cluster.storage_roles.{template_storage_role}.content"), f"{ctx}: template storage_role must include disk content")
+
+        resources = normalize_vm_resources(vm_doc, cluster_state["vm_defaults"], ctx)
+        storage = normalize_vm_storage(vm_doc, template, cluster_state["storage_roles"], ctx)
+        boot = normalize_vm_boot(vm_doc, lifecycle_str, ctx)
+        require(resources["root_disk_gib"] >= cast(int, template.get("disk_size_gib")), f"{ctx}: root_disk_gib must be at least {template.get('disk_size_gib')} GiB because PVE cannot shrink disks")
 
         if passthrough is not None:
             devices = as_list(passthrough, f"{ctx}.passthrough")
@@ -285,12 +399,22 @@ def validate_vms(vms_doc: dict[str, Any], cluster_state: dict[str, Any]) -> list
                 "tags": list(tags),
                 "pool": pool,
                 "ha": {"enabled": False, "group": None, "state": None},
+                "resources": resources,
+                "boot": boot,
                 "template": {
                     "name": template_name,
                     "vmid": template.get("vmid"),
                     "vm_name": template.get("name"),
+                    "node": template.get("node"),
+                    "storage_role": template_storage_role,
+                    "disk_size_gib": template.get("disk_size_gib"),
+                    "cpu_type": template.get("cpu_type"),
+                    "bios": template.get("bios"),
+                    "machine": template.get("machine"),
+                    "scsi_controller": template.get("scsi_controller"),
+                    "primary_disk": template.get("primary_disk"),
                 },
-                "vm_defaults": cluster_state["vm_defaults"],
+                "storage": storage,
                 "passthrough": passthrough if passthrough is None else passthrough,
             }
         )

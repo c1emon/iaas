@@ -8,14 +8,9 @@ variable "disk_datastore_id" {
   description = "Datastore used for the VM root disk."
 }
 
-variable "default_template" {
+variable "template" {
   type        = any
-  description = "Default template data from the cluster source-of-truth."
-}
-
-variable "vm_defaults" {
-  type        = any
-  description = "Default VM sizing and hardware from the cluster source-of-truth."
+  description = "Template data from the cluster source-of-truth."
 }
 
 variable "vm" {

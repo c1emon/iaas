@@ -21,6 +21,15 @@ all:
           - web
           pve_pool: null
           pve_template: debian_13_genericcloud
+          pve_template_vmid: 9001
+          pve_template_node: cohe
+          pve_disk_storage_role: memory
+          pve_disk_datastore: memory
+          pve_started: true
+          pve_on_boot: false
+          pve_cores: 2
+          pve_memory_mib: 2048
+          pve_root_disk_gib: 20
         prod-app-01:
           ansible_connection: ssh
           ansible_host: 10.50.0.20
@@ -40,6 +49,15 @@ all:
           - app
           pve_pool: null
           pve_template: debian_13_genericcloud
+          pve_template_vmid: 9001
+          pve_template_node: cohe
+          pve_disk_storage_role: memory
+          pve_disk_datastore: memory
+          pve_started: true
+          pve_on_boot: true
+          pve_cores: 2
+          pve_memory_mib: 2048
+          pve_root_disk_gib: 20
         media-lab-01:
           ansible_connection: ssh
           ansible_host: 10.10.0.21
@@ -60,6 +78,15 @@ all:
           - igpu
           pve_pool: null
           pve_template: debian_13_genericcloud
+          pve_template_vmid: 9001
+          pve_template_node: cohe
+          pve_disk_storage_role: memory
+          pve_disk_datastore: memory
+          pve_started: true
+          pve_on_boot: false
+          pve_cores: 2
+          pve_memory_mib: 2048
+          pve_root_disk_gib: 20
     dev:
       hosts:
         dev-web-01: {}

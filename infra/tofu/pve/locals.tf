@@ -2,11 +2,6 @@ locals {
   cluster = var.cluster
   vms     = var.vms
 
-  default_template_name = local.cluster.default_template
-  default_template      = local.cluster.templates[local.default_template_name]
-  vm_defaults           = local.cluster.vm_defaults
-  disk_datastore        = local.cluster.storage_roles[local.default_template.storage_role].datastore
-
   vms_by_name = {
     for vm in local.vms : vm.name => vm
   }

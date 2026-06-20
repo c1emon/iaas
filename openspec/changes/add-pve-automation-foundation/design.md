@@ -238,6 +238,8 @@ Packer should build templates on `cohe` by default. Long-lived VMs should defaul
 
 VM IDs are manually declared in YAML and validated against the reserved ranges. Templates also use manually declared VMIDs. Default VM sizing is `2` cores, `2048` MiB memory, and `20` GiB root disk, with VM-level overrides allowed. VM disks default to datastore `memory`, `virtio-scsi-single`, and `scsi0`; root disk size should follow inventory. VM clones should be full clones. CPU type defaults to `host`, BIOS/machine defaults to `OVMF` + `q35`, and qemu-guest-agent should be enabled in both the template and VM configuration.
 
+Phase 2 makes effective VM resources, storage placement, and boot policy inventory-driven at generation time. Plan review must treat template changes and storage-role changes as replacement/high-risk events, while root-disk decreases remain generator-rejected because PVE cannot shrink disks.
+
 PVE VM tags should combine automatically generated tags such as `managed-by-opentofu`, lifecycle, network, and role with operator-provided inventory tags. PVE pool assignment is optional per VM. PVE VM-level firewall is out of scope.
 
 OVMF requires EFI disk handling. The selected `bpg/proxmox` provider supports explicit `efi_disk` configuration with `bios = "ovmf"`; first-version configuration should use the intended datastore (`memory`) with `type = "4m"` and `raw` format unless online validation shows the storage backend requires a different choice. The implementation must verify that the chosen storage and provider configuration can create EFI disks before the first template/VM acceptance is complete.
