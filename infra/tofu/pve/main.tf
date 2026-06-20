@@ -15,7 +15,7 @@ module "long_lived_vms" {
   for_each = local.long_lived_vms
 
   cluster_name      = local.cluster.name
-  disk_datastore_id = local.memory_datastore
+  disk_datastore_id = local.disk_datastore
   default_template  = local.default_template
   vm_defaults       = local.vm_defaults
   vm                = each.value
@@ -31,7 +31,7 @@ module "ephemeral_vms" {
   for_each = local.ephemeral_vms
 
   cluster_name      = local.cluster.name
-  disk_datastore_id = local.memory_datastore
+  disk_datastore_id = local.disk_datastore
   default_template  = local.default_template
   vm_defaults       = local.vm_defaults
   vm                = each.value

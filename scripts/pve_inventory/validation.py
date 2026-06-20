@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ipaddress
+import re
 from typing import Any, cast
 
 from .errors import require
@@ -26,6 +27,51 @@ def parse_static_ip(value: str) -> tuple[str, int, str]:
     return str(interface.ip), int(interface.network.prefixlen), str(interface.network)
 
 
+def validate_automation(cluster_doc: dict[str, Any], storage_roles: dict[str, Any]) -> dict[str, Any]:
+    """Validate cluster automation settings."""
+    cluster = as_mapping(cluster_doc.get("cluster"), "cluster.cluster")
+    automation = as_mapping(cluster.get("automation"), "cluster.cluster.automation")
+    ansible_user = automation.get("ansible_user")
+    require(isinstance(ansible_user, str) and ansible_user, "cluster: cluster.automation.ansible_user must be a non-empty string")
+
+    cloud_init = as_mapping(automation.get("cloud_init"), "cluster.cluster.automation.cloud_init")
+    snippet_storage_role = cloud_init.get("snippet_storage_role")
+    require(isinstance(snippet_storage_role, str) and snippet_storage_role, "cluster: cluster.automation.cloud_init.snippet_storage_role must be a non-empty string")
+    snippet_storage_role_str = cast(str, snippet_storage_role)
+    require(snippet_storage_role_str in storage_roles, "cluster: cluster.automation.cloud_init.snippet_storage_role must reference a declared storage role")
+    snippet_storage = as_mapping(storage_roles[snippet_storage_role_str], f"cluster.storage_roles.{snippet_storage_role_str}")
+    require("snippets" in as_list(snippet_storage.get("content"), f"cluster.storage_roles.{snippet_storage_role_str}.content"), "cluster: cluster.automation.cloud_init.snippet_storage_role must point to storage with snippets content")
+
+    snippet_file_prefix = cloud_init.get("snippet_file_prefix")
+    require(isinstance(snippet_file_prefix, str) and re.match(r"^[A-Za-z0-9][A-Za-z0-9._-]*$", snippet_file_prefix), "cluster: cluster.automation.cloud_init.snippet_file_prefix must match ^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+    users = as_list(cloud_init.get("users"), "cluster.cluster.automation.cloud_init.users")
+    require(users, "cluster: cluster.automation.cloud_init.users must be a non-empty list")
+    seen_names: set[str] = set()
+    seen_env_vars: set[str] = set()
+    for index, user in enumerate(users):
+        uctx = f"cluster.cluster.automation.cloud_init.users[{index}]"
+        user_map = as_mapping(user, uctx)
+        for field in ("name", "gecos", "groups", "shell", "password_env", "public_key_env"):
+            value = user_map.get(field)
+            require(isinstance(value, str) and value, f"{uctx}: {field} must be a non-empty string")
+        sudo = as_list(user_map.get("sudo"), f"{uctx}.sudo")
+        require(sudo and all(isinstance(item, str) and item for item in sudo), f"{uctx}: sudo must be a non-empty list of non-empty strings")
+        name = cast(str, user_map["name"])
+        password_env = cast(str, user_map["password_env"])
+        public_key_env = cast(str, user_map["public_key_env"])
+        require(re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", password_env), f"{uctx}: password_env must match ^[A-Za-z_][A-Za-z0-9_]*$")
+        require(re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", public_key_env), f"{uctx}: public_key_env must match ^[A-Za-z_][A-Za-z0-9_]*$")
+        require(name not in seen_names, f"{uctx}: duplicate user name {name}")
+        require(password_env not in seen_env_vars, f"{uctx}: duplicate environment variable {password_env}")
+        require(public_key_env not in seen_env_vars, f"{uctx}: duplicate environment variable {public_key_env}")
+        seen_names.add(name)
+        seen_env_vars.add(password_env)
+        seen_env_vars.add(public_key_env)
+
+    return automation
+
+
 def validate_cluster(cluster_doc: dict[str, Any]) -> dict[str, Any]:
     """Validate cluster policy and return normalized state for rendering."""
     require(cluster_doc.get("schema_version") == 1, "cluster: schema_version must be 1")
@@ -45,6 +91,8 @@ def validate_cluster(cluster_doc: dict[str, Any]) -> dict[str, Any]:
     require(memory.get("content") == ["disk"], "cluster: memory storage role must carry disk content")
     require(images.get("datastore") == "images", "cluster: images storage role must target datastore 'images'")
     require(images.get("content") == ["iso", "import", "snippets"], "cluster: images storage role content mismatch")
+
+    automation = validate_automation(cluster_doc, storage_roles)
 
     networks = as_mapping(cluster_doc.get("networks"), "cluster.networks")
     expected_networks = {
@@ -115,6 +163,7 @@ def validate_cluster(cluster_doc: dict[str, Any]) -> dict[str, Any]:
         "default_template": cluster.get("default_template"),
         "reserved_vm_id_ranges": reserved,
         "storage_roles": storage_roles,
+        "automation": automation,
         "networks": networks,
         "nodes": nodes,
         "vm_defaults": vm_defaults,

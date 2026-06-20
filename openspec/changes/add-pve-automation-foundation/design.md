@@ -97,7 +97,7 @@ ops    = automation user for Ansible and other operational tooling
 root   = not used for direct SSH login
 ```
 
-Both `clemon` and `ops` should have sudo capability without passwordless sudo. Ansible should connect as `ops` and become root with sudo when privileged operations are required. Generated Ansible inventory should contain the non-secret connection model, but no passwords, private keys, tokens, or password hashes.
+Both `clemon` and `ops` should have sudo capability without passwordless sudo. The inventory's `cluster.automation` config should drive the Ansible login user, the cloud-init user list, and the snippet storage role/prefix used by the runtime helper. Generated Ansible inventory should contain the non-secret connection model, but no passwords, private keys, tokens, or password hashes.
 
 Root SSH login should be disabled by default. SSH access should use keys supplied at runtime through 1Password SSH Agent or the local SSH agent.
 

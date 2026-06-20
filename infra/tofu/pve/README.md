@@ -42,6 +42,9 @@ verifies snippets before applying Terraform changes. `STORAGE_ID`, `PVE_HOST`,
 and `PVE_SSH_USER` are intentionally explicit inputs; the Makefile does not
 provide environment-specific defaults for them.
 
+Cluster inventory drives the Ansible login user, cloud-init VM users, and the
+snippet storage role/prefix used for rendered user-data files.
+
 The provider uses `bpg/proxmox` `~> 0.109.0` with `ssh { agent = true username = "pve-ops" }` and token-based API auth.
 
 ## Safety notes
@@ -66,7 +69,7 @@ uploads them into isolated NFS-backed `images` snippets storage, and references 
 
 Use `op run --env-file .env.pve-opentofu.tpl -- make render-user-data STORAGE_ID=images` to create local snippets. `make plan` stays local. `make apply` runs `upload-user-data` and `verify-user-data` before the Terraform apply.
 
-Required runtime env vars from `op run`:
+Required runtime env vars from `op run` (driven by the inventory-defined cloud-init users):
 
 - `PVE_VM_CLEMON_PASSWORD`
 - `PVE_VM_CLEMON_PUBLIC_KEY`

@@ -5,7 +5,7 @@ locals {
   default_template_name = local.cluster.default_template
   default_template      = local.cluster.templates[local.default_template_name]
   vm_defaults           = local.cluster.vm_defaults
-  memory_datastore      = local.cluster.storage_roles.memory.datastore
+  disk_datastore        = local.cluster.storage_roles[local.default_template.storage_role].datastore
 
   vms_by_name = {
     for vm in local.vms : vm.name => vm
@@ -27,10 +27,10 @@ locals {
   }
 
   cloud_init_vms     = merge(local.long_lived_vms, local.ephemeral_vms)
-  snippets_datastore = local.cluster.storage_roles.images.datastore
+  snippets_datastore = local.cluster.storage_roles[local.cluster.automation.cloud_init.snippet_storage_role].datastore
 
   user_data_file_ids = {
-    for name, vm in local.cloud_init_vms : name => "${local.snippets_datastore}:snippets/opentofu-vm-${vm.vmid}-user-data.yml"
+    for name, vm in local.cloud_init_vms : name => "${local.snippets_datastore}:snippets/${local.cluster.automation.cloud_init.snippet_file_prefix}-${vm.vmid}-user-data.yml"
   }
 
   vm_tags = {

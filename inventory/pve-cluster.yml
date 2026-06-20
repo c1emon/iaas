@@ -7,6 +7,26 @@ schema_version: 1
 cluster:
   name: astra-pve
   default_template: debian_13_genericcloud
+  automation:
+    ansible_user: ops
+    cloud_init:
+      snippet_storage_role: images
+      snippet_file_prefix: opentofu-vm
+      users:
+        - name: clemon
+          gecos: clemon
+          groups: sudo
+          shell: /bin/bash
+          sudo: ["ALL=(ALL) ALL"]
+          password_env: PVE_VM_CLEMON_PASSWORD
+          public_key_env: PVE_VM_CLEMON_PUBLIC_KEY
+        - name: ops
+          gecos: ops
+          groups: sudo
+          shell: /bin/bash
+          sudo: ["ALL=(ALL) ALL"]
+          password_env: PVE_VM_OPS_PASSWORD
+          public_key_env: PVE_VM_OPS_PUBLIC_KEY
 
 # Reserved VMID bands enforced by validation.
 reserved_vm_id_ranges:

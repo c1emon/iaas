@@ -26,7 +26,7 @@ def build_ansible_inventory(model: dict[str, Any]) -> str:
         hostvars = {
             "ansible_connection": "ssh",
             "ansible_host": vm["ip_address"],
-            "ansible_user": "ops",
+            "ansible_user": model["cluster"]["automation"]["ansible_user"],
             "ansible_become": True,
             "ansible_become_method": "sudo",
             "ansible_python_interpreter": "{{ ansible_playbook_python }}",
