@@ -1,5 +1,7 @@
 locals {
-  vm_is_protected = var.prevent_destroy
+  vm_is_protected    = var.prevent_destroy
+  vm_passthrough     = try(var.vm.passthrough, [])
+  vm_has_passthrough = length(local.vm_passthrough) > 0
 }
 
 resource "proxmox_virtual_environment_vm" "protected" {
@@ -43,6 +45,18 @@ resource "proxmox_virtual_environment_vm" "protected" {
     bridge = var.vm.network.bridge
   }
 
+  dynamic "hostpci" {
+    for_each = local.vm_passthrough
+
+    content {
+      device  = hostpci.value.device
+      mapping = hostpci.value.mapping
+      pcie    = hostpci.value.pcie
+      rombar  = hostpci.value.rombar
+      xvga    = hostpci.value.xvga
+    }
+  }
+
   initialization {
     datastore_id = var.disk_datastore_id
 
@@ -73,6 +87,11 @@ resource "proxmox_virtual_environment_vm" "protected" {
   lifecycle {
     ignore_changes  = [initialization[0].user_data_file_id]
     prevent_destroy = true
+
+    precondition {
+      condition     = !local.vm_has_passthrough || (var.template.bios == "ovmf" && var.template.machine == "q35" && var.template.cpu_type == "host" && try(var.vm.ha.enabled, false) == false)
+      error_message = "Passthrough VMs require q35, ovmf, cpu_type host, and HA disabled."
+    }
   }
 }
 
@@ -117,6 +136,18 @@ resource "proxmox_virtual_environment_vm" "unprotected" {
     bridge = var.vm.network.bridge
   }
 
+  dynamic "hostpci" {
+    for_each = local.vm_passthrough
+
+    content {
+      device  = hostpci.value.device
+      mapping = hostpci.value.mapping
+      pcie    = hostpci.value.pcie
+      rombar  = hostpci.value.rombar
+      xvga    = hostpci.value.xvga
+    }
+  }
+
   initialization {
     datastore_id = var.disk_datastore_id
 
@@ -146,5 +177,10 @@ resource "proxmox_virtual_environment_vm" "unprotected" {
 
   lifecycle {
     ignore_changes = [initialization[0].user_data_file_id]
+
+    precondition {
+      condition     = !local.vm_has_passthrough || (var.template.bios == "ovmf" && var.template.machine == "q35" && var.template.cpu_type == "host" && try(var.vm.ha.enabled, false) == false)
+      error_message = "Passthrough VMs require q35, ovmf, cpu_type host, and HA disabled."
+    }
   }
 }

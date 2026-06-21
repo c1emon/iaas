@@ -18,7 +18,6 @@ This directory is the root module for Section 4 of `add-pve-automation-foundatio
 - Local state path: `terraform.tfstate`
 - Backups: `.cache/tofu-state-backups/`
 - Existing VMs are intentionally out of scope.
-- VM declarations with passthrough are intentionally deferred until Section 5.
 - `lifecycle_class` changes between the protected and unprotected module
   resources require state migration, not recreation:
   - unprotected -> protected:
@@ -51,7 +50,11 @@ The provider uses `bpg/proxmox` `~> 0.109.0` with `ssh { agent = true username =
 
 - Long-lived VMs are split into a separate module call with `prevent_destroy = true`.
 - Ephemeral/lab VMs are intentionally not protected by default.
-- Passthrough VMs are excluded from this section and left for Section 5.
+- Passthrough VMs are provisioned through `hostpci` resource mappings and remain in Section 5 scope; no raw PCI paths are accepted.
+- Passthrough source YAML may optionally set `device_override` to pin a specific `hostpciN`; otherwise devices are auto-assigned per VM order.
+- HA stays disabled for passthrough VMs, and this module does not move VMs between nodes or mutate host IOMMU/VFIO state.
+- See `docs/runbooks/pve-pci-passthrough-readiness.md` for the host-side readiness checklist.
+- Future TODO: manage PCI resource mappings with `bpg/proxmox` `proxmox_hardware_mapping_pci` from a separate high-privilege bootstrap root such as `infra/tofu/pve-mappings/`; keep this VM lifecycle root limited to consuming mapping names.
 - `initialization[0].user_data_file_id` drift is ignored because the provider can otherwise churn externally managed cloud-init snippets; IP configuration and DNS remain Terraform-managed.
 - OpenTofu manages VM lifecycle only. It does not create `pve-ops@pve`, its tokens, or the bootstrap ACLs.
 - Both long-lived and ephemeral VMs are started after provisioning; only

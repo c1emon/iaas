@@ -39,7 +39,7 @@ vms:
       state: null
     passthrough: null
 
-  # Example passthrough VM; mapping must exist in pve-cluster.yml.
+  # Example passthrough VM; mapping must exist in pve-cluster.yml and optional device_override may be used.
   - name: media-lab-01
     vmid: 501
     lifecycle_class: ephemeral_lab
@@ -56,8 +56,7 @@ vms:
       group: null
       state: null
     passthrough:
-      - device: hostpci0
-        mapping: iGpu0
+      - mapping: iGpu0
         pcie: true
         rombar: true
         xvga: false

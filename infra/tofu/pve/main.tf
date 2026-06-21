@@ -19,7 +19,7 @@ module "long_lived_vms" {
   template          = each.value.template
   vm                = each.value
   tags              = local.vm_tags[each.key]
-  user_data_file_id = local.user_data_file_ids[each.key]
+  user_data_file_id = try(local.user_data_file_ids[each.key], null)
   prevent_destroy   = true
   started           = each.value.boot.started
   on_boot           = each.value.boot.on_boot
@@ -34,7 +34,7 @@ module "ephemeral_vms" {
   template          = each.value.template
   vm                = each.value
   tags              = local.vm_tags[each.key]
-  user_data_file_id = local.user_data_file_ids[each.key]
+  user_data_file_id = try(local.user_data_file_ids[each.key], null)
   prevent_destroy   = false
   started           = each.value.boot.started
   on_boot           = each.value.boot.on_boot

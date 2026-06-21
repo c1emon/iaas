@@ -61,7 +61,13 @@ def build_markdown(model: dict[str, Any]) -> str:
     """Render a compact Markdown summary of declared VMs."""
     lines = ["# PVE VMs", "", "| Name | VMID | Lifecycle | Node | Network | IP | Template | Disk datastore | CPU | Memory | Disk | Started | On boot | Groups | Tags | Passthrough |", "|---|---:|---|---|---|---|---|---|---:|---:|---:|---|---|---|---|---|"]
     for vm in model["vms"]:
-        passthrough = "yes" if vm["passthrough"] else "no"
+        if vm["passthrough"]:
+            passthrough = "; ".join(
+                f"{device['device']}:{device['mapping']} (pcie={'true' if device['pcie'] else 'false'}, rombar={'true' if device['rombar'] else 'false'}, xvga={'true' if device['xvga'] else 'false'})"
+                for device in vm["passthrough"]
+            )
+        else:
+            passthrough = "no"
         groups = ", ".join(vm["ansible_groups"])
         tags = ", ".join(vm["tags"])
         template = f"{vm['template']['name']} ({vm['template']['vmid']})"

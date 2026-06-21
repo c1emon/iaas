@@ -30,7 +30,8 @@ variable "tags" {
 
 variable "user_data_file_id" {
   type        = string
-  description = "Cloud-init user-data snippet file id such as images:snippets/opentofu-vm-500-user-data.yml."
+  default     = null
+  description = "Cloud-init user-data snippet file id such as images:snippets/opentofu-vm-500-user-data.yml; set null for passthrough VMs."
 }
 
 variable "prevent_destroy" {

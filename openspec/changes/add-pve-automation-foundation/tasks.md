@@ -104,14 +104,14 @@
 
 ## 5. PCIe Passthrough VM Support
 
-- [ ] 5.1 Render `hostpci` blocks from VM passthrough declarations using PVE resource mapping names, not raw PCI addresses.
-- [ ] 5.2 Support the existing `iGpu0` mapping on `cohe` and `node3`.
-- [ ] 5.3 Require passthrough VMs to use compatible defaults such as `q35`, `ovmf`, and `cpu: host` unless explicitly overridden safely.
-- [ ] 5.4 Keep HA disabled for passthrough VMs and document migration limitations.
-- [ ] 5.5 Add a runbook or checklist for host-side PCI passthrough readiness without automatically changing IOMMU/VFIO host configuration.
-- [ ] 5.6 Support first-version passthrough fields `device`, `mapping`, `pcie`, `rombar`, and `xvga`.
-- [ ] 5.7 Reject automatic node changes/migration for passthrough VMs.
-- [ ] 5.8 Treat PCIe passthrough as phase B; do not block first disposable VM acceptance on passthrough support.
+- [x] 5.1 Render `hostpci` blocks from VM passthrough declarations using PVE resource mapping names, not raw PCI addresses.
+- [x] 5.2 Support the existing `iGpu0` mapping on `cohe` and `node3`.
+- [x] 5.3 Require passthrough VMs to use compatible defaults such as `q35`, `ovmf`, and `cpu: host` unless explicitly overridden safely.
+- [x] 5.4 Keep HA disabled for passthrough VMs and document migration limitations.
+- [x] 5.5 Add a runbook or checklist for host-side PCI passthrough readiness without automatically changing IOMMU/VFIO host configuration.
+- [x] 5.6 Support first-version passthrough fields `device`, `mapping`, `pcie`, `rombar`, and `xvga`.
+- [x] 5.7 Reject automatic node changes/migration for passthrough VMs.
+- [x] 5.8 Treat PCIe passthrough as phase B; do not block first disposable VM acceptance on passthrough support.
 
 ## 6. Ansible Integration and Verification
 

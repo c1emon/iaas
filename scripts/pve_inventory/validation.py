@@ -373,11 +373,14 @@ def normalize_vm_boot(vm_doc: dict[str, Any], lifecycle_class: str, ctx: str) ->
 
 def validate_vms(vms_doc: dict[str, Any], cluster_state: dict[str, Any]) -> list[dict[str, Any]]:
     """Validate VM declarations and return normalized VM records."""
+    from .passthrough import normalize_vm_passthrough
+
     require(vms_doc.get("schema_version") == 1, "vms: schema_version must be 1")
     vms = as_list(vms_doc.get("vms"), "vms.vms")
     seen_ids: set[int] = set()
     seen_names: set[str] = set()
     seen_ips: set[str] = set()
+    passthrough_usage: dict[tuple[str, str], str] = {}
     normalized: list[dict[str, Any]] = []
 
     for index, vm in enumerate(vms):
@@ -394,7 +397,6 @@ def validate_vms(vms_doc: dict[str, Any], cluster_state: dict[str, Any]) -> list
         ansible_groups = as_list(vm_doc.get("ansible_groups"), f"{ctx}.ansible_groups")
         tags = as_list(vm_doc.get("tags"), f"{ctx}.tags")
         ha = as_mapping(vm_doc.get("ha"), f"{ctx}.ha")
-        passthrough = vm_doc.get("passthrough")
         pool = vm_doc.get("pool")
         template_name = vm_doc.get("template", cluster_state["default_template"])
 
@@ -452,22 +454,15 @@ def validate_vms(vms_doc: dict[str, Any], cluster_state: dict[str, Any]) -> list
         boot = normalize_vm_boot(vm_doc, lifecycle_str, ctx)
         require(resources["root_disk_gib"] >= cast(int, template.get("disk_size_gib")), f"{ctx}: root_disk_gib must be at least {template.get('disk_size_gib')} GiB because PVE cannot shrink disks")
 
-        if passthrough is not None:
-            devices = as_list(passthrough, f"{ctx}.passthrough")
-            for passthrough_index, device in enumerate(devices):
-                dctx = f"{ctx}.passthrough[{passthrough_index}]"
-                pd = as_mapping(device, dctx)
-                mapping_name = pd.get("mapping")
-                require(isinstance(mapping_name, str) and mapping_name, f"{dctx}: mapping must be a non-empty string")
-                mapping_name_str = cast(str, mapping_name)
-                mapping = cluster_state["pci_mappings"].get(mapping_name_str)
-                require(mapping is not None, f"{dctx}: mapping must reference a declared PCI mapping")
-                require(node_str in as_mapping(mapping, f"cluster.pci_mappings.{mapping_name_str}")["nodes"], f"{dctx}: VM node must be allowed by the mapping")
-                require(pd.get("device") == "hostpci0", f"{dctx}: device must be hostpci0 in the sample schema")
-                require(pd.get("pcie") is True, f"{dctx}: pcie must be true")
-                require(pd.get("rombar") is True, f"{dctx}: rombar must be true")
-                require(pd.get("xvga") is False, f"{dctx}: xvga must be false")
-                require(ha.get("enabled") is False, f"{dctx}: passthrough VMs must keep HA disabled")
+        normalized_passthrough = normalize_vm_passthrough(
+            vm_doc,
+            cluster_state,
+            node_str,
+            name_str,
+            cast(bool, ha.get("enabled")),
+            ctx,
+            passthrough_usage,
+        )
 
         normalized.append(
             {
@@ -509,7 +504,7 @@ def validate_vms(vms_doc: dict[str, Any], cluster_state: dict[str, Any]) -> list
                     "primary_disk": template.get("primary_disk"),
                 },
                 "storage": storage,
-                "passthrough": passthrough if passthrough is None else passthrough,
+                "passthrough": normalized_passthrough,
             }
         )
 

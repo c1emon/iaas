@@ -6,6 +6,7 @@ import copy
 import os
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -13,20 +14,153 @@ from scripts.pve_inventory.io import load_yaml
 from scripts.pve_inventory.model import build_model
 from scripts.pve_inventory.render import render_outputs
 from scripts.pve_inventory.errors import ValidationError
-from scripts.pve_inventory.validation import validate_cluster
+from scripts.pve_inventory.validation import validate_cluster, validate_vms
 
 
 ROOT = Path(__file__).resolve().parents[2]
 CLUSTER_PATH = ROOT / "inventory" / "pve-cluster.yml"
+VMS_PATH = ROOT / "inventory" / "vms.yml"
 
 
-def cluster_state() -> dict[str, object]:
+def cluster_state() -> dict[str, Any]:
     return validate_cluster(load_yaml(CLUSTER_PATH))
+
+
+def vms_model() -> dict[str, Any]:
+    cluster = cluster_state()
+    return build_model(cluster, validate_vms(load_yaml(VMS_PATH), cluster))
 
 
 def template_env_text() -> str:
     model = build_model(cluster_state(), [])
     return render_outputs(model)["template_build_env"]
+
+
+def test_generated_docs_render_passthrough_details() -> None:
+    docs = render_outputs(vms_model())["docs"]
+    assert "hostpci0:iGpu0 (pcie=true, rombar=true, xvga=false)" in docs
+    assert "| media-lab-01 | 501 | ephemeral_lab | cohe | dev | 10.10.0.21/24 |" in docs
+
+
+def test_inventory_passthrough_schema_omits_device() -> None:
+    vms = load_yaml(VMS_PATH)
+    passthrough = vms["vms"][2]["passthrough"][0]
+    assert "device" not in passthrough
+    assert "device_override" not in passthrough
+
+
+def test_validation_generates_hostpci0_without_override() -> None:
+    normalized = validate_vms(load_yaml(VMS_PATH), cluster_state())
+    media_vm = next(vm for vm in normalized if vm["name"] == "media-lab-01")
+    assert media_vm["passthrough"][0]["device"] == "hostpci0"
+
+
+def test_validation_honors_device_override_and_skips_reserved_devices() -> None:
+    doc = copy.deepcopy(load_yaml(VMS_PATH))
+    doc["vms"][0]["node"] = "node3"
+    doc["vms"][0]["passthrough"] = [
+        {"mapping": "iGpu0", "pcie": True, "rombar": True, "xvga": False},
+        {"mapping": "iGpu1", "device_override": "hostpci1", "pcie": True, "rombar": True, "xvga": False},
+    ]
+    cluster = cluster_state()
+    cluster["pci_mappings"]["iGpu1"] = {
+        "type": "igpu",
+        "ha_allowed": False,
+        "defaults": {"pcie": True, "rombar": True, "xvga": False},
+        "nodes": {"node3": {"path": "0000:00:02.1", "iommu_group": 99}},
+    }
+    normalized = validate_vms(doc, cluster)
+    dev_vm = next(vm for vm in normalized if vm["name"] == "dev-web-01")
+    assert [item["device"] for item in dev_vm["passthrough"]] == ["hostpci0", "hostpci1"]
+
+
+def test_validation_rejects_passthrough_unknown_fields() -> None:
+    doc = copy.deepcopy(load_yaml(VMS_PATH))
+    doc["vms"][2]["passthrough"][0]["device"] = "hostpci0"
+    with pytest.raises(ValidationError, match="passthrough.*unknown keys device"):
+        validate_vms(doc, cluster_state())
+
+
+def test_validation_rejects_other_passthrough_unknown_fields() -> None:
+    doc = copy.deepcopy(load_yaml(VMS_PATH))
+    doc["vms"][2]["passthrough"][0]["unexpected"] = True
+    with pytest.raises(ValidationError, match="passthrough.*unknown keys unexpected"):
+        validate_vms(doc, cluster_state())
+
+
+def test_validation_rejects_duplicate_device_overrides() -> None:
+    doc = copy.deepcopy(load_yaml(VMS_PATH))
+    doc["vms"][2]["passthrough"] = [
+        {"mapping": "iGpu0", "device_override": "hostpci1", "pcie": True, "rombar": True, "xvga": False},
+        {"mapping": "iGpu0", "device_override": "hostpci1", "pcie": True, "rombar": True, "xvga": False},
+    ]
+    with pytest.raises(ValidationError, match="duplicate device_override hostpci1"):
+        validate_vms(doc, cluster_state())
+
+
+def test_validation_rejects_invalid_device_override() -> None:
+    doc = copy.deepcopy(load_yaml(VMS_PATH))
+    doc["vms"][2]["passthrough"][0]["device_override"] = "hostpci16"
+    with pytest.raises(ValidationError, match="device_override must match hostpci0-hostpci15"):
+        validate_vms(doc, cluster_state())
+
+
+def test_validation_rejects_missing_passthrough_flags_with_clear_error() -> None:
+    doc = copy.deepcopy(load_yaml(VMS_PATH))
+    del doc["vms"][2]["passthrough"][0]["pcie"]
+    with pytest.raises(ValidationError, match="pcie is required and must match mapping default True"):
+        validate_vms(doc, cluster_state())
+
+
+def test_validation_rejects_passthrough_device_exhaustion() -> None:
+    doc = copy.deepcopy(load_yaml(VMS_PATH))
+    doc["vms"][0]["node"] = "node3"
+    doc["vms"][0]["passthrough"] = [
+        {"mapping": f"iGpu{i}", "device_override": f"hostpci{i}", "pcie": True, "rombar": True, "xvga": False}
+        for i in range(16)
+    ] + [{"mapping": "iGpu0", "pcie": True, "rombar": True, "xvga": False}]
+    cluster = cluster_state()
+    cluster["pci_mappings"]["iGpu1"] = {
+        "type": "igpu",
+        "ha_allowed": False,
+        "defaults": {"pcie": True, "rombar": True, "xvga": False},
+        "nodes": {"node3": {"path": "0000:00:02.1", "iommu_group": 99}},
+    }
+    for i in range(2, 16):
+        cluster["pci_mappings"][f"iGpu{i}"] = {
+            "type": "igpu",
+            "ha_allowed": False,
+            "defaults": {"pcie": True, "rombar": True, "xvga": False},
+            "nodes": {"node3": {"path": "0000:00:02.1", "iommu_group": 99 + i}},
+        }
+    with pytest.raises(ValidationError, match="passthrough devices exhausted hostpci0-hostpci15"):
+        validate_vms(doc, cluster)
+
+
+def test_validation_rejects_duplicate_mapping_on_same_node_across_vms() -> None:
+    doc = copy.deepcopy(load_yaml(VMS_PATH))
+    doc["vms"][1]["passthrough"] = [{"mapping": "iGpu0", "pcie": True, "rombar": True, "xvga": False}]
+    with pytest.raises(ValidationError, match="mapping iGpu0 on node cohe is already used by VM prod-app-01"):
+        validate_vms(doc, cluster_state())
+
+
+def test_validation_allows_same_mapping_on_different_nodes() -> None:
+    doc = copy.deepcopy(load_yaml(VMS_PATH))
+    doc["vms"][1]["node"] = "node3"
+    doc["vms"][1]["passthrough"] = [{"mapping": "iGpu0", "pcie": True, "rombar": True, "xvga": False}]
+    normalized = validate_vms(doc, cluster_state())
+    prod_vm = next(vm for vm in normalized if vm["name"] == "prod-app-01")
+    media_vm = next(vm for vm in normalized if vm["name"] == "media-lab-01")
+    assert prod_vm["node"] == "node3"
+    assert prod_vm["passthrough"][0]["device"] == "hostpci0"
+    assert media_vm["passthrough"][0]["device"] == "hostpci0"
+
+
+def test_validation_rejects_raw_pci_mapping_values() -> None:
+    doc = copy.deepcopy(load_yaml(VMS_PATH))
+    doc["vms"][2]["passthrough"][0]["mapping"] = "0000:00:02.1"
+    with pytest.raises(ValidationError, match="mapping must reference a declared PCI mapping"):
+        validate_vms(doc, cluster_state())
 
 
 def test_template_build_env_uses_if_unset_guards() -> None:
