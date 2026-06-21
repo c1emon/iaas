@@ -201,7 +201,7 @@ validation and do not change the global node SSHD policy.
 Run these before committing Ansible workflow changes:
 
 ```bash
-uv run python -m unittest tests/test_xikeos_migration.py
+uv run pytest tests/test_xikeos_migration.py
 uv run python -m compileall filter_plugins module_utils
 uv run yamllint roles/switch_config/defaults/main.yml \
   roles/switch_config/tasks/main.yml \

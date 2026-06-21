@@ -72,7 +72,7 @@ def check_text_file(path: Path, expected_text: str) -> bool:
 def check_outputs(expected: dict[str, str], paths: dict[str, Path]) -> list[str]:
     """Return stale/missing output paths in deterministic order."""
     mismatches: list[str] = []
-    for key in ("tfvars", "ansible", "docs"):
+    for key in ("tfvars", "ansible", "docs", "template_build_env"):
         path = paths[key]
         try:
             existing = path.read_text(encoding="utf-8")

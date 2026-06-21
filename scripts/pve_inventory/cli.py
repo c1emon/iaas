@@ -9,7 +9,7 @@ from pathlib import Path
 from .errors import ValidationError
 from .io import check_outputs, load_yaml, write_text
 from .model import build_model
-from .paths import DEFAULT_ANSIBLE, DEFAULT_CLUSTER, DEFAULT_DOCS, DEFAULT_TFVARS, DEFAULT_VMS
+from .paths import DEFAULT_ANSIBLE, DEFAULT_CLUSTER, DEFAULT_DOCS, DEFAULT_TEMPLATE_BUILD_ENV, DEFAULT_TFVARS, DEFAULT_VMS
 from .render import render_outputs
 from .validation import validate_cluster, validate_vms
 
@@ -41,11 +41,12 @@ def main(argv: list[str] | None = None) -> int:
         write_text(DEFAULT_TFVARS, outputs["tfvars"])
         write_text(DEFAULT_ANSIBLE, outputs["ansible"])
         write_text(DEFAULT_DOCS, outputs["docs"])
+        write_text(DEFAULT_TEMPLATE_BUILD_ENV, outputs["template_build_env"])
         print("PVE inventory outputs generated")
         return 0
 
     if args.check:
-        mismatches = check_outputs(outputs, {"tfvars": DEFAULT_TFVARS, "ansible": DEFAULT_ANSIBLE, "docs": DEFAULT_DOCS})
+        mismatches = check_outputs(outputs, {"tfvars": DEFAULT_TFVARS, "ansible": DEFAULT_ANSIBLE, "docs": DEFAULT_DOCS, "template_build_env": DEFAULT_TEMPLATE_BUILD_ENV})
         if mismatches:
             raise ValidationError("; ".join(mismatches))
         print("PVE inventory outputs are up to date")

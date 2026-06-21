@@ -33,10 +33,23 @@ def require_bool(value: Any, context: str) -> bool:
     return cast(bool, value)
 
 
+def require_non_empty_string(value: Any, context: str) -> str:
+    """Assert that a value is a non-empty string and return it."""
+    require(isinstance(value, str) and value, f"{context}: must be a non-empty string")
+    return cast(str, value)
+
+
 def require_unknown_keys(mapping: dict[str, Any], allowed: set[str], context: str) -> None:
     """Reject keys outside a strict schema."""
     unknown = sorted(set(mapping) - allowed)
     require(not unknown, f"{context}: unknown keys {', '.join(unknown)}")
+
+
+def require_url_like(value: Any, context: str) -> str:
+    """Assert that a value looks like a conservative HTTP(S) URL."""
+    text = require_non_empty_string(value, context)
+    require(re.match(r"^https?://[^\s]+$", text) is not None, f"{context}: must look like a URL")
+    return text
 
 
 def parse_static_ip(value: str) -> tuple[str, int, str]:
@@ -45,12 +58,73 @@ def parse_static_ip(value: str) -> tuple[str, int, str]:
     return str(interface.ip), int(interface.network.prefixlen), str(interface.network)
 
 
-def validate_automation(cluster_doc: dict[str, Any], storage_roles: dict[str, Any]) -> dict[str, Any]:
+def validate_automation(cluster_doc: dict[str, Any], storage_roles: dict[str, Any], templates: dict[str, Any], networks: dict[str, Any]) -> dict[str, Any]:
     """Validate cluster automation settings."""
     cluster = as_mapping(cluster_doc.get("cluster"), "cluster.cluster")
     automation = as_mapping(cluster.get("automation"), "cluster.cluster.automation")
-    ansible_user = automation.get("ansible_user")
-    require(isinstance(ansible_user, str) and ansible_user, "cluster: cluster.automation.ansible_user must be a non-empty string")
+    ansible_user = require_non_empty_string(automation.get("ansible_user"), "cluster: cluster.automation.ansible_user")
+
+    template_build = as_mapping(automation.get("template_build"), "cluster.cluster.automation.template_build")
+    require_unknown_keys(
+        template_build,
+        {
+            "template_key",
+            "image_url",
+            "image_sha512",
+            "image_url_prefix",
+            "import_storage_role",
+            "disk_storage_role",
+            "build_domain",
+            "apt_mirror",
+            "apt_security_mirror",
+            "timezone",
+            "locale",
+            "ciuser",
+            "nameserver",
+            "build_bridge",
+        },
+        "cluster: cluster.automation.template_build",
+    )
+
+    template_key = require_non_empty_string(template_build.get("template_key"), "cluster: cluster.automation.template_build.template_key")
+    require(template_key in templates, "cluster: cluster.automation.template_build.template_key must reference a declared template")
+    template = as_mapping(templates[template_key], f"cluster.templates.{template_key}")
+
+    image_url = require_url_like(template_build.get("image_url"), "cluster: cluster.automation.template_build.image_url")
+    image_url_prefix = require_url_like(template_build.get("image_url_prefix"), "cluster: cluster.automation.template_build.image_url_prefix")
+    require(image_url.startswith(image_url_prefix), "cluster: cluster.automation.template_build.image_url must start with image_url_prefix")
+    image_sha512 = require_non_empty_string(template_build.get("image_sha512"), "cluster: cluster.automation.template_build.image_sha512")
+    require(re.fullmatch(r"[A-Fa-f0-9]{128}", image_sha512) is not None, "cluster: cluster.automation.template_build.image_sha512 must be 128 hex characters")
+
+    import_storage_role = require_non_empty_string(template_build.get("import_storage_role"), "cluster: cluster.automation.template_build.import_storage_role")
+    require(import_storage_role in storage_roles, "cluster: cluster.automation.template_build.import_storage_role must reference a declared storage role")
+    import_storage = as_mapping(storage_roles[import_storage_role], f"cluster.storage_roles.{import_storage_role}")
+    import_content = set(as_list(import_storage.get("content"), f"cluster.storage_roles.{import_storage_role}.content"))
+    require({"import", "snippets"}.issubset(import_content), "cluster: cluster.automation.template_build.import_storage_role must include import and snippets content")
+
+    disk_storage_role = require_non_empty_string(template_build.get("disk_storage_role"), "cluster: cluster.automation.template_build.disk_storage_role")
+    require(disk_storage_role in storage_roles, "cluster: cluster.automation.template_build.disk_storage_role must reference a declared storage role")
+    disk_storage = as_mapping(storage_roles[disk_storage_role], f"cluster.storage_roles.{disk_storage_role}")
+    require("disk" in as_list(disk_storage.get("content"), f"cluster.storage_roles.{disk_storage_role}.content"), "cluster: cluster.automation.template_build.disk_storage_role must include disk content")
+
+    build_domain = require_non_empty_string(template_build.get("build_domain"), "cluster: cluster.automation.template_build.build_domain")
+    require(re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?", build_domain) is not None, "cluster: cluster.automation.template_build.build_domain must look like a hostname")
+    apt_mirror = require_url_like(template_build.get("apt_mirror"), "cluster: cluster.automation.template_build.apt_mirror")
+    apt_security_mirror = require_url_like(template_build.get("apt_security_mirror"), "cluster: cluster.automation.template_build.apt_security_mirror")
+    timezone = require_non_empty_string(template_build.get("timezone"), "cluster: cluster.automation.template_build.timezone")
+    locale = require_non_empty_string(template_build.get("locale"), "cluster: cluster.automation.template_build.locale")
+    ciuser = require_non_empty_string(template_build.get("ciuser"), "cluster: cluster.automation.template_build.ciuser")
+    nameserver = require_non_empty_string(template_build.get("nameserver"), "cluster: cluster.automation.template_build.nameserver")
+    try:
+        ipaddress.ip_address(nameserver)
+    except ValueError:
+        require(False, "cluster: cluster.automation.template_build.nameserver must be a valid IP address")
+
+    build_bridge = require_non_empty_string(template_build.get("build_bridge"), "cluster: cluster.automation.template_build.build_bridge")
+    build_network = next((net for net in networks.values() if net.get("bridge") == build_bridge), None)
+    require(build_network is not None, "cluster: cluster.automation.template_build.build_bridge must reference a declared network bridge")
+    build_network_map = cast(dict[str, Any], build_network)
+    require(build_network_map.get("attach_vms") is True, "cluster: cluster.automation.template_build.build_bridge must reference an attachable network bridge")
 
     cloud_init = as_mapping(automation.get("cloud_init"), "cluster.cluster.automation.cloud_init")
     defaults = cloud_init.get("defaults")
@@ -102,7 +176,27 @@ def validate_automation(cluster_doc: dict[str, Any], storage_roles: dict[str, An
         seen_env_vars.add(public_key_env)
 
     return {
-        "ansible_user": cast(str, ansible_user),
+        "ansible_user": ansible_user,
+        "template_build": {
+            "template_key": template_key,
+            "template_vmid": template.get("vmid"),
+            "template_name": template.get("name"),
+            "image_url": image_url,
+            "image_sha512": image_sha512,
+            "image_url_prefix": image_url_prefix,
+            "import_storage_role": import_storage_role,
+            "import_storage": cast(str, import_storage.get("datastore")),
+            "disk_storage_role": disk_storage_role,
+            "disk_storage": cast(str, disk_storage.get("datastore")),
+            "build_domain": build_domain,
+            "apt_mirror": apt_mirror,
+            "apt_security_mirror": apt_security_mirror,
+            "timezone": timezone,
+            "locale": locale,
+            "ciuser": ciuser,
+            "nameserver": nameserver,
+            "build_bridge": build_bridge,
+        },
         "cloud_init": {
             "defaults": default_values,
             "snippet_storage_role": snippet_storage_role_str,
@@ -132,8 +226,6 @@ def validate_cluster(cluster_doc: dict[str, Any]) -> dict[str, Any]:
     require(images.get("datastore") == "images", "cluster: images storage role must target datastore 'images'")
     require(images.get("content") == ["iso", "import", "snippets"], "cluster: images storage role content mismatch")
 
-    automation = validate_automation(cluster_doc, storage_roles)
-
     networks = as_mapping(cluster_doc.get("networks"), "cluster.networks")
     expected_networks = {
         "mgmt": ("vmbr0", "10.1.0.0/24", "10.1.0.254", False),
@@ -147,6 +239,9 @@ def validate_cluster(cluster_doc: dict[str, Any]) -> dict[str, Any]:
         require(net.get("cidr") == cidr, f"cluster: {name} CIDR must be {cidr}")
         require(net.get("gateway") == gateway, f"cluster: {name} gateway mismatch")
         require(net.get("attach_vms") is attach_vms, f"cluster: {name} attach_vms mismatch")
+
+    templates = as_mapping(cluster_doc.get("templates"), "cluster.templates")
+    automation = validate_automation(cluster_doc, storage_roles, templates, networks)
 
     nodes = as_mapping(cluster_doc.get("nodes"), "cluster.nodes")
     require("cohe" in nodes, "cluster: cohe node must be present")
@@ -172,7 +267,6 @@ def validate_cluster(cluster_doc: dict[str, Any]) -> dict[str, Any]:
     require(vm_defaults.get("primary_nics") == 1, "cluster: vm_defaults.primary_nics must be 1")
     require(vm_defaults.get("pool") is None, "cluster: vm_defaults.pool must be null")
 
-    templates = as_mapping(cluster_doc.get("templates"), "cluster.templates")
     require(cluster.get("default_template") in templates, "cluster: default_template must reference a declared template")
     for template_name, template_value in templates.items():
         tctx = f"cluster.templates.{template_name}"

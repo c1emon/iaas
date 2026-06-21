@@ -3,12 +3,13 @@ packer {
 }
 
 # The first template foundation uses the genericcloud import workflow.
-# The build logic lives in build-template.sh; this file keeps the project
-# ready for future Packer-driven orchestration without changing ownership.
+# The build logic lives in build-template.sh and sources the generated
+# template-build.env; this file keeps the project ready for future
+# Packer-driven orchestration without changing ownership.
 
 variable "pve_endpoint" {
   type        = string
-  description = "PVE API endpoint or node SSH target"
+  description = "PVE API endpoint or node SSH target; local wrapper still requires explicit PVE_HOST"
 }
 
 variable "pve_node" {
@@ -31,12 +32,12 @@ variable "disk_storage" {
 
 variable "template_vmid" {
   type        = number
-  description = "Template VMID, constrained to the template range"
+  description = "Template VMID, constrained to the template range and typically sourced from template-build.env"
 }
 
 variable "template_name" {
   type        = string
-  description = "Template name using the debian-13-tmpl-{date} convention"
+  description = "Template name using the conservative wrapper regex; typically sourced from template-build.env"
 }
 
 variable "pve_username" {
@@ -70,10 +71,10 @@ variable "force_replace" {
 
 variable "image_url" {
   type        = string
-  description = "Pinned Debian 13 genericcloud qcow2 URL"
+  description = "Pinned Debian 13 genericcloud qcow2 URL, usually generated into template-build.env"
 }
 
 variable "image_sha512" {
   type        = string
-  description = "Pinned SHA512 checksum for the qcow2 image"
+  description = "Pinned SHA512 checksum for the qcow2 image, usually generated into template-build.env"
 }

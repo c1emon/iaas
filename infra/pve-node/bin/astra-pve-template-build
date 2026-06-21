@@ -1,18 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly DEFAULT_IMAGE_URL_PREFIX='https://cloud.debian.org/images/cloud/'
-readonly DEFAULT_IMAGE_URL='https://cloud.debian.org/images/cloud/trixie/20260601-2496/debian-13-genericcloud-amd64-20260601-2496.qcow2'
-readonly DEFAULT_IMAGE_SHA512='61264ae6968d765e61cf5607a664ba63099ddfb66b8404aa737d06f89b39c8e0fbaa1517b13705909ff01686d32015a0147436662672b4dacc10b4a171d7993d'
-readonly DEFAULT_IMPORT_STORAGE='images'
-readonly DEFAULT_DISK_STORAGE='memory'
-readonly DEFAULT_BUILD_DOMAIN='localdomain'
-readonly DEFAULT_APT_MIRROR='https://mirrors.tuna.tsinghua.edu.cn/debian'
-readonly DEFAULT_APT_SECURITY_MIRROR='https://mirrors.tuna.tsinghua.edu.cn/debian-security'
-readonly DEFAULT_TIMEZONE='Asia/Shanghai'
-readonly DEFAULT_LOCALE='en_US.UTF-8'
-readonly DEFAULT_CIUSER='builder'
-readonly DEFAULT_NAMESERVER='10.10.0.254'
 readonly CURL='/usr/bin/curl'
 readonly SHASUM='/usr/bin/shasum'
 readonly CP='/usr/bin/cp'
@@ -20,10 +8,11 @@ readonly VIRT_CUSTOMIZE='/usr/bin/virt-customize'
 readonly VIRT_SYSPREP='/usr/bin/virt-sysprep'
 readonly QM='/usr/sbin/qm'
 readonly FLOCK='/usr/bin/flock'
+readonly CACHE_ROOT='/var/cache/astra/packer'
 
 # Emit one JSON object per status line; no jq dependency on the node.
 usage() {
-  printf 'usage: %s --vmid N --name NAME --image-url URL --sha512 HEX --import-storage STORAGE --disk-storage STORAGE --build-domain DOMAIN [--force] [--debug]\n' "$0" >&2
+  printf 'usage: %s --vmid N --name NAME --image-url-prefix PREFIX --image-url URL --sha512 HEX --import-storage STORAGE --disk-storage STORAGE --build-domain DOMAIN --apt-mirror URL --apt-security-mirror URL --timezone TZ --locale LOCALE --ciuser USER --nameserver IP --build-bridge BRIDGE [--force] [--debug]\n' "$0" >&2
 }
 
 # Minimal JSON escaping for terse machine-readable logs.
@@ -72,11 +61,19 @@ require_command() {
 
 TEMPLATE_VMID=''
 TEMPLATE_NAME=''
+IMAGE_URL_PREFIX=''
 IMAGE_URL=''
 IMAGE_SHA512=''
 IMPORT_STORAGE=''
 DISK_STORAGE=''
 BUILD_DOMAIN=''
+APT_MIRROR=''
+APT_SECURITY_MIRROR=''
+TIMEZONE=''
+LOCALE=''
+CIUSER=''
+NAMESERVER=''
+BUILD_BRIDGE=''
 FORCE_REPLACE=false
 DEBUG_MODE=false
 
@@ -88,6 +85,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --name)
       TEMPLATE_NAME=$2
+      shift 2
+      ;;
+    --image-url-prefix)
+      IMAGE_URL_PREFIX=$2
       shift 2
       ;;
     --image-url)
@@ -108,6 +109,34 @@ while [[ $# -gt 0 ]]; do
       ;;
     --build-domain)
       BUILD_DOMAIN=$2
+      shift 2
+      ;;
+    --apt-mirror)
+      APT_MIRROR=$2
+      shift 2
+      ;;
+    --apt-security-mirror)
+      APT_SECURITY_MIRROR=$2
+      shift 2
+      ;;
+    --timezone)
+      TIMEZONE=$2
+      shift 2
+      ;;
+    --locale)
+      LOCALE=$2
+      shift 2
+      ;;
+    --ciuser)
+      CIUSER=$2
+      shift 2
+      ;;
+    --nameserver)
+      NAMESERVER=$2
+      shift 2
+      ;;
+    --build-bridge)
+      BUILD_BRIDGE=$2
       shift 2
       ;;
     --force)
@@ -131,12 +160,20 @@ done
 
 [[ ${TEMPLATE_VMID} =~ ^[0-9]+$ ]] || die_json 'vmid must be numeric'
 (( TEMPLATE_VMID >= 9000 && TEMPLATE_VMID <= 9500 )) || die_json 'vmid must be in 9000-9500'
-[[ ${TEMPLATE_NAME} =~ ^debian-13-tmpl-[0-9]{8}$ ]] || die_json 'template name must match debian-13-tmpl-YYYYMMDD'
-[[ ${IMAGE_URL} == ${DEFAULT_IMAGE_URL_PREFIX}* ]] || die_json 'image URL must use the official Debian cloud prefix'
+[[ ${TEMPLATE_NAME} =~ ^[A-Za-z0-9][A-Za-z0-9._-]+$ ]] || die_json 'template name must match the conservative template regex'
 [[ ${IMAGE_SHA512} =~ ^[[:xdigit:]]{128}$ ]] || die_json 'SHA512 must be 128 hex characters'
+[[ -n ${IMAGE_URL_PREFIX} ]] || die_json 'image URL prefix is required'
 [[ -n ${IMPORT_STORAGE} ]] || die_json 'import storage is required'
 [[ -n ${DISK_STORAGE} ]] || die_json 'disk storage is required'
 [[ -n ${BUILD_DOMAIN} ]] || die_json 'build domain is required'
+[[ -n ${APT_MIRROR} ]] || die_json 'apt mirror is required'
+[[ -n ${APT_SECURITY_MIRROR} ]] || die_json 'apt security mirror is required'
+[[ -n ${TIMEZONE} ]] || die_json 'timezone is required'
+[[ -n ${LOCALE} ]] || die_json 'locale is required'
+[[ -n ${CIUSER} ]] || die_json 'ciuser is required'
+[[ -n ${NAMESERVER} ]] || die_json 'nameserver is required'
+[[ -n ${BUILD_BRIDGE} ]] || die_json 'build bridge is required'
+[[ ${IMAGE_URL} == ${IMAGE_URL_PREFIX}* ]] || die_json 'image URL must start with the declared image URL prefix'
 
 require_command "${CURL}"
 require_command "${SHASUM}"
@@ -154,8 +191,6 @@ run_step() {
   fi
 }
 
-# Remote cache/work layout lives under /var/cache/astra/packer.
-readonly CACHE_ROOT='/var/cache/astra/packer'
 readonly DOWNLOAD_DIR="${CACHE_ROOT}/downloads"
 readonly WORK_DIR="${CACHE_ROOT}/work/${TEMPLATE_NAME}"
 
@@ -205,13 +240,13 @@ log_json customize 'preparing image'
 "${CP}" "${source_image}" "${custom_image}"
 cat >"${apt_sources_file}" <<EOF
 Types: deb
-URIs: ${DEFAULT_APT_MIRROR}
+URIs: ${APT_MIRROR}
 Suites: trixie trixie-updates
 Components: main
 Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
 
 Types: deb
-URIs: ${DEFAULT_APT_SECURITY_MIRROR}
+URIs: ${APT_SECURITY_MIRROR}
 Suites: trixie-security
 Components: main
 Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
@@ -222,8 +257,8 @@ run_step "${VIRT_CUSTOMIZE}" -a "${custom_image}" \
   --run-command 'apt-get update' \
   --install cloud-init,qemu-guest-agent,openssh-server \
   --run-command 'cloud-init clean --logs || true' \
-  --timezone "${DEFAULT_TIMEZONE}" \
-  --run-command "locale-gen ${DEFAULT_LOCALE}"
+  --timezone "${TIMEZONE}" \
+  --run-command "locale-gen ${LOCALE}"
 
 log_json sysprep 'cleaning image'
 run_step "${VIRT_SYSPREP}" -a "${custom_image}" \
@@ -241,7 +276,7 @@ run_step "${QM}" create "${TEMPLATE_VMID}" \
   --bios ovmf \
   --efidisk0 "${DISK_STORAGE}:0,efitype=4m,format=raw" \
   --scsihw virtio-scsi-single \
-  --net0 'virtio,bridge=br_dev'
+  --net0 "virtio,bridge=${BUILD_BRIDGE}"
 
 log_json import 'importing qcow2'
 run_step "${QM}" importdisk "${TEMPLATE_VMID}" "${custom_image}" "${DISK_STORAGE}" --format qcow2
@@ -270,9 +305,9 @@ run_step "${QM}" set "${TEMPLATE_VMID}" \
   --serial0 socket \
   --vga serial0 \
   --agent enabled=1 \
-  --ciuser "${DEFAULT_CIUSER}" \
+  --ciuser "${CIUSER}" \
   --searchdomain "${BUILD_DOMAIN}" \
-  --nameserver "${DEFAULT_NAMESERVER}"
+  --nameserver "${NAMESERVER}"
 
 log_json template 'converting to template'
 run_step "${QM}" template "${TEMPLATE_VMID}"

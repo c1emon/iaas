@@ -7,6 +7,7 @@ This directory documents the first template build path:
 - local trigger: `build-template.sh`
 - remote wrapper: `infra/pve-node/bin/astra-pve-template-build`
 - remote cache: `/var/cache/astra/packer`
+- generated env: `template-build.env` (committed, non-secret, sourced by the local trigger)
 - template naming: `debian-13-tmpl-YYYYMMDD`
 
 ## Build flow
@@ -24,9 +25,12 @@ The wrapper writes a temporary deb822 `debian.sources`, removes stale
 It also runs `cloud-init clean --logs || true` after installing cloud-init, then
 uses virt-sysprep for the remaining cleanup operations.
 
-`PVE_HOST` must point at the selected build node SSH host. Remote commands run
-as `pve-ops` and use `sudo` for the wrapper entrypoint, with a sudoers template
-allowing only `/usr/local/sbin/astra-pve-template-build`.
+`PVE_HOST` must be set explicitly to the selected build node SSH host. Remote
+commands run as `pve-ops` and use `sudo` for the wrapper entrypoint, with a
+sudoers template allowing only `/usr/local/sbin/astra-pve-template-build`.
+
+`build-template.sh` sources the generated `template-build.env` beside the script
+before applying any environment overrides.
 
 Wrapper runtime dependencies on the PVE node: `/usr/bin/curl`,
 `/usr/bin/shasum`, `/usr/bin/cp`, `/usr/bin/virt-customize`,
@@ -37,7 +41,7 @@ Install `libguestfs-tools` on the PVE node to provide `virt-customize` and
 For OVMF/q35 builds, the template is created with an explicit 4m EFI disk on
 `DISK_STORAGE`.
 
-`br_dev` must exist until the bridge is parameterized.
+The configured build bridge must exist and remain attachable for template builds.
 
 `qm importdisk` attachment uses the imported volume reported in VM config and
 fails rather than guessing if that volume cannot be detected.
@@ -60,7 +64,11 @@ Packer CLI is not required for this helper yet.
 - `template_vmid`, `template_name`
 - `pve_username`, `pve_token_id`, `pve_token_secret`
 - `cache_dir`, `force_replace`
-- `image_url`, `image_sha512`
+- `image_url`, `image_sha512`, `image_url_prefix`
+- `apt_mirror`, `apt_security_mirror`, `timezone`, `locale`, `ciuser`, `nameserver`, `build_bridge`
+
+Generated non-secret defaults live in `template-build.env`; `PVE_HOST` remains a
+required explicit local setting.
 
 ## Ownership boundary
 

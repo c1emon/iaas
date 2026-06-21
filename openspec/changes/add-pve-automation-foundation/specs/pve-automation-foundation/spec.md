@@ -35,7 +35,7 @@ The system SHALL define a Packer-based process for building a Debian 13 cloud-in
 - **THEN** the build SHALL produce a Debian 13 PVE template suitable for cloud-init cloning
 - **AND** the template SHALL include cloud-init and qemu-guest-agent readiness
 - **AND** the template SHALL use a pinned Debian 13 genericcloud image URL and checksum selected at implementation time
-- **AND** the template SHALL include the configured TUNA Debian apt mirrors, `Asia/Shanghai` timezone, and `en_US.UTF-8` locale
+- **AND** the template SHALL include configured apt mirrors, timezone, locale, and build bridge parameters sourced from inventory-driven template build settings
 - **AND** the template SHALL be cleaned of machine-specific identity, SSH host keys, cloud-init state, and temporary build artifacts before reuse
 
 #### Scenario: Keep VM-specific data out of the template

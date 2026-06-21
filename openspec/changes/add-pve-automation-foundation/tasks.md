@@ -44,7 +44,7 @@
 - [x] 3.6 Document template rebuild and versioning runbook.
 - [x] 3.7 Pin the selected current Debian 13 genericcloud image URL and checksum at implementation time.
 - [x] 3.8 Use `cohe` as the default Packer build node and `debian-13-tmpl-{date}` as the template naming convention.
-- [x] 3.9 Configure TUNA Debian apt mirrors, timezone `Asia/Shanghai`, and locale `en_US.UTF-8` in the template.
+- [x] 3.9 Configure template_build-driven apt mirrors, timezone, locale, and build bridge in the template.
 - [x] 3.10 Store Packer cache/download artifacts under `.cache/packer` and keep them out of Git.
 - [x] 3.11 Retain old dated templates by default and require explicit force for replacement.
 - [x] 3.12 Restrict template force replacement to VMIDs `9000-9500` and names matching `debian-13-tmpl-*`.

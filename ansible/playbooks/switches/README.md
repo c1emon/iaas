@@ -141,7 +141,7 @@ uv run ansible-playbook --syntax-check playbooks/switches/readonly-facts.yml
 uv run ansible-playbook --syntax-check playbooks/switches/config-plan.yml
 uv run yamllint inventories/homelab.yml inventories/group_vars/switches.yml playbooks/switches/readonly-facts.yml playbooks/switches/tasks/export-readonly-facts.yml playbooks/switches/config-plan.yml roles/switch_config/defaults/main.yml roles/switch_config/tasks/main.yml roles/switch_config/tasks/validate.yml roles/switch_config/tasks/diff.yml roles/switch_config/tasks/apply.yml roles/switch_config/tasks/export.yml
 uv run ansible-lint playbooks/switches/readonly-facts.yml playbooks/switches/config-plan.yml roles/switch_config
-uv run python -m unittest tests/test_xikeos_migration.py
+uv run pytest tests/test_xikeos_migration.py
 uv run python -m compileall filter_plugins module_utils
 op run --env-file ../.env.switch.tpl -- uv run ansible-playbook playbooks/switches/network-cli-smoke.yml
 ```
