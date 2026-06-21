@@ -3,7 +3,7 @@
 This directory documents the first template build path:
 
 - source image: Debian 13 Trixie genericcloud qcow2
-- build host SSH target: `cohe` by default
+- build node: `cohe` in inventory; use `PVE_HOST=10.1.0.72` when connecting by management IP instead of SSH alias
 - local trigger: `build-template.sh`
 - remote wrapper: `infra/pve-node/bin/astra-pve-template-build`
 - remote cache: `/var/cache/astra/packer`
@@ -25,9 +25,9 @@ The wrapper writes a temporary deb822 `debian.sources`, removes stale
 It also runs `cloud-init clean --logs || true` after installing cloud-init, then
 uses virt-sysprep for the remaining cleanup operations.
 
-`PVE_HOST` must be set explicitly to the selected build node SSH host. Remote
-commands run as `pve-ops` and use `sudo` for the wrapper entrypoint, with a
-sudoers template allowing only `/usr/local/sbin/astra-pve-template-build`.
+`PVE_HOST` must be set explicitly to the selected build node SSH host or IP.
+Remote commands run as `pve-ops` and use `sudo` for the wrapper entrypoint,
+with a sudoers template allowing only `/usr/local/sbin/astra-pve-template-build`.
 
 `build-template.sh` sources the generated `template-build.env` beside the script
 before applying any environment overrides.
@@ -69,6 +69,21 @@ Packer CLI is not required for this helper yet.
 
 Generated non-secret defaults live in `template-build.env`; `PVE_HOST` remains a
 required explicit local setting.
+
+## Live-test notes
+
+- Section 3 template rebuild was live-tested against `pve-ops@10.1.0.72` with
+  VMID `9001` and template name `debian-13-tmpl-20260616`.
+- `FORCE_REPLACE=true TEMPLATE_DEBUG=true` successfully removed the previous
+  VMID `9001`, reused the cached pinned Debian 13 genericcloud image, verified
+  SHA512, customized the image, imported it, and converted it to a PVE template.
+- The resulting template was verified with `template: 1`, `bios: ovmf`,
+  `machine: q35`, `scsihw: virtio-scsi-single`, root and EFI disks on
+  `memory`, cloud-init media on `images`, `net0` on `br_dev`, and guest agent
+  enabled.
+- A temporary full clone VMID `799` was created from the template, started,
+  reached qemu-guest-agent readiness, received static IP `10.10.0.199/24`, and
+  was destroyed with `--purge`; template VMID `9001` was retained.
 
 ## Ownership boundary
 

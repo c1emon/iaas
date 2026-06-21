@@ -73,7 +73,7 @@ Alternative considered: let OpenTofu read YAML directly with `yamldecode()`. Rej
 
 Packer should produce a Debian 13 cloud-init template before OpenTofu creates VMs. The selected first route is Debian 13 `genericcloud` qcow2 image import/customization rather than installer ISO automation. The implementation must pin the selected current image URL and checksum, customize the image offline where practical, import it into PVE storage, attach cloud-init and EFI disks, set boot order, and convert the VM to a template. The template should include cloud-init, enabled qemu-guest-agent, serial-console readiness, configured apt mirrors, timezone, locale, build bridge, baseline packages, and cleanup of unique machine state. The ISO installer route remains a fallback only if implementation reveals a need for installer-only behavior such as custom partitioning.
 
-Packer should build on `cohe` by default and fail if that node is unavailable; operators can change the build node manually. Packer cache and downloaded image artifacts should live under `.cache/packer` and stay out of Git. Existing dated templates should be retained for rollback. If a requested template VMID/name already exists, replacement must require an explicit force mode that only allows VMIDs in `9000-9500` and names matching `debian-13-tmpl-*`.
+Packer should build on `cohe` by default and fail if that node is unavailable; operators can change the build node manually. Packer cache and downloaded image artifacts should live under `.cache/packer` and stay out of Git. Existing templates should be retained for rollback. If a requested template VMID/name already exists, replacement must require an explicit force mode that only allows VMIDs in `9000-9500` and conservative PVE-safe template names. The initial Debian 13 template uses the inventory-declared `debian-13-tmpl-{date}` convention, but the wrapper should not hard-code that prefix so future template families can reuse the same guarded path.
 
 Packer owns template creation. OpenTofu should reference templates by declared ID/name but should not manage the template VM lifecycle created by Packer.
 
@@ -224,7 +224,7 @@ State backup should not rely only on operator memory. Makefile/OpenTofu helper t
 
 ### Use fixed VM ID ranges and template naming
 
-The Debian 13 genericcloud image source should be selected as the current latest image at implementation time and then pinned. Template names should use the form `debian-13-tmpl-{date}`, with a compact date such as `debian-13-tmpl-20260616` unless implementation reveals a PVE naming constraint.
+The Debian 13 genericcloud image source should be selected as the current latest image at implementation time and then pinned. Initial Debian 13 template names should use the form `debian-13-tmpl-{date}`, with a compact date such as `debian-13-tmpl-20260616`, while the reusable wrapper accepts conservative PVE-safe inventory-declared names for future template families.
 
 VM ID ranges should be reserved as follows:
 

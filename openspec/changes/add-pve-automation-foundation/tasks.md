@@ -43,11 +43,11 @@
 - [x] 3.5 Clean machine identity, SSH host keys, cloud-init state, package cache, and temporary files before templating.
 - [x] 3.6 Document template rebuild and versioning runbook.
 - [x] 3.7 Pin the selected current Debian 13 genericcloud image URL and checksum at implementation time.
-- [x] 3.8 Use `cohe` as the default Packer build node and `debian-13-tmpl-{date}` as the template naming convention.
+- [x] 3.8 Use `cohe` as the default Packer build node and inventory-driven template names, with `debian-13-tmpl-{date}` as the initial Debian 13 naming convention.
 - [x] 3.9 Configure template_build-driven apt mirrors, timezone, locale, and build bridge in the template.
 - [x] 3.10 Store Packer cache/download artifacts under `.cache/packer` and keep them out of Git.
 - [x] 3.11 Retain old dated templates by default and require explicit force for replacement.
-- [x] 3.12 Restrict template force replacement to VMIDs `9000-9500` and names matching `debian-13-tmpl-*`.
+- [x] 3.12 Restrict template force replacement to VMIDs `9000-9500` and conservative PVE-safe template names.
 - [x] 3.13 Keep Packer-created templates owned by Packer; OpenTofu may reference but not manage template lifecycle.
 - [x] 3.14 Execute an end-to-end Debian 13 template build on cohe and validate the resulting template.
 

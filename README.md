@@ -4,16 +4,20 @@ This repository is being re-initialized as the source of truth for Astra infrast
 
 Current scope:
 
-- No live infrastructure changes.
 - No real secrets committed to Git.
-- Terraform, Ansible, and operational documents will be added incrementally after boundaries and safety workflows are defined.
+- PVE automation foundation with YAML source-of-truth inventory, generated OpenTofu input, generated Ansible inventory, and generated VM documentation.
+- Debian 13 PVE template build helpers under `infra/packer/`, executed through audited PVE-node wrappers.
+- OpenTofu VM lifecycle configuration under `infra/tofu/`, using local state for the initial single-operator workflow.
+- Ansible bootstrap and verification content is added incrementally around the same inventory model.
 
-Planned areas:
+Key areas:
 
 - `docs/` — architecture, runbooks, decision records.
-- `terraform/` — infrastructure resources such as Proxmox VMs and DNS records.
+- `inventory/` — operator-authored PVE cluster and VM source-of-truth YAML.
+- `infra/packer/` — PVE template build helpers and runbooks.
+- `infra/tofu/` — OpenTofu-managed PVE VM lifecycle.
 - `ansible/` — host configuration, service deployment, and low-risk network automation.
-- `scripts/` — local helper scripts only when needed.
+- `scripts/` — validation, generation, and runtime helper scripts.
 
 ## Python toolchain
 

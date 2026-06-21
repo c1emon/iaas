@@ -115,6 +115,38 @@ def test_template_build_script_shell_quotes_remote_args(tmp_path: Path) -> None:
     assert remote_command.endswith("'--force' '--debug'")
 
 
+def test_template_build_script_rejects_shell_unsafe_template_name(tmp_path: Path) -> None:
+    ssh_bin = tmp_path / "ssh"
+    ssh_bin.write_text("#!/usr/bin/env bash\nexit 99\n", encoding="utf-8")
+    ssh_bin.chmod(0o755)
+
+    script = ROOT / "infra" / "packer" / "proxmox" / "debian-13" / "build-template.sh"
+    env = os.environ | {
+        "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
+        "PVE_HOST": "pve-01.example.invalid",
+        "TEMPLATE_VMID": "9001",
+        "TEMPLATE_NAME": "bad template name",
+        "IMAGE_URL_PREFIX": "https://images.example.invalid/",
+        "IMAGE_URL": "https://images.example.invalid/debian.qcow2",
+        "IMAGE_SHA512": "a" * 128,
+        "IMPORT_STORAGE": "local",
+        "DISK_STORAGE": "fast-nvme",
+        "BUILD_DOMAIN": "build.example.invalid",
+        "APT_MIRROR": "https://deb.debian.org/debian",
+        "APT_SECURITY_MIRROR": "https://security.debian.org/debian-security",
+        "TIMEZONE": "Etc/UTC",
+        "LOCALE": "en_US.UTF-8",
+        "CIUSER": "ci",
+        "NAMESERVER": "192.0.2.53",
+        "BUILD_BRIDGE": "br_dev",
+    }
+
+    result = subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True)
+
+    assert result.returncode == 1
+    assert "template name must match the conservative template regex" in result.stderr
+
+
 def test_validation_rejects_unknown_template_build_keys() -> None:
     doc = copy.deepcopy(load_yaml(CLUSTER_PATH))
     doc["cluster"]["automation"]["template_build"]["unexpected"] = "boom"

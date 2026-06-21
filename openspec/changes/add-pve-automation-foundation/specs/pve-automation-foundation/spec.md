@@ -45,7 +45,7 @@ The system SHALL define a Packer-based process for building a Debian 13 cloud-in
 #### Scenario: Retain existing templates by default
 - **WHEN** a new Debian 13 template is built
 - **THEN** existing dated templates SHALL be retained by default for rollback
-- **AND** replacement of an existing template SHALL require explicit force mode constrained to template VM IDs `9000-9500` and names matching `debian-13-tmpl-*`
+- **AND** replacement of an existing template SHALL require explicit force mode constrained to template VM IDs `9000-9500` and conservative PVE-safe template names
 
 #### Scenario: Spike the genericcloud import path first
 - **WHEN** implementation starts
@@ -268,7 +268,7 @@ The system SHALL use separate dedicated identities for PVE API automation and PV
 - **AND** it SHALL state that future automation of this bootstrap may be introduced separately under an existing administrator identity
 
 ### Requirement: Reserved naming and ID ranges
-The system SHALL enforce reserved VM ID ranges and template naming conventions for PVE automation.
+The system SHALL enforce reserved VM ID ranges and conservative template naming rules for PVE automation.
 
 #### Scenario: Reserve VM ID ranges
 - **WHEN** inventory declares templates or VMs
@@ -276,7 +276,8 @@ The system SHALL enforce reserved VM ID ranges and template naming conventions f
 - **AND** long-lived VM IDs SHALL be in `1000-2000`
 - **AND** ephemeral or lab VM IDs SHALL be in `500-800`
 
-#### Scenario: Name Debian 13 templates predictably
+#### Scenario: Name templates safely and predictably
 - **WHEN** a Debian 13 template is built
-- **THEN** it SHALL use the naming pattern `debian-13-tmpl-{date}`
+- **THEN** the initial inventory SHOULD use the naming pattern `debian-13-tmpl-{date}`
+- **AND** the reusable template build wrapper SHALL accept conservative PVE-safe inventory-declared names rather than hard-coding a Debian-only prefix
 - **AND** the source Debian 13 genericcloud image URL and checksum SHALL be pinned at implementation time after selecting the current latest image
