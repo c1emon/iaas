@@ -1,0 +1,323 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly CURL='/usr/bin/curl'
+readonly SHASUM='/usr/bin/shasum'
+readonly CP='/usr/bin/cp'
+readonly VIRT_CUSTOMIZE='/usr/bin/virt-customize'
+readonly VIRT_SYSPREP='/usr/bin/virt-sysprep'
+readonly QM='/usr/sbin/qm'
+readonly FLOCK='/usr/bin/flock'
+readonly CACHE_ROOT='/var/cache/astra/packer'
+
+# Emit one JSON object per status line; no jq dependency on the node.
+usage() {
+  printf 'usage: %s --vmid N --name NAME --image-url-prefix PREFIX --image-url URL --sha512 HEX --import-storage STORAGE --disk-storage STORAGE --build-domain DOMAIN --apt-mirror URL --apt-security-mirror URL --timezone TZ --locale LOCALE --ciuser USER --nameserver IP --build-bridge BRIDGE [--force] [--debug]\n' "$0" >&2
+}
+
+# Minimal JSON escaping for terse machine-readable logs.
+json_escape() {
+  local value=${1-}
+  value=${value//\\/\\\\}
+  value=${value//\"/\\\"}
+  value=${value//$'\n'/\\n}
+  value=${value//$'\r'/\\r}
+  value=${value//$'\t'/\\t}
+  printf '%s' "${value}"
+}
+
+# Status logs stay terse and structured for wrapper callers.
+log_json() {
+  local event=$1
+  local message=${2-}
+  printf '{"event":"%s","message":"%s","vmid":%s,"name":"%s"}\n' \
+    "$(json_escape "${event}")" \
+    "$(json_escape "${message}")" \
+    "${TEMPLATE_VMID}" \
+    "$(json_escape "${TEMPLATE_NAME}")"
+}
+
+# Errors are also JSON so callers can surface them consistently.
+die_json() {
+  local message=$1
+  printf '{"event":"error","message":"%s","vmid":%s,"name":"%s"}\n' \
+    "$(json_escape "${message}")" \
+    "${TEMPLATE_VMID:-0}" \
+    "$(json_escape "${TEMPLATE_NAME:-}")" >&2
+  exit 1
+}
+
+# Template state is read from qm; existing VMs/templates block replacement unless forced.
+template_exists() {
+  "${QM}" status "${TEMPLATE_VMID}" >/dev/null 2>&1
+}
+
+# Keep the runtime dependency list explicit because the wrapper runs as root on the node.
+require_command() {
+  if [[ ! -x $1 ]]; then
+    die_json "missing required command: $1"
+  fi
+}
+
+TEMPLATE_VMID=''
+TEMPLATE_NAME=''
+IMAGE_URL_PREFIX=''
+IMAGE_URL=''
+IMAGE_SHA512=''
+IMPORT_STORAGE=''
+DISK_STORAGE=''
+BUILD_DOMAIN=''
+APT_MIRROR=''
+APT_SECURITY_MIRROR=''
+TIMEZONE=''
+LOCALE=''
+CIUSER=''
+NAMESERVER=''
+BUILD_BRIDGE=''
+FORCE_REPLACE=false
+DEBUG_MODE=false
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --vmid)
+      TEMPLATE_VMID=$2
+      shift 2
+      ;;
+    --name)
+      TEMPLATE_NAME=$2
+      shift 2
+      ;;
+    --image-url-prefix)
+      IMAGE_URL_PREFIX=$2
+      shift 2
+      ;;
+    --image-url)
+      IMAGE_URL=$2
+      shift 2
+      ;;
+    --sha512)
+      IMAGE_SHA512=$2
+      shift 2
+      ;;
+    --import-storage)
+      IMPORT_STORAGE=$2
+      shift 2
+      ;;
+    --disk-storage)
+      DISK_STORAGE=$2
+      shift 2
+      ;;
+    --build-domain)
+      BUILD_DOMAIN=$2
+      shift 2
+      ;;
+    --apt-mirror)
+      APT_MIRROR=$2
+      shift 2
+      ;;
+    --apt-security-mirror)
+      APT_SECURITY_MIRROR=$2
+      shift 2
+      ;;
+    --timezone)
+      TIMEZONE=$2
+      shift 2
+      ;;
+    --locale)
+      LOCALE=$2
+      shift 2
+      ;;
+    --ciuser)
+      CIUSER=$2
+      shift 2
+      ;;
+    --nameserver)
+      NAMESERVER=$2
+      shift 2
+      ;;
+    --build-bridge)
+      BUILD_BRIDGE=$2
+      shift 2
+      ;;
+    --force)
+      FORCE_REPLACE=true
+      shift
+      ;;
+    --debug)
+      DEBUG_MODE=true
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage
+      die_json "unknown argument: $1"
+      ;;
+  esac
+done
+
+[[ ${TEMPLATE_VMID} =~ ^[0-9]+$ ]] || die_json 'vmid must be numeric'
+(( TEMPLATE_VMID >= 9000 && TEMPLATE_VMID <= 9500 )) || die_json 'vmid must be in 9000-9500'
+[[ ${TEMPLATE_NAME} =~ ^[A-Za-z0-9][A-Za-z0-9._-]+$ ]] || die_json 'template name must match the conservative template regex'
+[[ ${IMAGE_SHA512} =~ ^[[:xdigit:]]{128}$ ]] || die_json 'SHA512 must be 128 hex characters'
+[[ -n ${IMAGE_URL_PREFIX} ]] || die_json 'image URL prefix is required'
+[[ -n ${IMPORT_STORAGE} ]] || die_json 'import storage is required'
+[[ -n ${DISK_STORAGE} ]] || die_json 'disk storage is required'
+[[ -n ${BUILD_DOMAIN} ]] || die_json 'build domain is required'
+[[ -n ${APT_MIRROR} ]] || die_json 'apt mirror is required'
+[[ -n ${APT_SECURITY_MIRROR} ]] || die_json 'apt security mirror is required'
+[[ -n ${TIMEZONE} ]] || die_json 'timezone is required'
+[[ -n ${LOCALE} ]] || die_json 'locale is required'
+[[ -n ${CIUSER} ]] || die_json 'ciuser is required'
+[[ -n ${NAMESERVER} ]] || die_json 'nameserver is required'
+[[ -n ${BUILD_BRIDGE} ]] || die_json 'build bridge is required'
+[[ ${IMAGE_URL} == ${IMAGE_URL_PREFIX}* ]] || die_json 'image URL must start with the declared image URL prefix'
+
+require_command "${CURL}"
+require_command "${SHASUM}"
+require_command "${CP}"
+require_command "${VIRT_CUSTOMIZE}"
+require_command "${VIRT_SYSPREP}"
+require_command "${QM}"
+require_command "${FLOCK}"
+
+run_step() {
+  if [[ ${DEBUG_MODE} == true ]]; then
+    "$@"
+  else
+    "$@" >/dev/null
+  fi
+}
+
+readonly DOWNLOAD_DIR="${CACHE_ROOT}/downloads"
+readonly WORK_DIR="${CACHE_ROOT}/work/${TEMPLATE_NAME}"
+
+# Use the standard lock location when available; fall back to /var/lock.
+lock_dir='/run/lock'
+if [[ ! -d ${lock_dir} ]]; then
+  lock_dir='/var/lock'
+fi
+lock_file="${lock_dir}/astra-pve-template-build.lock"
+
+mkdir -p "${DOWNLOAD_DIR}" "${WORK_DIR}"
+
+exec 9>"${lock_file}"
+"${FLOCK}" -n 9 || die_json 'another build is already running'
+
+# Temporary image copy is removed on exit.
+trap 'rm -rf "${WORK_DIR}"' EXIT
+
+source_image="${DOWNLOAD_DIR}/$(basename "${IMAGE_URL}")"
+custom_image="${WORK_DIR}/${TEMPLATE_NAME}.qcow2"
+apt_sources_file="${WORK_DIR}/debian.sources"
+
+# Start of the build workflow.
+log_json start 'build requested'
+
+if template_exists; then
+  if [[ ${FORCE_REPLACE} != true ]]; then
+    die_json 'template VMID already exists; pass --force to replace'
+  fi
+  log_json destroy 'removing existing template'
+  run_step "${QM}" destroy "${TEMPLATE_VMID}" --purge 1
+fi
+
+# Reuse the cached qcow2 if present, but always re-check the pinned checksum.
+if [[ ! -f ${source_image} ]]; then
+  log_json download "fetching ${IMAGE_URL}"
+  "${CURL}" -fsSL "${IMAGE_URL}" -o "${source_image}"
+else
+  log_json cache "reusing cached image ${source_image}"
+fi
+
+log_json checksum 'verifying SHA512'
+printf '%s  %s\n' "${IMAGE_SHA512}" "${source_image}" | "${SHASUM}" -a 512 -c - >/dev/null
+
+# Customize the genericcloud image before importing it to PVE.
+log_json customize 'preparing image'
+"${CP}" "${source_image}" "${custom_image}"
+cat >"${apt_sources_file}" <<EOF
+Types: deb
+URIs: ${APT_MIRROR}
+Suites: trixie trixie-updates
+Components: main
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+
+Types: deb
+URIs: ${APT_SECURITY_MIRROR}
+Suites: trixie-security
+Components: main
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+EOF
+run_step "${VIRT_CUSTOMIZE}" -a "${custom_image}" \
+  --upload "${apt_sources_file}:/etc/apt/sources.list.d/debian.sources" \
+  --run-command 'rm -f /etc/apt/sources.list' \
+  --run-command 'apt-get update' \
+  --install cloud-init,qemu-guest-agent,openssh-server \
+  --run-command 'cloud-init clean --logs || true' \
+  --timezone "${TIMEZONE}" \
+  --run-command "locale-gen ${LOCALE}"
+
+log_json sysprep 'cleaning image'
+run_step "${VIRT_SYSPREP}" -a "${custom_image}" \
+  --operations machine-id,ssh-hostkeys,logfiles,tmp-files,package-manager-cache
+
+# Create the q35/OVMF template skeleton before attaching storage.
+log_json create 'creating VM template'
+run_step "${QM}" create "${TEMPLATE_VMID}" \
+  --name "${TEMPLATE_NAME}" \
+  --memory 2048 \
+  --cores 2 \
+  --cpu host \
+  --ostype l26 \
+  --machine q35 \
+  --bios ovmf \
+  --efidisk0 "${DISK_STORAGE}:0,efitype=4m,format=raw" \
+  --scsihw virtio-scsi-single \
+  --net0 "virtio,bridge=${BUILD_BRIDGE}"
+
+log_json import 'importing qcow2'
+run_step "${QM}" importdisk "${TEMPLATE_VMID}" "${custom_image}" "${DISK_STORAGE}" --format qcow2
+
+# Require qm to report the imported volume as unused0; guessing can target the EFI disk.
+imported_volume=''
+while IFS= read -r line; do
+  case ${line} in
+    unused0:*)
+      imported_volume=${line#unused0: }
+      break
+      ;;
+  esac
+done < <("${QM}" config "${TEMPLATE_VMID}")
+
+if [[ -z ${imported_volume} ]]; then
+  die_json 'failed to detect imported volume from qm config'
+fi
+
+# Attach the imported disk, cloud-init drive, and boot/serial settings.
+log_json attach "attaching ${imported_volume}"
+run_step "${QM}" set "${TEMPLATE_VMID}" \
+  --scsi0 "${imported_volume}" \
+  --ide2 "${IMPORT_STORAGE}:cloudinit" \
+  --boot order=scsi0 \
+  --serial0 socket \
+  --vga serial0 \
+  --agent enabled=1 \
+  --ciuser "${CIUSER}" \
+  --searchdomain "${BUILD_DOMAIN}" \
+  --nameserver "${NAMESERVER}"
+
+log_json template 'converting to template'
+run_step "${QM}" template "${TEMPLATE_VMID}"
+
+# Remove the working copy; the cached source image remains for reuse.
+rm -f "${custom_image}"
+trap - EXIT
+
+printf '{"status":"success","vmid":%s,"name":"%s","image":"%s","template":%s}\n' \
+  "${TEMPLATE_VMID}" \
+  "$(json_escape "${TEMPLATE_NAME}")" \
+  "$(json_escape "${IMAGE_URL}")" \
+  'true'

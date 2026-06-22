@@ -1,0 +1,54 @@
+---
+- name: Verify PVE guest reachability and identity
+  hosts: pve_vms
+  gather_facts: true
+  become: false
+
+  tasks:
+    - name: Assert the inventory hostname matches the guest hostname
+      ansible.builtin.assert:
+        that:
+          - inventory_hostname == ansible_facts.hostname
+        fail_msg: >-
+          Inventory host {{ inventory_hostname }} does not match guest hostname
+          {{ ansible_facts.hostname | default('unknown') }}
+
+    - name: Assert the declared static IP is present in gathered facts
+      ansible.builtin.assert:
+        that:
+          - hostvars[inventory_hostname].ansible_host in (ansible_facts.all_ipv4_addresses | default([]))
+        fail_msg: >-
+          Guest {{ inventory_hostname }} does not report the declared static IP
+          {{ hostvars[inventory_hostname].ansible_host }} in ansible facts
+
+    - name: Read the guest resolver configuration
+      ansible.builtin.slurp:
+        src: /etc/resolv.conf
+      register: pve_resolver_conf
+
+    - name: Read systemd-resolved DNS configuration when available
+      ansible.builtin.command: resolvectl dns
+      register: pve_resolvectl_dns
+      changed_when: false
+      failed_when: false
+
+    - name: Assert resolver configuration includes expected PVE DNS nameserver(s)
+      ansible.builtin.assert:
+        that:
+          - >-
+            ('nameserver ' ~ item) in (pve_resolver_conf.content | b64decode)
+            or item in (pve_resolvectl_dns.stdout | default(''))
+        fail_msg: >-
+          Guest {{ inventory_hostname }} resolver config is missing nameserver {{ item }}
+      loop: "{{ hostvars[inventory_hostname].pve_dns | default([]) }}"
+
+    - name: Gather service facts for qemu guest agent checks
+      ansible.builtin.service_facts:
+
+    - name: Assert qemu-guest-agent is installed and running
+      ansible.builtin.assert:
+        that:
+          - "'qemu-guest-agent.service' in ansible_facts.services"
+          - ansible_facts.services.get('qemu-guest-agent.service', {}).get('state') == 'running'
+        fail_msg: >-
+          Guest {{ inventory_hostname }} does not report a running qemu-guest-agent

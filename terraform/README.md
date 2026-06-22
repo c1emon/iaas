@@ -1,6 +1,8 @@
-# Terraform
+# Legacy Terraform placeholder
 
-Terraform code will be added here after backend, provider, secret, and apply workflows are defined.
+Active PVE VM lifecycle configuration now lives under `infra/tofu/` and uses
+OpenTofu. Keep this directory empty unless a future change explicitly
+reintroduces Terraform-specific configuration.
 
 Do not commit:
 

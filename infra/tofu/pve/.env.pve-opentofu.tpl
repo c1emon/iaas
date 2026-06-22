@@ -1,0 +1,9 @@
+TF_VAR_pve_endpoint=op://Astra/pve-opentofu-api-token/endpoint
+TF_VAR_pve_api_username=op://Astra/pve-opentofu-api-token/username
+TF_VAR_pve_api_token_id=op://Astra/pve-opentofu-api-token/token_id
+TF_VAR_pve_api_token_secret=op://Astra/pve-opentofu-api-token/token_secret
+TF_VAR_pve_insecure=true
+PVE_VM_CLEMON_PASSWORD=op://Astra/vm-user-clemon/PAM/password
+PVE_VM_CLEMON_PUBLIC_KEY=op://Astra/vm-user-clemon/public_key
+PVE_VM_OPS_PASSWORD=op://Astra/vm-user-ops/PAM/password
+PVE_VM_OPS_PUBLIC_KEY=op://Astra/vm-user-ops/public_key
