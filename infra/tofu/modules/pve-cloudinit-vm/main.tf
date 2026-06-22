@@ -23,7 +23,7 @@ resource "proxmox_virtual_environment_vm" "protected" {
     node_name    = var.template.node
     vm_id        = var.template.vmid
     full         = true
-    datastore_id = var.cloud_init_datastore_id
+    datastore_id = var.disk_datastore_id
   }
 
   cpu {
@@ -36,7 +36,7 @@ resource "proxmox_virtual_environment_vm" "protected" {
   }
 
   disk {
-    datastore_id = var.cloud_init_datastore_id
+    datastore_id = var.disk_datastore_id
     interface    = var.template.primary_disk
     size         = var.vm.resources.root_disk_gib
   }
@@ -58,7 +58,7 @@ resource "proxmox_virtual_environment_vm" "protected" {
   }
 
   initialization {
-    datastore_id = var.disk_datastore_id
+    datastore_id = var.cloud_init_datastore_id
 
     ip_config {
       ipv4 {
@@ -149,7 +149,7 @@ resource "proxmox_virtual_environment_vm" "unprotected" {
   }
 
   initialization {
-    datastore_id = var.disk_datastore_id
+    datastore_id = var.cloud_init_datastore_id
 
     ip_config {
       ipv4 {
