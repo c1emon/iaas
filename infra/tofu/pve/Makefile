@@ -4,8 +4,11 @@ ROOT ?= $(abspath ../../../)
 STATE_FILE ?= terraform.tfstate
 BACKUP_DIR ?= $(ROOT)/.cache/tofu-state-backups
 USER_DATA_DIR ?= $(ROOT)/.cache/pve-cloud-init/user-data
+ANSIBLE_INVENTORY ?= $(ROOT)/ansible/inventories/generated/pve.yml
+ANSIBLE_PLAYBOOK ?= $(ROOT)/ansible/playbooks/pve/verify-guests.yml
+ANSIBLE_LIMIT ?= pve_vms
 
-.PHONY: backup-state init fmt validate require-storage-id require-pve-target render-user-data upload-user-data verify-user-data plan apply destroy
+.PHONY: backup-state init fmt validate require-storage-id require-pve-target render-user-data upload-user-data verify-user-data verify-guests verify-guests-syntax plan apply destroy
 
 backup-state:
 	@mkdir -p "$(BACKUP_DIR)"
@@ -35,6 +38,12 @@ upload-user-data: require-pve-target render-user-data
 
 verify-user-data: require-pve-target render-user-data
 	$(UV) run --directory "$(ROOT)" python -m scripts.pve_inventory.cloud_init verify --output-dir "$(USER_DATA_DIR)" --storage-id "$(STORAGE_ID)" --pve-host "$(PVE_HOST)" --ssh-user "$(PVE_SSH_USER)"
+
+verify-guests:
+	$(UV) run --directory "$(ROOT)" ansible-playbook -i "$(ANSIBLE_INVENTORY)" --limit "$(ANSIBLE_LIMIT)" "$(ANSIBLE_PLAYBOOK)"
+
+verify-guests-syntax:
+	$(UV) run --directory "$(ROOT)" ansible-playbook --syntax-check -i "$(ANSIBLE_INVENTORY)" "$(ANSIBLE_PLAYBOOK)"
 
 plan: render-user-data
 	$(MAKE) backup-state BACKUP_PHASE=before

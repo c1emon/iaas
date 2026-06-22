@@ -2,7 +2,9 @@
 
 This directory contains Ansible automation for homelab network and service
 management. Current workflows cover OPNsense API management and SKS8300/XikeOS
-switch read-only facts plus safe configuration previews.
+switch read-only facts plus safe configuration previews. Section 6 adds PVE guest
+verification playbooks for read-only SSH/facts, hostname, static IP, resolver,
+and qemu-guest-agent checks.
 
 ## Setup
 
@@ -30,6 +32,10 @@ by `requirements.yml` and ignored by Git.
 Default inventory is `inventories/homelab.yml`; `ansible.cfg` points Ansible at
 that inventory and the repository role/collection paths.
 
+PVE guest workflows use `inventories/generated/pve.yml` explicitly instead of
+the default inventory. That generated inventory is the source for `ops` login,
+become settings, and non-secret host vars.
+
 Secrets are injected at runtime from 1Password environment templates:
 
 - `../.env.opnsense.tpl` for OPNsense API variables
@@ -37,6 +43,10 @@ Secrets are injected at runtime from 1Password environment templates:
 
 Never commit plaintext vault passwords, private keys, API keys, generated
 exports, or environment-specific secrets.
+
+For PVE guest verification, DNS means the guest resolver configuration only:
+the playbook checks `resolv.conf` nameserver entries against `pve_dns` and does
+not perform external DNS lookups.
 
 ## OPNsense playbooks
 
@@ -195,6 +205,22 @@ ssh pve-ops@cohe 'sudo -n /usr/local/sbin/astra-pve-template-build --help'
 
 These checks are documentation-only here; they are not required for repository
 validation and do not change the global node SSHD policy.
+
+## PVE guest verification
+
+Use the generated inventory explicitly when verifying guests:
+
+```bash
+uv run ansible-playbook -i inventories/generated/pve.yml \
+  playbooks/pve/verify-guests.yml --limit pve_vms
+```
+
+That workflow is read-only: it gathers facts, confirms the inventory hostname,
+checks the declared static IP in gathered facts, verifies resolver config, and
+confirms `qemu-guest-agent` is present and running.
+
+Guest configuration changes stay in Ansible roles. OpenTofu owns VM lifecycle,
+cloud-init identity, and network inputs; Packer owns template creation.
 
 ## Validation commands
 

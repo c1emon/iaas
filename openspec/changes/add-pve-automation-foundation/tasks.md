@@ -115,13 +115,13 @@
 
 ## 6. Ansible Integration and Verification
 
-- [ ] 6.1 Generate Ansible inventory groups from VM `ansible_groups` declarations.
-- [ ] 6.2 Add a verification workflow plan for SSH reachability, hostname, static IP, DNS, and qemu-guest-agent readiness.
-- [ ] 6.3 Keep guest OS service configuration in Ansible roles rather than Packer or OpenTofu.
-- [ ] 6.4 Document the boundary between OpenTofu-owned VM lifecycle and Ansible-owned guest configuration.
-- [ ] 6.5 Generate Ansible inventory with `ansible_user: ops`, sudo become settings, and no embedded secrets.
-- [ ] 6.6 Disable VM SSH password authentication and root SSH login by default.
-- [ ] 6.7 Do not run cloud-init package update/upgrade on first boot.
+- [x] 6.1 Generate Ansible inventory groups from VM `ansible_groups` declarations.
+- [x] 6.2 Add a verification workflow plan for SSH reachability, hostname, static IP, DNS, and qemu-guest-agent readiness.
+- [x] 6.3 Keep guest OS service configuration in Ansible roles rather than Packer or OpenTofu.
+- [x] 6.4 Document the boundary between OpenTofu-owned VM lifecycle and Ansible-owned guest configuration.
+- [x] 6.5 Generate Ansible inventory with `ansible_user: ops`, sudo become settings, and no embedded secrets.
+- [x] 6.6 Disable VM SSH password authentication and root SSH login by default.
+- [x] 6.7 Do not run cloud-init package update/upgrade on first boot.
 
 ## 7. Documentation and Validation
 

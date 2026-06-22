@@ -2,6 +2,10 @@
 
 This directory is the root module for Section 4 of `add-pve-automation-foundation`.
 
+OpenTofu owns VM lifecycle, cloud-init identity, and network configuration.
+Packer owns the reusable template. Ansible owns guest OS service configuration
+and read-only verification.
+
 ## Inputs
 
 - `generated.auto.tfvars.json` is loaded automatically.
@@ -44,6 +48,11 @@ provide environment-specific defaults for them.
 Cluster inventory drives the Ansible login user, cloud-init VM users, and the
 snippet storage role/prefix used for rendered user-data files.
 
+PVE guest playbooks must use the generated inventory at
+`ansible/inventories/generated/pve.yml`; they do not rely on the default
+`ansible.cfg` inventory. The generated inventory uses `ansible_user: ops`,
+become settings, and no embedded secrets.
+
 The provider uses `bpg/proxmox` `~> 0.109.0` with `ssh { agent = true username = "pve-ops" }` and token-based API auth.
 
 ## Safety notes
@@ -57,6 +66,9 @@ The provider uses `bpg/proxmox` `~> 0.109.0` with `ssh { agent = true username =
 - Future TODO: manage PCI resource mappings with `bpg/proxmox` `proxmox_hardware_mapping_pci` from a separate high-privilege bootstrap root such as `infra/tofu/pve-mappings/`; keep this VM lifecycle root limited to consuming mapping names.
 - `initialization[0].user_data_file_id` drift is ignored because the provider can otherwise churn externally managed cloud-init snippets; IP configuration and DNS remain Terraform-managed.
 - OpenTofu manages VM lifecycle only. It does not create `pve-ops@pve`, its tokens, or the bootstrap ACLs.
+- DNS verification in Section 6 is resolver-config only; it checks guest
+  nameserver entries and does not manage external DNS records or name
+  resolution.
 - Both long-lived and ephemeral VMs are started after provisioning; only
   `on_boot` differs (`true` for long-lived, `false` for ephemeral).
 
