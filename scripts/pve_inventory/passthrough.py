@@ -6,7 +6,7 @@ import re
 from typing import Any, cast
 
 from .errors import require
-from .validation import as_list, as_mapping, require_non_empty_string, require_unknown_keys
+from .validation_common import as_list, as_mapping, require_non_empty_string, require_unknown_keys
 
 
 def normalize_vm_passthrough(
