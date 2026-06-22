@@ -109,7 +109,7 @@ Risk/behavior notes:
 
 ## Section 4A cloud-init flow
 
-Section 4A renders runtime cloud-init user-data snippets for each non-passthrough VM,
+Section 4A renders runtime cloud-init user-data snippets for each VM,
 uploads them into isolated NFS-backed `images` snippets storage, and references them with
 `user_data_file_id`.
 

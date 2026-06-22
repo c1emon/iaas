@@ -13,6 +13,7 @@ import pytest
 from scripts.pve_inventory.io import load_yaml
 from scripts.pve_inventory.model import build_model
 from scripts.pve_inventory.render import render_outputs
+from scripts.pve_inventory.cloud_init import render_snippets
 from scripts.pve_inventory.errors import ValidationError
 from scripts.pve_inventory.validation import validate_cluster, validate_vms
 
@@ -40,6 +41,23 @@ def test_generated_docs_render_passthrough_details() -> None:
     docs = render_outputs(vms_model())["docs"]
     assert "hostpci0:iGpu0 (pcie=true, rombar=true, xvga=false)" in docs
     assert "| media-lab-01 | 501 | ephemeral_lab | cohe | dev | 10.10.0.21/24 |" in docs
+
+
+def test_passthrough_vms_get_cloud_init_user_data(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PVE_VM_CLEMON_PASSWORD", "clemon-password")
+    monkeypatch.setenv("PVE_VM_CLEMON_PUBLIC_KEY", "ssh-ed25519 AAAAclemon clemon@example")
+    monkeypatch.setenv("PVE_VM_OPS_PASSWORD", "ops-password")
+    monkeypatch.setenv("PVE_VM_OPS_PUBLIC_KEY", "ssh-ed25519 AAAAops ops@example")
+
+    snippets = render_snippets(ROOT / "infra/tofu/pve/generated.auto.tfvars.json", "images")
+
+    snippet_names = {snippet.name for snippet in snippets}
+    assert snippet_names == {"dev-web-01", "prod-app-01", "media-lab-01"}
+    media_snippet = next(snippet for snippet in snippets if snippet.name == "media-lab-01")
+    assert media_snippet.file_name == "opentofu-vm-501-user-data.yml"
+    assert media_snippet.file_id == "images:snippets/opentofu-vm-501-user-data.yml"
+    assert "hostname: media-lab-01" in media_snippet.content
+    assert "name: ops" in media_snippet.content
 
 
 def test_inventory_passthrough_schema_omits_device() -> None:

@@ -16,7 +16,7 @@ locals {
     if lower(vm.lifecycle_class) != "long_lived"
   }
 
-  cloud_init_vms     = { for name, vm in local.vms_by_name : name => vm if try(vm.passthrough, null) == null }
+  cloud_init_vms     = local.vms_by_name
   snippets_datastore = local.cluster.storage_roles[local.cluster.automation.cloud_init.snippet_storage_role].datastore
 
   user_data_file_ids = {

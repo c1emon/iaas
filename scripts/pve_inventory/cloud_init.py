@@ -190,8 +190,6 @@ def render_snippets(tfvars_path: Path, storage_id: str) -> list[CloudInitSnippet
     snippets: list[CloudInitSnippet] = []
     for vm in vms:
         require(isinstance(vm, dict), f"{tfvars_path}: vms entries must be objects")
-        if vm.get("passthrough") is not None:
-            continue
         vmid = vm.get("vmid")
         name = vm.get("name")
         require(isinstance(vmid, int), f"{tfvars_path}: vmid must be an integer")
