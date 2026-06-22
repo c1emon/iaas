@@ -8,6 +8,7 @@ Current scope:
 - PVE automation foundation with YAML source-of-truth inventory, generated OpenTofu input, generated Ansible inventory, and generated VM documentation.
 - Debian 13 PVE template build helpers under `infra/packer/`, executed through audited PVE-node wrappers.
 - OpenTofu VM lifecycle configuration under `infra/tofu/`, using local state for the initial single-operator workflow.
+- The legacy `terraform/` directory is only a placeholder; live PVE automation uses OpenTofu.
 - Ansible bootstrap and verification content is added incrementally around the same inventory model.
 
 Key areas:

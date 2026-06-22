@@ -1,6 +1,6 @@
 locals {
   vm_is_protected    = var.prevent_destroy
-  vm_passthrough     = try(var.vm.passthrough, [])
+  vm_passthrough     = try(var.vm.passthrough == null ? [] : var.vm.passthrough, [])
   vm_has_passthrough = length(local.vm_passthrough) > 0
 }
 
@@ -23,7 +23,7 @@ resource "proxmox_virtual_environment_vm" "protected" {
     node_name    = var.template.node
     vm_id        = var.template.vmid
     full         = true
-    datastore_id = var.disk_datastore_id
+    datastore_id = var.cloud_init_datastore_id
   }
 
   cpu {
@@ -36,7 +36,7 @@ resource "proxmox_virtual_environment_vm" "protected" {
   }
 
   disk {
-    datastore_id = var.disk_datastore_id
+    datastore_id = var.cloud_init_datastore_id
     interface    = var.template.primary_disk
     size         = var.vm.resources.root_disk_gib
   }

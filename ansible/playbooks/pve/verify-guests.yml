@@ -26,10 +26,18 @@
         src: /etc/resolv.conf
       register: pve_resolver_conf
 
+    - name: Read systemd-resolved DNS configuration when available
+      ansible.builtin.command: resolvectl dns
+      register: pve_resolvectl_dns
+      changed_when: false
+      failed_when: false
+
     - name: Assert resolver configuration includes expected PVE DNS nameserver(s)
       ansible.builtin.assert:
         that:
-          - ('nameserver ' ~ item) in (pve_resolver_conf.content | b64decode)
+          - >-
+            ('nameserver ' ~ item) in (pve_resolver_conf.content | b64decode)
+            or item in (pve_resolvectl_dns.stdout | default(''))
         fail_msg: >-
           Guest {{ inventory_hostname }} resolver config is missing nameserver {{ item }}
       loop: "{{ hostvars[inventory_hostname].pve_dns | default([]) }}"

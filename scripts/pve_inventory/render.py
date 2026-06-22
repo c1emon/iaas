@@ -29,7 +29,7 @@ def build_ansible_inventory(model: dict[str, Any]) -> str:
             "ansible_user": model["cluster"]["automation"]["ansible_user"],
             "ansible_become": True,
             "ansible_become_method": "sudo",
-            "ansible_python_interpreter": "{{ ansible_playbook_python }}",
+            "ansible_python_interpreter": "auto_silent",
             "pve_vmid": vm["vmid"],
             "pve_node": vm["node"],
             "pve_network": vm["network"]["name"],

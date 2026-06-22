@@ -125,15 +125,15 @@
 
 ## 7. Documentation and Validation
 
-- [ ] 7.1 Add decision notes for OpenTofu over Terraform, `bpg/proxmox`, YAML source-of-truth, local state, and bridge-based networking.
-- [ ] 7.2 Document storage roles: `images` for ISO/import/snippets and `memory` for VM/template disks.
-- [ ] 7.3 Document that PVE host network configuration is a prerequisite and is not mutated by this change.
-- [ ] 7.4 Validate source YAML, generated OpenTofu variables, and generated Ansible inventory with repository linting tools where practical.
-- [ ] 7.5 Run Packer validation, OpenTofu format/validate/plan, and Ansible inventory validation for a disposable VM before marking the change complete.
-- [ ] 7.6 Document `br_dev` as `10.10.0.0/24` with gateway/DNS `10.10.0.254` and `br_prod` as `10.50.0.0/24` with gateway/DNS `10.50.0.254`.
-- [ ] 7.7 Document the bootstrap/IaC boundary: PVE API identity and root of trust are bootstrap-managed; VM lifecycle is OpenTofu-managed.
-- [ ] 7.8 Add Makefile targets for generation, offline validation, online PVE checks, Packer build, OpenTofu plan/apply helpers, and Ansible checks.
-- [ ] 7.9 Update top-level README from `terraform/` planning to `infra/tofu/` and `infra/packer/`.
-- [ ] 7.10 Document local state manual backup runbook and defer remote backend.
-- [ ] 7.11 Validate a first disposable dev VM on `cohe` attached to `br_dev`, without PCIe passthrough, including create/configure/Ansible/destroy acceptance.
-- [ ] 7.12 Document DNS as a non-goal: static-IP VM hostname/FQDN resolution is not guaranteed until DNS records are handled manually or by a later change.
+- [x] 7.1 Add decision notes for OpenTofu over Terraform, `bpg/proxmox`, YAML source-of-truth, local state, and bridge-based networking.
+- [x] 7.2 Document storage roles: `images` for ISO/import/snippets and `memory` for VM/template disks.
+- [x] 7.3 Document that PVE host network configuration is a prerequisite and is not mutated by this change.
+- [x] 7.4 Validate source YAML, generated OpenTofu variables, and generated Ansible inventory with repository linting tools where practical.
+- [x] 7.5 Run Packer validation, OpenTofu format/validate/plan, and Ansible inventory validation for a disposable VM before marking the change complete.
+- [x] 7.6 Document `br_dev` as `10.10.0.0/24` with gateway/DNS `10.10.0.254` and `br_prod` as `10.50.0.0/24` with gateway/DNS `10.50.0.254`.
+- [x] 7.7 Document the bootstrap/IaC boundary: PVE API identity and root of trust are bootstrap-managed; VM lifecycle is OpenTofu-managed.
+- [x] 7.8 Add Makefile targets for generation, offline validation, online PVE checks, Packer build, OpenTofu plan/apply helpers, and Ansible checks.
+- [x] 7.9 Update top-level README from `terraform/` planning to `infra/tofu/` and `infra/packer/`.
+- [x] 7.10 Document local state manual backup runbook and defer remote backend.
+- [x] 7.11 Validate a first disposable dev VM on `cohe` attached to `br_dev`, without PCIe passthrough, including create/configure/Ansible/destroy acceptance.
+- [x] 7.12 Document DNS as a non-goal: static-IP VM hostname/FQDN resolution is not guaranteed until DNS records are handled manually or by a later change.

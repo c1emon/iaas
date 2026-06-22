@@ -5,6 +5,25 @@ OpenSpec change: `add-pve-automation-foundation`
 
 ## Decisions
 
+### OpenTofu, YAML source of truth, and bridge-based networking
+
+Use OpenTofu (`tofu`) rather than Terraform for live PVE VM operations. The
+`bpg/proxmox` provider is the VM lifecycle integration point, while
+operator-authored YAML stays the source of truth for cluster defaults,
+networks, templates, PCI mappings, and VM declarations.
+
+The first implementation keeps state local in `infra/tofu/pve/terraform.tfstate`
+and treats remote backends as deferred. VM NICs attach only to existing
+bridges (`br_dev` / `br_prod`) and this foundation does not create or mutate
+host network configuration.
+
+The storage layout is split by role: `images` holds ISO/import/snippets
+content, while `memory` holds VM/template disks and EFI/root disk usage.
+
+The development bridge is `br_dev` on `10.10.0.0/24` with gateway/DNS
+`10.10.0.254`; the production bridge is `br_prod` on `10.50.0.0/24` with
+gateway/DNS `10.50.0.254`.
+
 ### Debian 13 template route
 
 Use the Debian 13 `genericcloud` qcow2 image import route for the first reusable PVE template, not an installer ISO route.
@@ -42,7 +61,9 @@ References:
 
 ### API tokens, SSH, and limited sudo
 
-Use PVE API tokens for Packer/OpenTofu API operations and reserve the Linux `pve-ops` SSH user for host-side operations that cannot be performed through the API.
+Use PVE API tokens for Packer/OpenTofu API operations and reserve the Linux
+`pve-ops` SSH user for host-side operations that cannot be performed through
+the API.
 
 Create a passwordless PVE realm automation user and separate privilege-separated tokens:
 
@@ -116,6 +137,12 @@ Section 4/4A live validation on `cohe` created disposable VMID `500` (`dev-web-0
 - Snippets remain in shared `images` storage for VM lifetime because OpenTofu references `user_data_file_id`.
 - The 1Password SSH Agent config must include `vm-user-ops` and `vm-user-clemon` entries before broad vault catch-alls if key selection order prevents guest login.
 
+### DNS non-goal
+
+This foundation does not create or update DNS records, DHCP reservations, or
+host overrides. Static-IP VM hostnames and FQDNs may not resolve until the
+operator handles DNS manually or a later DNS automation change is added.
+
 References:
 
 - PVE `qm` manual: <https://pve.proxmox.com/pve-docs/qm.1.html>
@@ -145,6 +172,16 @@ Acceptance must include an online validation that PVE can create a disposable OV
 Reference:
 
 - VM EFI disk docs: <https://registry.terraform.io/providers/bpg/proxmox/latest/docs/resources/virtual_environment_vm>
+
+### Local state and backup runbook
+
+Keep `infra/tofu/pve/terraform.tfstate` local and git-ignored for the first
+implementation. The helper flow should back up state to a timestamped file
+under `.cache/tofu-state-backups/` via `make backup-state` before and/or after
+apply-like operations.
+
+Remote backend support is intentionally deferred until the collaboration model
+requires it.
 
 ### Generated tfvars ignore strategy
 

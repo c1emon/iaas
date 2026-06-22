@@ -1,10 +1,11 @@
 # OpenTofu PVE VM lifecycle
 
-This directory is the root module for Section 4 of `add-pve-automation-foundation`.
+This directory is the root module for the PVE VM lifecycle foundation in
+`add-pve-automation-foundation`.
 
-OpenTofu owns VM lifecycle, cloud-init identity, and network configuration.
+OpenTofu owns VM lifecycle, cloud-init identity, and bridge attachment.
 Packer owns the reusable template. Ansible owns guest OS service configuration
-and read-only verification.
+and read-only verification. YAML inventory is the source of truth.
 
 ## Inputs
 
@@ -17,10 +18,19 @@ and read-only verification.
 - Runtime snippet cache files are written with parent directories `0700` and
   files `0600`.
 
+## Storage and network assumptions
+
+- `images` is the shared NFS content store for ISO/import/snippets.
+- `memory` is the shared VM/template disk store.
+- `br_dev` maps to `10.10.0.0/24` with gateway/DNS `10.10.0.254`.
+- `br_prod` maps to `10.50.0.0/24` with gateway/DNS `10.50.0.254`.
+- PVE host bridge configuration is a prerequisite and is not mutated here.
+
 ## State
 
-- Local state path: `terraform.tfstate`
+- Local state path: `infra/tofu/pve/terraform.tfstate`
 - Backups: `.cache/tofu-state-backups/`
+- Use `make backup-state` before and/or after apply-like operations.
 - Existing VMs are intentionally out of scope.
 - `lifecycle_class` changes between the protected and unprotected module
   resources require state migration, not recreation:
@@ -36,14 +46,21 @@ and read-only verification.
 ```bash
 op run --env-file .env.pve-opentofu.tpl -- tofu init -backend=false
 op run --env-file .env.pve-opentofu.tpl -- tofu validate
+op run --env-file .env.pve-opentofu.tpl -- make generate
+op run --env-file .env.pve-opentofu.tpl -- make validate
+op run --env-file .env.pve-opentofu.tpl -- make check-pve PVE_HOST=cohe PVE_SSH_USER=pve-ops
+op run --env-file .env.pve-opentofu.tpl -- make packer-build PVE_HOST=cohe
 op run --env-file .env.pve-opentofu.tpl -- make plan STORAGE_ID=images
 op run --env-file .env.pve-opentofu.tpl -- make apply STORAGE_ID=images PVE_HOST=cohe PVE_SSH_USER=pve-ops
+op run --env-file .env.pve-opentofu.tpl -- make ansible-check
 ```
 
-`make plan` renders local cloud-init snippets only. `make apply` uploads and
-verifies snippets before applying Terraform changes. `STORAGE_ID`, `PVE_HOST`,
-and `PVE_SSH_USER` are intentionally explicit inputs; the Makefile does not
-provide environment-specific defaults for them.
+`make generate` renders committed outputs from YAML. `make validate` validates
+source YAML, generated inventory, and OpenTofu config. `make plan` renders
+local cloud-init snippets only. `make apply` uploads and verifies snippets
+before applying OpenTofu changes. `STORAGE_ID`, `PVE_HOST`, and `PVE_SSH_USER`
+are intentionally explicit inputs; the Makefile does not provide
+environment-specific defaults for them.
 
 Cluster inventory drives the Ansible login user, cloud-init VM users, and the
 snippet storage role/prefix used for rendered user-data files.
@@ -64,7 +81,7 @@ The provider uses `bpg/proxmox` `~> 0.109.0` with `ssh { agent = true username =
 - HA stays disabled for passthrough VMs, and this module does not move VMs between nodes or mutate host IOMMU/VFIO state.
 - See `docs/runbooks/pve-pci-passthrough-readiness.md` for the host-side readiness checklist.
 - Future TODO: manage PCI resource mappings with `bpg/proxmox` `proxmox_hardware_mapping_pci` from a separate high-privilege bootstrap root such as `infra/tofu/pve-mappings/`; keep this VM lifecycle root limited to consuming mapping names.
-- `initialization[0].user_data_file_id` drift is ignored because the provider can otherwise churn externally managed cloud-init snippets; IP configuration and DNS remain Terraform-managed.
+- `initialization[0].user_data_file_id` drift is ignored because the provider can otherwise churn externally managed cloud-init snippets; IP configuration remains managed here and DNS is out of scope.
 - OpenTofu manages VM lifecycle only. It does not create `pve-ops@pve`, its tokens, or the bootstrap ACLs.
 - DNS verification in Section 6 is resolver-config only; it checks guest
   nameserver entries and does not manage external DNS records or name
@@ -100,7 +117,7 @@ uploads them into isolated NFS-backed `images` snippets storage, and references 
 - File ID: `images:snippets/opentofu-vm-<vmid>-user-data.yml`
 - Retention: snippets stay in storage for the VM lifetime; do not delete them immediately after upload.
 
-Use `op run --env-file .env.pve-opentofu.tpl -- make render-user-data STORAGE_ID=images` to create local snippets. `make plan` stays local. `make apply` runs `upload-user-data` and `verify-user-data` before the Terraform apply.
+Use `op run --env-file .env.pve-opentofu.tpl -- make render-user-data STORAGE_ID=images` to create local snippets. `make plan` stays local. `make apply` runs `upload-user-data` and `verify-user-data` before the OpenTofu apply.
 
 Required runtime env vars from `op run` (driven by the inventory-defined cloud-init users):
 
@@ -137,7 +154,7 @@ item = "vm-user-clemon"
 vault = "Astra"
 ```
 
-## Manual backup helper
+## Local state backup helper
 
 Use `make backup-state` before or after apply-like operations. `make apply` and `make destroy` call it automatically with `before`/`after` suffixes and a seconds-plus-PID timestamp to avoid collisions.
 

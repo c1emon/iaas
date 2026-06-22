@@ -8,6 +8,11 @@ variable "disk_datastore_id" {
   description = "Datastore used for the VM root disk."
 }
 
+variable "cloud_init_datastore_id" {
+  type        = string
+  description = "Datastore used for the VM cloud-init media."
+}
+
 variable "template" {
   type        = any
   description = "Template data from the cluster source-of-truth."
