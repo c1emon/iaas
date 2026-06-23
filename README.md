@@ -32,3 +32,27 @@ uv run yamllint --version
 ```
 
 Commit `pyproject.toml` and `uv.lock`; do not commit `.venv/`.
+
+## Validation
+
+The default offline-safe gate is the repository root `make check` target.
+
+```bash
+make generate
+make check-generated
+make check
+```
+
+`make check` runs `check-generated`, `test`, `lint-yaml`, `tofu-fmt`, and
+`tofu-validate`. It is what CI executes and it does not require PVE
+credentials, PVE plan/apply/destroy access, Packer builds, or mutation-only
+targets.
+
+Explicit online or mutation operations stay outside the default gate:
+
+- `make pve-check-pve`
+- `make pve-plan`
+- `make pve-apply`
+- `make pve-destroy`
+- `make pve-packer-build`
+- `make pve-ansible-check`

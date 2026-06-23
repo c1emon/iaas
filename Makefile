@@ -1,14 +1,38 @@
 ROOT ?= $(abspath .)
 PVE_DIR ?= $(ROOT)/infra/tofu/pve
+INVENTORY_DIR ?= $(ROOT)/inventory
+UV ?= uv
+TOFU ?= tofu
 PACKER_BUILD_SCRIPT ?= $(ROOT)/infra/packer/proxmox/debian-13/build-template.sh
 
-.PHONY: pve-generate pve-check pve-validate pve-fmt pve-check-pve pve-packer-build pve-plan pve-apply pve-destroy pve-ansible-check pve-ansible-syntax pve-backup-state
+.PHONY: generate check-generated test lint-yaml tofu-fmt tofu-validate check pve-generate pve-check pve-validate pve-fmt pve-check-pve pve-packer-build pve-plan pve-apply pve-destroy pve-ansible-check pve-ansible-syntax pve-backup-state
 
-pve-generate:
+generate:
 	$(MAKE) -C "$(PVE_DIR)" generate
 
-pve-check:
+check-generated:
 	$(MAKE) -C "$(PVE_DIR)" check-generated
+
+test:
+	$(UV) run --directory "$(ROOT)" pytest
+
+lint-yaml:
+	$(UV) run --directory "$(ROOT)" yamllint "$(INVENTORY_DIR)"
+
+tofu-fmt:
+	$(TOFU) -chdir="$(ROOT)/infra/tofu" fmt -recursive -check -diff
+
+tofu-validate:
+	$(TOFU) -chdir="$(PVE_DIR)" init -backend=false
+	$(TOFU) -chdir="$(PVE_DIR)" validate
+
+check: check-generated test lint-yaml tofu-fmt tofu-validate
+
+pve-generate:
+	$(MAKE) generate
+
+pve-check:
+	$(MAKE) check-generated
 
 pve-validate:
 	$(MAKE) -C "$(PVE_DIR)" validate

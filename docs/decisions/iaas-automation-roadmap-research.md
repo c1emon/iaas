@@ -197,6 +197,46 @@ Hard rules to preserve the current positioning:
 
 ## Recommended roadmap
 
+### CI platform direction
+
+The CI platform should be treated as a reusable internal automation capability, while the first rollout remains limited to this `iaas` repository.
+
+Recommended near-term shape:
+
+- Keep cloud CI, if used, limited to offline validation and reporting.
+- Use an internal CI path for environment-aware checks that need access to PVE, OPNsense, switches, or other homelab resources.
+- Prefer a lightweight self-hosted stack such as Forgejo plus Woodpecker CI if fully internal Git and CI become desirable.
+- Keep CI jobs as wrappers around repository-owned commands such as `make check`, `make pve-preflight`, and `make pve-plan` so the CI platform remains replaceable.
+- Separate runner pools by risk:
+  - offline lint/test/docs/generator checks with no secrets;
+  - `iaas` read-only environment checks with scoped read-only credentials;
+  - future app/service/maintenance runners only when needed.
+- Do not share high-privilege secrets across projects or runner pools.
+
+Forgejo/Woodpecker trigger model under consideration:
+
+- Normal path: tag in GitHub, Forgejo pull-mirror syncs branches/tags, then internal CI runs selected pipelines.
+- Backup path: manually push a tag directly to Forgejo when GitHub sync or external network access is unavailable.
+- Both paths may coexist, but tag namespaces should distinguish source and allowed risk level.
+
+Suggested tag namespaces:
+
+```text
+upstream/ci/check/*
+upstream/release/*
+
+local/ci/check/*
+local/ci/pve-preflight/*
+local/ci/pve-plan/*
+```
+
+Safety rules:
+
+- GitHub-mirrored tags should initially trigger only offline checks or release validation.
+- Locally pushed Forgejo tags may trigger read-only PVE preflight or plan jobs because they are explicit internal operator actions.
+- Avoid automatic `apply` jobs in CI for now.
+- Use unique tags for each trigger to avoid ambiguity or duplicate events.
+
 ### P0: 1-2 week reliability work
 
 Goal: make existing capabilities repeatable and easy to validate.
@@ -275,7 +315,18 @@ Only pursue these when the repository outgrows the simpler model:
 
 ## Future OpenSpec proposal seeds
 
-Use these as possible change names and scopes:
+Use these as possible change names and scopes. The roadmap should remain a direction and candidate pool; each OpenSpec change should be small enough to implement and verify independently.
+
+Recommended proposal queue:
+
+1. `add-iaas-validation-entrypoints`
+2. `document-pve-state-and-secret-operations`
+3. `add-pve-online-preflight`
+4. `add-pve-guest-verification`
+5. `add-internal-ci-trigger-path`
+6. `add-service-metadata-inventory`
+
+Do not turn the full roadmap into one large spec. Start with the P0 validation entrypoints and keep CI platform specifics limited to a CI-compatible command surface until the internal CI trigger path is proposed separately.
 
 1. `add-iaas-validation-entrypoints`
    - Root Makefile/Taskfile, offline `make check`, generator check, tests, OpenTofu validation.
@@ -292,10 +343,13 @@ Use these as possible change names and scopes:
 5. `add-service-metadata-inventory`
    - Lightweight `inventory/services.yml`, generated docs only at first.
 
-6. `add-pve-operations-runbooks`
+6. `add-internal-ci-trigger-path`
+   - Internal Forgejo/Woodpecker-style trigger path, tag namespace policy, offline vs read-only runner separation, no automatic apply.
+
+7. `add-pve-operations-runbooks`
    - PVE health, maintenance, rolling reboot/update pattern, optional Ntfy notification.
 
-7. `add-pve-hardware-mapping-bootstrap`
+8. `add-pve-hardware-mapping-bootstrap`
    - Future separate OpenTofu root for `proxmox_hardware_mapping_pci`; high-privilege and low-frequency only.
 
 ## Design cautions
