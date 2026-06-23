@@ -43,6 +43,19 @@ and read-only verification. YAML inventory is the source of truth.
 
 ## Usage
 
+Repository root offline validation uses `make check`. This module keeps the
+more explicit module-local commands for validation, planning, and mutation.
+
+### Offline validation from the repo root
+
+```bash
+make generate
+make check-generated
+make check
+```
+
+### Module-local validation and mutation
+
 ```bash
 op run --env-file .env.pve-opentofu.tpl -- tofu init -backend=false
 op run --env-file .env.pve-opentofu.tpl -- tofu validate
@@ -58,9 +71,10 @@ op run --env-file .env.pve-opentofu.tpl -- make ansible-check
 `make generate` renders committed outputs from YAML. `make validate` validates
 source YAML, generated inventory, and OpenTofu config. `make plan` renders
 local cloud-init snippets only. `make apply` uploads and verifies snippets
-before applying OpenTofu changes. `STORAGE_ID`, `PVE_HOST`, and `PVE_SSH_USER`
-are intentionally explicit inputs; the Makefile does not provide
-environment-specific defaults for them.
+before applying OpenTofu changes. `make check-pve` is the explicit read-only
+PVE bridge preflight. `STORAGE_ID`, `PVE_HOST`, and `PVE_SSH_USER` are
+intentionally explicit inputs; the Makefile does not provide environment-
+specific defaults for them.
 
 Cluster inventory drives the Ansible login user, cloud-init VM users, and the
 snippet storage role/prefix used for rendered user-data files.

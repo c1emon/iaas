@@ -246,6 +246,16 @@ The preferred future split is:
 
 This keeps CI execution off the hypervisor while still minimizing PVE host operations. The runner should not receive direct `qm` access; it should upload or expose the qcow2 artifact and invoke the wrapper through the existing `pve-ops` SSH/sudo boundary. Section 4A snippet uploads likewise use the audited `/usr/local/sbin/astra-pve-snippet-upload` wrapper instead of broad `sudo install` access.
 
+### Repository validation entrypoints and deferred internal CI triggers
+
+The `add-iaas-validation-entrypoints` change adds root-level offline validation
+targets and a GitHub Actions workflow that runs `make check` on pull requests
+and pushes to `main`. That workflow is validation/reporting only and does not
+consume infrastructure secrets.
+
+Any internal tag-triggered CI path remains deferred to the separate
+`add-internal-ci-trigger-path` change.
+
 ## Operator runbook: PVE identity bootstrap
 
 Before OpenTofu runs, operators bootstrap the PVE realm identity and store the resulting token material in 1Password.
