@@ -189,6 +189,10 @@ Keep `infra/tofu/pve/generated.auto.tfvars.json` as a committed, non-sensitive g
 
 This preserves the spec requirement that generated OpenTofu input is reviewable and committed, while keeping normal local/secret tfvars files ignored.
 
+The operator-facing runbook for local state ownership, backup/restore, ignored
+cache paths, generated-output sensitivity, and 1Password runtime secret
+injection is `docs/pve-state-cache-secrets.md`.
+
 ### 1Password field lookup rules
 
 Automation must not assume custom 1Password field IDs are stable. Custom fields created in the 1Password UI receive generated IDs, even when their displayed labels are stable.

@@ -44,9 +44,30 @@ make check
 ```
 
 `make check` runs `check-generated`, `test`, `lint-yaml`, `tofu-fmt`, and
-`tofu-validate`. It is what CI executes and it does not require PVE
-credentials, PVE plan/apply/destroy access, Packer builds, or mutation-only
-targets.
+`tofu-validate`. It is the default offline-safe gate and it does not require PVE
+credentials, PVE plan/apply/destroy access, Packer builds, Ansible guest SSH
+verification, or mutation-only targets.
+
+Optional explicit hygiene checks are available outside the default gate:
+
+```bash
+make secret-scan
+make ansible-syntax
+```
+
+`make secret-scan` uses the repository `gitleaks` configuration to scan for
+committed secrets. Gitleaks was chosen over TruffleHog for the first pass because
+it has a small single-binary CLI, a reviewable repository config file, redacted
+output, and straightforward CI installation. It remains explicit rather than a
+`make check` dependency until false-positive behavior is proven stable.
+`make ansible-syntax` runs the explicit PVE guest verification syntax check
+without contacting guests.
+
+Ansible syntax validation is intentionally separate from `make check` in this P0
+closure change. The current root target delegates to `make pve-ansible-syntax`,
+which syntax-checks `ansible/playbooks/pve/verify-guests.yml` against the
+generated PVE inventory. Guest reachability and SSH verification remain under
+the explicit online `make pve-ansible-check` target only.
 
 Explicit online or mutation operations stay outside the default gate:
 
@@ -56,3 +77,7 @@ Explicit online or mutation operations stay outside the default gate:
 - `make pve-destroy`
 - `make pve-packer-build`
 - `make pve-ansible-check`
+
+See `docs/pve-state-cache-secrets.md` for PVE state backup/restore, cache
+cleanup, generated-output sensitivity, and 1Password runtime secret injection
+guidance.

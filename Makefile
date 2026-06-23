@@ -3,9 +3,10 @@ PVE_DIR ?= $(ROOT)/infra/tofu/pve
 INVENTORY_DIR ?= $(ROOT)/inventory
 UV ?= uv
 TOFU ?= tofu
+GITLEAKS ?= gitleaks
 PACKER_BUILD_SCRIPT ?= $(ROOT)/infra/packer/proxmox/debian-13/build-template.sh
 
-.PHONY: generate check-generated test lint-yaml tofu-fmt tofu-validate check pve-generate pve-check pve-validate pve-fmt pve-check-pve pve-packer-build pve-plan pve-apply pve-destroy pve-ansible-check pve-ansible-syntax pve-backup-state
+.PHONY: generate check-generated test lint-yaml tofu-fmt tofu-validate check secret-scan ansible-syntax pve-generate pve-check pve-validate pve-fmt pve-check-pve pve-packer-build pve-plan pve-apply pve-destroy pve-ansible-check pve-ansible-syntax pve-backup-state
 
 generate:
 	$(MAKE) -C "$(PVE_DIR)" generate
@@ -27,6 +28,12 @@ tofu-validate:
 	$(TOFU) -chdir="$(PVE_DIR)" validate
 
 check: check-generated test lint-yaml tofu-fmt tofu-validate
+
+secret-scan:
+	@command -v "$(GITLEAKS)" >/dev/null 2>&1 || { printf 'error: gitleaks is required for secret-scan (install gitleaks or set GITLEAKS=/path/to/gitleaks)\n' >&2; exit 127; }
+	$(GITLEAKS) detect --source "$(ROOT)" --config "$(ROOT)/.gitleaks.toml" --no-banner --redact
+
+ansible-syntax: pve-ansible-syntax
 
 pve-generate:
 	$(MAKE) generate

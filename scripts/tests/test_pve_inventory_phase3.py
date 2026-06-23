@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -71,6 +72,20 @@ def test_validation_generates_hostpci0_without_override() -> None:
     normalized = validate_vms(load_yaml(VMS_PATH), cluster_state())
     media_vm = next(vm for vm in normalized if vm["name"] == "media-lab-01")
     assert media_vm["passthrough"][0]["device"] == "hostpci0"
+
+
+def test_validation_treats_omitted_null_and_empty_passthrough_as_no_devices() -> None:
+    doc = copy.deepcopy(load_yaml(VMS_PATH))
+    doc["vms"][0].pop("passthrough", None)
+    doc["vms"][1]["passthrough"] = None
+    doc["vms"][2]["passthrough"] = []
+
+    model = build_model(cluster_state(), validate_vms(doc, cluster_state()))
+    tfvars = json.loads(render_outputs(model)["tfvars"])
+
+    for vm in tfvars["vms"]:
+        assert vm["passthrough"] in (None, [])
+        assert not any((item.get("device") or "").startswith("hostpci") for item in vm.get("passthrough") or [])
 
 
 def test_validation_honors_device_override_and_skips_reserved_devices() -> None:
