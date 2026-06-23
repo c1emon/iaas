@@ -47,4 +47,4 @@
 - [x] 6.3 Run the explicit Ansible syntax validation target locally or document any blocker.
 - [x] 6.4 Run the passthrough-related test suite locally.
 - [x] 6.5 Run `openspec validate complete-p0-iaas-reliability`.
-- [ ] 6.6 Inspect CI results after pushing the change.
+- [x] 6.6 Inspect CI results after pushing the change.
