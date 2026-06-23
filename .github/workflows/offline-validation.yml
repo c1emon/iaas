@@ -25,6 +25,16 @@ jobs:
         with:
           tofu_version: latest
 
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.27.2
+        run: |
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o /tmp/gitleaks.tar.gz
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+
       - run: uv sync --locked --dev
 
       - run: make check
+
+      - run: make secret-scan

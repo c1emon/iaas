@@ -70,6 +70,10 @@ Packer CLI is not required for this helper yet.
 Generated non-secret defaults live in `template-build.env`; `PVE_HOST` remains a
 required explicit local setting.
 
+For the repository-wide state, cache, generated-output, and 1Password runtime
+secret handling rules that apply before template builds, see
+`../../../../docs/pve-state-cache-secrets.md`.
+
 ## Live-test notes
 
 - Section 3 template rebuild was live-tested against `pve-ops@10.1.0.72` with

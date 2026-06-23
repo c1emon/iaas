@@ -1,0 +1,4 @@
+title = "iaas gitleaks configuration"
+
+[extend]
+useDefault = true

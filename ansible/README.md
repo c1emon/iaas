@@ -40,9 +40,15 @@ Secrets are injected at runtime from 1Password environment templates:
 
 - `../.env.opnsense.tpl` for OPNsense API variables
 - `../.env.switch.tpl` for switch SSH variables
+- `../infra/tofu/pve/.env.pve-opentofu.tpl` for PVE OpenTofu and generated
+  cloud-init user material
 
 Never commit plaintext vault passwords, private keys, API keys, generated
 exports, or environment-specific secrets.
+
+See `../docs/pve-state-cache-secrets.md` for the shared state/cache/generated
+artifact and 1Password runtime injection rules used by PVE, OPNsense, switch,
+Packer, and guest workflows.
 
 For PVE guest verification, DNS means the guest resolver configuration only:
 the playbook checks `resolv.conf` nameserver entries against `pve_dns` and does
@@ -244,6 +250,10 @@ uv run ansible-playbook --syntax-check playbooks/switches/readonly-facts.yml
 ANSIBLE_COLLECTIONS_PATH="$HOME/.ansible/collections:$PWD/collections" \
 uv run ansible-playbook --syntax-check playbooks/switches/config-plan.yml
 ```
+
+From the repository root, `make ansible-syntax` is the explicit PVE guest
+verification syntax-check target. It is intentionally outside default
+`make check` for this P0 closure stage.
 
 Use live switch check-mode previews only when credentials are available and the
 target host is safe to contact.
