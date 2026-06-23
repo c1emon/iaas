@@ -36,5 +36,5 @@
 ## 5. Validation
 
 - [x] 5.1 Run the completed offline `make check` locally.
-- [ ] 5.2 Run or inspect the CI workflow result after pushing the change.
+- [x] 5.2 Run or inspect the CI workflow result after pushing the change.
 - [x] 5.3 Verify no implementation step added mutation behavior to the default check path.
