@@ -59,4 +59,4 @@
 - [x] 7.4 Run `openspec validate add-pve-online-preflight`.
 - [x] 7.5 If PVE runtime credentials are available, run API-first `make pve-preflight` locally and record the result.
 - [x] 7.6 If SSH context is available, run `make pve-preflight` with `PVE_HOST` and `PVE_SSH_USER` and record SSH adjunct results.
-- [ ] 7.7 Inspect CI after pushing to confirm only offline validation runs in GitHub Actions.
+- [x] 7.7 Inspect CI after pushing to confirm only offline validation runs in GitHub Actions.
