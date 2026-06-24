@@ -9,7 +9,7 @@ ANSIBLE_PLAYBOOK ?= $(ROOT)/ansible/playbooks/pve/verify-guests.yml
 ANSIBLE_LIMIT ?= pve_vms
 PACKER_BUILD_SCRIPT ?= $(ROOT)/infra/packer/proxmox/debian-13/build-template.sh
 
-.PHONY: backup-state generate check-generated validate-source validate-ansible validate fmt init check-pve render-user-data upload-user-data verify-user-data verify-guests verify-guests-syntax plan apply destroy tofu-plan tofu-apply tofu-destroy packer-build ansible-check ansible-syntax
+.PHONY: backup-state generate check-generated validate-source validate-ansible validate fmt init pve-preflight check-pve render-user-data upload-user-data verify-user-data verify-guests verify-guests-syntax plan apply destroy tofu-plan tofu-apply tofu-destroy packer-build ansible-check ansible-syntax
 
 backup-state:
 	@mkdir -p "$(BACKUP_DIR)"
@@ -36,10 +36,10 @@ fmt:
 init:
 	$(TOFU) init -backend=false
 
-check-pve:
-	@test -n "$(PVE_HOST)" || { printf 'error: PVE_HOST is required\n' >&2; exit 1; }
-	@test -n "$(PVE_SSH_USER)" || { printf 'error: PVE_SSH_USER is required\n' >&2; exit 1; }
-	@ssh "$(PVE_SSH_USER)@$(PVE_HOST)" "sudo -n sh -lc 'test -e /sys/class/net/br_dev && test -e /sys/class/net/br_prod && pvesm status | grep -q \"^images \" && pvesm status | grep -q \"^memory \"'"
+pve-preflight:
+	$(UV) run --directory "$(ROOT)" python -m scripts.pve_inventory.preflight
+
+check-pve: pve-preflight
 
 require-storage-id:
 	@test -n "$(STORAGE_ID)" || { printf 'error: STORAGE_ID is required\n' >&2; exit 1; }
