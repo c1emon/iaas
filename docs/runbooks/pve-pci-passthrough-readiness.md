@@ -30,7 +30,7 @@ Use this as a host-side checklist before enabling a passthrough VM.
 - If this repository later automates mapping creation, prefer a dedicated bootstrap root such as `infra/tofu/pve-mappings/` instead of the normal VM lifecycle root.
 - Run that bootstrap root with explicit high-privilege credentials only when changing mappings; current research indicates hardware mapping management may require `root@pam` or equivalent elevated mapping permissions.
 - The normal `infra/tofu/pve` VM root should continue to consume mapping names through `hostpci { mapping = "..." }` and should not create, update, or delete cluster hardware mappings during routine VM applies.
-- A future read-only preflight can compare `inventory/pve-cluster.yml` with `pvesh get /cluster/mapping/pci --check-node <node>` before VM apply.
+- `make pve-preflight` now performs the repository-owned read-only PCI mapping check before VM apply; it does not create or modify mappings.
 
 Example future OpenTofu shape:
 

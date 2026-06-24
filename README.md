@@ -71,6 +71,7 @@ the explicit online `make pve-ansible-check` target only.
 
 Explicit online or mutation operations stay outside the default gate:
 
+- `make pve-preflight`
 - `make pve-check-pve`
 - `make pve-plan`
 - `make pve-apply`
