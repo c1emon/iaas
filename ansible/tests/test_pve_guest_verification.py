@@ -71,8 +71,13 @@ def test_make_targets_and_playbook_are_ansible_first() -> None:
     assert "hosts: localhost" in playbook
     assert "pve_guest_group: pve_vms" in playbook
     assert "python -m scripts.pve_inventory.guest_verification" not in playbook
-    assert "BatchMode=yes" in tasks_file
-    assert "PasswordAuthentication=no" in tasks_file
+    assert "ansible.builtin.setup:" in tasks_file
+    assert "ansible.builtin.service_facts:" in tasks_file
+    assert "ansible.builtin.slurp:" in tasks_file
+    assert "ansible.builtin.command: sudo -n true" in tasks_file
+    assert "ansible.builtin.command: sshd -T" in tasks_file
+    assert "python3" not in tasks_file
+    assert "from_json" not in tasks_file
     for secret_marker in ("IdentityFile", "id_rsa", "BEGIN OPENSSH PRIVATE KEY"):
         assert secret_marker not in (playbook + tasks_file)
 
@@ -125,26 +130,11 @@ def test_unreachable_guest_reports_warn_and_continues(tmp_path: Path) -> None:
     assert "IdentityFile" not in captured
 
 
-def test_dns_mismatch_reports_warn_for_reachable_guest(tmp_path: Path) -> None:
-    inventory = tmp_path / "inventory.yml"
-    _write_inventory(inventory, {"dev-web-01": _base_hostvars()})
+def test_dns_mismatch_is_warning_class_in_native_tasks() -> None:
+    tasks_file = TASKS_FILE.read_text(encoding="utf-8")
 
-    ssh_dir = tmp_path / "bin"
-    ssh_dir.mkdir()
-    ssh_script = ssh_dir / "ssh"
-    ssh_script.write_text(
-        "#!/usr/bin/env bash\n"
-        "set -euo pipefail\n"
-        "cat <<'JSON'\n"
-        "{\"hostname\":\"dev-web-01\",\"ips\":[\"10.10.0.20\"],\"qga_loadstate\":\"loaded\",\"qga_active\":\"active\",\"sudo_n_true\":\"ok\",\"permitrootlogin\":\"no\",\"resolv_conf_nameservers\":[\"1.1.1.1\"],\"resolvectl_dns\":\"1.1.1.1\"}\n"
-        "JSON\n",
-        encoding="utf-8",
-    )
-    ssh_script.chmod(0o755)
-
-    result = _run_ansible(["-i", str(inventory), str(PLAYBOOK)], env={"PATH": f"{ssh_dir}{os.pathsep}{os.environ['PATH']}"})
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert "WARN guest.dev-web-01.dns.10.10.0.254" in result.stdout
-    assert "PASS guest.dev-web-01.hostname" in result.stdout
-    assert "PASS guest.dev-web-01.sudo" in result.stdout
+    assert "ansible.builtin.slurp:" in tasks_file
+    assert "ansible.builtin.command: resolvectl dns" in tasks_file
+    assert "pve_guest_dns_present" in tasks_file
+    assert "severity: \"{{ 'PASS' if pve_guest_dns_present else 'WARN' }}\"" in tasks_file
+    assert "WARN') ~ ' guest.' ~ pve_guest_name ~ '.dns.'" in tasks_file
