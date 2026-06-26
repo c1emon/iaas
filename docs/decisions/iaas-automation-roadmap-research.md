@@ -319,14 +319,17 @@ Use these as possible change names and scopes. The roadmap should remain a direc
 
 Recommended proposal queue:
 
-1. `add-iaas-validation-entrypoints`
-2. `document-pve-state-and-secret-operations`
-3. `add-pve-online-preflight`
-4. `add-pve-guest-verification`
-5. `add-internal-ci-trigger-path`
-6. `add-service-metadata-inventory`
+1. `add-iaas-validation-entrypoints` — completed P0 foundation.
+2. `document-pve-state-and-secret-operations` — completed P0 reliability closure.
+3. `add-pve-online-preflight` — completed first P1 safety rail.
+4. `add-pve-guest-verification` — completed first P1 runtime verification.
+5. `add-service-metadata-inventory` — next priority.
+6. `add-pve-cluster-health-check` — next priority.
+7. `add-pve-rolling-maintenance-runbook` — next priority after cluster health checks.
+8. `add-internal-ci-trigger-path`
+9. `add-lightweight-notification-helper`
 
-Do not turn the full roadmap into one large spec. Start with the P0 validation entrypoints and keep CI platform specifics limited to a CI-compatible command surface until the internal CI trigger path is proposed separately.
+Do not turn the full roadmap into one large spec. With the P0 entrypoints and first P1 safety rails already complete, prioritize service metadata, cluster health checks, and rolling maintenance runbooks before internal CI trigger work.
 
 1. `add-iaas-validation-entrypoints`
    - Root Makefile/Taskfile, offline `make check`, generator check, tests, OpenTofu validation.
@@ -343,13 +346,19 @@ Do not turn the full roadmap into one large spec. Start with the P0 validation e
 5. `add-service-metadata-inventory`
    - Lightweight `inventory/services.yml`, generated docs only at first.
 
-6. `add-internal-ci-trigger-path`
+6. `add-pve-cluster-health-check`
+   - Read-only PVE cluster health checks for quorum, node status, storage availability, and VM/template status; distinct from apply-oriented `pve-preflight`.
+
+7. `add-pve-rolling-maintenance-runbook`
+   - PVE rolling reboot/update runbook first, with pre-check/post-check gates and explicit manual control before any future playbook automation.
+
+8. `add-internal-ci-trigger-path`
    - Internal Forgejo/Woodpecker-style trigger path, tag namespace policy, offline vs read-only runner separation, no automatic apply.
 
-7. `add-pve-operations-runbooks`
-   - PVE health, maintenance, rolling reboot/update pattern, optional Ntfy notification.
+9. `add-lightweight-notification-helper`
+   - Optional Ntfy-style notification helper for long-running workflows and maintenance summaries; keep disabled/no-op by default.
 
-8. `add-pve-hardware-mapping-bootstrap`
+10. `add-pve-hardware-mapping-bootstrap`
    - Future separate OpenTofu root for `proxmox_hardware_mapping_pci`; high-privilege and low-frequency only.
 
 ## Design cautions
