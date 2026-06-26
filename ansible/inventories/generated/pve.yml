@@ -6,7 +6,7 @@ all:
           ansible_connection: ssh
           ansible_host: 10.10.0.20
           ansible_user: ops
-          ansible_become: true
+          ansible_become: false
           ansible_become_method: sudo
           ansible_python_interpreter: auto_silent
           pve_vmid: 500
@@ -16,6 +16,9 @@ all:
           pve_gateway: 10.10.0.254
           pve_dns:
           - 10.10.0.254
+          pve_ansible_groups:
+          - dev
+          - web
           pve_tags:
           - dev
           - web
@@ -25,7 +28,7 @@ all:
           pve_template_node: cohe
           pve_disk_storage_role: memory
           pve_disk_datastore: memory
-          pve_started: true
+          pve_started: false
           pve_on_boot: false
           pve_cores: 2
           pve_memory_mib: 2048
@@ -34,7 +37,7 @@ all:
           ansible_connection: ssh
           ansible_host: 10.50.0.20
           ansible_user: ops
-          ansible_become: true
+          ansible_become: false
           ansible_become_method: sudo
           ansible_python_interpreter: auto_silent
           pve_vmid: 1000
@@ -44,6 +47,9 @@ all:
           pve_gateway: 10.50.0.254
           pve_dns:
           - 10.50.0.254
+          pve_ansible_groups:
+          - prod
+          - app
           pve_tags:
           - prod
           - app
@@ -53,8 +59,8 @@ all:
           pve_template_node: cohe
           pve_disk_storage_role: memory
           pve_disk_datastore: memory
-          pve_started: true
-          pve_on_boot: true
+          pve_started: false
+          pve_on_boot: false
           pve_cores: 2
           pve_memory_mib: 2048
           pve_root_disk_gib: 20
@@ -62,7 +68,7 @@ all:
           ansible_connection: ssh
           ansible_host: 10.10.0.21
           ansible_user: ops
-          ansible_become: true
+          ansible_become: false
           ansible_become_method: sudo
           ansible_python_interpreter: auto_silent
           pve_vmid: 501
@@ -72,6 +78,9 @@ all:
           pve_gateway: 10.10.0.254
           pve_dns:
           - 10.10.0.254
+          pve_ansible_groups:
+          - lab
+          - media
           pve_tags:
           - lab
           - media
@@ -82,7 +91,7 @@ all:
           pve_template_node: cohe
           pve_disk_storage_role: memory
           pve_disk_datastore: memory
-          pve_started: true
+          pve_started: false
           pve_on_boot: false
           pve_cores: 2
           pve_memory_mib: 2048

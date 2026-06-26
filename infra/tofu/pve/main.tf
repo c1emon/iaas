@@ -16,7 +16,7 @@ module "long_lived_vms" {
 
   cluster_name            = local.cluster.name
   disk_datastore_id       = each.value.storage.disk_datastore_id
-  cloud_init_datastore_id = local.snippets_datastore
+  cloud_init_datastore_id = local.cloud_init_datastore
   template                = each.value.template
   vm                      = each.value
   tags                    = local.vm_tags[each.key]
@@ -32,7 +32,7 @@ module "ephemeral_vms" {
 
   cluster_name            = local.cluster.name
   disk_datastore_id       = each.value.storage.disk_datastore_id
-  cloud_init_datastore_id = local.snippets_datastore
+  cloud_init_datastore_id = local.cloud_init_datastore
   template                = each.value.template
   vm                      = each.value
   tags                    = local.vm_tags[each.key]

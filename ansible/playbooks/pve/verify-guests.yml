@@ -1,54 +1,61 @@
 ---
 - name: Verify PVE guest reachability and identity
-  hosts: pve_vms
-  gather_facts: true
-  become: false
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    pve_guest_group: pve_vms
+    pve_guest_results: []
 
   tasks:
-    - name: Assert the inventory hostname matches the guest hostname
-      ansible.builtin.assert:
-        that:
-          - inventory_hostname == ansible_facts.hostname
-        fail_msg: >-
-          Inventory host {{ inventory_hostname }} does not match guest hostname
-          {{ ansible_facts.hostname | default('unknown') }}
-
-    - name: Assert the declared static IP is present in gathered facts
-      ansible.builtin.assert:
-        that:
-          - hostvars[inventory_hostname].ansible_host in (ansible_facts.all_ipv4_addresses | default([]))
-        fail_msg: >-
-          Guest {{ inventory_hostname }} does not report the declared static IP
-          {{ hostvars[inventory_hostname].ansible_host }} in ansible facts
-
-    - name: Read the guest resolver configuration
-      ansible.builtin.slurp:
-        src: /etc/resolv.conf
-      register: pve_resolver_conf
-
-    - name: Read systemd-resolved DNS configuration when available
-      ansible.builtin.command: resolvectl dns
-      register: pve_resolvectl_dns
+    - name: Load generated guest targets
+      ansible.builtin.set_fact:
+        pve_guest_names: "{{ groups.get(pve_guest_group, []) }}"
       changed_when: false
-      failed_when: false
 
-    - name: Assert resolver configuration includes expected PVE DNS nameserver(s)
-      ansible.builtin.assert:
-        that:
-          - >-
-            ('nameserver ' ~ item) in (pve_resolver_conf.content | b64decode)
-            or item in (pve_resolvectl_dns.stdout | default(''))
-        fail_msg: >-
-          Guest {{ inventory_hostname }} resolver config is missing nameserver {{ item }}
-      loop: "{{ hostvars[inventory_hostname].pve_dns | default([]) }}"
+    - name: Report SKIP when no guests are declared
+      ansible.builtin.debug:
+        msg: >-
+          SKIP inventory.{{ pve_guest_group }}: no declared guests found in the generated inventory;
+          summary: 0 pass, 0 warn, 0 fail, 0 skip
+      when: pve_guest_names | length == 0
+      changed_when: false
 
-    - name: Gather service facts for qemu guest agent checks
-      ansible.builtin.service_facts:
+    - name: End play when no guests are declared
+      ansible.builtin.meta: end_play
+      when: pve_guest_names | length == 0
 
-    - name: Assert qemu-guest-agent is installed and running
-      ansible.builtin.assert:
-        that:
-          - "'qemu-guest-agent.service' in ansible_facts.services"
-          - ansible_facts.services.get('qemu-guest-agent.service', {}).get('state') == 'running'
-        fail_msg: >-
-          Guest {{ inventory_hostname }} does not report a running qemu-guest-agent
+    - name: Verify each generated guest
+      ansible.builtin.include_tasks: tasks/verify-guest.yml
+      loop: "{{ pve_guest_names }}"
+      loop_control:
+        loop_var: pve_guest_name
+        label: "{{ pve_guest_name }}"
+
+    - name: Build the operator report
+      ansible.builtin.set_fact:
+        pve_guest_pass_count: "{{ pve_guest_results | selectattr('severity', 'equalto', 'PASS') | list | length }}"
+        pve_guest_warn_count: "{{ pve_guest_results | selectattr('severity', 'equalto', 'WARN') | list | length }}"
+        pve_guest_fail_count: "{{ pve_guest_results | selectattr('severity', 'equalto', 'FAIL') | list | length }}"
+        pve_guest_skip_count: "{{ pve_guest_results | selectattr('severity', 'equalto', 'SKIP') | list | length }}"
+      changed_when: false
+
+    - name: Render the operator report
+      ansible.builtin.set_fact:
+        pve_guest_report: |-
+          {% for result in pve_guest_results %}
+          {{ result.line }}
+          {% endfor %}
+          summary: {{ pve_guest_pass_count }} pass, {{ pve_guest_warn_count }} warn, {{ pve_guest_fail_count }} fail, {{ pve_guest_skip_count }} skip
+      changed_when: false
+
+    - name: Print the verification summary
+      ansible.builtin.debug:
+        msg: "{{ pve_guest_report }}"
+      changed_when: false
+
+    - name: Fail when hard failures exist
+      ansible.builtin.fail:
+        msg: >-
+          PVE guest verification found {{ pve_guest_fail_count }} hard failure(s)
+      when: pve_guest_fail_count | int > 0

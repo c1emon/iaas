@@ -58,7 +58,7 @@ verify-user-data: require-pve-target render-user-data
 	$(UV) run --directory "$(ROOT)" python -m scripts.pve_inventory.cloud_init verify --output-dir "$(USER_DATA_DIR)" --storage-id "$(STORAGE_ID)" --pve-host "$(PVE_HOST)" --ssh-user "$(PVE_SSH_USER)"
 
 verify-guests:
-	$(UV) run --directory "$(ROOT)" ansible-playbook -i "$(ANSIBLE_INVENTORY)" --limit "$(ANSIBLE_LIMIT)" "$(ANSIBLE_PLAYBOOK)"
+	$(UV) run --directory "$(ROOT)" ansible-playbook -i "$(ANSIBLE_INVENTORY)" "$(ANSIBLE_PLAYBOOK)"
 
 verify-guests-syntax:
 	$(UV) run --directory "$(ROOT)" ansible-playbook --syntax-check -i "$(ANSIBLE_INVENTORY)" "$(ANSIBLE_PLAYBOOK)"

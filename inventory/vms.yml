@@ -15,6 +15,9 @@ vms:
     ansible_groups: [dev, web]
     tags: [dev, web]
     pool: null
+    boot:
+      started: false
+      on_boot: false
     ha:
       enabled: false
       group: null
@@ -33,6 +36,9 @@ vms:
     ansible_groups: [prod, app]
     tags: [prod, app]
     pool: null
+    boot:
+      started: false
+      on_boot: false
     ha:
       enabled: false
       group: null
@@ -51,6 +57,9 @@ vms:
     ansible_groups: [lab, media]
     tags: [lab, media, igpu]
     pool: null
+    boot:
+      started: false
+      on_boot: false
     ha:
       enabled: false
       group: null
