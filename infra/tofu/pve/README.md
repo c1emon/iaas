@@ -21,7 +21,8 @@ and read-only verification. YAML inventory is the source of truth.
 ## Storage and network assumptions
 
 - `images` is the shared NFS content store for ISO/import/snippets.
-- `memory` is the shared VM/template disk store.
+- `memory` is the shared VM/template disk store for root, EFI, and cloud-init
+  drive media.
 - `br_dev` maps to `10.10.0.0/24` with gateway/DNS `10.10.0.254`.
 - `br_prod` maps to `10.50.0.0/24` with gateway/DNS `10.50.0.254`.
 - PVE host bridge configuration is a prerequisite and is not mutated here.
@@ -139,6 +140,8 @@ uploads them into isolated NFS-backed `images` snippets storage, and references 
 
 - Snippet name: `opentofu-vm-<vmid>-user-data.yml`
 - File ID: `images:snippets/opentofu-vm-<vmid>-user-data.yml`
+- Cloud-init media/drive datastore: the `memory` role/datastore. Snippets stay
+  on `images`, while VM root/EFI disks and cloud-init drive media use `memory`.
 - Retention: snippets stay in storage for the VM lifetime; do not delete them immediately after upload.
 
 Use `op run --env-file .env.pve-opentofu.tpl -- make render-user-data STORAGE_ID=images` to create local snippets. `make plan` stays local. `make apply` runs `upload-user-data` and `verify-user-data` before the OpenTofu apply.

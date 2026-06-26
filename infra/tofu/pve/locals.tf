@@ -16,8 +16,9 @@ locals {
     if lower(vm.lifecycle_class) != "long_lived"
   }
 
-  cloud_init_vms     = local.vms_by_name
-  snippets_datastore = local.cluster.storage_roles[local.cluster.automation.cloud_init.snippet_storage_role].datastore
+  cloud_init_vms       = local.vms_by_name
+  snippets_datastore   = local.cluster.storage_roles[local.cluster.automation.cloud_init.snippet_storage_role].datastore
+  cloud_init_datastore = local.cluster.storage_roles[local.cluster.automation.cloud_init.drive_storage_role].datastore
 
   user_data_file_ids = {
     for name, vm in local.cloud_init_vms : name => "${local.snippets_datastore}:snippets/${local.cluster.automation.cloud_init.snippet_file_prefix}-${vm.vmid}-user-data.yml"

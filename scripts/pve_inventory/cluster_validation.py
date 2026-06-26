@@ -79,6 +79,17 @@ def validate_automation(cluster_doc: dict[str, Any], storage_roles: dict[str, An
     require(build_network_map.get("attach_vms") is True, "cluster: cluster.automation.template_build.build_bridge must reference an attachable network bridge")
 
     cloud_init = as_mapping(automation.get("cloud_init"), "cluster.cluster.automation.cloud_init")
+    require_unknown_keys(
+        cloud_init,
+        {
+            "defaults",
+            "drive_storage_role",
+            "snippet_storage_role",
+            "snippet_file_prefix",
+            "users",
+        },
+        "cluster: cluster.automation.cloud_init",
+    )
     defaults = cloud_init.get("defaults")
     default_values = {
         "package_update": False,
@@ -99,6 +110,11 @@ def validate_automation(cluster_doc: dict[str, Any], storage_roles: dict[str, An
     require(snippet_storage_role_str in storage_roles, "cluster: cluster.automation.cloud_init.snippet_storage_role must reference a declared storage role")
     snippet_storage = as_mapping(storage_roles[snippet_storage_role_str], f"cluster.storage_roles.{snippet_storage_role_str}")
     require("snippets" in as_list(snippet_storage.get("content"), f"cluster.storage_roles.{snippet_storage_role_str}.content"), "cluster: cluster.automation.cloud_init.snippet_storage_role must point to storage with snippets content")
+
+    drive_storage_role = require_non_empty_string(cloud_init.get("drive_storage_role"), "cluster: cluster.automation.cloud_init.drive_storage_role must be a non-empty string")
+    require(drive_storage_role in storage_roles, "cluster: cluster.automation.cloud_init.drive_storage_role must reference a declared storage role")
+    drive_storage = as_mapping(storage_roles[drive_storage_role], f"cluster.storage_roles.{drive_storage_role}")
+    require("disk" in as_list(drive_storage.get("content"), f"cluster.storage_roles.{drive_storage_role}.content"), "cluster: cluster.automation.cloud_init.drive_storage_role must point to storage with disk content")
 
     snippet_file_prefix = cloud_init.get("snippet_file_prefix")
     require(isinstance(snippet_file_prefix, str) and re.match(r"^[A-Za-z0-9][A-Za-z0-9._-]*$", snippet_file_prefix), "cluster: cluster.automation.cloud_init.snippet_file_prefix must match ^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -151,6 +167,7 @@ def validate_automation(cluster_doc: dict[str, Any], storage_roles: dict[str, An
         },
         "cloud_init": {
             "defaults": default_values,
+            "drive_storage_role": drive_storage_role,
             "snippet_storage_role": snippet_storage_role_str,
             "snippet_file_prefix": cast(str, snippet_file_prefix),
             "users": users,

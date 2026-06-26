@@ -27,7 +27,7 @@ def build_ansible_inventory(model: dict[str, Any]) -> str:
             "ansible_connection": "ssh",
             "ansible_host": vm["ip_address"],
             "ansible_user": model["cluster"]["automation"]["ansible_user"],
-            "ansible_become": True,
+            "ansible_become": False,
             "ansible_become_method": "sudo",
             "ansible_python_interpreter": "auto_silent",
             "pve_vmid": vm["vmid"],

@@ -61,6 +61,16 @@ def test_passthrough_vms_get_cloud_init_user_data(monkeypatch: pytest.MonkeyPatc
     assert "name: ops" in media_snippet.content
 
 
+def test_cloud_init_storage_roles_split_by_purpose() -> None:
+    cluster = cluster_state()
+    assert cluster["automation"]["cloud_init"]["drive_storage_role"] == "memory"
+    assert cluster["automation"]["cloud_init"]["snippet_storage_role"] == "images"
+
+    tfvars = json.loads(render_outputs(vms_model())["tfvars"])
+    assert tfvars["cluster"]["automation"]["cloud_init"]["drive_storage_role"] == "memory"
+    assert tfvars["cluster"]["automation"]["cloud_init"]["snippet_storage_role"] == "images"
+
+
 def test_inventory_passthrough_schema_omits_device() -> None:
     vms = load_yaml(VMS_PATH)
     passthrough = vms["vms"][2]["passthrough"][0]
