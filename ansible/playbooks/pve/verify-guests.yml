@@ -1,4 +1,6 @@
 ---
+# Syntax-only playbook retained for `make pve-ansible-syntax`.
+# The canonical live guest verification command is `make pve-verify-guests`.
 - name: Verify PVE guest reachability and identity
   hosts: pve_vms
   gather_facts: true

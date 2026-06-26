@@ -51,8 +51,14 @@ artifact and 1Password runtime injection rules used by PVE, OPNsense, switch,
 Packer, and guest workflows.
 
 For PVE guest verification, DNS means the guest resolver configuration only:
-the playbook checks `resolv.conf` nameserver entries against `pve_dns` and does
+the workflow checks `resolv.conf` nameserver entries against `pve_dns` and does
 not perform external DNS lookups.
+
+The canonical online guest verification command is repository-owned and lives at
+`make pve-verify-guests` from the repository root. It uses the generated PVE
+inventory, the local SSH agent or 1Password SSH Agent, and never reads private
+keys from the repository. Offline syntax validation remains separate at
+`make pve-ansible-syntax`.
 
 ## OPNsense playbooks
 
@@ -217,13 +223,18 @@ validation and do not change the global node SSHD policy.
 Use the generated inventory explicitly when verifying guests:
 
 ```bash
-uv run ansible-playbook -i inventories/generated/pve.yml \
-  playbooks/pve/verify-guests.yml --limit pve_vms
+make pve-verify-guests
 ```
 
-That workflow is read-only: it gathers facts, confirms the inventory hostname,
-checks the declared static IP in gathered facts, verifies resolver config, and
-confirms `qemu-guest-agent` is present and running.
+That workflow is read-only: it confirms generated inventory assumptions, checks
+hostname/static IP/qemu-guest-agent/sudo/root-SSH state on reachable guests, and
+reports offline or DNS-mismatched guests as WARN without mutating anything.
+
+If you only need syntax validation for the Ansible playbook, use:
+
+```bash
+make pve-ansible-syntax
+```
 
 Guest configuration changes stay in Ansible roles. OpenTofu owns VM lifecycle,
 cloud-init identity, and network inputs; Packer owns template creation.
@@ -251,9 +262,9 @@ ANSIBLE_COLLECTIONS_PATH="$HOME/.ansible/collections:$PWD/collections" \
 uv run ansible-playbook --syntax-check playbooks/switches/config-plan.yml
 ```
 
-From the repository root, `make ansible-syntax` is the explicit PVE guest
+From the repository root, `make pve-ansible-syntax` is the explicit PVE guest
 verification syntax-check target. It is intentionally outside default
-`make check` for this P0 closure stage.
+`make check` and GitHub Actions for this P0 closure stage.
 
 Use live switch check-mode previews only when credentials are available and the
 target host is safe to contact.

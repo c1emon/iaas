@@ -16,6 +16,9 @@ all:
           pve_gateway: 10.10.0.254
           pve_dns:
           - 10.10.0.254
+          pve_ansible_groups:
+          - dev
+          - web
           pve_tags:
           - dev
           - web
@@ -44,6 +47,9 @@ all:
           pve_gateway: 10.50.0.254
           pve_dns:
           - 10.50.0.254
+          pve_ansible_groups:
+          - prod
+          - app
           pve_tags:
           - prod
           - app
@@ -72,6 +78,9 @@ all:
           pve_gateway: 10.10.0.254
           pve_dns:
           - 10.10.0.254
+          pve_ansible_groups:
+          - lab
+          - media
           pve_tags:
           - lab
           - media

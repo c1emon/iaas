@@ -36,6 +36,7 @@ def build_ansible_inventory(model: dict[str, Any]) -> str:
             "pve_bridge": vm["network"]["bridge"],
             "pve_gateway": vm["gateway"],
             "pve_dns": vm["dns"],
+            "pve_ansible_groups": vm["ansible_groups"],
             "pve_tags": vm["tags"],
             "pve_pool": vm["pool"],
             "pve_template": vm["template"]["name"],

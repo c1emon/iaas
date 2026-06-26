@@ -66,6 +66,8 @@ op run --env-file .env.pve-opentofu.tpl -- make pve-preflight PVE_HOST=cohe PVE_
 op run --env-file .env.pve-opentofu.tpl -- make packer-build PVE_HOST=cohe
 op run --env-file .env.pve-opentofu.tpl -- make plan STORAGE_ID=images
 op run --env-file .env.pve-opentofu.tpl -- make apply STORAGE_ID=images PVE_HOST=cohe PVE_SSH_USER=pve-ops
+op run --env-file .env.pve-opentofu.tpl -- make verify-guests
+op run --env-file .env.pve-opentofu.tpl -- make verify-guests-syntax
 op run --env-file .env.pve-opentofu.tpl -- make ansible-check
 ```
 
@@ -73,10 +75,12 @@ op run --env-file .env.pve-opentofu.tpl -- make ansible-check
 source YAML, generated inventory, and OpenTofu config. `make plan` renders
 local cloud-init snippets only. `make apply` uploads and verifies snippets
 before applying OpenTofu changes. `make pve-preflight` is the explicit read-only
-PVE readiness check and `make pve-check-pve` is a compatibility alias. SSH
-adjunct checks are optional; omit `PVE_HOST` and `PVE_SSH_USER` to skip them.
-`STORAGE_ID`, `PVE_HOST`, and `PVE_SSH_USER` are intentionally explicit inputs;
-the Makefile does not provide environment-specific defaults for them.
+PVE readiness check and `make pve-check-pve` is a compatibility alias. Guest
+verification is separate and read-only: `make verify-guests` (or root
+`make pve-verify-guests`) uses the generated inventory plus the local SSH agent
+or 1Password SSH Agent. `STORAGE_ID`, `PVE_HOST`, and `PVE_SSH_USER` are
+intentionally explicit inputs; the Makefile does not provide environment-specific
+defaults for them.
 
 `make pve-preflight` uses the PVE API token variables from
 `.env.pve-opentofu.tpl` and should normally be invoked as:
@@ -90,10 +94,20 @@ That command stays outside `make check` and outside cloud CI.
 Cluster inventory drives the Ansible login user, cloud-init VM users, and the
 snippet storage role/prefix used for rendered user-data files.
 
-PVE guest playbooks must use the generated inventory at
-`ansible/inventories/generated/pve.yml`; they do not rely on the default
+PVE guest verification must use the generated inventory at
+`ansible/inventories/generated/pve.yml`; it does not rely on the default
 `ansible.cfg` inventory. The generated inventory uses `ansible_user: ops`,
 become settings, and no embedded secrets.
+
+Guest verification results:
+
+- `PASS` — reachable guest matches the declared runtime expectations.
+- `WARN` — the guest is offline/unreachable or DNS is mismatched, but no hard
+  failure was found.
+- `FAIL` — a reachable guest violates a hard read-only check.
+- `SKIP` — there are no declared guests in the generated inventory group.
+
+Guest verification stays outside `make check` and GitHub Actions cloud CI.
 
 The provider uses `bpg/proxmox` `~> 0.109.0` with `ssh { agent = true username = "pve-ops" }` and token-based API auth.
 
@@ -162,7 +176,9 @@ Snippet upload and verify use the audited host-side wrapper `/usr/local/sbin/ast
 - Section 4/4A was live-tested with VMID `500` (`dev-web-01`) on `cohe`, attached to `br_dev` with static IP `10.10.0.20/24`, then destroyed with a targeted OpenTofu destroy.
 - PVE 9 required `AstraAutomation` on both the parent user `pve-ops@pve` and the privilege-separated token `pve-ops@pve!opentofu`.
 - `AstraAutomation` also required `SDN.Use` for the `br_dev` SDN bridge check.
-- Guest SSH for `ops` and `clemon` depends on the corresponding keys being available in the local SSH agent or 1Password SSH Agent.
+- Guest SSH for `ops` depends on the corresponding keys being available in the
+  local SSH agent or 1Password SSH Agent; the workflow does not read repository
+  private keys.
 - `astra-pve-template-build` is a bootstrap transitional wrapper for host-local template registration.
 
 Example 1Password SSH Agent entries:
