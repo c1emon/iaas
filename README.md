@@ -61,8 +61,8 @@ it has a small single-binary CLI, a reviewable repository config file, redacted
 output, and straightforward CI installation. It remains explicit rather than a
 `make check` dependency until false-positive behavior is proven stable.
 `make pve-verify-guests` runs the explicit online PVE guest verification command
-without mutating guests. It uses the generated inventory and local SSH agent /
-1Password SSH Agent context.
+without mutating guests. It is Ansible-first, uses the generated inventory, and
+relies on the local SSH agent / 1Password SSH Agent context.
 `make pve-ansible-syntax` runs the explicit PVE guest verification syntax check
 without contacting guests.
 

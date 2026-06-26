@@ -77,10 +77,10 @@ local cloud-init snippets only. `make apply` uploads and verifies snippets
 before applying OpenTofu changes. `make pve-preflight` is the explicit read-only
 PVE readiness check and `make pve-check-pve` is a compatibility alias. Guest
 verification is separate and read-only: `make verify-guests` (or root
-`make pve-verify-guests`) uses the generated inventory plus the local SSH agent
-or 1Password SSH Agent. `STORAGE_ID`, `PVE_HOST`, and `PVE_SSH_USER` are
-intentionally explicit inputs; the Makefile does not provide environment-specific
-defaults for them.
+`make pve-verify-guests`) invokes the Ansible-first playbook with the generated
+inventory plus the local SSH agent or 1Password SSH Agent. `STORAGE_ID`,
+`PVE_HOST`, and `PVE_SSH_USER` are intentionally explicit inputs; the Makefile
+does not provide environment-specific defaults for them.
 
 `make pve-preflight` uses the PVE API token variables from
 `.env.pve-opentofu.tpl` and should normally be invoked as:

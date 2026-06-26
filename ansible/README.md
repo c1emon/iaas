@@ -55,10 +55,9 @@ the workflow checks `resolv.conf` nameserver entries against `pve_dns` and does
 not perform external DNS lookups.
 
 The canonical online guest verification command is repository-owned and lives at
-`make pve-verify-guests` from the repository root. It uses the generated PVE
-inventory, the local SSH agent or 1Password SSH Agent, and never reads private
-keys from the repository. Offline syntax validation remains separate at
-`make pve-ansible-syntax`.
+`make pve-verify-guests` from the repository root. It is Ansible-first, uses the
+generated PVE inventory, and never reads private keys from the repository.
+Offline syntax validation remains separate at `make pve-ansible-syntax`.
 
 ## OPNsense playbooks
 
