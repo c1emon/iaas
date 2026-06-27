@@ -14,6 +14,27 @@ The system SHALL expose an explicit repository-owned online PVE cluster health c
 - **THEN** PVE cluster health checks SHALL NOT be a dependency of that default gate
 - **AND** the default gate SHALL remain runnable without PVE API, SSH, 1Password, or apply-capable credentials
 
+### Requirement: Read-only Python PVE API layer
+The system SHALL access live PVE state for health checks through a repository-owned Python API layer backed by `proxmoxer`.
+
+#### Scenario: API layer is a reusable module
+- **WHEN** the implementation adds the proxmoxer-backed PVE API layer
+- **THEN** it SHALL place the wrapper in a standalone reusable PVE API package rather than embedding it inside the health command or preflight command
+- **AND** the package SHALL support separation of client, error handling, and future endpoint/normalization helpers instead of requiring all API concerns in one large file
+- **AND** health-command code SHALL depend on that package for live PVE connectivity and endpoint traversal
+- **AND** existing preflight-specific API code MAY remain separate until a future refactor migrates it intentionally
+
+#### Scenario: Health checks query PVE through the API layer
+- **WHEN** the health command needs live PVE cluster, node, storage, VM, HA, or Ceph data
+- **THEN** it SHALL call named read-only methods on the repository-owned PVE API layer
+- **AND** health-check logic SHALL NOT traverse the raw `proxmoxer` client directly throughout the command implementation
+
+#### Scenario: API layer preserves read-only behavior
+- **WHEN** the PVE API layer talks to Proxmox VE
+- **THEN** it SHALL use read-only API operations for health facts
+- **AND** it SHALL NOT expose generic mutation helpers such as create, update, delete, start, stop, reboot, migrate, upload, or configuration-write operations to health-check callers
+- **AND** it SHALL NOT print API token secrets or resolved credential values
+
 ### Requirement: Cluster and node health checks
 The system SHALL report PVE cluster and node health using read-only API data.
 

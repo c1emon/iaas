@@ -28,7 +28,7 @@ Cluster health is related but different:
 **Goals:**
 
 - Add canonical root `make pve-health`.
-- Run read-only PVE API health checks using the same runtime API token conventions as other explicit PVE online operations.
+- Run read-only PVE API health checks through a reusable Python PVE API layer backed by `proxmoxer`, using the same runtime API token conventions as other explicit PVE online operations.
 - Report pass/warn/fail/skip results with a non-zero exit only for blocking failures.
 - Check cluster quorum when the API exposes quorum state.
 - Check required node online/status facts and optional placeholder node availability.
@@ -50,12 +50,13 @@ Cluster health is related but different:
 - Do not send notifications in this change.
 - Do not automatically remediate unhealthy conditions.
 - Do not require PVE API access in `make check` or cloud CI.
+- Do not expose or call PVE mutation operations from the health-check API layer.
 
 ## Decisions
 
 ### Add a separate health entrypoint rather than widening preflight
 
-The first implementation should add a dedicated `scripts/pve_inventory/health.py` entrypoint. It may reuse existing helpers such as the GET-only `ProxmoxAPI` client and `CheckResult` reporting functions, but the top-level command should remain distinct from `preflight.py`.
+The first implementation should add a dedicated `scripts/pve_inventory/health.py` entrypoint. It may reuse existing `CheckResult` reporting functions, but the top-level command should remain distinct from `preflight.py`.
 
 This preserves the semantic boundary:
 
@@ -63,6 +64,40 @@ This preserves the semantic boundary:
 preflight.py  -> resource readiness for plan/apply-like workflows
 health.py     -> current cluster and runtime health view
 ```
+
+### Introduce a proxmoxer-backed read-only Python PVE API layer
+
+For long-term maintainability, the health implementation should introduce a repository-owned Python PVE API layer backed by `proxmoxer` rather than scattering raw HTTP calls or direct SDK traversal through health-check logic.
+
+This layer should live in a standalone reusable package under the PVE inventory package, for example `scripts/pve_inventory/pve_api/`, and should not be embedded in `health.py`, `preflight.py`, or the existing preflight-specific API module. `health.py` should orchestrate health semantics and reporting; the PVE API package should own live PVE connectivity and endpoint traversal.
+
+The package should leave room for future expansion instead of concentrating all API concerns in one large file. A first implementation may keep the package small, but it should establish separable modules such as:
+
+```text
+scripts/pve_inventory/pve_api/
+  __init__.py        public read-only API exports
+  client.py          proxmoxer-backed read-only client/adapter
+  errors.py          PVE API exception types and safe error messages
+```
+
+Additional modules for response normalization, endpoint-specific helpers, or test fakes may be added as the shared PVE API layer grows.
+
+The layer should expose narrow, named read-only methods for the facts needed by online checks, for example:
+
+```text
+cluster_status()
+nodes()
+node_status(node)
+node_storage(node)
+vms(node)
+vm_status(node, vmid)
+ha_status()
+ceph_status()
+```
+
+Health-check code should consume those methods rather than using the raw `proxmoxer` object directly. Internally, the adapter should use `proxmoxer` GET calls only. It should not expose generic POST/PUT/DELETE helpers, and tests should make accidental mutation entrypoints difficult to add unnoticed.
+
+The existing GET-only preflight API client may remain in place for compatibility during this change. A later refactor may migrate preflight onto the shared API package once the health-oriented adapter has proven stable.
 
 ### Define required and optional nodes from inventory usage
 
@@ -162,6 +197,8 @@ JSON output can be added later if internal CI needs machine-readable health repo
 ## Risks / Trade-offs
 
 - PVE API response shapes differ by version → Keep parsing defensive and test with fake route variants; skip unknown optional fields rather than failing when no health conclusion can be drawn.
+- `proxmoxer` is a thin REST API wrapper, not a health semantics layer → Keep health decisions in repository code and hide the raw SDK behind named read-only methods.
+- Adding a PVE SDK increases dependency surface → Pin/manage the dependency through the existing Python environment workflow and test API adapter behavior with fakes.
 - Capacity thresholds can be environment-specific → Use conservative defaults and leave configurability to a future change if needed.
 - Health checks may be mistaken for remediation → Keep command name/reporting/documentation explicit that this is read-only observation.
 - Long-lived stopped VMs may be intentionally stopped → Warn rather than fail, giving operators visibility without blocking all health reports.

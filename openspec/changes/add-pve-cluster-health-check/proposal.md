@@ -7,7 +7,7 @@ Cluster health is a different question from apply readiness: it should answer wh
 ## What Changes
 
 - Add an explicit `make pve-health` entrypoint for read-only online PVE cluster health checks.
-- Implement the health command as a new PVE online operation, likely under `scripts/pve_inventory/health.py`, while reusing the existing GET-only PVE API client and pass/warn/fail/skip reporting conventions where practical.
+- Implement the health command as a new PVE online operation, likely under `scripts/pve_inventory/health.py`, backed by a reusable Python PVE API layer that uses `proxmoxer` while exposing only read-only health/query methods to callers.
 - Check API reachability, cluster quorum when exposed, required and optional node status, node capacity thresholds, required datastore presence/activity/usage, referenced template status, declared VM runtime status, HA status when available, and Ceph health when available.
 - Treat declared-but-unused placeholder nodes as warnings rather than failures.
 - Warn when declared long-lived VMs are missing or stopped; do not warn for missing/stopped ephemeral lab VMs.
@@ -28,6 +28,7 @@ Cluster health is a different question from apply readiness: it should answer wh
 - Affected areas:
   - Root `Makefile` and `infra/tofu/pve/Makefile` PVE target surface.
   - New PVE health command implementation under the PVE inventory/online operations code.
+  - Python dependency metadata for the `proxmoxer` PVE API SDK.
   - Tests using fake PVE API responses for quorum, nodes, capacity, storage, templates, VMs, HA, and Ceph behavior.
   - Documentation explaining `make pve-health` and how it differs from `make pve-preflight`.
 - Operational impact:
