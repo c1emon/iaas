@@ -4,6 +4,8 @@
 
 它是后续 OpenSpec change、维护任务和实现排期的输入，不代表所有事项必须一次性完成。
 
+当前状态：Phase 1 已通过 `fix-review-p1-remediations` 完成并归档，相关规格已同步到主规格。
+
 ## 目标
 
 - 修复已确认会影响现有流程的 bug。
@@ -50,21 +52,21 @@
 
 目标是消除已知自相矛盾、失效入口和明显文件卫生问题。
 
-- [ ] 对齐 `ops` sudo policy 与 guest verification。
+- [x] 对齐 `ops` sudo policy 与 guest verification。
   - 相关位置：`inventory/pve-cluster.yml`、`ansible/playbooks/pve/tasks/verify-guest.yml`
   - 当前状态：`ops` 作为自动化用户使用受控 `NOPASSWD`；`clemon` 保持交互式 sudo。
   - 约束：guest verification 继续把 `sudo -n true` 作为硬检查，且 root SSH / SSH 密码登录保持关闭。
-- [ ] 删除、归档或修复失效 legacy smoke 脚本。
+- [x] 删除、归档或修复失效 legacy smoke 脚本。
   - 当前状态：旧 switch smoke 入口已退役；新的 switch 行为应落在当前 collection / test surface。
-- [ ] 修正文档中与 inventory 不一致的节点信息。
+- [x] 修正文档中与 inventory 不一致的节点信息。
   - 重点：`docs/architecture.md` 中 PVE node3 管理 IP 与 `inventory/pve-cluster.yml` / validation 事实一致。
-- [ ] 清理并隔离运行时产物。
+- [x] 清理并隔离运行时产物。
   - 重点：`infra/tofu/pve/terraform.tfstate*`、`.terraform/`、`.venv/`、`.cache/`、`ansible/collections/`、`.DS_Store`
   - 要求：确认未被 Git 跟踪；必要时迁出仓库工作树或使用远端 backend / 专用 ignored state 目录。
-- [ ] 统一 CLI 对 `ValidationError` 的边界处理。
+- [x] 统一 CLI 对 `ValidationError` 的边界处理。
   - 相关位置：`scripts/pve_inventory/cli.py`、`scripts/services_inventory/cli.py`
   - 目标：输入错误输出稳定、可读，不泄露 Python traceback。
-- [ ] 将 `static_ip` 解析异常包装成带上下文的 validation 错误。
+- [x] 将 `static_ip` 解析异常包装成带上下文的 validation 错误。
   - 相关位置：`scripts/pve_inventory/vm_validation.py`
 
 验证建议：
@@ -199,7 +201,7 @@
 
 推荐切分：
 
-1. `fix-review-p1-remediations`
+1. `fix-review-p1-remediations`（已完成并归档）
    - sudo policy；
    - legacy smoke；
    - CLI error boundary；
@@ -252,10 +254,10 @@
 
 | 优先级 | 事项 | 阶段 |
 |---|---|---:|
-| P1 | `ops` sudo policy 与 guest verification 冲突 | 1 |
-| P1 | legacy switch smoke 入口已退役 | 1 |
+| P1 | `ops` sudo policy 与 guest verification 冲突（已完成） | 1 |
+| P1 | legacy switch smoke 入口已退役（已完成） | 1 |
 | P1 | cloud-init snippet verify 不校验内容 | 2 |
-| P1/P2 | 运行时产物混在工作树 | 1 |
+| P1/P2 | 运行时产物混在工作树（已完成：tracked-file hygiene） | 1 |
 | P1/P2 | 最小功能一致性安全网不足 | 0 |
 | P2 | VM name / group / tag / static IP 校验不足 | 3a |
 | P2 | services Markdown 未转义 | 3a |
