@@ -60,6 +60,21 @@ committed secrets. Gitleaks was chosen over TruffleHog for the first pass becaus
 it has a small single-binary CLI, a reviewable repository config file, redacted
 output, and straightforward CI installation. It remains explicit rather than a
 `make check` dependency until false-positive behavior is proven stable.
+
+PVE online checks stay explicit and outside `make check` / cloud CI:
+
+```bash
+op run --env-file infra/tofu/pve/.env.pve-opentofu.tpl -- make pve-preflight
+op run --env-file infra/tofu/pve/.env.pve-opentofu.tpl -- make pve-health
+```
+
+`pve-preflight` is the apply-readiness check for planned VM lifecycle changes.
+`pve-health` is the current-cluster health check. It uses the same canonical
+`TF_VAR_pve_*` API variables, but no SSH fields, and reports pass/warn/fail/skip
+with thresholds of CPU >90% warn, memory >90% warn, rootfs >90% warn / >98% fail,
+and datastore >85% warn / >95% fail. Long-lived VMs missing or stopped warn;
+ephemeral lab VMs missing or stopped do not warn solely for that state.
+
 `make pve-verify-guests` runs the explicit online PVE guest verification command
 without mutating guests. It is Ansible-first, uses the generated inventory, and
 relies on the local SSH agent / 1Password SSH Agent context.
@@ -76,6 +91,7 @@ remains a compatibility alias.
 Explicit online or mutation operations stay outside the default gate:
 
 - `make pve-preflight`
+- `make pve-health`
 - `make pve-check-pve`
 - `make pve-plan`
 - `make pve-apply`

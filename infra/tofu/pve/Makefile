@@ -9,7 +9,7 @@ ANSIBLE_PLAYBOOK ?= $(ROOT)/ansible/playbooks/pve/verify-guests.yml
 ANSIBLE_LIMIT ?= pve_vms
 PACKER_BUILD_SCRIPT ?= $(ROOT)/infra/packer/proxmox/debian-13/build-template.sh
 
-.PHONY: backup-state generate check-generated validate-source validate-ansible validate fmt init pve-preflight check-pve render-user-data upload-user-data verify-user-data verify-guests verify-guests-syntax plan apply destroy tofu-plan tofu-apply tofu-destroy packer-build ansible-check ansible-syntax
+.PHONY: backup-state generate check-generated validate-source validate-ansible validate fmt init pve-preflight pve-health check-pve render-user-data upload-user-data verify-user-data verify-guests verify-guests-syntax plan apply destroy tofu-plan tofu-apply tofu-destroy packer-build ansible-check ansible-syntax
 
 backup-state:
 	@mkdir -p "$(BACKUP_DIR)"
@@ -38,6 +38,9 @@ init:
 
 pve-preflight:
 	$(UV) run --directory "$(ROOT)" python -m scripts.pve_inventory.preflight
+
+pve-health:
+	$(UV) run --directory "$(ROOT)" python -m scripts.pve_inventory.health
 
 check-pve: pve-preflight
 
