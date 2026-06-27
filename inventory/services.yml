@@ -1,0 +1,60 @@
+---
+# Service metadata source of truth. This is declared documentation only.
+schema_version: 1
+
+services:
+  - name: dev-dashboard
+    owner_vm: dev-web-01
+    description: Developer-facing web UI and metrics.
+    endpoints:
+      - name: web
+        fqdn: dashboard.dev.example.invalid
+        port: 8080
+        protocol: http
+        exposure: lan
+        auth: app
+        dns_hint: manual
+        reverse_proxy_hint: future
+        opnsense_hint: review-before-public
+      - name: metrics
+        port: 9090
+        protocol: http
+        exposure: internal
+        auth: none
+
+  - name: prod-api
+    owner_vm: prod-app-01
+    description: Application API and gRPC control plane.
+    endpoints:
+      - name: api
+        fqdn: api.example.invalid
+        port: 443
+        protocol: https
+        exposure: public
+        auth: none
+        dns_hint: manual
+        reverse_proxy_hint: future
+        opnsense_hint: review-public
+      - name: grpc
+        fqdn: grpc.example.invalid
+        port: 8443
+        protocol: grpc
+        exposure: vpn
+        auth: sso
+        reverse_proxy_hint: future
+
+  - name: media-admin
+    owner_vm: media-lab-01
+    description: Internal admin and database access.
+    endpoints:
+      - name: admin
+        port: 8443
+        protocol: https
+        exposure: vpn
+        auth: unknown
+        dns_hint: manual
+      - name: database
+        port: 5432
+        protocol: postgres
+        exposure: internal
+        auth: client-cert

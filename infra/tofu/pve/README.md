@@ -44,8 +44,9 @@ and read-only verification. YAML inventory is the source of truth.
 
 ## Usage
 
-Repository root offline validation uses `make check`. This module keeps the
-more explicit module-local commands for validation, planning, and mutation.
+Repository root offline validation uses `make check`. That root flow now also
+checks the committed service metadata docs. This module keeps the more explicit
+module-local commands for validation, planning, and mutation.
 
 ### Offline validation from the repo root
 

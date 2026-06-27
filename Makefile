@@ -6,13 +6,15 @@ TOFU ?= tofu
 GITLEAKS ?= gitleaks
 PACKER_BUILD_SCRIPT ?= $(ROOT)/infra/packer/proxmox/debian-13/build-template.sh
 
-.PHONY: generate check-generated test lint-yaml tofu-fmt tofu-validate check secret-scan ansible-syntax pve-generate pve-check pve-validate pve-fmt pve-preflight pve-check-pve pve-packer-build pve-plan pve-apply pve-destroy pve-verify-guests pve-ansible-check pve-ansible-syntax pve-backup-state
+.PHONY: generate check-generated test lint-yaml tofu-fmt tofu-validate check secret-scan ansible-syntax pve-generate pve-check services-generate services-check pve-validate pve-fmt pve-preflight pve-check-pve pve-packer-build pve-plan pve-apply pve-destroy pve-verify-guests pve-ansible-check pve-ansible-syntax pve-backup-state
 
 generate:
 	$(MAKE) -C "$(PVE_DIR)" generate
+	$(MAKE) services-generate
 
 check-generated:
 	$(MAKE) -C "$(PVE_DIR)" check-generated
+	$(MAKE) services-check
 
 test:
 	$(UV) run --directory "$(ROOT)" pytest
@@ -36,10 +38,16 @@ secret-scan:
 ansible-syntax: pve-ansible-syntax
 
 pve-generate:
-	$(MAKE) generate
+	$(MAKE) -C "$(PVE_DIR)" generate
 
 pve-check:
-	$(MAKE) check-generated
+	$(MAKE) -C "$(PVE_DIR)" check-generated
+
+services-generate:
+	$(UV) run --directory "$(ROOT)" python -m scripts.services_inventory.cli --generate
+
+services-check:
+	$(UV) run --directory "$(ROOT)" python -m scripts.services_inventory.cli --check
 
 pve-validate:
 	$(MAKE) -C "$(PVE_DIR)" validate

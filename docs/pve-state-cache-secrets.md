@@ -18,6 +18,7 @@ the default validation path.
 | Generated PVE OpenTofu input | `infra/tofu/pve/generated.auto.tfvars.json` | Committed | Reviewable non-sensitive generated artifact. |
 | Generated PVE Ansible inventory | `ansible/inventories/generated/pve.yml` | Committed | Reviewable non-sensitive generated artifact. |
 | Generated PVE VM docs | `docs/generated/pve-vms.md` | Committed | Reviewable non-sensitive generated artifact. |
+| Generated service metadata docs | `docs/generated/services.md` | Committed | Reviewable non-sensitive generated artifact. |
 | Packer template defaults | `infra/packer/proxmox/debian-13/template-build.env` | Committed | Non-sensitive defaults; runtime host and credentials stay outside the file. |
 | PVE/OpenTofu env template | `infra/tofu/pve/.env.pve-opentofu.tpl` | Committed template | 1Password references only; resolved values are secrets. |
 | OPNsense env template | `.env.opnsense.tpl` | Committed template | 1Password references only; resolved values are secrets. |
@@ -110,6 +111,7 @@ The following generated outputs are intended to be committed and reviewed:
 - `infra/tofu/pve/generated.auto.tfvars.json`
 - `ansible/inventories/generated/pve.yml`
 - `docs/generated/pve-vms.md`
+- `docs/generated/services.md`
 - `infra/packer/proxmox/debian-13/template-build.env`
 
 These files must remain non-sensitive. They may contain inventory names,

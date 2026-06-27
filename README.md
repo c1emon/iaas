@@ -5,7 +5,7 @@ This repository is being re-initialized as the source of truth for Astra infrast
 Current scope:
 
 - No real secrets committed to Git.
-- PVE automation foundation with YAML source-of-truth inventory, generated OpenTofu input, generated Ansible inventory, and generated VM documentation.
+- PVE automation foundation with YAML source-of-truth inventory, generated OpenTofu input, generated Ansible inventory, generated VM documentation, and generated service metadata documentation.
 - Debian 13 PVE template build helpers under `infra/packer/`, executed through audited PVE-node wrappers.
 - OpenTofu VM lifecycle configuration under `infra/tofu/`, using local state for the initial single-operator workflow.
 - The legacy `terraform/` directory is only a placeholder; live PVE automation uses OpenTofu.
@@ -45,8 +45,8 @@ make check
 
 `make check` runs `check-generated`, `test`, `lint-yaml`, `tofu-fmt`, and
 `tofu-validate`. It is the default offline-safe gate and it does not require PVE
-credentials, PVE plan/apply/destroy access, Packer builds, or guest SSH
-verification.
+credentials, PVE plan/apply/destroy access, Packer builds, guest SSH
+verification, or service-doc regeneration.
 
 Optional explicit hygiene checks are available outside the default gate:
 
