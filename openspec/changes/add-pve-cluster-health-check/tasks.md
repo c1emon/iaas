@@ -55,4 +55,4 @@
 - [x] 5.3 Run `make secret-scan` locally.
 - [x] 5.4 Run `openspec validate add-pve-cluster-health-check`.
 - [x] 5.5 If PVE runtime credentials are available, run `make pve-health` locally and record pass/warn/fail/skip results.
-- [ ] 5.6 Inspect CI after pushing to confirm only offline validation runs in GitHub Actions.
+- [x] 5.6 Inspect CI after pushing to confirm only offline validation runs in GitHub Actions.
