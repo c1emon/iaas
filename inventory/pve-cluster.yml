@@ -47,7 +47,7 @@ cluster:
           gecos: ops
           groups: sudo
           shell: /bin/bash
-          sudo: ["ALL=(ALL) ALL"]
+          sudo: ["ALL=(ALL) NOPASSWD:ALL"]
           password_env: PVE_VM_OPS_PASSWORD
           public_key_env: PVE_VM_OPS_PUBLIC_KEY
 
