@@ -64,6 +64,7 @@ op run --env-file .env.pve-opentofu.tpl -- tofu validate
 op run --env-file .env.pve-opentofu.tpl -- make generate
 op run --env-file .env.pve-opentofu.tpl -- make validate
 op run --env-file .env.pve-opentofu.tpl -- make pve-preflight PVE_HOST=cohe PVE_SSH_USER=pve-ops
+op run --env-file .env.pve-opentofu.tpl -- make pve-health
 op run --env-file .env.pve-opentofu.tpl -- make packer-build PVE_HOST=cohe
 op run --env-file .env.pve-opentofu.tpl -- make plan STORAGE_ID=images
 op run --env-file .env.pve-opentofu.tpl -- make apply STORAGE_ID=images PVE_HOST=cohe PVE_SSH_USER=pve-ops
@@ -82,6 +83,30 @@ verification is separate and read-only: `make verify-guests` (or root
 inventory plus the local SSH agent or 1Password SSH Agent. `STORAGE_ID`,
 `PVE_HOST`, and `PVE_SSH_USER` are intentionally explicit inputs; the Makefile
 does not provide environment-specific defaults for them.
+
+`make pve-health` is the explicit read-only cluster health check. It uses only
+the `TF_VAR_pve_*` API variables from `.env.pve-opentofu.tpl` and no SSH
+settings. Invoke it as:
+
+```bash
+op run --env-file .env.pve-opentofu.tpl -- make pve-health
+```
+
+Manual equivalent:
+
+```bash
+export TF_VAR_pve_endpoint=...
+export TF_VAR_pve_api_username=...
+export TF_VAR_pve_api_token_id=...
+export TF_VAR_pve_api_token_secret=...
+export TF_VAR_pve_insecure=true
+make pve-health
+```
+
+`pve-health` stays outside `make check`, `validate`, `check-pve`, and cloud CI.
+It reports CPU >90% warn, memory >90% warn, rootfs >90% warn / >98% fail,
+and datastore >85% warn / >95% fail. Long-lived VMs missing or stopped warn;
+ephemeral lab VMs missing or stopped do not warn solely for that state.
 
 `make pve-preflight` uses the PVE API token variables from
 `.env.pve-opentofu.tpl` and should normally be invoked as:

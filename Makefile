@@ -6,7 +6,7 @@ TOFU ?= tofu
 GITLEAKS ?= gitleaks
 PACKER_BUILD_SCRIPT ?= $(ROOT)/infra/packer/proxmox/debian-13/build-template.sh
 
-.PHONY: generate check-generated test lint-yaml tofu-fmt tofu-validate check secret-scan ansible-syntax pve-generate pve-check services-generate services-check pve-validate pve-fmt pve-preflight pve-check-pve pve-packer-build pve-plan pve-apply pve-destroy pve-verify-guests pve-ansible-check pve-ansible-syntax pve-backup-state
+.PHONY: generate check-generated test lint-yaml tofu-fmt tofu-validate check secret-scan ansible-syntax pve-generate pve-check services-generate services-check pve-validate pve-fmt pve-preflight pve-health pve-check-pve pve-packer-build pve-plan pve-apply pve-destroy pve-verify-guests pve-ansible-check pve-ansible-syntax pve-backup-state
 
 generate:
 	$(MAKE) -C "$(PVE_DIR)" generate
@@ -57,6 +57,9 @@ pve-fmt:
 
 pve-preflight:
 	$(MAKE) -C "$(PVE_DIR)" pve-preflight
+
+pve-health:
+	$(MAKE) -C "$(PVE_DIR)" pve-health
 
 pve-check-pve:
 	$(MAKE) -C "$(PVE_DIR)" pve-preflight
