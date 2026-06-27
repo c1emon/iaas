@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import copy
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 from scripts.pve_inventory.errors import ValidationError
 from scripts.services_inventory.cli import main as services_main
@@ -143,3 +146,21 @@ def test_service_docs_stale_check_is_offline_and_participates_in_root_targets(tm
     assert "services-check:" in makefile_text
     assert "$(MAKE) services-generate" in makefile_text
     assert "$(MAKE) services-check" in makefile_text
+
+
+def test_services_cli_validation_failure_exits_1_without_traceback(tmp_path: Path) -> None:
+    services_copy = tmp_path / "services.yml"
+    doc = copy.deepcopy(load_yaml(SERVICES_PATH))
+    doc["services"][0]["owner_vm"] = "missing-vm"
+    services_copy.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "scripts.services_inventory.cli", "--services", str(services_copy)],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert result.stderr.startswith("FAIL validation: ")
+    assert "Traceback (most recent call last):" not in result.stderr

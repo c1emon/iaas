@@ -57,7 +57,7 @@ The important boundary is that this applies to the VM guest automation user, not
 
 ### Retire the legacy SKS8300 smoke script instead of fixing it here
 
-`scripts/sks8300_smoke.py` imports a module path that no longer exists in the repository. Recreating that smoke matrix would require choosing current switch collection APIs and is unrelated to P1 remediation.
+The legacy switch smoke entrypoint imports a module path that no longer exists in the repository. Recreating that smoke matrix would require choosing current switch collection APIs and is unrelated to P1 remediation.
 
 This change should remove or archive the entrypoint and ensure no current Makefile, docs, or tests direct operators to run it as a supported command.
 
@@ -108,7 +108,7 @@ The implementation should be accepted when:
 - `make check` still runs offline.
 - Generated outputs are unchanged except for explicitly intended documentation or guest sudo output changes.
 - `ops` rendered cloud-init sudo policy and guest verification expectations agree.
-- `scripts/sks8300_smoke.py` is no longer a broken supported entrypoint.
+- The legacy switch smoke entrypoint is no longer a broken supported entrypoint.
 - `git ls-files '*.tfstate*'` is empty.
 - Validation CLIs return exit code 1 and no traceback for repository validation errors.
 - Invalid VM static IP tests produce contextual validation errors.

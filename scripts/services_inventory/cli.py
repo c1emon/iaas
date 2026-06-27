@@ -64,5 +64,13 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def _run() -> int:
+    try:
+        return main()
+    except ValidationError as exc:
+        print(f"FAIL validation: {exc}", file=sys.stderr)
+        return 1
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(_run())

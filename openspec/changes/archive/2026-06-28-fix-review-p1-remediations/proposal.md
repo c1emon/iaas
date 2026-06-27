@@ -10,7 +10,7 @@ Other P1/P2 hygiene items also create avoidable operational noise: a broken lega
 
 - Align the guest automation access model by treating `ops` as the non-interactive automation user and preserving `sudo -n true` as a hard guest verification check.
 - Keep `clemon` as the human administration user with password-protected sudo.
-- Retire the broken legacy `scripts/sks8300_smoke.py` entrypoint instead of rebuilding the old smoke matrix in this change.
+- Retire the broken legacy switch smoke entrypoint instead of rebuilding the old smoke matrix in this change.
 - Correct architecture documentation that conflicts with the current PVE inventory source of truth.
 - Confirm and enforce repository hygiene for runtime artifacts such as `terraform.tfstate*`, `.terraform/`, `.venv/`, `.cache/`, `ansible/collections/`, and `.DS_Store` without deleting ignored local files automatically.
 - Normalize validation CLI failures so expected inventory/config errors print stable operator-readable messages and exit with status 1 rather than showing Python tracebacks.
@@ -35,7 +35,7 @@ Other P1/P2 hygiene items also create avoidable operational noise: a broken lega
 - Affected areas:
   - `inventory/pve-cluster.yml` guest user sudo declarations.
   - `ansible/playbooks/pve/tasks/verify-guest.yml` semantics and related tests/docs if needed.
-  - `scripts/sks8300_smoke.py` and any references to it.
+  - the legacy switch smoke entrypoint and any references to it.
   - `docs/architecture.md` PVE node facts.
   - `.gitignore`, docs, or offline hygiene checks for runtime artifacts as needed.
   - `scripts/pve_inventory/cli.py`, `scripts/services_inventory/cli.py`, and related tests.

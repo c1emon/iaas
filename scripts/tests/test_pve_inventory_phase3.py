@@ -6,10 +6,12 @@ import copy
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 
 from scripts.pve_inventory.io import load_yaml
 from scripts.pve_inventory.model import build_model
@@ -58,7 +60,12 @@ def test_passthrough_vms_get_cloud_init_user_data(monkeypatch: pytest.MonkeyPatc
     assert media_snippet.file_name == "opentofu-vm-501-user-data.yml"
     assert media_snippet.file_id == "images:snippets/opentofu-vm-501-user-data.yml"
     assert "hostname: media-lab-01" in media_snippet.content
+    assert "disable_root: true" in media_snippet.content
+    assert "ssh_pwauth: false" in media_snippet.content
+    assert "name: clemon" in media_snippet.content
+    assert "sudo:\n  - ALL=(ALL) ALL" in media_snippet.content
     assert "name: ops" in media_snippet.content
+    assert "sudo:\n  - ALL=(ALL) NOPASSWD:ALL" in media_snippet.content
 
 
 def test_cloud_init_storage_roles_split_by_purpose() -> None:
@@ -204,6 +211,32 @@ def test_validation_rejects_raw_pci_mapping_values() -> None:
     doc["vms"][2]["passthrough"][0]["mapping"] = "0000:00:02.1"
     with pytest.raises(ValidationError, match="mapping must reference a declared PCI mapping"):
         validate_vms(doc, cluster_state())
+
+
+def test_validation_rejects_malformed_static_ip_with_vm_field_context() -> None:
+    doc = copy.deepcopy(load_yaml(VMS_PATH))
+    doc["vms"][0]["static_ip"] = "not-a-cidr"
+
+    with pytest.raises(ValidationError, match=r"vms\.[^.]+\.static_ip: must be a valid CIDR-style IP interface"):
+        validate_vms(doc, cluster_state())
+
+
+def test_pve_cli_validation_failure_exits_1_without_traceback(tmp_path: Path) -> None:
+    vms_copy = tmp_path / "vms.yml"
+    doc = copy.deepcopy(load_yaml(VMS_PATH))
+    doc["vms"][0]["static_ip"] = "not-a-cidr"
+    vms_copy.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "scripts.pve_inventory.cli", "--vms", str(vms_copy)],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert result.stderr.startswith("FAIL validation: ")
+    assert "Traceback (most recent call last):" not in result.stderr
 
 
 def test_template_build_env_uses_if_unset_guards() -> None:

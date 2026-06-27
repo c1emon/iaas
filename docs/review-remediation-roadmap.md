@@ -52,11 +52,10 @@
 
 - [ ] 对齐 `ops` sudo policy 与 guest verification。
   - 相关位置：`inventory/pve-cluster.yml`、`ansible/playbooks/pve/tasks/verify-guest.yml`
-  - 当前问题：cloud-init 配置要求密码 sudo，但 guest verification 检查 `sudo -n true`。
-  - 决策点：如果 `ops` 是自动化用户，改为受控 `NOPASSWD`；如果保留交互式 sudo，则 verification 不能 hard fail。
+  - 当前状态：`ops` 作为自动化用户使用受控 `NOPASSWD`；`clemon` 保持交互式 sudo。
+  - 约束：guest verification 继续把 `sudo -n true` 作为硬检查，且 root SSH / SSH 密码登录保持关闭。
 - [ ] 删除、归档或修复失效 legacy smoke 脚本。
-  - 相关位置：`scripts/sks8300_smoke.py`
-  - 当前问题：引用当前仓库不存在的 `ansible.module_utils.switch_profiles.sks8300`。
+  - 当前状态：旧 switch smoke 入口已退役；新的 switch 行为应落在当前 collection / test surface。
 - [ ] 修正文档中与 inventory 不一致的节点信息。
   - 重点：`docs/architecture.md` 中 PVE node3 管理 IP 与 `inventory/pve-cluster.yml` / validation 事实一致。
 - [ ] 清理并隔离运行时产物。
@@ -254,7 +253,7 @@
 | 优先级 | 事项 | 阶段 |
 |---|---|---:|
 | P1 | `ops` sudo policy 与 guest verification 冲突 | 1 |
-| P1 | `scripts/sks8300_smoke.py` 引用不存在模块 | 1 |
+| P1 | legacy switch smoke 入口已退役 | 1 |
 | P1 | cloud-init snippet verify 不校验内容 | 2 |
 | P1/P2 | 运行时产物混在工作树 | 1 |
 | P1/P2 | 最小功能一致性安全网不足 | 0 |

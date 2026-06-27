@@ -329,7 +329,7 @@ TODO：补充具体管理口接入清单和 IPMI / BMC 地址表。
 
 | 节点 | 域名 | 管理 IP |
 |---|---|---|
-| node3 | `node3.ops.clemon.icu` | `10.1.0.71` |
+| node3 | `node3.ops.clemon.icu` | `10.1.0.73` |
 | cohe | `cohe.ops.clemon.icu` | `10.1.0.72` |
 
 | 项目 | 配置 |

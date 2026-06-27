@@ -5,7 +5,7 @@ from __future__ import annotations
 import ipaddress
 from typing import Any, cast
 
-from .errors import require
+from .errors import ValidationError, require
 from .validation_common import as_list, as_mapping, require_bool, require_positive_int, require_unknown_keys
 
 
@@ -130,7 +130,10 @@ def validate_vms(vms_doc: dict[str, Any], cluster_state: dict[str, Any]) -> list
         require(network.get("attach_vms") is True, f"{ctx}: network {network_name_str} is not attachable for VMs")
 
         require(isinstance(static_ip, str), f"{ctx}: static_ip must be a string")
-        host_ip, prefix_length, network_cidr = parse_static_ip(cast(str, static_ip))
+        try:
+            host_ip, prefix_length, network_cidr = parse_static_ip(cast(str, static_ip))
+        except ValueError as exc:
+            raise ValidationError(f"vms.{name_str}.static_ip: must be a valid CIDR-style IP interface") from exc
         cidr = ipaddress.ip_network(network["cidr"], strict=False)
         require(ipaddress.ip_address(host_ip) in cidr, f"{ctx}: static_ip must be inside {network_name_str} ({network['cidr']})")
         require(host_ip not in seen_ips, f"{ctx}: duplicate static IP {host_ip}")
