@@ -14,11 +14,11 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Callable, cast
 
-from .pve_api.errors import PveApiAuthenticationError, PveApiError, PveApiNotConfiguredError, PveApiUnavailableError, redact_sensitive_text
-from .pve_api.protocol import PveReadOnlyApi
-from .pve_api.runtime import PveOnlineRuntimeContext as RuntimeConfig
-from .preflight_model import DerivedResources
-from .preflight_results import CheckResult
+from ...pve_api.errors import PveApiAuthenticationError, PveApiError, PveApiNotConfiguredError, PveApiUnavailableError, redact_sensitive_text
+from ...pve_api.protocol import PveReadOnlyApi
+from ...pve_api.runtime import PveOnlineRuntimeContext as RuntimeConfig
+from ..results import CheckResult
+from .model import DerivedResources
 
 
 def _normalize_string_list(value: Any) -> set[str]:

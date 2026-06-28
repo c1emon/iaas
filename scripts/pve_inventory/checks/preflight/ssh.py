@@ -9,8 +9,8 @@ from __future__ import annotations
 import subprocess
 from typing import Any, Callable
 
-from .pve_api.runtime import PveOnlineRuntimeContext as RuntimeConfig
-from .preflight_results import CheckResult, Severity
+from ...pve_api.runtime import PveOnlineRuntimeContext as RuntimeConfig
+from ..results import CheckResult, Severity
 
 
 def _emit(results: list[CheckResult], severity: Severity, check_id: str, message: str) -> None:

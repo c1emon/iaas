@@ -9,8 +9,8 @@ import pytest
 
 from scripts.pve_inventory.health import derive_health_expectations, load_health_runtime_config, render_report, run_health
 from scripts.common.io import load_yaml
+from scripts.pve_inventory.checks.results import has_failures
 from scripts.pve_inventory.model import build_model
-from scripts.pve_inventory.preflight_results import has_failures
 from scripts.pve_inventory.validation import validate_cluster, validate_vms
 from scripts.pve_inventory.pve_api.errors import PveApiNotConfiguredError, PveApiUnavailableError, PveApiAuthenticationError
 

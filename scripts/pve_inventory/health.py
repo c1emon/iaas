@@ -26,7 +26,7 @@ from .pve_api import (
     load_api_runtime_config,
     redact_sensitive_text,
 )
-from .preflight_results import CheckResult, Severity, has_failures, render_report
+from .checks.results import CheckResult, Severity, has_failures, render_report
 from .validation import validate_cluster, validate_vms
 
 
