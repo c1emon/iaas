@@ -53,6 +53,46 @@ def test_optional_endpoint_name_is_rendered_as_a_placeholder() -> None:
     assert "| dev-dashboard | dev-web-01 | - | dashboard.dev.example.invalid | http | 8080 | lan | app |" in markdown
 
 
+def test_markdown_renderer_escapes_pipes_newlines_and_carriage_returns() -> None:
+    markdown = build_markdown(
+        {
+            "services": [
+                {
+                    "name": "svc|name",
+                    "owner_vm": "vm|name",
+                    "endpoints": [
+                        {
+                            "name": "ep|one\nnext\rline",
+                            "fqdn": "fqdn|value\nnext\rline",
+                            "port": 443,
+                            "protocol": "http|s",
+                            "exposure": "pub|lic\nline",
+                            "auth": "sso|auth\rline",
+                            "dns_hint": "dns|hint\r\nline",
+                            "reverse_proxy_hint": "proxy|hint\rline",
+                            "opnsense_hint": "opn|hint",
+                        }
+                    ],
+                }
+            ],
+            "warnings": [
+                {
+                    "service": "svc|name\nline",
+                    "endpoint": "ep|one\rline",
+                    "code": "warn|code\nline",
+                    "message": "bad|message\rline",
+                }
+            ],
+        }
+    )
+
+    assert "\\|" in markdown
+    assert "<br>" in markdown
+    assert "\r" not in markdown
+    assert any(line.startswith("| svc\\|name | vm\\|name | ep\\|one<br>next<br>line | fqdn\\|value<br>next<br>line | http\\|s | 443 | pub\\|lic<br>line | sso\\|auth<br>line | dns: dns\\|hint<br>line; reverse proxy: proxy\\|hint<br>line; opnsense: opn\\|hint |") for line in markdown.splitlines())
+    assert any(line.startswith("| svc\\|name<br>line | ep\\|one<br>line | warn\\|code<br>line | bad\\|message<br>line |") for line in markdown.splitlines())
+
+
 @pytest.mark.parametrize(
     ("field_path", "value", "message"),
     [
