@@ -184,7 +184,7 @@ uploads them into isolated NFS-backed `images` snippets storage, and references 
   on `images`, while VM root/EFI disks and cloud-init drive media use `memory`.
 - Retention: snippets stay in storage for the VM lifetime; do not delete them immediately after upload.
 
-Use `op run --env-file .env.pve-opentofu.tpl -- make render-user-data STORAGE_ID=images` to create local snippets. `make plan` stays local. `make apply` runs `upload-user-data` and `verify-user-data` before the OpenTofu apply.
+Use `op run --env-file .env.pve-opentofu.tpl -- make render-user-data STORAGE_ID=images` to create local snippets plus `manifest.json`. `make plan` stays local. `make apply` renders once, then `upload-user-data` and `verify-user-data` consume the existing manifest/snippet files before the OpenTofu apply.
 
 Required runtime env vars from `op run` (driven by the inventory-defined cloud-init users):
 
@@ -194,6 +194,8 @@ Required runtime env vars from `op run` (driven by the inventory-defined cloud-i
 - `PVE_VM_OPS_PUBLIC_KEY`
 
 The runtime helper hashes passwords locally, writes only ignored cache files, and never logs plaintext secrets or password hashes.
+
+`upload-user-data` and `verify-user-data` read the existing manifest and exact local snippet files; they do not rerender user-data. `verify-user-data` passes the manifest checksum to the host-side wrapper, which checks remote content before accepting it.
 
 Snippet upload and verify use the audited host-side wrapper `/usr/local/sbin/astra-pve-snippet-upload`; it does not rely on broad `sudo install` privileges. The wrapper installs files `0600` on non-NFS snippet storage and `0644` on NFS-backed storage to remain readable when root-squash or server-side ownership mapping is in effect. This is an intentional tradeoff for the isolated `images` NFS storage; do not use this mode on broadly shared or untrusted storage. Keep `STORAGE_ID` aligned with `local.snippets_datastore`.
 

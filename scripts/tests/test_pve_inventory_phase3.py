@@ -3,20 +3,22 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 import subprocess
 import sys
+from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
 import pytest
 import yaml
 
+import scripts.pve_inventory.cloud_init as cloud_init
 from scripts.pve_inventory.io import load_yaml
 from scripts.pve_inventory.model import build_model
 from scripts.pve_inventory.render import render_outputs
-from scripts.pve_inventory.cloud_init import render_snippets
 from scripts.pve_inventory.errors import ValidationError
 from scripts.pve_inventory.validation import validate_cluster, validate_vms
 
@@ -52,7 +54,7 @@ def test_passthrough_vms_get_cloud_init_user_data(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("PVE_VM_OPS_PASSWORD", "ops-password")
     monkeypatch.setenv("PVE_VM_OPS_PUBLIC_KEY", "ssh-ed25519 AAAAops ops@example")
 
-    snippets = render_snippets(ROOT / "infra/tofu/pve/generated.auto.tfvars.json", "images")
+    snippets = cloud_init.render_snippets(ROOT / "infra/tofu/pve/generated.auto.tfvars.json", "images")
 
     snippet_names = {snippet.name for snippet in snippets}
     assert snippet_names == {"dev-web-01", "prod-app-01", "media-lab-01"}
@@ -66,6 +68,124 @@ def test_passthrough_vms_get_cloud_init_user_data(monkeypatch: pytest.MonkeyPatc
     assert "sudo:\n  - ALL=(ALL) ALL" in media_snippet.content
     assert "name: ops" in media_snippet.content
     assert "sudo:\n  - ALL=(ALL) NOPASSWD:ALL" in media_snippet.content
+
+
+def test_cloud_init_render_writes_manifest_and_exact_bytes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("PVE_VM_CLEMON_PASSWORD", "clemon-password")
+    monkeypatch.setenv("PVE_VM_CLEMON_PUBLIC_KEY", "ssh-ed25519 AAAAclemon clemon@example")
+    monkeypatch.setenv("PVE_VM_OPS_PASSWORD", "ops-password")
+    monkeypatch.setenv("PVE_VM_OPS_PUBLIC_KEY", "ssh-ed25519 AAAAops ops@example")
+
+    tfvars_path = ROOT / "infra" / "tofu" / "pve" / "generated.auto.tfvars.json"
+    snippets = cloud_init.render_snippets(tfvars_path, "images")
+    cloud_init.write_rendered_artifacts(snippets, tfvars_path, "images", tmp_path)
+
+    manifest_path = tmp_path / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["schema_version"] == 1
+    assert manifest["storage_id"] == "images"
+    assert manifest["source_tfvars_path"] == str(tfvars_path)
+    assert manifest["source_tfvars_sha256"] == hashlib.sha256(tfvars_path.read_bytes()).hexdigest()
+
+    snippet_names = {entry["file_name"] for entry in manifest["snippets"]}
+    assert snippet_names == {snippet.file_name for snippet in snippets}
+
+    media_entry = next(entry for entry in manifest["snippets"] if entry["name"] == "media-lab-01")
+    media_bytes = (tmp_path / media_entry["file_name"]).read_bytes()
+    assert media_entry["file_id"] == "images:snippets/opentofu-vm-501-user-data.yml"
+    assert media_entry["byte_count"] == len(media_bytes)
+    assert media_entry["sha256"] == hashlib.sha256(media_bytes).hexdigest()
+
+
+def test_cloud_init_upload_and_verify_use_existing_manifest_without_rerender(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("PVE_VM_CLEMON_PASSWORD", "clemon-password")
+    monkeypatch.setenv("PVE_VM_CLEMON_PUBLIC_KEY", "ssh-ed25519 AAAAclemon clemon@example")
+    monkeypatch.setenv("PVE_VM_OPS_PASSWORD", "ops-password")
+    monkeypatch.setenv("PVE_VM_OPS_PUBLIC_KEY", "ssh-ed25519 AAAAops ops@example")
+
+    tfvars_path = ROOT / "infra" / "tofu" / "pve" / "generated.auto.tfvars.json"
+    snippets = cloud_init.render_snippets(tfvars_path, "images")
+    cloud_init.write_rendered_artifacts(snippets, tfvars_path, "images", tmp_path)
+
+    monkeypatch.setattr(cloud_init, "render_snippets", lambda *args, **kwargs: pytest.fail("upload/verify must not rerender"))
+
+    calls: list[list[str]] = []
+
+    def fake_run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[object]:
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(cloud_init.subprocess, "run", fake_run)
+
+    cloud_init.main(["upload", "--output-dir", str(tmp_path), "--storage-id", "images", "--pve-host", "pve-01", "--ssh-user", "ops"])
+    cloud_init.main(["verify", "--output-dir", str(tmp_path), "--storage-id", "images", "--pve-host", "pve-01", "--ssh-user", "ops"])
+
+    assert any("--verify" in argv and "--sha256" in argv for argv in calls)
+
+
+def test_cloud_init_load_rendered_artifacts_rejects_checksum_mismatch(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("PVE_VM_CLEMON_PASSWORD", "clemon-password")
+    monkeypatch.setenv("PVE_VM_CLEMON_PUBLIC_KEY", "ssh-ed25519 AAAAclemon clemon@example")
+    monkeypatch.setenv("PVE_VM_OPS_PASSWORD", "ops-password")
+    monkeypatch.setenv("PVE_VM_OPS_PUBLIC_KEY", "ssh-ed25519 AAAAops ops@example")
+
+    tfvars_path = ROOT / "infra" / "tofu" / "pve" / "generated.auto.tfvars.json"
+    snippets = cloud_init.render_snippets(tfvars_path, "images")
+    cloud_init.write_rendered_artifacts(snippets, tfvars_path, "images", tmp_path)
+
+    snippet_path = tmp_path / snippets[0].file_name
+    snippet_path.write_text(snippet_path.read_text(encoding="utf-8") + "# drift\n", encoding="utf-8")
+
+    with pytest.raises(ValidationError, match=snippets[0].name):
+        cloud_init.load_rendered_artifacts(tmp_path, "images")
+
+
+def test_cloud_init_upload_timeout_is_operator_readable(monkeypatch: pytest.MonkeyPatch) -> None:
+    snippet = cloud_init.CloudInitSnippet(
+        vmid=501,
+        name="media-lab-01",
+        file_name="opentofu-vm-501-user-data.yml",
+        file_id="images:snippets/opentofu-vm-501-user-data.yml",
+        content="hostname: media-lab-01\n",
+        byte_count=23,
+        sha256="a" * 64,
+    )
+    args = Namespace(storage_id="images", pve_host="pve-01", ssh_user="ops", ssh_timeout=30.0)
+
+    def timeout_run(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[object]:
+        raise subprocess.TimeoutExpired(cmd=["ssh"], timeout=30.0)
+
+    monkeypatch.setattr(cloud_init.subprocess, "run", timeout_run)
+
+    with pytest.raises(ValidationError, match="timed out after 30s") as excinfo:
+        cloud_init.upload_snippets([snippet], args)
+
+    assert snippet.file_name in str(excinfo.value)
+    assert snippet.name in str(excinfo.value)
+
+
+def test_cloud_init_verify_nonzero_exit_is_operator_readable(monkeypatch: pytest.MonkeyPatch) -> None:
+    snippet = cloud_init.CloudInitSnippet(
+        vmid=501,
+        name="media-lab-01",
+        file_name="opentofu-vm-501-user-data.yml",
+        file_id="images:snippets/opentofu-vm-501-user-data.yml",
+        content="hostname: media-lab-01\n",
+        byte_count=23,
+        sha256="a" * 64,
+    )
+    args = Namespace(storage_id="images", pve_host="pve-01", ssh_user="ops", ssh_timeout=30.0)
+
+    def failed_run(argv: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[object]:
+        raise subprocess.CalledProcessError(1, argv)
+
+    monkeypatch.setattr(cloud_init.subprocess, "run", failed_run)
+
+    with pytest.raises(ValidationError, match="ssh command failed") as excinfo:
+        cloud_init.verify_snippets([snippet], args)
+
+    assert snippet.file_name in str(excinfo.value)
+    assert snippet.name in str(excinfo.value)
 
 
 def test_cloud_init_storage_roles_split_by_purpose() -> None:

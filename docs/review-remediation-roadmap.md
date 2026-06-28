@@ -4,7 +4,7 @@
 
 它是后续 OpenSpec change、维护任务和实现排期的输入，不代表所有事项必须一次性完成。
 
-当前状态：Phase 1 已通过 `fix-review-p1-remediations` 完成并归档，相关规格已同步到主规格。
+当前状态：Phase 1 已通过 `fix-review-p1-remediations` 完成并归档；Phase 2 已通过 `make-cloud-init-snippet-verification-deterministic` 完成，等待归档同步。
 
 ## 目标
 
@@ -79,23 +79,23 @@
 
 目标是让 upload / verify 能证明 PVE 节点上的 snippet 内容等于当前流程生成的本地 artifact。
 
-- [ ] 将 cloud-init upload / verify 改为单次 render 产物驱动。
+- [x] 将 cloud-init upload / verify 改为单次 render 产物驱动。
   - 相关位置：`scripts/pve_inventory/cloud_init.py`
   - 目标：一次流程内复用同一批本地 rendered snippets，避免 upload 和 verify 分别重新生成内容。
-- [ ] 生成 manifest / checksum。
+- [x] 生成 manifest / checksum。
   - 建议内容：snippet 文件名、目标节点、sha256、生成时间、输入 inventory 标识。
-- [ ] upload 使用 exact rendered files。
+- [x] upload 使用 exact rendered files。
   - 要求：upload 阶段不得隐式重新 render 另一批内容。
-- [ ] 为 PVE node wrapper 增加内容校验能力。
+- [x] 为 PVE node wrapper 增加内容校验能力。
   - 相关位置：`infra/pve-node/bin/astra-pve-snippet-upload`
   - 目标：支持 checksum verify，例如 `--sha256 EXPECTED` 或等价接口。
-- [ ] 处理密码 hash 随机 salt 对一致性校验的影响。
+- [x] 处理密码 hash 随机 salt 对一致性校验的影响。
   - 相关位置：`scripts/pve_inventory/secrets.py`
   - 目标：同一 apply/verify 流程不因重复 render 产生不同 hash。
   - 非目标：不要为了跨次 diff 稳定而固定长期 salt。
-- [ ] 给 cloud-init upload / verify 的 SSH subprocess 增加 timeout。
+- [x] 给 cloud-init upload / verify 的 SSH subprocess 增加 timeout。
   - 相关位置：`scripts/pve_inventory/cloud_init.py`
-- [ ] 增加 stale remote snippet 测试。
+- [x] 增加 stale remote snippet 测试。
   - 场景：远端文件存在且 YAML 合法，但内容不是当前本地期望，verify 必须失败。
 
 验证建议：

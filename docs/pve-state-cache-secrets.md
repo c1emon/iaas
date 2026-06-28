@@ -13,6 +13,7 @@ the default validation path.
 | PVE OpenTofu local state | `infra/tofu/pve/terraform.tfstate` | Ignored | Sensitive local state; keep private to the operator workstation. |
 | PVE state backups | `.cache/tofu-state-backups/` | Ignored | Sensitive snapshots of local state. |
 | Rendered cloud-init snippets | `.cache/pve-cloud-init/user-data/` | Ignored | May include password hashes, SSH keys, hostnames, IPs, and user data. |
+| Cloud-init snippet manifest | `.cache/pve-cloud-init/user-data/manifest.json` | Ignored | Sensitive-adjacent runtime metadata with snippet names, VM identity, checksums, and source tfvars provenance. |
 | Local Packer cache | `.cache/packer/` | Ignored | Runtime cache only; current remote wrapper caches on the PVE node under `/var/cache/astra/packer`. |
 | OPNsense exports/snapshots | `exports/opnsense/` | Ignored | Treat as environment-derived and review before sharing. |
 | Generated PVE OpenTofu input | `infra/tofu/pve/generated.auto.tfvars.json` | Committed | Reviewable non-sensitive generated artifact. |
@@ -71,6 +72,7 @@ Known repository cache paths for these workflows are:
 
 - `.cache/tofu-state-backups/`
 - `.cache/pve-cloud-init/user-data/`
+- `.cache/pve-cloud-init/user-data/manifest.json`
 - `.cache/packer/`
 
 Cleanup is safe when no related workflow is running:
@@ -80,9 +82,10 @@ rm -rf .cache/pve-cloud-init/user-data .cache/packer
 ```
 
 Only delete `.cache/tofu-state-backups/` after confirming no backup is needed for
-local recovery. Never commit `.cache` contents. Treat state backups and rendered
-cloud-init snippets as sensitive; rendered snippets may contain password hashes,
-authorized SSH keys, usernames, and host identity data.
+local recovery. Never commit `.cache` contents. Treat state backups, rendered
+cloud-init snippets, and their manifest/checksum files as sensitive-adjacent;
+rendered artifacts may contain password hashes, authorized SSH keys, usernames,
+checksums, and host identity data.
 
 ## Runtime secret injection conventions
 

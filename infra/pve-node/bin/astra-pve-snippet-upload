@@ -8,7 +8,7 @@ readonly RM='/bin/rm'
 readonly MKTEMP='/usr/bin/mktemp'
 
 usage() {
-  printf 'usage: %s [--verify] --storage STORAGE --filename PREFIX-N-user-data.yml\n' "$0" >&2
+  printf 'usage: %s [--verify --sha256 SHA256] --storage STORAGE --filename PREFIX-N-user-data.yml\n' "$0" >&2
 }
 
 die() {
@@ -19,6 +19,7 @@ die() {
 storage_id=''
 filename=''
 verify='false'
+expected_sha256=''
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -33,6 +34,10 @@ while [[ $# -gt 0 ]]; do
     --verify)
       verify='true'
       shift
+      ;;
+    --sha256)
+      expected_sha256=${2-}
+      shift 2
       ;;
     -h|--help)
       usage
@@ -51,13 +56,21 @@ done
 [[ ${filename} =~ ^[A-Za-z0-9][A-Za-z0-9._-]*-[0-9]+-user-data\.yml$ ]] || die 'filename must match PREFIX-N-user-data.yml with a conservative prefix'
 [[ ${filename} != *'/'* ]] || die 'filename must not contain path separators'
 
-if [[ ! -x ${PVESM} ]]; then
+if [[ ${verify} == 'true' ]]; then
+  [[ -n ${expected_sha256} ]] || die 'sha256 is required for verify'
+  [[ ${expected_sha256} =~ ^[A-Fa-f0-9]{64}$ ]] || die 'sha256 must be a 64-character hexadecimal digest'
+  expected_sha256="$(printf '%s' "${expected_sha256}" | tr '[:upper:]' '[:lower:]')"
+elif [[ -n ${expected_sha256} ]]; then
+  die '--sha256 is only valid with --verify'
+fi
+
+if [[ ! -x ${ASTRA_PVE_SNIPPET_UPLOAD_PVESM:-${PVESM}} ]]; then
   die 'pvesm is required'
 fi
 
 resolve_target_path() {
   local resolved=''
-  if resolved="$(${PVESM} path "${storage_id}:snippets/${filename}" 2>/dev/null)" && [[ -n ${resolved} ]]; then
+  if resolved="$(${ASTRA_PVE_SNIPPET_UPLOAD_PVESM:-${PVESM}} path "${storage_id}:snippets/${filename}" 2>/dev/null)" && [[ -n ${resolved} ]]; then
     printf '%s\n' "${resolved}"
   else
     printf '/mnt/pve/%s/snippets/%s\n' "${storage_id}" "${filename}"
@@ -74,8 +87,9 @@ if [[ ${verify} == 'true' ]]; then
   if ! command -v python3 >/dev/null 2>&1; then
     die 'python3 is required for verify'
   fi
-  if ! python3 - "${target_path}" <<'PY'
+  if ! python3 - "${target_path}" "${expected_sha256}" <<'PY'
 import pathlib
+import hashlib
 import sys
 
 try:
@@ -85,14 +99,26 @@ except Exception as exc:
     raise SystemExit(1)
 
 path = pathlib.Path(sys.argv[1])
+expected_sha256 = sys.argv[2]
 try:
-    payload = path.read_text(encoding='utf-8')
+    payload = path.read_bytes()
 except OSError as exc:
     print(f'error: unable to read {path}: {exc}', file=sys.stderr)
     raise SystemExit(1)
 
+actual_sha256 = hashlib.sha256(payload).hexdigest()
+if actual_sha256 != expected_sha256:
+    print(f'error: checksum mismatch for {path}', file=sys.stderr)
+    raise SystemExit(1)
+
 try:
-    yaml.safe_load(payload)
+    text = payload.decode('utf-8')
+except UnicodeDecodeError as exc:
+    print(f'error: invalid UTF-8 in {path}: {exc}', file=sys.stderr)
+    raise SystemExit(1)
+
+try:
+    yaml.safe_load(text)
 except yaml.YAMLError as exc:
     print(f'error: invalid YAML in {path}: {exc}', file=sys.stderr)
     raise SystemExit(1)

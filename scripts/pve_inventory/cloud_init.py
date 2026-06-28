@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import subprocess
 import sys
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -18,6 +21,11 @@ from .paths import DEFAULT_TFVARS, DEFAULT_USER_DATA_DIR
 from .secrets import hash_cloud_init_password
 
 
+MANIFEST_FILE_NAME = "manifest.json"
+MANIFEST_SCHEMA_VERSION = 1
+DEFAULT_SSH_TIMEOUT_SECONDS = 30.0
+
+
 @dataclass(frozen=True)
 class CloudInitSnippet:
     vmid: int
@@ -25,6 +33,8 @@ class CloudInitSnippet:
     file_name: str
     file_id: str
     content: str
+    byte_count: int = 0
+    sha256: str = ""
 
 
 def snippet_storage_path(storage_id: str, file_name: str) -> str:
@@ -40,19 +50,21 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     render.add_argument("--output-dir", type=Path, default=DEFAULT_USER_DATA_DIR, help="Directory for rendered snippets")
     render.add_argument("--storage-id", required=True, help="PVE snippets storage id")
 
-    upload = subparsers.add_parser("upload", help="Render and upload cloud-init snippets")
+    upload = subparsers.add_parser("upload", help="Upload cloud-init snippets from the existing manifest")
     upload.add_argument("--tfvars", type=Path, default=DEFAULT_TFVARS, help="Path to generated.auto.tfvars.json")
     upload.add_argument("--output-dir", type=Path, default=DEFAULT_USER_DATA_DIR, help="Directory for rendered snippets")
     upload.add_argument("--storage-id", required=True, help="PVE snippets storage id")
     upload.add_argument("--pve-host", required=True, help="Target PVE node hostname or alias")
     upload.add_argument("--ssh-user", required=True, help="SSH user for snippet upload")
+    upload.add_argument("--ssh-timeout", type=float, default=None, help="SSH timeout in seconds (default: 30 or ASTRA_PVE_SSH_TIMEOUT_SECONDS)")
 
-    verify = subparsers.add_parser("verify", help="Render and verify cloud-init snippets")
+    verify = subparsers.add_parser("verify", help="Verify cloud-init snippets from the existing manifest")
     verify.add_argument("--tfvars", type=Path, default=DEFAULT_TFVARS, help="Path to generated.auto.tfvars.json")
     verify.add_argument("--output-dir", type=Path, default=DEFAULT_USER_DATA_DIR, help="Directory for rendered snippets")
     verify.add_argument("--storage-id", required=True, help="PVE snippets storage id")
     verify.add_argument("--pve-host", required=True, help="Target PVE node hostname or alias")
     verify.add_argument("--ssh-user", required=True, help="SSH user for snippet verification")
+    verify.add_argument("--ssh-timeout", type=float, default=None, help="SSH timeout in seconds (default: 30 or ASTRA_PVE_SSH_TIMEOUT_SECONDS)")
 
     return parser.parse_args(argv)
 
@@ -67,6 +79,29 @@ def load_generated_tfvars(path: Path) -> dict[str, Any]:
     payload = load_json(path)
     require(isinstance(payload, dict), f"{path}: expected a JSON object")
     return payload
+
+
+def sha256_hex(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def manifest_path(output_dir: Path) -> Path:
+    return output_dir / MANIFEST_FILE_NAME
+
+
+def resolve_ssh_timeout(arg_timeout: float | None) -> float:
+    if arg_timeout is not None:
+        require(arg_timeout > 0, "--ssh-timeout must be greater than zero")
+        return arg_timeout
+    env_timeout = os.environ.get("ASTRA_PVE_SSH_TIMEOUT_SECONDS", "").strip()
+    if not env_timeout:
+        return DEFAULT_SSH_TIMEOUT_SECONDS
+    try:
+        timeout = float(env_timeout)
+    except ValueError as exc:
+        raise ValidationError("ASTRA_PVE_SSH_TIMEOUT_SECONDS must be a number") from exc
+    require(timeout > 0, "ASTRA_PVE_SSH_TIMEOUT_SECONDS must be greater than zero")
+    return timeout
 
 
 def load_automation_cloud_init(payload: dict[str, Any], tfvars_path: Path) -> tuple[dict[str, Any], str, str, dict[str, Any], list[dict[str, Any]]]:
@@ -195,87 +230,218 @@ def render_snippets(tfvars_path: Path, storage_id: str) -> list[CloudInitSnippet
         require(isinstance(vmid, int), f"{tfvars_path}: vmid must be an integer")
         require(isinstance(name, str) and name, f"{tfvars_path}: name must be a non-empty string")
         file_name = f"{snippet_file_prefix}-{vmid}-user-data.yml"
+        content = build_user_data(vm, users, defaults, env)
+        content_bytes = content.encode("utf-8")
         snippets.append(
             CloudInitSnippet(
                 vmid=vmid,
                 name=name,
                 file_name=file_name,
                 file_id=snippet_storage_path(snippets_datastore, file_name),
-                content=build_user_data(vm, users, defaults, env),
+                content=content,
+                byte_count=len(content_bytes),
+                sha256=sha256_hex(content_bytes),
             )
         )
     snippets.sort(key=lambda item: (item.vmid, item.name))
     return snippets
 
 
-def write_snippets(snippets: list[CloudInitSnippet], output_dir: Path) -> None:
+def build_manifest(snippets: list[CloudInitSnippet], tfvars_path: Path, storage_id: str) -> dict[str, Any]:
+    tfvars_bytes = tfvars_path.read_bytes()
+    return {
+        "schema_version": MANIFEST_SCHEMA_VERSION,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "source_tfvars_path": str(tfvars_path),
+        "source_tfvars_sha256": sha256_hex(tfvars_bytes),
+        "storage_id": storage_id,
+        "snippets": [
+            {
+                "vmid": snippet.vmid,
+                "name": snippet.name,
+                "file_name": snippet.file_name,
+                "file_id": snippet.file_id,
+                "byte_count": snippet.byte_count,
+                "sha256": snippet.sha256,
+            }
+            for snippet in snippets
+        ],
+    }
+
+
+def write_rendered_artifacts(snippets: list[CloudInitSnippet], tfvars_path: Path, storage_id: str, output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
+    written_snippets: list[CloudInitSnippet] = []
     for snippet in snippets:
-        write_text(output_dir / snippet.file_name, snippet.content, secure=True)
+        snippet_path = output_dir / snippet.file_name
+        write_text(snippet_path, snippet.content, secure=True)
+        snippet_bytes = snippet_path.read_bytes()
+        written_snippets.append(
+            CloudInitSnippet(
+                vmid=snippet.vmid,
+                name=snippet.name,
+                file_name=snippet.file_name,
+                file_id=snippet.file_id,
+                content=snippet.content,
+                byte_count=len(snippet_bytes),
+                sha256=sha256_hex(snippet_bytes),
+            )
+        )
+    manifest = build_manifest(written_snippets, tfvars_path, storage_id)
+    write_text(manifest_path(output_dir), json.dumps(manifest, indent=2, sort_keys=True) + "\n", secure=True)
+
+
+def load_rendered_artifacts(output_dir: Path, storage_id: str) -> list[CloudInitSnippet]:
+    manifest_file = manifest_path(output_dir)
+    if not manifest_file.exists():
+        raise ValidationError(f"{manifest_file}: missing manifest for rendered cloud-init snippets")
+    payload = load_json(manifest_file)
+    require(isinstance(payload, dict), f"{manifest_file}: expected a JSON object")
+    require(payload.get("schema_version") == MANIFEST_SCHEMA_VERSION, f"{manifest_file}: unsupported manifest schema version")
+    manifest_storage_id = payload.get("storage_id")
+    require(isinstance(manifest_storage_id, str) and manifest_storage_id, f"{manifest_file}: storage_id must be a non-empty string")
+    require(manifest_storage_id == storage_id, f"{manifest_file}: storage_id does not match --storage-id")
+    snippets_data = payload.get("snippets")
+    require(isinstance(snippets_data, list) and snippets_data, f"{manifest_file}: snippets must be a non-empty list")
+
+    snippets: list[CloudInitSnippet] = []
+    for raw_entry in snippets_data:
+        require(isinstance(raw_entry, dict), f"{manifest_file}: snippets entries must be objects")
+        entry = cast(dict[str, Any], raw_entry)
+        vmid = entry.get("vmid")
+        name = entry.get("name")
+        file_name = entry.get("file_name")
+        file_id = entry.get("file_id")
+        byte_count = entry.get("byte_count")
+        expected_sha256 = entry.get("sha256")
+        require(isinstance(vmid, int), f"{manifest_file}: snippet vmid must be an integer")
+        require(isinstance(name, str) and name, f"{manifest_file}: snippet name must be a non-empty string")
+        require(isinstance(file_name, str) and file_name, f"{manifest_file}: snippet file_name must be a non-empty string")
+        require(isinstance(file_id, str) and file_id, f"{manifest_file}: snippet file_id must be a non-empty string")
+        require(isinstance(byte_count, int) and byte_count >= 0, f"{manifest_file}: snippet byte_count must be a non-negative integer")
+        require(isinstance(expected_sha256, str) and len(expected_sha256) == 64, f"{manifest_file}: snippet sha256 must be a 64-character hex string")
+        vmid_int = cast(int, vmid)
+        name_str = cast(str, name)
+        file_name_str = cast(str, file_name)
+        file_id_str = cast(str, file_id)
+        byte_count_int = cast(int, byte_count)
+        expected_sha256_str = cast(str, expected_sha256)
+
+        snippet_path = output_dir / file_name_str
+        if not snippet_path.exists():
+            raise ValidationError(f"{snippet_path}: missing rendered snippet for VM {name_str} ({vmid_int})")
+        try:
+            snippet_bytes = snippet_path.read_bytes()
+        except OSError as exc:
+            raise ValidationError(f"{snippet_path}: unable to read rendered snippet for VM {name_str} ({vmid_int})") from exc
+        actual_sha256 = sha256_hex(snippet_bytes)
+        if len(snippet_bytes) != byte_count_int or actual_sha256 != expected_sha256_str:
+            raise ValidationError(f"{snippet_path}: checksum mismatch for VM {name_str} ({vmid_int})")
+        try:
+            content = snippet_bytes.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ValidationError(f"{snippet_path}: rendered snippet for VM {name_str} ({vmid_int}) is not valid UTF-8") from exc
+        snippets.append(
+            CloudInitSnippet(
+                vmid=vmid_int,
+                name=name_str,
+                file_name=file_name_str,
+                file_id=file_id_str,
+                content=content,
+                byte_count=byte_count_int,
+                sha256=actual_sha256,
+            )
+        )
+    snippets.sort(key=lambda item: (item.vmid, item.name))
+    return snippets
+
+
+def run_ssh_snippet_command(snippet: CloudInitSnippet, args: argparse.Namespace, command: list[str], input_text: str | None = None) -> None:
+    remote = f"{args.ssh_user}@{args.pve_host}"
+    ssh_argv = ["ssh", remote, *command]
+    timeout = resolve_ssh_timeout(getattr(args, "ssh_timeout", None))
+    try:
+        subprocess.run(
+            ssh_argv,
+            input=input_text,
+            text=input_text is not None,
+            check=True,
+            timeout=timeout,
+        )
+    except FileNotFoundError as exc:
+        raise ValidationError("ssh is required for snippet operations") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise ValidationError(
+            f"ssh timed out after {timeout:.0f}s while processing {snippet.file_name} for VM {snippet.name} ({snippet.vmid})"
+        ) from exc
+    except subprocess.CalledProcessError as exc:
+        raise ValidationError(
+            f"ssh command failed with exit code {exc.returncode} while processing {snippet.file_name} for VM {snippet.name} ({snippet.vmid})"
+        ) from exc
 
 
 def upload_snippets(snippets: list[CloudInitSnippet], args: argparse.Namespace) -> None:
-    remote = f"{args.ssh_user}@{args.pve_host}"
     for snippet in snippets:
-        try:
-            subprocess.run(
-                [
-                    "ssh",
-                    remote,
-                    "sudo",
-                    "-n",
-                    "/usr/local/sbin/astra-pve-snippet-upload",
-                    "--storage",
-                    args.storage_id,
-                    "--filename",
-                    snippet.file_name,
-                ],
-                input=snippet.content,
-                text=True,
-                check=True,
-            )
-        except FileNotFoundError as exc:
-            raise ValidationError("ssh is required for snippet upload") from exc
+        run_ssh_snippet_command(
+            snippet,
+            args,
+            [
+                "sudo",
+                "-n",
+                "/usr/local/sbin/astra-pve-snippet-upload",
+                "--storage",
+                args.storage_id,
+                "--filename",
+                snippet.file_name,
+            ],
+            input_text=snippet.content,
+        )
 
 
 def verify_snippets(snippets: list[CloudInitSnippet], args: argparse.Namespace) -> None:
-    remote = f"{args.ssh_user}@{args.pve_host}"
     for snippet in snippets:
-        try:
-            subprocess.run(
-                [
-                    "ssh",
-                    remote,
-                    "sudo",
-                    "-n",
-                    "/usr/local/sbin/astra-pve-snippet-upload",
-                    "--storage",
-                    args.storage_id,
-                    "--filename",
-                    snippet.file_name,
-                    "--verify",
-                ],
-                check=True,
-            )
-        except FileNotFoundError as exc:
-            raise ValidationError("ssh is required for snippet verification") from exc
+        run_ssh_snippet_command(
+            snippet,
+            args,
+            [
+                "sudo",
+                "-n",
+                "/usr/local/sbin/astra-pve-snippet-upload",
+                "--storage",
+                args.storage_id,
+                "--filename",
+                snippet.file_name,
+                "--verify",
+                "--sha256",
+                snippet.sha256,
+            ],
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
-    snippets = render_snippets(args.tfvars, args.storage_id)
-    write_snippets(snippets, args.output_dir)
-
-    if args.command == "upload":
+    if args.command == "render":
+        snippets = render_snippets(args.tfvars, args.storage_id)
+        write_rendered_artifacts(snippets, args.tfvars, args.storage_id, args.output_dir)
+        print(f"rendered {len(snippets)} cloud-init snippets to {args.output_dir}")
+    elif args.command == "upload":
+        snippets = load_rendered_artifacts(args.output_dir, args.storage_id)
         upload_snippets(snippets, args)
         print(f"uploaded {len(snippets)} cloud-init snippets to {args.pve_host}")
     elif args.command == "verify":
+        snippets = load_rendered_artifacts(args.output_dir, args.storage_id)
         verify_snippets(snippets, args)
         print(f"verified {len(snippets)} cloud-init snippets on {args.pve_host}")
-    else:
-        print(f"rendered {len(snippets)} cloud-init snippets to {args.output_dir}")
     return 0
 
 
+def _run() -> int:
+    try:
+        return main()
+    except ValidationError as exc:
+        print(f"FAIL cloud-init: {exc}", file=sys.stderr)
+        return 1
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(_run())

@@ -54,10 +54,10 @@ require-pve-target: require-storage-id
 render-user-data: require-storage-id
 	$(UV) run --directory "$(ROOT)" python -m scripts.pve_inventory.cloud_init render --output-dir "$(USER_DATA_DIR)" --storage-id "$(STORAGE_ID)"
 
-upload-user-data: require-pve-target render-user-data
+upload-user-data: require-pve-target
 	$(UV) run --directory "$(ROOT)" python -m scripts.pve_inventory.cloud_init upload --output-dir "$(USER_DATA_DIR)" --storage-id "$(STORAGE_ID)" --pve-host "$(PVE_HOST)" --ssh-user "$(PVE_SSH_USER)"
 
-verify-user-data: require-pve-target render-user-data
+verify-user-data: require-pve-target
 	$(UV) run --directory "$(ROOT)" python -m scripts.pve_inventory.cloud_init verify --output-dir "$(USER_DATA_DIR)" --storage-id "$(STORAGE_ID)" --pve-host "$(PVE_HOST)" --ssh-user "$(PVE_SSH_USER)"
 
 verify-guests:
@@ -78,6 +78,7 @@ plan: render-user-data
 	$(TOFU) plan
 
 apply:
+	$(MAKE) render-user-data
 	$(MAKE) upload-user-data verify-user-data
 	$(MAKE) backup-state BACKUP_PHASE=before
 	$(TOFU) apply
