@@ -4,7 +4,7 @@
 
 它是后续 OpenSpec change、维护任务和实现排期的输入，不代表所有事项必须一次性完成。
 
-当前状态：Phase 1 已通过 `fix-review-p1-remediations` 完成并归档；Phase 2 已通过 `make-cloud-init-snippet-verification-deterministic` 完成，等待归档同步。
+当前状态：Phase 1 已通过 `fix-review-p1-remediations` 完成并归档；Phase 2 已通过 `make-cloud-init-snippet-verification-deterministic` 完成并归档；Phase 3a 已通过 `strengthen-pve-and-service-inventory-validation` 完成并归档。
 
 ## 目标
 
@@ -107,17 +107,17 @@
 
 目标是让 source-of-truth 的常见错误尽早、稳定地暴露在 validation 层。
 
-- [ ] 强化 VM name / hostname / Ansible group / PVE tag / static IP 校验。
+- [x] 强化 VM name / hostname / Ansible group / PVE tag / static IP 校验。
   - 相关位置：`scripts/pve_inventory/vm_validation.py`
   - 建议约束：
     - VM name / hostname：限制为 DNS/hostname 安全字符。
     - Ansible group：限制为 Ansible inventory group 安全字符。
     - PVE tag：限制为 PVE/provider 可接受字符集。
     - list 字段：元素必须为非空 string，重复项显式处理。
-- [ ] 为 services Markdown renderer 增加表格转义。
+- [x] 为 services Markdown renderer 增加表格转义。
   - 相关位置：`scripts/services_inventory/render.py`
   - 重点：转义 `|`、换行等会破坏 Markdown table 的字符。
-- [ ] 保持当前 `inventory/*.yml` 全部通过。
+- [x] 保持当前 `inventory/*.yml` 全部通过。
   - 如果新规则暴露现有非法值，应优先判断是输入确实错误，还是规则过窄。
 
 验证建议：
@@ -207,13 +207,13 @@
    - CLI error boundary；
    - 文件卫生；
    - 文档不一致。
-2. `make-cloud-init-snippet-verification-deterministic`
+2. `make-cloud-init-snippet-verification-deterministic`（已完成并归档）
    - manifest/checksum；
    - exact file upload；
    - remote checksum verify；
    - timeout；
    - password hash artifact 策略。
-3. `strengthen-pve-and-service-inventory-validation`
+3. `strengthen-pve-and-service-inventory-validation`（已完成并归档）
    - VM name/hostname；
    - Ansible group；
    - PVE tag；
@@ -256,11 +256,11 @@
 |---|---|---:|
 | P1 | `ops` sudo policy 与 guest verification 冲突（已完成） | 1 |
 | P1 | legacy switch smoke 入口已退役（已完成） | 1 |
-| P1 | cloud-init snippet verify 不校验内容 | 2 |
+| P1 | cloud-init snippet verify 不校验内容（已完成） | 2 |
 | P1/P2 | 运行时产物混在工作树（已完成：tracked-file hygiene） | 1 |
 | P1/P2 | 最小功能一致性安全网不足 | 0 |
-| P2 | VM name / group / tag / static IP 校验不足 | 3a |
-| P2 | services Markdown 未转义 | 3a |
+| P2 | VM name / group / tag / static IP 校验不足（已完成） | 3a |
+| P2 | services Markdown 未转义（已完成） | 3a |
 | P2 | OPNsense vars schema 偏弱 | 3b |
 | P2 | `services_inventory` 依赖 `pve_inventory` 内部 helper | 4a |
 | P2 | PVE API client / runtime config 重复 | 4b |
