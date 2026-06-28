@@ -17,7 +17,8 @@ from ...pve_api import (
     load_api_runtime_config,
     redact_sensitive_text,
 )
-from ...validation import validate_cluster, validate_vms
+from ...inventory.validation.cluster import validate_cluster
+from ...inventory.validation.vm import validate_vms
 from ..results import CheckResult, Severity
 from .model import derive_health_expectations
 from .infra import check_ceph, check_ha

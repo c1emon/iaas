@@ -12,15 +12,12 @@ import pytest
 
 from scripts.common.io import load_yaml
 from scripts.pve_inventory.inventory.model import build_model
-from scripts.pve_inventory.preflight import (
-    CheckResult,
-    ProxmoxAPI,
-    derive_expected_resources,
-    has_failures,
-    render_report,
-    run_preflight,
-)
-from scripts.pve_inventory.validation import validate_cluster, validate_vms
+from scripts.pve_inventory.checks.preflight.api import ProxmoxAPI
+from scripts.pve_inventory.checks.preflight.model import derive_expected_resources
+from scripts.pve_inventory.checks.results import CheckResult, has_failures, render_report
+from scripts.pve_inventory.inventory.validation.cluster import validate_cluster
+from scripts.pve_inventory.inventory.validation.vm import validate_vms
+from scripts.pve_inventory.preflight import run_preflight
 
 
 ROOT = Path(__file__).resolve().parents[2]

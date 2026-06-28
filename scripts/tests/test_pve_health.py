@@ -7,11 +7,15 @@ from typing import Any, cast
 
 import pytest
 
-from scripts.pve_inventory.health import derive_health_expectations, load_health_runtime_config, render_report, run_health
 from scripts.common.io import load_yaml
+from scripts.pve_inventory.checks.health.model import derive_health_expectations
 from scripts.pve_inventory.checks.results import has_failures
+from scripts.pve_inventory.checks.results import render_report
 from scripts.pve_inventory.inventory.model import build_model
-from scripts.pve_inventory.validation import validate_cluster, validate_vms
+from scripts.pve_inventory.inventory.validation.cluster import validate_cluster
+from scripts.pve_inventory.inventory.validation.vm import validate_vms
+from scripts.pve_inventory.pve_api.runtime import load_api_runtime_config
+from scripts.pve_inventory.health import run_health
 from scripts.pve_inventory.pve_api.errors import PveApiNotConfiguredError, PveApiUnavailableError, PveApiAuthenticationError
 
 
@@ -260,7 +264,7 @@ def test_offline_guards_keep_pve_health_outside_make_check_and_ci() -> None:
 
 
 def test_health_runtime_config_uses_api_only_tf_vars() -> None:
-    runtime = load_health_runtime_config(
+    runtime = load_api_runtime_config(
         {
             "TF_VAR_pve_endpoint": "https://pve.example.invalid",
             "TF_VAR_pve_api_username": "pve-ops@pve",

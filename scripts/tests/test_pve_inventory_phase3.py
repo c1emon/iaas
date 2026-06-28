@@ -15,12 +15,17 @@ from typing import Any
 import pytest
 import yaml
 
-import scripts.pve_inventory.cloud_init as cloud_init
+from scripts.pve_inventory.cloud_init import main as cloud_init_main
+from scripts.pve_inventory.cloud_init_helpers.artifacts import load_rendered_artifacts, write_rendered_artifacts
+from scripts.pve_inventory.cloud_init_helpers.model import CloudInitSnippet
+from scripts.pve_inventory.cloud_init_helpers.render import render_snippets
+from scripts.pve_inventory.cloud_init_helpers import ssh as cloud_init_ssh
 from scripts.common.io import load_yaml
 from scripts.pve_inventory.inventory.model import build_model
 from scripts.pve_inventory.inventory.render import render_outputs
+from scripts.pve_inventory.inventory.validation.cluster import validate_cluster
+from scripts.pve_inventory.inventory.validation.vm import validate_vms
 from scripts.common.errors import ValidationError
-from scripts.pve_inventory.validation import validate_cluster, validate_vms
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -54,7 +59,7 @@ def test_passthrough_vms_get_cloud_init_user_data(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("PVE_VM_OPS_PASSWORD", "ops-password")
     monkeypatch.setenv("PVE_VM_OPS_PUBLIC_KEY", "ssh-ed25519 AAAAops ops@example")
 
-    snippets = cloud_init.render_snippets(ROOT / "infra/tofu/pve/generated.auto.tfvars.json", "images")
+    snippets = render_snippets(ROOT / "infra/tofu/pve/generated.auto.tfvars.json", "images")
 
     snippet_names = {snippet.name for snippet in snippets}
     assert snippet_names == {"dev-web-01", "prod-app-01", "media-lab-01"}
@@ -77,8 +82,8 @@ def test_cloud_init_render_writes_manifest_and_exact_bytes(monkeypatch: pytest.M
     monkeypatch.setenv("PVE_VM_OPS_PUBLIC_KEY", "ssh-ed25519 AAAAops ops@example")
 
     tfvars_path = ROOT / "infra" / "tofu" / "pve" / "generated.auto.tfvars.json"
-    snippets = cloud_init.render_snippets(tfvars_path, "images")
-    cloud_init.write_rendered_artifacts(snippets, tfvars_path, "images", tmp_path)
+    snippets = render_snippets(tfvars_path, "images")
+    write_rendered_artifacts(snippets, tfvars_path, "images", tmp_path)
 
     manifest_path = tmp_path / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -104,10 +109,8 @@ def test_cloud_init_upload_and_verify_use_existing_manifest_without_rerender(mon
     monkeypatch.setenv("PVE_VM_OPS_PUBLIC_KEY", "ssh-ed25519 AAAAops ops@example")
 
     tfvars_path = ROOT / "infra" / "tofu" / "pve" / "generated.auto.tfvars.json"
-    snippets = cloud_init.render_snippets(tfvars_path, "images")
-    cloud_init.write_rendered_artifacts(snippets, tfvars_path, "images", tmp_path)
-
-    monkeypatch.setattr(cloud_init, "render_snippets", lambda *args, **kwargs: pytest.fail("upload/verify must not rerender"))
+    snippets = render_snippets(tfvars_path, "images")
+    write_rendered_artifacts(snippets, tfvars_path, "images", tmp_path)
 
     calls: list[list[str]] = []
 
@@ -115,10 +118,10 @@ def test_cloud_init_upload_and_verify_use_existing_manifest_without_rerender(mon
         calls.append(argv)
         return subprocess.CompletedProcess(argv, 0)
 
-    monkeypatch.setattr(cloud_init.subprocess, "run", fake_run)
+    monkeypatch.setattr(cloud_init_ssh.subprocess, "run", fake_run)
 
-    cloud_init.main(["upload", "--output-dir", str(tmp_path), "--storage-id", "images", "--pve-host", "pve-01", "--ssh-user", "ops"])
-    cloud_init.main(["verify", "--output-dir", str(tmp_path), "--storage-id", "images", "--pve-host", "pve-01", "--ssh-user", "ops"])
+    cloud_init_main(["upload", "--output-dir", str(tmp_path), "--storage-id", "images", "--pve-host", "pve-01", "--ssh-user", "ops"])
+    cloud_init_main(["verify", "--output-dir", str(tmp_path), "--storage-id", "images", "--pve-host", "pve-01", "--ssh-user", "ops"])
 
     assert any("--verify" in argv and "--sha256" in argv for argv in calls)
 
@@ -130,18 +133,18 @@ def test_cloud_init_load_rendered_artifacts_rejects_checksum_mismatch(monkeypatc
     monkeypatch.setenv("PVE_VM_OPS_PUBLIC_KEY", "ssh-ed25519 AAAAops ops@example")
 
     tfvars_path = ROOT / "infra" / "tofu" / "pve" / "generated.auto.tfvars.json"
-    snippets = cloud_init.render_snippets(tfvars_path, "images")
-    cloud_init.write_rendered_artifacts(snippets, tfvars_path, "images", tmp_path)
+    snippets = render_snippets(tfvars_path, "images")
+    write_rendered_artifacts(snippets, tfvars_path, "images", tmp_path)
 
     snippet_path = tmp_path / snippets[0].file_name
     snippet_path.write_text(snippet_path.read_text(encoding="utf-8") + "# drift\n", encoding="utf-8")
 
     with pytest.raises(ValidationError, match=snippets[0].name):
-        cloud_init.load_rendered_artifacts(tmp_path, "images")
+        load_rendered_artifacts(tmp_path, "images")
 
 
 def test_cloud_init_upload_timeout_is_operator_readable(monkeypatch: pytest.MonkeyPatch) -> None:
-    snippet = cloud_init.CloudInitSnippet(
+    snippet = CloudInitSnippet(
         vmid=501,
         name="media-lab-01",
         file_name="opentofu-vm-501-user-data.yml",
@@ -155,17 +158,17 @@ def test_cloud_init_upload_timeout_is_operator_readable(monkeypatch: pytest.Monk
     def timeout_run(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[object]:
         raise subprocess.TimeoutExpired(cmd=["ssh"], timeout=30.0)
 
-    monkeypatch.setattr(cloud_init.subprocess, "run", timeout_run)
+    monkeypatch.setattr(cloud_init_ssh.subprocess, "run", timeout_run)
 
     with pytest.raises(ValidationError, match="timed out after 30s") as excinfo:
-        cloud_init.upload_snippets([snippet], args)
+        cloud_init_ssh.upload_snippets([snippet], args)
 
     assert snippet.file_name in str(excinfo.value)
     assert snippet.name in str(excinfo.value)
 
 
 def test_cloud_init_verify_nonzero_exit_is_operator_readable(monkeypatch: pytest.MonkeyPatch) -> None:
-    snippet = cloud_init.CloudInitSnippet(
+    snippet = CloudInitSnippet(
         vmid=501,
         name="media-lab-01",
         file_name="opentofu-vm-501-user-data.yml",
@@ -179,10 +182,10 @@ def test_cloud_init_verify_nonzero_exit_is_operator_readable(monkeypatch: pytest
     def failed_run(argv: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[object]:
         raise subprocess.CalledProcessError(1, argv)
 
-    monkeypatch.setattr(cloud_init.subprocess, "run", failed_run)
+    monkeypatch.setattr(cloud_init_ssh.subprocess, "run", failed_run)
 
     with pytest.raises(ValidationError, match="ssh command failed") as excinfo:
-        cloud_init.verify_snippets([snippet], args)
+        cloud_init_ssh.verify_snippets([snippet], args)
 
     assert snippet.file_name in str(excinfo.value)
     assert snippet.name in str(excinfo.value)

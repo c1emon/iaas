@@ -11,9 +11,10 @@ from scripts.common.errors import ValidationError
 from scripts.common.io import check_outputs, load_yaml, write_text
 
 from .inventory.model import build_model
+from .inventory.validation.cluster import validate_cluster
+from .inventory.validation.vm import validate_vms
 from .paths import DEFAULT_ANSIBLE, DEFAULT_CLUSTER, DEFAULT_DOCS, DEFAULT_TEMPLATE_BUILD_ENV, DEFAULT_TFVARS, DEFAULT_VMS
 from .inventory.render import render_outputs
-from .validation import validate_cluster, validate_vms
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
