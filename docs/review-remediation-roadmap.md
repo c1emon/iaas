@@ -4,7 +4,7 @@
 
 它是后续 OpenSpec change、维护任务和实现排期的输入，不代表所有事项必须一次性完成。
 
-当前状态：Phase 1 已通过 `fix-review-p1-remediations` 完成并归档；Phase 2 已通过 `make-cloud-init-snippet-verification-deterministic` 完成并归档；Phase 3a 已通过 `strengthen-pve-and-service-inventory-validation` 完成并归档。
+当前状态：Phase 1 已通过 `fix-review-p1-remediations` 完成并归档；Phase 2 已通过 `make-cloud-init-snippet-verification-deterministic` 完成并归档；Phase 3a 已通过 `strengthen-pve-and-service-inventory-validation` 完成并归档；Phase 4a 已通过 `extract-python-common-primitives` 完成并归档。
 
 ## 目标
 
@@ -144,17 +144,18 @@
 
 目标是减少明显重复，但避免把 `scripts/common/` 做成大杂烩或过早 domain framework。
 
-- [ ] 提取共享 primitive helper。
+- [x] 提取共享 primitive helper。
   - 建议位置：`scripts/common/`
+  - 当前状态：已建立 `scripts/common/`，承载 domain-neutral 的 errors、I/O、基础 validation、Markdown escaping、CLI validation boundary。
   - 候选内容：
     - errors
     - I/O
     - 基础 validation helper
     - Markdown escaping
     - CLI boundary / output helper
-- [ ] 解除 `services_inventory` 对 `pve_inventory` 内部 helper 的隐式依赖。
+- [x] 解除 `services_inventory` 对 `pve_inventory` 内部 helper 的隐式依赖。
   - 相关位置：`scripts/services_inventory/*`
-- [ ] 不在本阶段重组所有 domain 目录。
+- [x] 不在本阶段重组所有 domain 目录。
 
 验证建议：
 
@@ -221,8 +222,8 @@
    - services Markdown escaping。
 4. `strengthen-opnsense-vars-validation`
    - 单独后置，不混入 PVE inventory validation。
-5. `extract-python-common-primitives`
-   - 只提取 errors / I/O / validation primitives / CLI boundary。
+5. `extract-python-common-primitives`（已完成并归档）
+   - 只提取 errors / I/O / validation primitives / CLI boundary / Markdown escaping。
 6. `consolidate-pve-api-runtime-adapters`
    - 后置可选。
 
@@ -262,7 +263,7 @@
 | P2 | VM name / group / tag / static IP 校验不足（已完成） | 3a |
 | P2 | services Markdown 未转义（已完成） | 3a |
 | P2 | OPNsense vars schema 偏弱 | 3b |
-| P2 | `services_inventory` 依赖 `pve_inventory` 内部 helper | 4a |
+| P2 | `services_inventory` 依赖 `pve_inventory` 内部 helper（已完成） | 4a |
 | P2 | PVE API client / runtime config 重复 | 4b |
 | P2 | OpenTofu protected / unprotected resource 缺少一致性保障 | 5 |
 
@@ -274,7 +275,7 @@
 2. Phase 1：P1 止血。
 3. Phase 2：cloud-init deterministic artifacts。
 4. Phase 3a：PVE 与 services validation hardening。
-5. 视维护痛点选择 Phase 4a。
+5. Phase 4a：小范围 common primitives 抽取（已完成）。
 6. Phase 3b / 4b / 5 后置，按需要单独推进。
 
 不推荐一次性推进所有阶段。
