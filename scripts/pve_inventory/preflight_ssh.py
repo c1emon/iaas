@@ -9,7 +9,7 @@ from __future__ import annotations
 import subprocess
 from typing import Any, Callable
 
-from .preflight_config import RuntimeConfig
+from .pve_api.runtime import PveOnlineRuntimeContext as RuntimeConfig
 from .preflight_results import CheckResult, Severity
 
 

@@ -17,11 +17,13 @@ from .model import build_model
 from .paths import DEFAULT_CLUSTER, DEFAULT_VMS
 from .pve_api import (
     HealthApiRuntimeConfig,
+    PveReadOnlyApi,
     PveApiAuthenticationError,
     PveApiError,
     PveApiNotConfiguredError,
     PveApiUnavailableError,
     ReadOnlyPveApi,
+    load_api_runtime_config,
     redact_sensitive_text,
 )
 from .preflight_results import CheckResult, Severity, has_failures, render_report
@@ -50,38 +52,8 @@ class HealthExpectations:
 THRESHOLDS = HealthThresholds()
 
 
-def _parse_bool(value: str | None, *, default: bool = False) -> bool:
-    if value is None or value == "":
-        return default
-    normalized = value.strip().lower()
-    if normalized in {"1", "true", "yes", "on"}:
-        return True
-    if normalized in {"0", "false", "no", "off"}:
-        return False
-    raise ValidationError(f"TF_VAR_pve_insecure must be a boolean-like value, got {value!r}")
-
-
 def load_health_runtime_config(environ: dict[str, str] | None = None) -> HealthApiRuntimeConfig:
-    env = os.environ if environ is None else environ
-    endpoint = env.get("TF_VAR_pve_endpoint", "").strip()
-    api_username = env.get("TF_VAR_pve_api_username", "").strip()
-    api_token_id = env.get("TF_VAR_pve_api_token_id", "").strip()
-    api_token_secret = env.get("TF_VAR_pve_api_token_secret", "").strip()
-    missing = [name for name, value in (
-        ("TF_VAR_pve_endpoint", endpoint),
-        ("TF_VAR_pve_api_username", api_username),
-        ("TF_VAR_pve_api_token_id", api_token_id),
-        ("TF_VAR_pve_api_token_secret", api_token_secret),
-    ) if not value]
-    if missing:
-        raise ValidationError(f"missing required PVE runtime environment variables: {', '.join(missing)}")
-    return HealthApiRuntimeConfig(
-        endpoint=endpoint,
-        api_username=api_username,
-        api_token_id=api_token_id,
-        api_token_secret=api_token_secret,
-        insecure=_parse_bool(env.get("TF_VAR_pve_insecure"), default=False),
-    )
+    return load_api_runtime_config(environ)
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -184,7 +156,7 @@ def _ceph_health_status(data: Any) -> str:
     return str(data.get("status") or "").upper()
 
 
-def _safe_message(api: Any, message: str) -> str:
+def _safe_message(api: PveReadOnlyApi, message: str) -> str:
     redactor = getattr(api, "redact_operator_text", None)
     if callable(redactor):
         return redactor(message)  # type: ignore[misc]
@@ -263,7 +235,7 @@ def _node_rootfs_percent(record: dict[str, Any]) -> float | None:
     return None
 
 
-def _check_api_reachability(api: Any, results: list[CheckResult]) -> Any | None:
+def _check_api_reachability(api: PveReadOnlyApi, results: list[CheckResult]) -> Any | None:
     try:
         cluster_status = api.cluster_status()
     except PveApiAuthenticationError as exc:
@@ -286,7 +258,7 @@ def _check_quorum(cluster_status: Any, results: list[CheckResult]) -> None:
         _emit(results, "FAIL", "cluster.quorum", "cluster is not quorate")
 
 
-def _check_nodes(api: Any, expectations: HealthExpectations, results: list[CheckResult]) -> dict[str, dict[str, Any]]:
+def _check_nodes(api: PveReadOnlyApi, expectations: HealthExpectations, results: list[CheckResult]) -> dict[str, dict[str, Any]]:
     try:
         records = _as_list(api.nodes())
     except PveApiError as exc:
@@ -316,7 +288,7 @@ def _check_nodes(api: Any, expectations: HealthExpectations, results: list[Check
     return node_index
 
 
-def _check_node_capacity(api: Any, node_index: dict[str, dict[str, Any]], results: list[CheckResult]) -> None:
+def _check_node_capacity(api: PveReadOnlyApi, node_index: dict[str, dict[str, Any]], results: list[CheckResult]) -> None:
     for node, record in sorted(node_index.items()):
         status = _node_status_name(record)
         if status != "online":
@@ -341,7 +313,7 @@ def _check_node_capacity(api: Any, node_index: dict[str, dict[str, Any]], result
                 _emit(results, "PASS", f"node.capacity.{node}.{label}", f"{label} usage on {node} is {value:.1f}%")
 
 
-def _check_required_datastores(api: Any, expectations: HealthExpectations, node_index: dict[str, dict[str, Any]], results: list[CheckResult]) -> None:
+def _check_required_datastores(api: PveReadOnlyApi, expectations: HealthExpectations, node_index: dict[str, dict[str, Any]], results: list[CheckResult]) -> None:
     for node in sorted(expectations.required_nodes & set(node_index)):
         required = sorted(expectations.required_datastores_by_node.get(node, set()))
         if not required:
@@ -370,7 +342,7 @@ def _check_required_datastores(api: Any, expectations: HealthExpectations, node_
                 _emit(results, "PASS", f"storage.{node}.{datastore}", f"required datastore {datastore} is active on {node}")
 
 
-def _vm_records_by_node(api: Any, nodes: Iterable[str], results: list[CheckResult]) -> dict[str, dict[int, dict[str, Any]]]:
+def _vm_records_by_node(api: PveReadOnlyApi, nodes: Iterable[str], results: list[CheckResult]) -> dict[str, dict[int, dict[str, Any]]]:
     vm_index: dict[str, dict[int, dict[str, Any]]] = {}
     for node in nodes:
         try:
@@ -382,7 +354,7 @@ def _vm_records_by_node(api: Any, nodes: Iterable[str], results: list[CheckResul
     return vm_index
 
 
-def _check_templates(api: Any, expectations: HealthExpectations, vm_index: dict[str, dict[int, dict[str, Any]]], results: list[CheckResult]) -> None:
+def _check_templates(api: PveReadOnlyApi, expectations: HealthExpectations, vm_index: dict[str, dict[int, dict[str, Any]]], results: list[CheckResult]) -> None:
     for template_name, template in sorted(expectations.templates.items()):
         node = str(template["node"])
         records = vm_index.get(node, {})
@@ -404,7 +376,7 @@ def _check_templates(api: Any, expectations: HealthExpectations, vm_index: dict[
             _emit(results, "PASS", f"template.{template_name}", f"referenced template {template_name} is present on {node}")
 
 
-def _check_vms(api: Any, expectations: HealthExpectations, vm_index: dict[str, dict[int, dict[str, Any]]], results: list[CheckResult]) -> None:
+def _check_vms(api: PveReadOnlyApi, expectations: HealthExpectations, vm_index: dict[str, dict[int, dict[str, Any]]], results: list[CheckResult]) -> None:
     for vm in expectations.declared_vms:
         node = vm["node"]
         vmid = int(vm["vmid"])
@@ -430,7 +402,7 @@ def _check_vms(api: Any, expectations: HealthExpectations, vm_index: dict[str, d
             _emit(results, "SKIP", f"vm.{vm['name']}", f"ephemeral lab VM {vm['name']} is {state} on {node}")
 
 
-def _check_ha(api: Any, results: list[CheckResult]) -> None:
+def _check_ha(api: PveReadOnlyApi, results: list[CheckResult]) -> None:
     try:
         records = _as_list(api.ha_status())
     except (PveApiNotConfiguredError, PveApiUnavailableError):
@@ -457,7 +429,7 @@ def _check_ha(api: Any, results: list[CheckResult]) -> None:
         _emit(results, "PASS", "ha", "HA resources are healthy")
 
 
-def _check_ceph(api: Any, results: list[CheckResult]) -> None:
+def _check_ceph(api: PveReadOnlyApi, results: list[CheckResult]) -> None:
     try:
         data = api.ceph_status()
     except (PveApiNotConfiguredError, PveApiUnavailableError):
@@ -481,7 +453,7 @@ def run_health(
     cluster_path: Path = DEFAULT_CLUSTER,
     vms_path: Path = DEFAULT_VMS,
     environ: dict[str, str] | None = None,
-    api_client: Any | None = None,
+    api_client: PveReadOnlyApi | None = None,
 ) -> list[CheckResult]:
     results: list[CheckResult] = []
     runtime = load_health_runtime_config(environ) if api_client is None else None
@@ -495,7 +467,7 @@ def run_health(
 
     if api_client is None:
         assert runtime is not None
-        client = ReadOnlyPveApi.from_runtime(runtime)
+        client: PveReadOnlyApi = ReadOnlyPveApi.from_runtime(runtime)
     else:
         client = api_client
     cluster_status = _check_api_reachability(client, results)
@@ -521,7 +493,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"FAIL model.validation: {exc}")
         return 1
     except Exception as exc:  # pragma: no cover
-        print(f"FAIL health: {redact_sensitive_text(str(exc), [])}")
+        print(f"FAIL health: {redact_sensitive_text(str(exc), [os.environ.get('TF_VAR_pve_api_token_secret', '')])}")
         return 1
 
     print(render_report(results), end="")

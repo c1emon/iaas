@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -44,8 +44,14 @@ class _FakeHealthApi:
     def node_status(self, node: str) -> Any:
         return self._response("node_status", node)
 
+    def node_network(self, node: str) -> Any:
+        raise NotImplementedError("health checks do not read node network data")
+
     def node_storage(self, node: str) -> Any:
         return self._response("node_storage", node)
+
+    def cluster_vm_resources(self) -> Any:
+        raise NotImplementedError("health checks do not read cluster VM resource data")
 
     def vms(self, node: str) -> Any:
         return self._response("vms", node)
@@ -56,11 +62,20 @@ class _FakeHealthApi:
     def vm_config(self, node: str, vmid: int) -> Any:
         return self._response("vm_config", (node, vmid))
 
+    def pci_mappings(self) -> Any:
+        raise NotImplementedError("health checks do not read PCI mapping data")
+
+    def pci_mapping_detail(self, mapping_name: str) -> Any:
+        raise NotImplementedError("health checks do not read PCI mapping data")
+
     def ha_status(self) -> Any:
         return self._response("ha_status")
 
     def ceph_status(self) -> Any:
         return self._response("ceph_status")
+
+    def redact_operator_text(self, text: str) -> str:
+        return text
 
 
 def _model() -> dict[str, Any]:
@@ -224,7 +239,7 @@ def test_health_reports_do_not_leak_secrets() -> None:
         def cluster_status(self) -> Any:
             raise PveApiAuthenticationError(f"invalid token {secret}")
 
-    results = run_health(environ={}, api_client=FailingApi())
+    results = run_health(environ={}, api_client=cast(Any, FailingApi()))
     report = render_report(results)
 
     assert secret not in report

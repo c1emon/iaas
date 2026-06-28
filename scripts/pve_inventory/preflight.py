@@ -8,6 +8,7 @@ symbols from here.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -16,8 +17,10 @@ from scripts.common.io import load_yaml
 
 from .model import build_model
 from .paths import DEFAULT_CLUSTER, DEFAULT_VMS
+from .pve_api.errors import redact_sensitive_text
+from .pve_api.protocol import PveReadOnlyApi
+from .pve_api.runtime import PveOnlineRuntimeContext, load_api_runtime_config, load_online_runtime_context
 from .preflight_api import ProxmoxAPI, create_api_client, run_api_checks
-from .preflight_config import RuntimeConfig, load_runtime_config, load_runtime_context
 from .preflight_model import DerivedResources, derive_expected_resources
 from .preflight_results import CheckResult, has_failures, render_report
 from .preflight_ssh import run_ssh_checks
@@ -36,12 +39,14 @@ def run_preflight(
     cluster_path: Path = DEFAULT_CLUSTER,
     vms_path: Path = DEFAULT_VMS,
     environ: dict[str, str] | None = None,
-    api_client: ProxmoxAPI | None = None,
+    api_client: PveReadOnlyApi | None = None,
     ssh_runner=None,
 ) -> list[CheckResult]:
     """Run the full read-only preflight and return structured results."""
     results: list[CheckResult] = []
-    runtime: RuntimeConfig = load_runtime_config(environ) if api_client is None else load_runtime_context(environ)
+    if api_client is None:
+        load_api_runtime_config(environ)
+    runtime: PveOnlineRuntimeContext = load_online_runtime_context(environ)
 
     cluster_doc = load_yaml(cluster_path)
     cluster_state = validate_cluster(cluster_doc)
@@ -68,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"FAIL model.validation: {exc}")
         return 1
     except Exception as exc:  # pragma: no cover
-        print(f"FAIL preflight: {exc}")
+        print(f"FAIL preflight: {redact_sensitive_text(str(exc), [os.environ.get('TF_VAR_pve_api_token_secret', '')])}")
         return 1
 
     print(render_report(results), end="")
