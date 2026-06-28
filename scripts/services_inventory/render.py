@@ -22,6 +22,13 @@ def _endpoint_label(endpoint: dict[str, Any]) -> str:
     return "-"
 
 
+def _escape_cell(value: Any) -> str:
+    text = "-" if value is None or value == "" else str(value)
+    if text == "-":
+        return text
+    return text.replace("\r\n", "<br>").replace("\r", "<br>").replace("\n", "<br>").replace("|", "\\|")
+
+
 def build_markdown(model: dict[str, Any]) -> str:
     """Render a compact Markdown service catalog."""
     lines = [
@@ -37,12 +44,14 @@ def build_markdown(model: dict[str, Any]) -> str:
     for service in model["services"]:
         for endpoint in service["endpoints"]:
             lines.append(
-                f"| {service['name']} | {service['owner_vm']} | {_endpoint_label(endpoint)} | {endpoint['fqdn'] or '-'} | {endpoint['protocol']} | {endpoint['port']} | {endpoint['exposure']} | {endpoint['auth']} | {_hint_text(endpoint)} |"
+                f"| {_escape_cell(service['name'])} | {_escape_cell(service['owner_vm'])} | {_escape_cell(_endpoint_label(endpoint))} | {_escape_cell(endpoint['fqdn'] or '-')} | {_escape_cell(endpoint['protocol'])} | {_escape_cell(endpoint['port'])} | {_escape_cell(endpoint['exposure'])} | {_escape_cell(endpoint['auth'])} | {_escape_cell(_hint_text(endpoint))} |"
             )
 
     if model["warnings"]:
         lines.extend(["", "## Warnings", "", "| Service | Endpoint | Code | Message |", "|---|---|---|---|"])
         for warning in model["warnings"]:
-            lines.append(f"| {warning['service']} | {warning['endpoint']} | {warning['code']} | {warning['message']} |")
+            lines.append(
+                f"| {_escape_cell(warning['service'])} | {_escape_cell(warning['endpoint'])} | {_escape_cell(warning['code'])} | {_escape_cell(warning['message'])} |"
+            )
 
     return "\n".join(lines) + "\n"

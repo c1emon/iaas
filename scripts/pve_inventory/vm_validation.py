@@ -3,16 +3,44 @@
 from __future__ import annotations
 
 import ipaddress
+import re
 from typing import Any, cast
 
 from .errors import ValidationError, require
 from .validation_common import as_list, as_mapping, require_bool, require_positive_int, require_unknown_keys
 
 
+DNS_LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+ANSIBLE_GROUP_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+PVE_TAG_RE = re.compile(r"^[a-z0-9]+(?:[._-][a-z0-9]+)*$")
+
+
 def parse_static_ip(value: str) -> tuple[str, int, str]:
     """Split a CIDR-style static IP into host, prefix, and network string."""
     interface = ipaddress.ip_interface(value)
     return str(interface.ip), int(interface.network.prefixlen), str(interface.network)
+
+
+def _require_pattern(value: Any, context: str, pattern: re.Pattern[str], description: str) -> str:
+    text = value if isinstance(value, str) else None
+    require(isinstance(text, str) and text, f"{context}: must be a non-empty string")
+    assert text is not None
+    require(pattern.fullmatch(text) is not None, f"{context}: must be {description}")
+    return text
+
+
+def _normalize_string_list(value: Any, context: str, item_description: str, pattern: re.Pattern[str], duplicate_label: str) -> list[str]:
+    items = as_list(value, context)
+    require(items, f"{context}: must not be empty")
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for index, item in enumerate(items):
+        item_context = f"{context}[{index}]"
+        text = _require_pattern(item, item_context, pattern, item_description)
+        require(text not in seen, f"{context}: duplicate {duplicate_label} {text}")
+        seen.add(text)
+        normalized.append(text)
+    return normalized
 
 
 def normalize_vm_resources(vm_doc: dict[str, Any], cluster_vm_defaults: dict[str, Any], ctx: str) -> dict[str, int]:
@@ -96,14 +124,13 @@ def validate_vms(vms_doc: dict[str, Any], cluster_state: dict[str, Any]) -> list
         static_ip = vm_doc.get("static_ip")
         gateway = vm_doc.get("gateway")
         dns = as_list(vm_doc.get("dns"), f"{ctx}.dns")
-        ansible_groups = as_list(vm_doc.get("ansible_groups"), f"{ctx}.ansible_groups")
-        tags = as_list(vm_doc.get("tags"), f"{ctx}.tags")
+        ansible_groups = _normalize_string_list(vm_doc.get("ansible_groups"), f"{ctx}.ansible_groups", "a lower-case Ansible-safe identifier", ANSIBLE_GROUP_RE, "ansible_groups value")
+        tags = _normalize_string_list(vm_doc.get("tags"), f"{ctx}.tags", "a lower-case PVE tag token", PVE_TAG_RE, "tag")
         ha = as_mapping(vm_doc.get("ha"), f"{ctx}.ha")
         pool = vm_doc.get("pool")
         template_name = vm_doc.get("template", cluster_state["default_template"])
 
-        require(isinstance(name, str) and name, f"{ctx}: name must be a non-empty string")
-        name_str = cast(str, name)
+        name_str = _require_pattern(name, f"{ctx}.name", DNS_LABEL_RE, "a lower-case DNS-label-safe value")
         require(name_str not in seen_names, f"{ctx}: duplicate VM name {name_str}")
         seen_names.add(name_str)
 
@@ -133,15 +160,18 @@ def validate_vms(vms_doc: dict[str, Any], cluster_state: dict[str, Any]) -> list
         try:
             host_ip, prefix_length, network_cidr = parse_static_ip(cast(str, static_ip))
         except ValueError as exc:
-            raise ValidationError(f"vms.{name_str}.static_ip: must be a valid CIDR-style IP interface") from exc
+            raise ValidationError(f"{ctx}.static_ip: must be a valid CIDR-style IP interface") from exc
         cidr = ipaddress.ip_network(network["cidr"], strict=False)
-        require(ipaddress.ip_address(host_ip) in cidr, f"{ctx}: static_ip must be inside {network_name_str} ({network['cidr']})")
-        require(host_ip not in seen_ips, f"{ctx}: duplicate static IP {host_ip}")
+        require(prefix_length == cidr.prefixlen, f"{ctx}.static_ip: must use prefix /{cidr.prefixlen}")
+        ip_addr = ipaddress.ip_address(host_ip)
+        require(ip_addr.version == cidr.version, f"{ctx}.static_ip: address family must match {network_name_str} ({network['cidr']})")
+        require(ip_addr in cidr, f"{ctx}.static_ip: must be inside {network_name_str} ({network['cidr']})")
+        require(ip_addr != cidr.network_address, f"{ctx}.static_ip: must not be the network address {cidr.network_address}")
+        require(ip_addr != cidr.broadcast_address, f"{ctx}.static_ip: must not be the broadcast address {cidr.broadcast_address}")
+        require(host_ip not in seen_ips, f"{ctx}.static_ip: duplicate IP {host_ip}")
         seen_ips.add(host_ip)
         require(gateway == network.get("gateway"), f"{ctx}: gateway must match the selected network")
         require(dns == [network.get("dns")], f"{ctx}: dns must match the selected network")
-        require(ansible_groups, f"{ctx}: ansible_groups must not be empty")
-        require(tags, f"{ctx}: tags must not be empty")
         require(isinstance(ha.get("enabled"), bool) and ha.get("enabled") is False, f"{ctx}: HA must stay disabled in section 2")
         require(ha.get("group") is None, f"{ctx}: HA group must be null until HA automation is implemented")
         require(ha.get("state") is None, f"{ctx}: HA state must be null until HA automation is implemented")

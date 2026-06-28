@@ -337,8 +337,87 @@ def test_validation_rejects_malformed_static_ip_with_vm_field_context() -> None:
     doc = copy.deepcopy(load_yaml(VMS_PATH))
     doc["vms"][0]["static_ip"] = "not-a-cidr"
 
-    with pytest.raises(ValidationError, match=r"vms\.[^.]+\.static_ip: must be a valid CIDR-style IP interface"):
+    with pytest.raises(ValidationError, match=r"vms\.vms\[0\]\.static_ip: must be a valid CIDR-style IP interface"):
         validate_vms(doc, cluster_state())
+
+
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [
+        ("DEV-web-01", r"vms\.vms\[0\]\.name: must be a lower-case DNS-label-safe value"),
+        ("dev web", r"vms\.vms\[0\]\.name: must be a lower-case DNS-label-safe value"),
+        ("dev_web", r"vms\.vms\[0\]\.name: must be a lower-case DNS-label-safe value"),
+        ("dev.web", r"vms\.vms\[0\]\.name: must be a lower-case DNS-label-safe value"),
+        ("-dev", r"vms\.vms\[0\]\.name: must be a lower-case DNS-label-safe value"),
+        ("dev-", r"vms\.vms\[0\]\.name: must be a lower-case DNS-label-safe value"),
+        ("a" * 64, r"vms\.vms\[0\]\.name: must be a lower-case DNS-label-safe value"),
+        ("", r"vms\.vms\[0\]\.name: must be a non-empty string"),
+    ],
+)
+def test_validation_rejects_invalid_vm_names(value: str, message: str) -> None:
+    doc = copy.deepcopy(load_yaml(VMS_PATH))
+    doc["vms"][0]["name"] = value
+
+    with pytest.raises(ValidationError, match=message):
+        validate_vms(doc, cluster_state())
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("ansible_groups", ["dev", "dev"], r"vms\.vms\[0\]\.ansible_groups: duplicate ansible_groups value dev"),
+        ("ansible_groups", ["dev", 1], r"vms\.vms\[0\]\.ansible_groups\[1\]: must be a non-empty string"),
+        ("ansible_groups", ["dev", ""], r"vms\.vms\[0\]\.ansible_groups\[1\]: must be a non-empty string"),
+        ("ansible_groups", ["dev", "dev-web"], r"vms\.vms\[0\]\.ansible_groups\[1\]: must be a lower-case Ansible-safe identifier"),
+        ("ansible_groups", ["dev", "dev web"], r"vms\.vms\[0\]\.ansible_groups\[1\]: must be a lower-case Ansible-safe identifier"),
+        ("tags", ["dev", "dev"], r"vms\.vms\[0\]\.tags: duplicate tag dev"),
+        ("tags", ["dev", 1], r"vms\.vms\[0\]\.tags\[1\]: must be a non-empty string"),
+        ("tags", ["dev", ""], r"vms\.vms\[0\]\.tags\[1\]: must be a non-empty string"),
+        ("tags", ["dev", "dev,ops"], r"vms\.vms\[0\]\.tags\[1\]: must be a lower-case PVE tag token"),
+        ("tags", ["dev", "dev ops"], r"vms\.vms\[0\]\.tags\[1\]: must be a lower-case PVE tag token"),
+    ],
+)
+def test_validation_rejects_invalid_and_duplicate_string_lists(field: str, value: list[object], message: str) -> None:
+    doc = copy.deepcopy(load_yaml(VMS_PATH))
+    doc["vms"][0][field] = value
+
+    with pytest.raises(ValidationError, match=message):
+        validate_vms(doc, cluster_state())
+
+
+@pytest.mark.parametrize(
+    ("static_ip", "message"),
+    [
+        ("not-a-cidr", r"vms\.vms\[0\]\.static_ip: must be a valid CIDR-style IP interface"),
+        ("10.10.0.20/25", r"vms\.vms\[0\]\.static_ip: must use prefix /24"),
+        ("2001:db8::20/24", r"vms\.vms\[0\]\.static_ip: address family must match dev \(10.10.0.0/24\)"),
+        ("10.20.0.20/24", r"vms\.vms\[0\]\.static_ip: must be inside dev \(10.10.0.0/24\)"),
+        ("10.10.0.0/24", r"vms\.vms\[0\]\.static_ip: must not be the network address 10.10.0.0"),
+        ("10.10.0.255/24", r"vms\.vms\[0\]\.static_ip: must not be the broadcast address 10.10.0.255"),
+    ],
+)
+def test_validation_rejects_static_ip_shape_prefix_and_network_bounds(static_ip: str, message: str) -> None:
+    doc = copy.deepcopy(load_yaml(VMS_PATH))
+    doc["vms"][0]["static_ip"] = static_ip
+
+    with pytest.raises(ValidationError, match=message):
+        validate_vms(doc, cluster_state())
+
+
+def test_validation_rejects_duplicate_static_ip() -> None:
+    doc = copy.deepcopy(load_yaml(VMS_PATH))
+    doc["vms"][1]["network"] = "dev"
+    doc["vms"][1]["gateway"] = "10.10.0.254"
+    doc["vms"][1]["dns"] = ["10.10.0.254"]
+    doc["vms"][1]["static_ip"] = doc["vms"][0]["static_ip"]
+
+    with pytest.raises(ValidationError, match=r"vms\.vms\[1\]\.static_ip: duplicate IP 10.10.0.20"):
+        validate_vms(doc, cluster_state())
+
+
+def test_current_vm_inventory_remains_valid() -> None:
+    normalized = validate_vms(load_yaml(VMS_PATH), cluster_state())
+    assert [vm["name"] for vm in normalized] == ["dev-web-01", "prod-app-01", "media-lab-01"]
 
 
 def test_pve_cli_validation_failure_exits_1_without_traceback(tmp_path: Path) -> None:
