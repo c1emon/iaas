@@ -8,7 +8,7 @@ from typing import Any, cast
 from scripts.common.errors import ValidationError, require
 from scripts.common.io import load_json, write_text
 
-from scripts.pve_inventory.cloud_init_helpers.model import CloudInitSnippet, MANIFEST_SCHEMA_VERSION, MANIFEST_FILE_NAME, sha256_hex
+from .model import CloudInitSnippet, MANIFEST_FILE_NAME, MANIFEST_SCHEMA_VERSION, sha256_hex, validate_sha256_hex, validate_snippet_file_name, validate_storage_id
 
 
 def manifest_path(output_dir: Path) -> Path:
@@ -16,6 +16,7 @@ def manifest_path(output_dir: Path) -> Path:
 
 
 def build_manifest(snippets: list[CloudInitSnippet], tfvars_path: Path, storage_id: str) -> dict[str, Any]:
+    validate_storage_id(storage_id)
     tfvars_bytes = tfvars_path.read_bytes()
     return {
         "schema_version": MANIFEST_SCHEMA_VERSION,
@@ -41,6 +42,7 @@ def write_rendered_artifacts(snippets: list[CloudInitSnippet], tfvars_path: Path
     output_dir.mkdir(parents=True, exist_ok=True)
     written_snippets: list[CloudInitSnippet] = []
     for snippet in snippets:
+        validate_snippet_file_name(snippet.file_name)
         snippet_path = output_dir / snippet.file_name
         write_text(snippet_path, snippet.content, secure=True)
         snippet_bytes = snippet_path.read_bytes()
@@ -60,6 +62,7 @@ def write_rendered_artifacts(snippets: list[CloudInitSnippet], tfvars_path: Path
 
 
 def load_rendered_artifacts(output_dir: Path, storage_id: str) -> list[CloudInitSnippet]:
+    validate_storage_id(storage_id)
     manifest_file = manifest_path(output_dir)
     if not manifest_file.exists():
         raise ValidationError(f"{manifest_file}: missing manifest for rendered cloud-init snippets")
@@ -68,6 +71,7 @@ def load_rendered_artifacts(output_dir: Path, storage_id: str) -> list[CloudInit
     require(payload.get("schema_version") == MANIFEST_SCHEMA_VERSION, f"{manifest_file}: unsupported manifest schema version")
     manifest_storage_id = payload.get("storage_id")
     require(isinstance(manifest_storage_id, str) and manifest_storage_id, f"{manifest_file}: storage_id must be a non-empty string")
+    validate_storage_id(manifest_storage_id)
     require(manifest_storage_id == storage_id, f"{manifest_file}: storage_id does not match --storage-id")
     snippets_data = payload.get("snippets")
     require(isinstance(snippets_data, list) and snippets_data, f"{manifest_file}: snippets must be a non-empty list")
@@ -87,13 +91,15 @@ def load_rendered_artifacts(output_dir: Path, storage_id: str) -> list[CloudInit
         require(isinstance(file_name, str) and file_name, f"{manifest_file}: snippet file_name must be a non-empty string")
         require(isinstance(file_id, str) and file_id, f"{manifest_file}: snippet file_id must be a non-empty string")
         require(isinstance(byte_count, int) and byte_count >= 0, f"{manifest_file}: snippet byte_count must be a non-negative integer")
-        require(isinstance(expected_sha256, str) and len(expected_sha256) == 64, f"{manifest_file}: snippet sha256 must be a 64-character hex string")
+        require(isinstance(expected_sha256, str), f"{manifest_file}: snippet sha256 must be a 64-character hex string")
         vmid_int = cast(int, vmid)
         name_str = cast(str, name)
         file_name_str = cast(str, file_name)
         file_id_str = cast(str, file_id)
         byte_count_int = cast(int, byte_count)
         expected_sha256_str = cast(str, expected_sha256)
+        validate_snippet_file_name(file_name_str)
+        validate_sha256_hex(expected_sha256_str)
 
         snippet_path = output_dir / file_name_str
         if not snippet_path.exists():

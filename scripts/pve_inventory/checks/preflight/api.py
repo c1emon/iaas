@@ -17,7 +17,7 @@ from typing import Any, Callable, cast
 from ...pve_api.errors import PveApiAuthenticationError, PveApiError, PveApiNotConfiguredError, PveApiUnavailableError, redact_sensitive_text
 from ...pve_api.protocol import PveReadOnlyApi
 from ...pve_api.runtime import PveOnlineRuntimeContext as RuntimeConfig
-from ..results import CheckResult
+from ..results import CheckResult, Severity
 from .model import DerivedResources
 
 
@@ -171,8 +171,8 @@ def create_api_client(runtime: RuntimeConfig) -> ProxmoxAPI:
     )
 
 
-def _emit(results: list[CheckResult], severity: str, check_id: str, message: str) -> None:
-    results.append(CheckResult(severity=cast(Any, severity), check_id=check_id, message=message))
+def _emit(results: list[CheckResult], severity: Severity, check_id: str, message: str) -> None:
+    results.append(CheckResult(severity=severity, check_id=check_id, message=message))
 
 
 def _node_index(client: PveReadOnlyApi, results: list[CheckResult], secrets: list[str]) -> set[str] | None:

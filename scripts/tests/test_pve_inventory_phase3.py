@@ -6,6 +6,7 @@ import copy
 import hashlib
 import json
 import os
+import shlex
 import subprocess
 import sys
 from argparse import Namespace
@@ -123,7 +124,7 @@ def test_cloud_init_upload_and_verify_use_existing_manifest_without_rerender(mon
     cloud_init_main(["upload", "--output-dir", str(tmp_path), "--storage-id", "images", "--pve-host", "pve-01", "--ssh-user", "ops"])
     cloud_init_main(["verify", "--output-dir", str(tmp_path), "--storage-id", "images", "--pve-host", "pve-01", "--ssh-user", "ops"])
 
-    assert any("--verify" in argv and "--sha256" in argv for argv in calls)
+    assert any("--verify" in argv[2] and "--sha256" in argv[2] for argv in calls)
 
 
 def test_cloud_init_load_rendered_artifacts_rejects_checksum_mismatch(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -189,6 +190,138 @@ def test_cloud_init_verify_nonzero_exit_is_operator_readable(monkeypatch: pytest
 
     assert snippet.file_name in str(excinfo.value)
     assert snippet.name in str(excinfo.value)
+
+
+@pytest.mark.parametrize("command", [["sudo", "--flag", "value with spaces", "a'b"]])
+def test_cloud_init_ssh_quotes_remote_command_as_a_single_argv_item(command: list[str]) -> None:
+    assert cloud_init_ssh._quote_remote_command(command) == " ".join(shlex.quote(part) for part in command)
+
+
+def test_cloud_init_ssh_builds_single_quoted_remote_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    snippet = CloudInitSnippet(
+        vmid=501,
+        name="media-lab-01",
+        file_name="opentofu-vm-501-user-data.yml",
+        file_id="images:snippets/opentofu-vm-501-user-data.yml",
+        content="hostname: media-lab-01\n",
+        byte_count=23,
+        sha256="a" * 64,
+    )
+    args = Namespace(storage_id="images", pve_host="pve-01", ssh_user="ops", ssh_timeout=30.0)
+    calls: list[list[str]] = []
+
+    def fake_run(argv: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[object]:
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(cloud_init_ssh.subprocess, "run", fake_run)
+
+    cloud_init_ssh.run_ssh_snippet_command(
+        snippet,
+        args,
+        ["sudo", "-n", "/usr/local/sbin/astra-pve-snippet-upload", "--storage", "images", "--filename", snippet.file_name],
+        input_text=snippet.content,
+    )
+
+    assert calls == [["ssh", "ops@pve-01", "sudo -n /usr/local/sbin/astra-pve-snippet-upload --storage images --filename opentofu-vm-501-user-data.yml"]]
+
+
+@pytest.mark.parametrize("action", [cloud_init_ssh.upload_snippets, cloud_init_ssh.verify_snippets])
+def test_cloud_init_ssh_rejects_unsafe_storage_id_before_ssh(monkeypatch: pytest.MonkeyPatch, action: Any) -> None:
+    snippet = CloudInitSnippet(
+        vmid=501,
+        name="media-lab-01",
+        file_name="opentofu-vm-501-user-data.yml",
+        file_id="images:snippets/opentofu-vm-501-user-data.yml",
+        content="hostname: media-lab-01\n",
+        byte_count=23,
+        sha256="a" * 64,
+    )
+    args = Namespace(storage_id="bad id", pve_host="pve-01", ssh_user="ops", ssh_timeout=30.0)
+    calls: list[list[str]] = []
+
+    def fake_run(argv: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[object]:
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(cloud_init_ssh.subprocess, "run", fake_run)
+
+    with pytest.raises(ValidationError, match="storage_id"):
+        action([snippet], args)
+
+    assert calls == []
+
+
+@pytest.mark.parametrize("file_name", ["a/b.yml", "../evil.yml", "bad;name.yml"])
+@pytest.mark.parametrize("action", [cloud_init_ssh.upload_snippets, cloud_init_ssh.verify_snippets])
+def test_cloud_init_ssh_rejects_unsafe_file_names_before_ssh(monkeypatch: pytest.MonkeyPatch, action: Any, file_name: str) -> None:
+    snippet = CloudInitSnippet(
+        vmid=501,
+        name="media-lab-01",
+        file_name=file_name,
+        file_id=f"images:snippets/{file_name}",
+        content="hostname: media-lab-01\n",
+        byte_count=23,
+        sha256="a" * 64,
+    )
+    args = Namespace(storage_id="images", pve_host="pve-01", ssh_user="ops", ssh_timeout=30.0)
+    calls: list[list[str]] = []
+
+    def fake_run(argv: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[object]:
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(cloud_init_ssh.subprocess, "run", fake_run)
+
+    with pytest.raises(ValidationError, match="file_name"):
+        action([snippet], args)
+
+    assert calls == []
+
+
+def test_cloud_init_verify_rejects_non_hex_sha256_before_ssh(monkeypatch: pytest.MonkeyPatch) -> None:
+    snippet = CloudInitSnippet(
+        vmid=501,
+        name="media-lab-01",
+        file_name="opentofu-vm-501-user-data.yml",
+        file_id="images:snippets/opentofu-vm-501-user-data.yml",
+        content="hostname: media-lab-01\n",
+        byte_count=23,
+        sha256="g" * 64,
+    )
+    args = Namespace(storage_id="images", pve_host="pve-01", ssh_user="ops", ssh_timeout=30.0)
+    calls: list[list[str]] = []
+
+    def fake_run(argv: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[object]:
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(cloud_init_ssh.subprocess, "run", fake_run)
+
+    with pytest.raises(ValidationError, match="sha256"):
+        cloud_init_ssh.verify_snippets([snippet], args)
+
+    assert calls == []
+
+
+def test_cloud_init_load_rendered_artifacts_rejects_unsafe_manifest_values(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("PVE_VM_CLEMON_PASSWORD", "clemon-password")
+    monkeypatch.setenv("PVE_VM_CLEMON_PUBLIC_KEY", "ssh-ed25519 AAAAclemon clemon@example")
+    monkeypatch.setenv("PVE_VM_OPS_PASSWORD", "ops-password")
+    monkeypatch.setenv("PVE_VM_OPS_PUBLIC_KEY", "ssh-ed25519 AAAAops ops@example")
+
+    tfvars_path = ROOT / "infra" / "tofu" / "pve" / "generated.auto.tfvars.json"
+    snippets = render_snippets(tfvars_path, "images")
+    write_rendered_artifacts(snippets, tfvars_path, "images", tmp_path)
+
+    manifest_path = tmp_path / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["snippets"][0]["file_name"] = "../evil.yml"
+    manifest["snippets"][0]["sha256"] = "g" * 64
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValidationError, match="file_name|sha256"):
+        load_rendered_artifacts(tmp_path, "images")
 
 
 def test_cloud_init_storage_roles_split_by_purpose() -> None:

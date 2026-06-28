@@ -9,9 +9,9 @@ import yaml
 from scripts.common.errors import ValidationError, require
 from scripts.common.io import load_json
 
-from scripts.pve_inventory.cloud_init_helpers.model import CloudInitSnippet, sha256_hex, snippet_storage_path
-from scripts.pve_inventory.paths import DEFAULT_TFVARS
-from scripts.pve_inventory.secrets import hash_cloud_init_password
+from ..paths import DEFAULT_TFVARS
+from ..secrets import hash_cloud_init_password
+from .model import CloudInitSnippet, sha256_hex, snippet_storage_path, validate_storage_id
 
 
 def read_required_env(name: str) -> str:
@@ -133,6 +133,7 @@ def render_snippets(tfvars_path: Path, storage_id: str) -> list[CloudInitSnippet
     vms = payload.get("vms", [])
     require(isinstance(vms, list), f"{tfvars_path}: vms must be a list")
     cluster, snippet_storage_role, snippet_file_prefix, defaults, users = load_automation_cloud_init(payload, tfvars_path)
+    validate_storage_id(storage_id)
     snippets_datastore = resolve_snippets_datastore(cluster, tfvars_path, snippet_storage_role)
     require(storage_id == snippets_datastore, f"--storage-id {storage_id} must match cluster.automation.cloud_init snippet datastore {snippets_datastore}")
     required_env_vars = []

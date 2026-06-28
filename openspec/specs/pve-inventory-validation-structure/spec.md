@@ -2,22 +2,24 @@
 
 ## Purpose
 
-Define the modular structure and compatibility boundary for PVE inventory validation code.
+Define the modular structure and supported import boundaries for PVE inventory validation code.
 
 ## Requirements
 
 ### Requirement: Modular PVE inventory validation structure
-The system SHALL organize PVE inventory validation implementation into focused modules while preserving the existing public validation entrypoints.
+The system SHALL organize PVE inventory validation implementation into focused modules while preserving offline validation command behavior.
 
-#### Scenario: Import existing validation entrypoints
-- **WHEN** Python callers import `validate_cluster` or `validate_vms` from `scripts.pve_inventory.validation`
-- **THEN** the imports SHALL continue to resolve successfully
+#### Scenario: Import concrete validation helpers
+- **WHEN** Python callers need PVE inventory validation helpers
+- **THEN** cluster validation helpers SHALL be importable from `scripts.pve_inventory.inventory.validation.cluster`
+- **AND** VM validation helpers SHALL be importable from `scripts.pve_inventory.inventory.validation.vm`
 - **AND** the imported functions SHALL validate the same cluster and VM source-of-truth YAML as before the split
+- **AND** callers SHALL NOT need the obsolete top-level `scripts.pve_inventory.validation` compatibility facade
 
 #### Scenario: Keep shared validation helpers cycle-free
 - **WHEN** cluster, VM, or passthrough validation code needs shared schema assertion helpers
 - **THEN** the helpers SHALL be available from a common validation module
-- **AND** passthrough validation SHALL NOT need to import helpers through the public `validation.py` façade
+- **AND** passthrough validation SHALL NOT need to import helpers through an obsolete top-level validation facade
 
 #### Scenario: Preserve offline validation behavior
 - **WHEN** operators run the existing PVE inventory validation or stale-output check commands

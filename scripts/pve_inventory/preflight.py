@@ -52,6 +52,7 @@ def run_preflight(
     """Run the full read-only preflight and return structured results."""
     results: list[CheckResult] = []
     if api_client is None:
+        # Validate the API runtime inputs before deriving the online context/client.
         load_api_runtime_config(environ)
     runtime: PveOnlineRuntimeContext = load_online_runtime_context(environ)
 

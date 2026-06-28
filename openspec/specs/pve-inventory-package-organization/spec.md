@@ -58,10 +58,11 @@ The system SHALL organize offline PVE inventory model, rendering, and validation
 - **THEN** PVE API transport/runtime/error/protocol concerns SHALL remain in the existing `pve_api` package rather than moving under the offline inventory package
 - **AND** online check helpers SHALL remain under check-oriented packages rather than being merged into offline inventory model or rendering helpers
 
-#### Scenario: Top-level validation facade remains stable
-- **WHEN** repository tests or callers intentionally import validation helpers from `scripts.pve_inventory.validation`
-- **THEN** that validation facade SHALL continue to expose the stable validation helpers needed by existing commands and tests
-- **AND** moved internal validation implementation modules SHALL NOT require callers to import from obsolete top-level helper paths
+#### Scenario: Validation helpers use concrete package paths
+- **WHEN** repository code or tests need PVE inventory validation helpers after package reorganization
+- **THEN** cluster validation helpers SHALL be imported from `scripts.pve_inventory.inventory.validation.cluster`
+- **AND** VM validation helpers SHALL be imported from `scripts.pve_inventory.inventory.validation.vm`
+- **AND** the obsolete top-level `scripts.pve_inventory.validation` compatibility facade SHALL NOT be required for commands or tests
 
 ### Requirement: Package refactor preserves offline-safe validation
 The system SHALL keep package reorganization as an internal refactor that does not widen validation or live-access behavior.

@@ -1,12 +1,24 @@
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 from argparse import Namespace
 
 from scripts.common.errors import ValidationError, require
 
-from scripts.pve_inventory.cloud_init_helpers.model import CloudInitSnippet, DEFAULT_SSH_TIMEOUT_SECONDS
+from .model import CloudInitSnippet, DEFAULT_SSH_TIMEOUT_SECONDS, validate_sha256_hex, validate_snippet_file_name, validate_storage_id
+
+
+def _quote_remote_command(command: list[str]) -> str:
+    return " ".join(shlex.quote(part) for part in command)
+
+
+def _validate_ssh_inputs(snippet: CloudInitSnippet, storage_id: str, verify: bool = False) -> None:
+    validate_storage_id(storage_id)
+    validate_snippet_file_name(snippet.file_name)
+    if verify:
+        validate_sha256_hex(snippet.sha256)
 
 
 def resolve_ssh_timeout(arg_timeout: float | None) -> float:
@@ -26,7 +38,7 @@ def resolve_ssh_timeout(arg_timeout: float | None) -> float:
 
 def run_ssh_snippet_command(snippet: CloudInitSnippet, args: Namespace, command: list[str], input_text: str | None = None) -> None:
     remote = f"{args.ssh_user}@{args.pve_host}"
-    ssh_argv = ["ssh", remote, *command]
+    ssh_argv = ["ssh", remote, _quote_remote_command(command)]
     timeout = resolve_ssh_timeout(getattr(args, "ssh_timeout", None))
     try:
         subprocess.run(
@@ -50,6 +62,8 @@ def run_ssh_snippet_command(snippet: CloudInitSnippet, args: Namespace, command:
 
 def upload_snippets(snippets: list[CloudInitSnippet], args: Namespace) -> None:
     for snippet in snippets:
+        _validate_ssh_inputs(snippet, args.storage_id)
+    for snippet in snippets:
         run_ssh_snippet_command(
             snippet,
             args,
@@ -67,6 +81,8 @@ def upload_snippets(snippets: list[CloudInitSnippet], args: Namespace) -> None:
 
 
 def verify_snippets(snippets: list[CloudInitSnippet], args: Namespace) -> None:
+    for snippet in snippets:
+        _validate_ssh_inputs(snippet, args.storage_id, verify=True)
     for snippet in snippets:
         run_ssh_snippet_command(
             snippet,

@@ -1,4 +1,4 @@
-"""Render and upload runtime cloud-init user-data snippets for Section 4A."""
+"""Render, upload, and verify runtime cloud-init user-data snippets."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ from pathlib import Path
 from scripts.common.errors import ValidationError
 
 from .paths import DEFAULT_TFVARS, DEFAULT_USER_DATA_DIR
-from scripts.pve_inventory.cloud_init_helpers.artifacts import load_rendered_artifacts, write_rendered_artifacts
-from scripts.pve_inventory.cloud_init_helpers.render import render_snippets
-from scripts.pve_inventory.cloud_init_helpers.ssh import upload_snippets, verify_snippets
+from .cloud_init_helpers.artifacts import load_rendered_artifacts, write_rendered_artifacts
+from .cloud_init_helpers.render import render_snippets
+from .cloud_init_helpers.ssh import upload_snippets, verify_snippets
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
