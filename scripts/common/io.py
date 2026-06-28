@@ -1,19 +1,19 @@
-"""File and YAML I/O helpers for the inventory tool."""
+"""Shared file and text I/O helpers."""
 
 from __future__ import annotations
 
 import json
 import os
 import tempfile
-import yaml
 from pathlib import Path
 from typing import Any, cast
+
+import yaml
 
 from .errors import ValidationError, require
 
 
 def load_yaml(path: Path) -> dict[str, Any]:
-    """Load a YAML mapping from disk."""
     try:
         with path.open("r", encoding="utf-8") as handle:
             data = yaml.safe_load(handle)
@@ -26,7 +26,6 @@ def load_yaml(path: Path) -> dict[str, Any]:
 
 
 def write_text(path: Path, text: str, secure: bool = False) -> None:
-    """Write a UTF-8 text file, creating parent directories."""
     path.parent.mkdir(parents=True, exist_ok=True)
     if not secure:
         path.write_text(text, encoding="utf-8")
@@ -50,7 +49,6 @@ def write_text(path: Path, text: str, secure: bool = False) -> None:
 
 
 def load_json(path: Path) -> Any:
-    """Load JSON from disk."""
     try:
         with path.open("r", encoding="utf-8") as handle:
             return json.load(handle)
@@ -61,7 +59,6 @@ def load_json(path: Path) -> Any:
 
 
 def check_text_file(path: Path, expected_text: str) -> bool:
-    """Return True when the file bytes match the expected text."""
     try:
         existing = path.read_text(encoding="utf-8")
     except OSError:
@@ -70,15 +67,14 @@ def check_text_file(path: Path, expected_text: str) -> bool:
 
 
 def check_outputs(expected: dict[str, str], paths: dict[str, Path]) -> list[str]:
-    """Return stale/missing output paths in deterministic order."""
     mismatches: list[str] = []
-    for key in ("tfvars", "ansible", "docs", "template_build_env"):
+    for key, expected_text in expected.items():
         path = paths[key]
-        try:
-            existing = path.read_text(encoding="utf-8")
-        except OSError:
-            mismatches.append(f"missing: {path}")
-            continue
-        if existing != expected[key]:
-            mismatches.append(f"stale: {path}")
+        if not check_text_file(path, expected_text):
+            try:
+                path.read_text(encoding="utf-8")
+            except OSError:
+                mismatches.append(f"missing: {path}")
+            else:
+                mismatches.append(f"stale: {path}")
     return mismatches

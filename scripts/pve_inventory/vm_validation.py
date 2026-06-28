@@ -6,8 +6,8 @@ import ipaddress
 import re
 from typing import Any, cast
 
-from .errors import ValidationError, require
-from .validation_common import as_list, as_mapping, require_bool, require_positive_int, require_unknown_keys
+from scripts.common.errors import ValidationError, require
+from scripts.common.validation import as_list, as_mapping, require_bool, require_positive_int, require_unknown_keys
 
 
 DNS_LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")

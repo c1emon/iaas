@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from importlib import import_module
 
-from .errors import ValidationError
+from scripts.common.errors import ValidationError
 
 
 def hash_cloud_init_password(password: str) -> str:

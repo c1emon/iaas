@@ -11,8 +11,9 @@ import argparse
 import sys
 from pathlib import Path
 
-from .errors import ValidationError
-from .io import load_yaml
+from scripts.common.errors import ValidationError
+from scripts.common.io import load_yaml
+
 from .model import build_model
 from .paths import DEFAULT_CLUSTER, DEFAULT_VMS
 from .preflight_api import ProxmoxAPI, create_api_client, run_api_checks

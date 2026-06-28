@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from .errors import ValidationError
+from scripts.common.errors import ValidationError
 
 
 @dataclass(frozen=True)

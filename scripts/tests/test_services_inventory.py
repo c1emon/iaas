@@ -10,9 +10,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from scripts.pve_inventory.errors import ValidationError
+from scripts.common.errors import ValidationError
+from scripts.common.io import load_yaml
 from scripts.services_inventory.cli import main as services_main
-from scripts.services_inventory.io import load_yaml
 from scripts.services_inventory.model import build_model
 from scripts.services_inventory.render import build_markdown
 from scripts.services_inventory.validation import load_vm_names, validate_services

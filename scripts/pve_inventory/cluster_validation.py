@@ -6,8 +6,8 @@ import ipaddress
 import re
 from typing import Any, cast
 
-from .errors import require
-from .validation_common import as_list, as_mapping, require_bool, require_non_empty_string, require_positive_int, require_unknown_keys, require_url_like
+from scripts.common.errors import require
+from scripts.common.validation import as_list, as_mapping, require_bool, require_non_empty_string, require_positive_int, require_unknown_keys, require_url_like
 
 
 def validate_automation(cluster_doc: dict[str, Any], storage_roles: dict[str, Any], templates: dict[str, Any], networks: dict[str, Any]) -> dict[str, Any]:
