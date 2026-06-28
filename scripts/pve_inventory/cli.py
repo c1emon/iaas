@@ -6,8 +6,10 @@ import argparse
 import sys
 from pathlib import Path
 
-from .errors import ValidationError
-from .io import check_outputs, load_yaml, write_text
+from scripts.common.cli import run_validation_cli
+from scripts.common.errors import ValidationError
+from scripts.common.io import check_outputs, load_yaml, write_text
+
 from .model import build_model
 from .paths import DEFAULT_ANSIBLE, DEFAULT_CLUSTER, DEFAULT_DOCS, DEFAULT_TEMPLATE_BUILD_ENV, DEFAULT_TFVARS, DEFAULT_VMS
 from .render import render_outputs
@@ -56,13 +58,5 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _run() -> int:
-    try:
-        return main()
-    except ValidationError as exc:
-        print(f"FAIL validation: {exc}", file=sys.stderr)
-        return 1
-
-
 if __name__ == "__main__":
-    raise SystemExit(_run())
+    raise SystemExit(run_validation_cli(main))

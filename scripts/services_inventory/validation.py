@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
-from scripts.pve_inventory.errors import require
-from scripts.pve_inventory.validation_common import as_list, as_mapping, require_non_empty_string, require_unknown_keys, require_positive_int
+import re
+
+from scripts.common.errors import require
+from scripts.common.validation import as_list, as_mapping, require_non_empty_string, require_positive_int, require_unknown_keys
 
 
 SERVICE_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")

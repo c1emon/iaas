@@ -6,9 +6,10 @@ import argparse
 import sys
 from pathlib import Path
 
-from scripts.pve_inventory.errors import ValidationError
+from scripts.common.cli import run_validation_cli
+from scripts.common.errors import ValidationError
+from scripts.common.io import load_yaml, write_text
 
-from .io import load_yaml, write_text
 from .model import build_model
 from .paths import DEFAULT_DOCS, DEFAULT_SERVICES, DEFAULT_VMS
 from .render import build_markdown
@@ -64,13 +65,5 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _run() -> int:
-    try:
-        return main()
-    except ValidationError as exc:
-        print(f"FAIL validation: {exc}", file=sys.stderr)
-        return 1
-
-
 if __name__ == "__main__":
-    raise SystemExit(_run())
+    raise SystemExit(run_validation_cli(main))

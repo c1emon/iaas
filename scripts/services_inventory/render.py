@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from scripts.common.markdown import escape_table_cell
+
 
 def _hint_text(endpoint: dict[str, Any]) -> str:
     parts: list[str] = []
@@ -23,10 +25,7 @@ def _endpoint_label(endpoint: dict[str, Any]) -> str:
 
 
 def _escape_cell(value: Any) -> str:
-    text = "-" if value is None or value == "" else str(value)
-    if text == "-":
-        return text
-    return text.replace("\r\n", "<br>").replace("\r", "<br>").replace("\n", "<br>").replace("|", "\\|")
+    return escape_table_cell(value)
 
 
 def build_markdown(model: dict[str, Any]) -> str:

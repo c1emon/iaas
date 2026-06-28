@@ -7,7 +7,7 @@ from typing import Any
 
 import yaml
 
-from .errors import require
+from scripts.common.errors import require
 
 
 def build_tfvars(model: dict[str, Any]) -> str:

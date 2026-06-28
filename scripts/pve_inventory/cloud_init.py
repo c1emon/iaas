@@ -15,8 +15,9 @@ from typing import Any, cast
 
 import yaml
 
-from .errors import ValidationError, require
-from .io import load_json, write_text
+from scripts.common.errors import ValidationError, require
+from scripts.common.io import load_json, write_text
+
 from .paths import DEFAULT_TFVARS, DEFAULT_USER_DATA_DIR
 from .secrets import hash_cloud_init_password
 

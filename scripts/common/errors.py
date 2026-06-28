@@ -10,6 +10,5 @@ class ValidationError(ValueError):
 
 
 def require(condition: Any, message: str) -> None:
-    """Raise ValidationError when a condition is false."""
     if not condition:
         raise ValidationError(message)
