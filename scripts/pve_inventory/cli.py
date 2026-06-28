@@ -10,9 +10,9 @@ from scripts.common.cli import run_validation_cli
 from scripts.common.errors import ValidationError
 from scripts.common.io import check_outputs, load_yaml, write_text
 
-from .model import build_model
+from .inventory.model import build_model
 from .paths import DEFAULT_ANSIBLE, DEFAULT_CLUSTER, DEFAULT_DOCS, DEFAULT_TEMPLATE_BUILD_ENV, DEFAULT_TFVARS, DEFAULT_VMS
-from .render import render_outputs
+from .inventory.render import render_outputs
 from .validation import validate_cluster, validate_vms
 
 

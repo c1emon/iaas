@@ -17,8 +17,8 @@ import yaml
 
 import scripts.pve_inventory.cloud_init as cloud_init
 from scripts.common.io import load_yaml
-from scripts.pve_inventory.model import build_model
-from scripts.pve_inventory.render import render_outputs
+from scripts.pve_inventory.inventory.model import build_model
+from scripts.pve_inventory.inventory.render import render_outputs
 from scripts.common.errors import ValidationError
 from scripts.pve_inventory.validation import validate_cluster, validate_vms
 

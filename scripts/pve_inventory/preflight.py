@@ -19,7 +19,7 @@ from .checks.preflight.api import ProxmoxAPI, create_api_client, run_api_checks
 from .checks.preflight.model import DerivedResources, derive_expected_resources
 from .checks.preflight.ssh import run_ssh_checks
 from .checks.results import CheckResult, has_failures, render_report
-from .model import build_model
+from .inventory.model import build_model
 from .paths import DEFAULT_CLUSTER, DEFAULT_VMS
 from .pve_api.errors import redact_sensitive_text
 from .pve_api.protocol import PveReadOnlyApi

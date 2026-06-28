@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 
 from scripts.common.io import load_yaml
-from scripts.pve_inventory.model import build_model
+from scripts.pve_inventory.inventory.model import build_model
 from scripts.pve_inventory.preflight import (
     CheckResult,
     ProxmoxAPI,

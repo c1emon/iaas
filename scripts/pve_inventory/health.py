@@ -13,7 +13,7 @@ from typing import Any, Iterable
 from scripts.common.errors import ValidationError
 from scripts.common.io import load_yaml
 
-from .model import build_model
+from .inventory.model import build_model
 from .paths import DEFAULT_CLUSTER, DEFAULT_VMS
 from .pve_api import (
     HealthApiRuntimeConfig,
