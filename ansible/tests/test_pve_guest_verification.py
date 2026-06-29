@@ -75,7 +75,9 @@ def test_make_targets_and_playbook_are_ansible_first() -> None:
     assert "ansible.builtin.service_facts:" in tasks_file
     assert "ansible.builtin.slurp:" in tasks_file
     assert "ansible.builtin.command: sudo -n true" in tasks_file
-    assert "ansible.builtin.command: sshd -T" in tasks_file
+    assert "ansible.builtin.command: sudo -n /usr/sbin/sshd -T" in tasks_file
+    assert "ansible_hostname" in tasks_file
+    assert "ansible_all_ipv4_addresses" in tasks_file
     assert "python3" not in tasks_file
     assert "from_json" not in tasks_file
     for secret_marker in ("IdentityFile", "id_rsa", "BEGIN OPENSSH PRIVATE KEY"):
