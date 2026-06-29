@@ -8,20 +8,30 @@ symbols from here.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+from typing import TYPE_CHECKING
 from pathlib import Path
 
 from scripts.common.errors import ValidationError
 from scripts.common.io import load_yaml
 
-from .model import build_model
+from .checks.preflight.api import create_api_client, run_api_checks
+from .checks.preflight.model import derive_expected_resources
+from .checks.preflight.ssh import run_ssh_checks
+from .checks.results import has_failures, render_report
+from .inventory.model import build_model
+from .inventory.validation.cluster import validate_cluster
+from .inventory.validation.vm import validate_vms
 from .paths import DEFAULT_CLUSTER, DEFAULT_VMS
-from .preflight_api import ProxmoxAPI, create_api_client, run_api_checks
-from .preflight_config import RuntimeConfig, load_runtime_config, load_runtime_context
-from .preflight_model import DerivedResources, derive_expected_resources
-from .preflight_results import CheckResult, has_failures, render_report
-from .preflight_ssh import run_ssh_checks
-from .validation import validate_cluster, validate_vms
+from .pve_api.errors import redact_sensitive_text
+from .pve_api.runtime import PveOnlineRuntimeContext, load_api_runtime_config, load_online_runtime_context
+
+if TYPE_CHECKING:
+    from .checks.preflight.api import ProxmoxAPI
+    from .checks.preflight.model import DerivedResources
+    from .checks.results import CheckResult
+    from .pve_api.protocol import PveReadOnlyApi
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -36,12 +46,15 @@ def run_preflight(
     cluster_path: Path = DEFAULT_CLUSTER,
     vms_path: Path = DEFAULT_VMS,
     environ: dict[str, str] | None = None,
-    api_client: ProxmoxAPI | None = None,
+    api_client: PveReadOnlyApi | None = None,
     ssh_runner=None,
 ) -> list[CheckResult]:
     """Run the full read-only preflight and return structured results."""
     results: list[CheckResult] = []
-    runtime: RuntimeConfig = load_runtime_config(environ) if api_client is None else load_runtime_context(environ)
+    if api_client is None:
+        # Validate the API runtime inputs before deriving the online context/client.
+        load_api_runtime_config(environ)
+    runtime: PveOnlineRuntimeContext = load_online_runtime_context(environ)
 
     cluster_doc = load_yaml(cluster_path)
     cluster_state = validate_cluster(cluster_doc)
@@ -68,7 +81,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"FAIL model.validation: {exc}")
         return 1
     except Exception as exc:  # pragma: no cover
-        print(f"FAIL preflight: {exc}")
+        print(f"FAIL preflight: {redact_sensitive_text(str(exc), [os.environ.get('TF_VAR_pve_api_token_secret', '')])}")
         return 1
 
     print(render_report(results), end="")
@@ -77,15 +90,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
-__all__ = [
-    "CheckResult",
-    "ProxmoxAPI",
-    "derive_expected_resources",
-    "has_failures",
-    "main",
-    "parse_args",
-    "render_report",
-    "run_preflight",
-]

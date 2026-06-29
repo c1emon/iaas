@@ -95,7 +95,7 @@
   when: not (pve_guest_setup.unreachable | default(false) or pve_guest_setup.failed | default(false))
 
 - name: Inspect effective SSHD configuration for {{ pve_guest_name }}
-  ansible.builtin.command: sshd -T
+  ansible.builtin.command: sudo -n /usr/sbin/sshd -T
   delegate_to: "{{ pve_guest_name }}"
   register: pve_guest_sshd_config
   changed_when: false
@@ -126,7 +126,7 @@
   ansible.builtin.set_fact:
     pve_guest_results: "{{ pve_guest_results + [pve_guest_hostname_result] }}"
   vars:
-    pve_guest_hostname: "{{ pve_guest_facts.hostname | default('unknown') }}"
+    pve_guest_hostname: "{{ pve_guest_facts.ansible_hostname | default('unknown') }}"
     pve_guest_hostname_ok: "{{ pve_guest_hostname == pve_guest_name }}"
     pve_guest_hostname_result:
       severity: "{{ 'PASS' if pve_guest_hostname_ok else 'FAIL' }}"
@@ -138,7 +138,7 @@
   ansible.builtin.set_fact:
     pve_guest_results: "{{ pve_guest_results + [pve_guest_ip_result] }}"
   vars:
-    pve_guest_all_ipv4: "{{ pve_guest_facts.all_ipv4_addresses | default([]) }}"
+    pve_guest_all_ipv4: "{{ pve_guest_facts.ansible_all_ipv4_addresses | default([]) }}"
     pve_guest_ip_ok: "{{ pve_guest_declared_ip in pve_guest_all_ipv4 }}"
     pve_guest_ip_result:
       severity: "{{ 'PASS' if pve_guest_ip_ok else 'FAIL' }}"
@@ -175,7 +175,7 @@
     pve_guest_results: "{{ pve_guest_results + [pve_guest_root_ssh_result] }}"
   vars:
     pve_guest_root_login: "{{ (pve_guest_sshd_config.stdout_lines | default([]) | select('match', '^permitrootlogin ') | list | first | default('permitrootlogin unknown')).split()[1] | lower }}"
-    pve_guest_root_ssh_ok: "{{ pve_guest_root_login in ['no', 'prohibit-password', 'forced-commands-only'] }}"
+    pve_guest_root_ssh_ok: "{{ pve_guest_root_login in ['no', 'prohibit-password', 'without-password', 'forced-commands-only'] }}"
     pve_guest_root_ssh_result:
       severity: "{{ 'PASS' if pve_guest_root_ssh_ok else 'FAIL' }}"
       line: "{{ ('PASS' if pve_guest_root_ssh_ok else 'FAIL') ~ ' guest.' ~ pve_guest_name ~ '.root-ssh: ' ~ ('effective sshd config disables root login (' ~ pve_guest_root_login ~ ')' if pve_guest_root_ssh_ok else 'effective sshd config allows root login (' ~ pve_guest_root_login ~ ')') }}"

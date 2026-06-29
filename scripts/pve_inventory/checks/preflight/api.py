@@ -14,17 +14,11 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Callable, cast
 
-from .preflight_config import RuntimeConfig
-from .preflight_model import DerivedResources
-from .preflight_results import CheckResult
-
-
-def _redact(text: str, secrets: list[str]) -> str:
-    """Best-effort secret scrubbing for operator-visible messages."""
-    redacted = text
-    for secret in sorted({value for value in secrets if value}, key=len, reverse=True):
-        redacted = redacted.replace(secret, "<redacted>")
-    return redacted
+from ...pve_api.errors import PveApiAuthenticationError, PveApiError, PveApiNotConfiguredError, PveApiUnavailableError, redact_sensitive_text
+from ...pve_api.protocol import PveReadOnlyApi
+from ...pve_api.runtime import PveOnlineRuntimeContext as RuntimeConfig
+from ..results import CheckResult, Severity
+from .model import DerivedResources
 
 
 def _normalize_string_list(value: Any) -> set[str]:
@@ -89,30 +83,81 @@ class ProxmoxAPI:
         context = ssl._create_unverified_context() if self.insecure else ssl.create_default_context()
         return self.opener(request, context=context, timeout=self.timeout)
 
-    def get_json(self, path: str) -> Any:
+    def _safe_message(self, action: str, exc: Exception) -> str:
+        raw = str(exc)
+        if isinstance(exc, urllib.error.HTTPError):
+            body = exc.read().decode("utf-8", errors="replace") if hasattr(exc, "read") else ""
+            if body:
+                raw = f"{raw}: {body.strip()}"
+            raw = f"HTTP {exc.code}: {raw}"
+        return f"PVE API {action} failed: {redact_sensitive_text(raw, [self.api_token_secret])}".strip()
+
+    def _get_json(self, path: str) -> Any:
         """Fetch and decode a JSON API response without mutating state."""
         try:
             response = self._request(path)
             payload = response.read()
         except urllib.error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace") if hasattr(exc, "read") else ""
-            detail = f"HTTP {exc.code}"
-            if body:
-                detail = f"{detail}: {body.strip()}"
-            raise RuntimeError(detail) from exc
+            message = self._safe_message(path, exc)
+            if exc.code in {401, 403}:
+                raise PveApiAuthenticationError(message, status_code=exc.code) from None
+            if exc.code == 404:
+                raise PveApiNotConfiguredError(message, status_code=exc.code) from None
+            if 500 <= exc.code < 600:
+                raise PveApiUnavailableError(message, status_code=exc.code) from None
+            raise PveApiError(message, status_code=exc.code) from None
         except urllib.error.URLError as exc:
-            raise RuntimeError(str(exc.reason)) from exc
+            raise PveApiError(self._safe_message(path, exc)) from None
         except OSError as exc:
-            raise RuntimeError(str(exc)) from exc
+            raise PveApiError(self._safe_message(path, exc)) from None
 
         try:
             decoded = json.loads(payload.decode("utf-8"))
         except json.JSONDecodeError as exc:
-            raise RuntimeError(f"invalid JSON response: {exc}") from exc
+            raise PveApiError(self._safe_message(path, exc)) from None
 
         if isinstance(decoded, dict) and "data" in decoded:
             return decoded["data"]
         return decoded
+
+    def cluster_status(self) -> Any:
+        return self._get_json("/cluster/status")
+
+    def nodes(self) -> Any:
+        return self._get_json("/nodes")
+
+    def node_status(self, node: str) -> Any:
+        return self._get_json(f"/nodes/{urllib.parse.quote(node)}/status")
+
+    def node_network(self, node: str) -> Any:
+        return self._get_json(f"/nodes/{urllib.parse.quote(node)}/network")
+
+    def node_storage(self, node: str) -> Any:
+        return self._get_json(f"/nodes/{urllib.parse.quote(node)}/storage")
+
+    def cluster_vm_resources(self) -> Any:
+        return self._get_json("/cluster/resources?type=vm")
+
+    def vms(self, node: str) -> Any:
+        return self._get_json(f"/nodes/{urllib.parse.quote(node)}/qemu")
+
+    def vm_status(self, node: str, vmid: int) -> Any:
+        return self._get_json(f"/nodes/{urllib.parse.quote(node)}/qemu/{vmid}/status/current")
+
+    def vm_config(self, node: str, vmid: int) -> Any:
+        return self._get_json(f"/nodes/{urllib.parse.quote(node)}/qemu/{vmid}/config")
+
+    def pci_mappings(self) -> Any:
+        return self._get_json("/cluster/mapping/pci")
+
+    def pci_mapping_detail(self, mapping_name: str) -> Any:
+        return self._get_json(f"/cluster/mapping/pci/{urllib.parse.quote(mapping_name)}")
+
+    def ha_status(self) -> Any:
+        return self._get_json("/cluster/ha/status/current")
+
+    def ceph_status(self) -> Any:
+        return self._get_json("/cluster/ceph/status")
 
 
 def create_api_client(runtime: RuntimeConfig) -> ProxmoxAPI:
@@ -126,16 +171,16 @@ def create_api_client(runtime: RuntimeConfig) -> ProxmoxAPI:
     )
 
 
-def _emit(results: list[CheckResult], severity: str, check_id: str, message: str) -> None:
-    results.append(CheckResult(severity=cast(Any, severity), check_id=check_id, message=message))
+def _emit(results: list[CheckResult], severity: Severity, check_id: str, message: str) -> None:
+    results.append(CheckResult(severity=severity, check_id=check_id, message=message))
 
 
-def _node_index(client: ProxmoxAPI, results: list[CheckResult], secrets: list[str]) -> set[str] | None:
+def _node_index(client: PveReadOnlyApi, results: list[CheckResult], secrets: list[str]) -> set[str] | None:
     """Load node inventory first; later checks only run when auth reached."""
     try:
-        nodes = _api_items(client.get_json("/nodes"))
-    except RuntimeError as exc:
-        _emit(results, "FAIL", "api.nodes", _redact(f"PVE API authentication/reachability failed: {exc}", secrets))
+        nodes = _api_items(client.nodes())
+    except PveApiError as exc:
+        _emit(results, "FAIL", "api.nodes", redact_sensitive_text(f"PVE API authentication/reachability failed: {exc}", secrets))
         return None
     node_names = {str(node.get("node")) for node in nodes if node.get("node")}
     _emit(results, "PASS", "api.nodes", f"PVE API reachable; discovered {len(node_names)} node(s)")
@@ -159,16 +204,16 @@ def _check_required_nodes(expected: DerivedResources, node_names: set[str], resu
     return present_required
 
 
-def _check_bridges(client: ProxmoxAPI, expected: DerivedResources, present_nodes: set[str], results: list[CheckResult], secrets: list[str]) -> None:
+def _check_bridges(client: PveReadOnlyApi, expected: DerivedResources, present_nodes: set[str], results: list[CheckResult], secrets: list[str]) -> None:
     """Check only bridges needed by VMs on the nodes that are actually used."""
     for node in sorted(present_nodes):
         required = sorted(expected.bridges_by_node.get(node, set()))
         if not required:
             continue
         try:
-            entries = _api_items(client.get_json(f"/nodes/{urllib.parse.quote(node)}/network"))
-        except RuntimeError as exc:
-            _emit(results, "FAIL", f"api.network.{node}", _redact(f"unable to read node network configuration: {exc}", secrets))
+            entries = _api_items(client.node_network(node))
+        except PveApiError as exc:
+            _emit(results, "FAIL", f"api.network.{node}", redact_sensitive_text(f"unable to read node network configuration: {exc}", secrets))
             continue
         available = {
             str(item.get("iface") or item.get("bridge") or item.get("name"))
@@ -182,16 +227,16 @@ def _check_bridges(client: ProxmoxAPI, expected: DerivedResources, present_nodes
                 _emit(results, "FAIL", f"api.bridge.{node}.{bridge}", f"required bridge {bridge} is missing on {node}")
 
 
-def _check_storage(client: ProxmoxAPI, expected: DerivedResources, present_nodes: set[str], results: list[CheckResult], secrets: list[str]) -> None:
+def _check_storage(client: PveReadOnlyApi, expected: DerivedResources, present_nodes: set[str], results: list[CheckResult], secrets: list[str]) -> None:
     """Verify the storage roles required by VMs, templates, and snippets."""
     for node in sorted(present_nodes):
         required = expected.storage_by_node.get(node, [])
         if not required:
             continue
         try:
-            entries = _api_items(client.get_json(f"/nodes/{urllib.parse.quote(node)}/storage"))
-        except RuntimeError as exc:
-            _emit(results, "FAIL", f"api.storage.{node}", _redact(f"unable to read node storage configuration: {exc}", secrets))
+            entries = _api_items(client.node_storage(node))
+        except PveApiError as exc:
+            _emit(results, "FAIL", f"api.storage.{node}", redact_sensitive_text(f"unable to read node storage configuration: {exc}", secrets))
             continue
         storage_index = {str(item.get("storage")): item for item in entries if item.get("storage")}
         for requirement in required:
@@ -207,12 +252,12 @@ def _check_storage(client: ProxmoxAPI, expected: DerivedResources, present_nodes
                 _emit(results, "PASS", f"api.storage.{node}.{requirement['role']}", f"storage {requirement['datastore']} is available on {node}")
 
 
-def _cluster_vm_index(client: ProxmoxAPI, results: list[CheckResult], secrets: list[str]) -> dict[int, dict[str, Any]] | None:
+def _cluster_vm_index(client: PveReadOnlyApi, results: list[CheckResult], secrets: list[str]) -> dict[int, dict[str, Any]] | None:
     """Build a quick VMID index from the cluster resource listing."""
     try:
-        items = _api_items(client.get_json("/cluster/resources?type=vm"))
-    except RuntimeError as exc:
-        _emit(results, "FAIL", "api.vms", _redact(f"unable to query VM inventory: {exc}", secrets))
+        items = _api_items(client.cluster_vm_resources())
+    except PveApiError as exc:
+        _emit(results, "FAIL", "api.vms", redact_sensitive_text(f"unable to query VM inventory: {exc}", secrets))
         return None
     index: dict[int, dict[str, Any]] = {}
     for item in items:
@@ -223,7 +268,7 @@ def _cluster_vm_index(client: ProxmoxAPI, results: list[CheckResult], secrets: l
     return index
 
 
-def _check_templates(client: ProxmoxAPI, expected: DerivedResources, vm_index: dict[int, dict[str, Any]], results: list[CheckResult], secrets: list[str]) -> None:
+def _check_templates(client: PveReadOnlyApi, expected: DerivedResources, vm_index: dict[int, dict[str, Any]], results: list[CheckResult], secrets: list[str]) -> None:
     """Confirm the declared template records exist and are flagged as templates."""
     for template in expected.templates:
         record = vm_index.get(template["vmid"])
@@ -242,7 +287,7 @@ def _check_templates(client: ProxmoxAPI, expected: DerivedResources, vm_index: d
         _emit(results, "PASS", f"api.template.{template['vmid']}", f"template {template['name']} on {template['node']} is present")
 
 
-def _check_vmids(client: ProxmoxAPI, expected: DerivedResources, vm_index: dict[int, dict[str, Any]], results: list[CheckResult], secrets: list[str]) -> None:
+def _check_vmids(client: PveReadOnlyApi, expected: DerivedResources, vm_index: dict[int, dict[str, Any]], results: list[CheckResult], secrets: list[str]) -> None:
     """Allow free VMIDs; occupied IDs must look repository-owned to pass."""
     for vm in expected.vmid_expectations:
         record = vm_index.get(vm["vmid"])
@@ -250,9 +295,9 @@ def _check_vmids(client: ProxmoxAPI, expected: DerivedResources, vm_index: dict[
             _emit(results, "PASS", f"api.vmid.{vm['vmid']}", f"VMID {vm['vmid']} is free")
             continue
         try:
-            config = client.get_json(f"/nodes/{urllib.parse.quote(str(record.get('node') or vm['node']))}/qemu/{vm['vmid']}/config")
-        except RuntimeError as exc:
-            _emit(results, "FAIL", f"api.vmid.{vm['vmid']}", _redact(f"unable to read existing VM config: {exc}", secrets))
+            config = client.vm_config(str(record.get('node') or vm['node']), vm["vmid"])
+        except PveApiError as exc:
+            _emit(results, "FAIL", f"api.vmid.{vm['vmid']}", redact_sensitive_text(f"unable to read existing VM config: {exc}", secrets))
             continue
         actual_tags = _normalize_string_list(config.get("tags") or record.get("tags"))
         description = str(config.get("description") or record.get("description") or "")
@@ -292,16 +337,20 @@ def _mapping_nodes(detail: dict[str, Any] | None) -> set[str] | None:
     return None
 
 
-def _check_pci_mappings(client: ProxmoxAPI, expected: DerivedResources, model: dict[str, Any], results: list[CheckResult], secrets: list[str]) -> None:
+def _check_pci_mappings(client: PveReadOnlyApi, expected: DerivedResources, model: dict[str, Any], results: list[CheckResult], secrets: list[str]) -> None:
     """Check passthrough mappings when the endpoint is present; warn on gaps."""
     try:
-        mapping_index = _api_items(client.get_json("/cluster/mapping/pci"))
-    except RuntimeError as exc:
-        if "HTTP 404" in str(exc):
+        mapping_index = _api_items(client.pci_mappings())
+    except PveApiNotConfiguredError:
+        # Older/limited API surfaces do not expose cluster mapping reads.
+        _emit(results, "SKIP", "api.pci", "PVE API does not expose PCI mapping reads on this endpoint; skipped")
+        return
+    except PveApiError as exc:
+        if getattr(exc, "status_code", None) == 404:
             # Older/limited API surfaces do not expose cluster mapping reads.
             _emit(results, "SKIP", "api.pci", "PVE API does not expose PCI mapping reads on this endpoint; skipped")
             return
-        _emit(results, "WARN", "api.pci", _redact(f"PCI mapping checks unavailable: {exc}", secrets))
+        _emit(results, "WARN", "api.pci", redact_sensitive_text(f"PCI mapping checks unavailable: {exc}", secrets))
         return
 
     for mapping_name, mapping in model["cluster"]["pci_mappings"].items():
@@ -310,8 +359,8 @@ def _check_pci_mappings(client: ProxmoxAPI, expected: DerivedResources, model: d
             detail = _mapping_detail_from_index(mapping_index, mapping_name)
         if detail is None:
             try:
-                detail = cast(dict[str, Any], client.get_json(f"/cluster/mapping/pci/{urllib.parse.quote(mapping_name)}"))
-            except RuntimeError:
+                detail = cast(dict[str, Any], client.pci_mapping_detail(mapping_name))
+            except PveApiError:
                 detail = None
 
         present_nodes = _mapping_nodes(detail)
@@ -331,9 +380,9 @@ def _check_pci_mappings(client: ProxmoxAPI, expected: DerivedResources, model: d
                 _emit(results, "WARN", f"api.pci.{mapping_name}.optional.{node}", f"unused declared PCI mapping node {node} is unavailable")
 
 
-def run_api_checks(runtime: RuntimeConfig, api_client: ProxmoxAPI, model: dict[str, Any], expected: DerivedResources, results: list[CheckResult]) -> None:
+def run_api_checks(runtime: RuntimeConfig, api_client: PveReadOnlyApi, model: dict[str, Any], expected: DerivedResources, results: list[CheckResult]) -> None:
     """Run the API-first read-only checks in dependency order."""
-    secrets = [runtime.api_token_secret, api_client.api_token_secret]
+    secrets = [runtime.api_token_secret, str(getattr(api_client, "api_token_secret", "")), str(getattr(api_client, "_api_token_secret", ""))]
     node_names = _node_index(api_client, results, secrets)
     if node_names is None:
         return

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any, Callable
 from urllib.parse import urlparse
 
@@ -15,17 +14,9 @@ from .errors import (
     PveApiUnavailableError,
     redact_sensitive_text,
 )
+from .runtime import PveApiRuntimeConfig
 
-
-@dataclass(frozen=True)
-class HealthApiRuntimeConfig:
-    """API-only runtime inputs used to build a proxmoxer client."""
-
-    endpoint: str
-    api_username: str
-    api_token_id: str
-    api_token_secret: str
-    insecure: bool
+HealthApiRuntimeConfig = PveApiRuntimeConfig
 
 
 def _normalize_endpoint(endpoint: str) -> tuple[str, int | None]:
@@ -43,7 +34,7 @@ def _normalize_endpoint(endpoint: str) -> tuple[str, int | None]:
 class ReadOnlyPveApi:
     """Named read-only PVE API queries for health and related checks."""
 
-    def __init__(self, runtime: HealthApiRuntimeConfig, *, timeout: int = 30, prox: ProxmoxAPI | None = None) -> None:
+    def __init__(self, runtime: PveApiRuntimeConfig, *, timeout: int = 30, prox: Any | None = None) -> None:
         self._api_token_secret = runtime.api_token_secret
         host, port = _normalize_endpoint(runtime.endpoint)
         kwargs: dict[str, Any] = {
@@ -61,7 +52,7 @@ class ReadOnlyPveApi:
         )
 
     @classmethod
-    def from_runtime(cls, runtime: HealthApiRuntimeConfig, *, timeout: int = 30) -> "ReadOnlyPveApi":
+    def from_runtime(cls, runtime: PveApiRuntimeConfig, *, timeout: int = 30) -> "ReadOnlyPveApi":
         return cls(runtime, timeout=timeout)
 
     def redact_operator_text(self, text: str) -> str:
@@ -102,8 +93,14 @@ class ReadOnlyPveApi:
     def node_status(self, node: str) -> Any:
         return self._call(f"nodes/{node}/status", lambda: self._prox.nodes(node).status.get())
 
+    def node_network(self, node: str) -> Any:
+        return self._call(f"nodes/{node}/network", lambda: self._prox.nodes(node).network.get())
+
     def node_storage(self, node: str) -> Any:
         return self._call(f"nodes/{node}/storage", lambda: self._prox.nodes(node).storage.get())
+
+    def cluster_vm_resources(self) -> Any:
+        return self._call("cluster/resources?type=vm", lambda: self._prox.cluster.resources.get(type="vm"))
 
     def vms(self, node: str) -> Any:
         return self._call(f"nodes/{node}/qemu", lambda: self._prox.nodes(node).qemu.get())
@@ -114,8 +111,17 @@ class ReadOnlyPveApi:
     def vm_config(self, node: str, vmid: int) -> Any:
         return self._call(f"nodes/{node}/qemu/{vmid}/config", lambda: self._prox.nodes(node).qemu(vmid).config.get())
 
+    def pci_mappings(self) -> Any:
+        return self._call("cluster/mapping/pci", lambda: self._prox.cluster.mapping.pci.get())
+
+    def pci_mapping_detail(self, mapping_name: str) -> Any:
+        return self._call(f"cluster/mapping/pci/{mapping_name}", lambda: self._prox.cluster.mapping.pci(mapping_name).get())
+
     def ha_status(self) -> Any:
         return self._call("cluster/ha/status/current", lambda: self._prox.cluster.ha.status.current.get())
 
     def ceph_status(self) -> Any:
         return self._call("cluster/ceph/status", lambda: self._prox.cluster.ceph.status.get())
+
+
+__all__ = ["HealthApiRuntimeConfig", "ReadOnlyPveApi"]

@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
-from scripts.pve_inventory.health import derive_health_expectations, load_health_runtime_config, render_report, run_health
 from scripts.common.io import load_yaml
-from scripts.pve_inventory.model import build_model
-from scripts.pve_inventory.preflight_results import has_failures
-from scripts.pve_inventory.validation import validate_cluster, validate_vms
+from scripts.pve_inventory.checks.health.model import derive_health_expectations
+from scripts.pve_inventory.checks.results import has_failures
+from scripts.pve_inventory.checks.results import render_report
+from scripts.pve_inventory.inventory.model import build_model
+from scripts.pve_inventory.inventory.validation.cluster import validate_cluster
+from scripts.pve_inventory.inventory.validation.vm import validate_vms
+from scripts.pve_inventory.pve_api.runtime import load_api_runtime_config
+from scripts.pve_inventory.health import run_health
 from scripts.pve_inventory.pve_api.errors import PveApiNotConfiguredError, PveApiUnavailableError, PveApiAuthenticationError
 
 
@@ -44,8 +48,14 @@ class _FakeHealthApi:
     def node_status(self, node: str) -> Any:
         return self._response("node_status", node)
 
+    def node_network(self, node: str) -> Any:
+        raise NotImplementedError("health checks do not read node network data")
+
     def node_storage(self, node: str) -> Any:
         return self._response("node_storage", node)
+
+    def cluster_vm_resources(self) -> Any:
+        raise NotImplementedError("health checks do not read cluster VM resource data")
 
     def vms(self, node: str) -> Any:
         return self._response("vms", node)
@@ -56,11 +66,20 @@ class _FakeHealthApi:
     def vm_config(self, node: str, vmid: int) -> Any:
         return self._response("vm_config", (node, vmid))
 
+    def pci_mappings(self) -> Any:
+        raise NotImplementedError("health checks do not read PCI mapping data")
+
+    def pci_mapping_detail(self, mapping_name: str) -> Any:
+        raise NotImplementedError("health checks do not read PCI mapping data")
+
     def ha_status(self) -> Any:
         return self._response("ha_status")
 
     def ceph_status(self) -> Any:
         return self._response("ceph_status")
+
+    def redact_operator_text(self, text: str) -> str:
+        return text
 
 
 def _model() -> dict[str, Any]:
@@ -224,7 +243,7 @@ def test_health_reports_do_not_leak_secrets() -> None:
         def cluster_status(self) -> Any:
             raise PveApiAuthenticationError(f"invalid token {secret}")
 
-    results = run_health(environ={}, api_client=FailingApi())
+    results = run_health(environ={}, api_client=cast(Any, FailingApi()))
     report = render_report(results)
 
     assert secret not in report
@@ -245,7 +264,7 @@ def test_offline_guards_keep_pve_health_outside_make_check_and_ci() -> None:
 
 
 def test_health_runtime_config_uses_api_only_tf_vars() -> None:
-    runtime = load_health_runtime_config(
+    runtime = load_api_runtime_config(
         {
             "TF_VAR_pve_endpoint": "https://pve.example.invalid",
             "TF_VAR_pve_api_username": "pve-ops@pve",
