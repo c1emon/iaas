@@ -8,11 +8,11 @@ secrets, exported private configs, or unencrypted backups.
 - [Root operator manual](../README.md) — safe first commands, source-of-truth
   files, generated outputs, runtime parameters, and safety classes.
 
-## Planning and roadmaps
+## Planning
 
-- Historical/context: [Review remediation roadmap](review-remediation-roadmap.md)
-- Historical/context: [IaaS automation roadmap research](decisions/iaas-automation-roadmap-research.md)
-- Planned consolidated roadmap entrypoint: `docs/roadmap.md` (tracked by `consolidate-documentation-roadmaps`; not present yet)
+- Current roadmap and backlog: [Roadmap and backlog](roadmap.md)
+- Historical remediation context: [Review remediation roadmap](review-remediation-roadmap.md)
+- Historical research context: [IaaS automation roadmap research](decisions/iaas-automation-roadmap-research.md)
 
 ## Architecture and inventory
 
@@ -55,8 +55,9 @@ secrets, exported private configs, or unencrypted backups.
 ## Decisions and historical context
 
 - [PVE automation preflight decision](decisions/pve-automation-preflight.md)
-- [IaaS automation roadmap research](decisions/iaas-automation-roadmap-research.md)
-- [Review remediation roadmap](review-remediation-roadmap.md)
+- [Roadmap and backlog](roadmap.md)
+- Historical research: [IaaS automation roadmap research](decisions/iaas-automation-roadmap-research.md)
+- Historical remediation plan: [Review remediation roadmap](review-remediation-roadmap.md)
 
 ## Other references
 

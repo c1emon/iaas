@@ -1,5 +1,9 @@
 # IaaS automation roadmap research
 
+> **Status:** Historical research snapshot. Current execution status and backlog
+> live in [docs/roadmap.md](../roadmap.md). Roadmap queues and "next priority"
+> notes below are preserved as decision context and may be outdated.
+
 This note captures the June 2026 exploration of comparable homelab/IaaS automation projects and the resulting direction for this repository. Use it as input for future OpenSpec proposals rather than as an implementation plan by itself.
 
 ## Current repository position

@@ -1,5 +1,10 @@
 # 全局代码审查整改路线图
 
+> **Status:** Historical remediation plan with remaining backlog. Current
+> planning status is summarized in [docs/roadmap.md](roadmap.md). Completed
+> phases are retained below for audit context; open phases should be treated as
+> backlog candidates, not the live execution queue.
+
 本文记录 2026-06-27 全局代码/模块 review 及后续 council 评估后形成的分阶段整改计划。路线采用“均衡偏保守”策略：先补安全网和修确定 bug，再提高 cloud-init 可证明性，随后收敛 validation，最后按实际维护痛点做小范围去重。
 
 它是后续 OpenSpec change、维护任务和实现排期的输入，不代表所有事项必须一次性完成。
