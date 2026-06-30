@@ -1,105 +1,93 @@
-# Astra Infrastructure
+# Astra Infrastructure Operator Manual
 
-This repository is being re-initialized as the source of truth for Astra infrastructure automation.
+This repository is the source of truth for Astra infrastructure automation.
+Start here for operator workflow; use `docs/` and module READMEs for deeper
+implementation detail. No real secrets are committed.
 
-Current scope:
-
-- No real secrets committed to Git.
-- PVE automation foundation with YAML source-of-truth inventory, generated OpenTofu input, generated Ansible inventory, generated VM documentation, and generated service metadata documentation.
-- Debian 13 PVE template build helpers under `infra/packer/`, executed through audited PVE-node wrappers.
-- OpenTofu VM lifecycle configuration under `infra/tofu/`, using local state for the initial single-operator workflow.
-- The legacy `terraform/` directory is only a placeholder; live PVE automation uses OpenTofu.
-- Ansible bootstrap and verification content is added incrementally around the same inventory model.
-
-Key areas:
-
-- `docs/` — architecture, runbooks, decision records.
-- `inventory/` — operator-authored PVE cluster and VM source-of-truth YAML.
-- `infra/packer/` — PVE template build helpers and runbooks.
-- `infra/tofu/` — OpenTofu-managed PVE VM lifecycle.
-- `ansible/` — host configuration, service deployment, and low-risk network automation.
-- `scripts/` — validation, generation, and runtime helper scripts.
-
-## Python toolchain
-
-Python-based tooling is managed with `uv`.
+The safest first workflow is the offline validation gate:
 
 ```bash
-uv sync
-uv run ansible --version
-uv run ansible-lint --version
-uv run yamllint --version
+make generate && make check-generated && make check
 ```
 
-Commit `pyproject.toml` and `uv.lock`; do not commit `.venv/`.
+That gate does not require runtime secrets, live PVE, OPNsense, switch, guest,
+Packer build, OpenTofu apply/destroy, or Ansible mutation access.
 
-## Validation
+## Capability map
 
-The default offline-safe gate is the repository root `make check` target.
+- `docs/` — architecture, operations, decisions, generated references.
+- `inventory/` — operator-authored source of truth for PVE, VMs, and services.
+- `infra/tofu/` — PVE VM lifecycle and local state handling.
+- `infra/packer/` — Debian 13 template build helper.
+- `ansible/` — OPNsense, switch, and PVE guest workflows.
+- `scripts/` — helper scripts and validation utilities.
 
-```bash
-make generate
-make check-generated
-make check
-```
+## Safety classes
 
-`make check` runs `check-generated`, `test`, `lint-yaml`, `tofu-fmt`, and
-`tofu-validate`. It is the default offline-safe gate and it does not require PVE
-credentials, PVE plan/apply/destroy access, Packer builds, guest SSH
-verification, or service-doc regeneration.
+| Class | Meaning | Examples |
+| --- | --- | --- |
+| Offline-safe | No live infrastructure access, no runtime secrets, no mutation. | `make generate`, `make check-generated`, `make check`, `make secret-scan`, `make pve-ansible-syntax` |
+| Online read-only | Contacts live infrastructure and requires runtime context, but should not change state. | `make pve-health`, `make pve-preflight`, `make pve-verify-guests`, `ansible/playbooks/opnsense/readonly.yml`, `ansible/playbooks/switches/readonly-facts.yml` |
+| Mutation-capable | May create, update, delete, upload, reboot, or otherwise change live state. | `make pve-apply`, `make pve-destroy`, `make pve-packer-build`, `ansible/playbooks/opnsense/manage-*.yml`, `ansible/playbooks/switches/config-plan.yml` when `switch_config_apply=true` |
 
-Optional explicit hygiene checks are available outside the default gate:
+## Source of truth
 
-```bash
-make secret-scan
-make pve-ansible-syntax
-```
+| File | Purpose |
+| --- | --- |
+| `inventory/pve-cluster.yml` | Cluster defaults, placement rules, template inputs, and cloud-init user material references. |
+| `inventory/vms.yml` | VM declarations, lifecycle class, networking, boot, and passthrough intent. |
+| `inventory/services.yml` | Declared service catalog and endpoint review metadata. |
 
-`make secret-scan` uses the repository `gitleaks` configuration to scan for
-committed secrets. Gitleaks was chosen over TruffleHog for the first pass because
-it has a small single-binary CLI, a reviewable repository config file, redacted
-output, and straightforward CI installation. It remains explicit rather than a
-`make check` dependency until false-positive behavior is proven stable.
+## Committed generated outputs
 
-PVE online checks stay explicit and outside `make check` / cloud CI:
+| File | Sensitivity expectation |
+| --- | --- |
+| `infra/tofu/pve/generated.auto.tfvars.json` | Reviewable non-sensitive generated input. |
+| `ansible/inventories/generated/pve.yml` | Reviewable non-sensitive generated inventory. |
+| `docs/generated/pve-vms.md` | Reviewable non-sensitive VM summary. |
+| `docs/generated/services.md` | Reviewable non-sensitive service summary. |
+| `infra/packer/proxmox/debian-13/template-build.env` | Committed non-secret defaults only. |
 
-```bash
-op run --env-file infra/tofu/pve/.env.pve-opentofu.tpl -- make pve-preflight
-op run --env-file infra/tofu/pve/.env.pve-opentofu.tpl -- make pve-health
-```
+## Common workflows
 
-`pve-preflight` is the apply-readiness check for planned VM lifecycle changes.
-`pve-health` is the current-cluster health check. It uses the same canonical
-`TF_VAR_pve_*` API variables, but no SSH fields, and reports pass/warn/fail/skip
-with thresholds of CPU >90% warn, memory >90% warn, rootfs >90% warn / >98% fail,
-and datastore >85% warn / >95% fail. Long-lived VMs missing or stopped warn;
-ephemeral lab VMs missing or stopped do not warn solely for that state.
+| Workflow | Safety class | Entry point |
+| --- | --- | --- |
+| Generate committed outputs | Offline-safe | `make generate` |
+| Validate repository shape | Offline-safe | `make generate && make check-generated && make check` |
+| PVE health / readiness | Online read-only | `op run --env-file infra/tofu/pve/.env.pve-opentofu.tpl -- make pve-health` / `make pve-preflight` |
+| PVE guest verification | Online read-only | `make pve-verify-guests` |
+| PVE VM lifecycle planning | Online read-only | `make pve-plan` |
+| PVE VM lifecycle apply/destroy | Mutation-capable | `make pve-apply`, `make pve-destroy` |
+| PVE template build | Mutation-capable | `make pve-packer-build` and `infra/packer/proxmox/debian-13/README.md` |
+| OPNsense read-only review | Online read-only | `docs/opnsense-management.md` and `ansible/playbooks/opnsense/README.md` |
+| OPNsense management | Mutation-capable | `ansible/playbooks/opnsense/manage-*.yml` via `ansible/README.md` |
+| Switch fact collection | Online read-only | `ansible/playbooks/switches/README.md` |
+| Switch config apply | Mutation-capable | `ansible/playbooks/switches/README.md` and `ansible/roles/switch_config/README.md` |
+| Service metadata review | Offline-safe | `docs/service-metadata.md` and `docs/generated/services.md` |
 
-`make pve-verify-guests` runs the explicit online PVE guest verification command
-without mutating guests. It is Ansible-first, uses the generated inventory, and
-relies on the local SSH agent / 1Password SSH Agent context.
-`make pve-ansible-syntax` runs the explicit PVE guest verification syntax check
-without contacting guests.
+## Runtime parameters and secret injection
 
-Ansible syntax validation is intentionally separate from `make check` in this P0
-closure change. The current root target delegates to `make pve-ansible-syntax`,
-which syntax-checks `ansible/playbooks/pve/verify-guests.yml` against the
-generated PVE inventory. Guest reachability and SSH verification remain under
-the explicit online `make pve-verify-guests` target; `make pve-ansible-check`
-remains a compatibility alias.
+| Area | Runtime parameters | Secret injection |
+| --- | --- | --- |
+| PVE OpenTofu | `TF_VAR_pve_*`, `PVE_HOST`, `PVE_SSH_USER`, `STORAGE_ID` | `op run --env-file infra/tofu/pve/.env.pve-opentofu.tpl -- ...`; cloud-init user vars come from the same template via `PVE_VM_*` variables. |
+| PVE template build | `PVE_HOST`, `FORCE_REPLACE`, `TEMPLATE_DEBUG`, `BUILD_*` inputs from `template-build.env` | Non-secret defaults are committed; credentials stay outside the repo and are supplied at runtime. |
+| OPNsense | `OPNSENSE_API_KEY`, `OPNSENSE_API_SECRET` | `op run --env-file .env.opnsense.tpl -- ...` |
+| Switches | `SWITCH_SSH_USER`, `SWITCH_SSH_PASSWORD`, `SWITCH_SSH_PORT` | `op run --env-file .env.switch.tpl -- ...` |
 
-Explicit online or mutation operations stay outside the default gate:
+Runtime secrets, private keys, local state, cache files, raw exports, and
+resolved credential files are not safe to commit. Use
+[`docs/pve-state-cache-secrets.md`](docs/pve-state-cache-secrets.md) for the
+detailed state/cache/secret handling runbook.
 
-- `make pve-preflight`
-- `make pve-health`
-- `make pve-check-pve`
-- `make pve-plan`
-- `make pve-apply`
-- `make pve-destroy`
-- `make pve-packer-build`
-- `make pve-verify-guests`
-- `make pve-ansible-check` (compatibility alias)
+## Documentation map
 
-See `docs/pve-state-cache-secrets.md` for PVE state backup/restore, cache
-cleanup, generated-output sensitivity, and 1Password runtime secret injection
-guidance.
+- Start here: [`docs/README.md`](docs/README.md)
+- Architecture: [`docs/architecture.md`](docs/architecture.md)
+- State, cache, and secrets: [`docs/pve-state-cache-secrets.md`](docs/pve-state-cache-secrets.md)
+- OPNsense management: [`docs/opnsense-management.md`](docs/opnsense-management.md)
+- Service metadata: [`docs/service-metadata.md`](docs/service-metadata.md)
+- PCI passthrough readiness: [`docs/runbooks/pve-pci-passthrough-readiness.md`](docs/runbooks/pve-pci-passthrough-readiness.md)
+- Decisions: [`docs/decisions/pve-automation-preflight.md`](docs/decisions/pve-automation-preflight.md), [`docs/decisions/iaas-automation-roadmap-research.md`](docs/decisions/iaas-automation-roadmap-research.md)
+- Historical / remediation planning: [`docs/review-remediation-roadmap.md`](docs/review-remediation-roadmap.md)
+- Planned consolidated roadmap entrypoint: `docs/roadmap.md` (tracked by `consolidate-documentation-roadmaps`; not present yet)
+- Detailed module READMEs: [`infra/tofu/pve/README.md`](infra/tofu/pve/README.md), [`infra/packer/proxmox/debian-13/README.md`](infra/packer/proxmox/debian-13/README.md), [`ansible/README.md`](ansible/README.md), [`ansible/playbooks/opnsense/README.md`](ansible/playbooks/opnsense/README.md), [`ansible/playbooks/switches/README.md`](ansible/playbooks/switches/README.md), [`ansible/roles/switch_config/README.md`](ansible/roles/switch_config/README.md), [`scripts/README.md`](scripts/README.md)
