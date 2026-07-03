@@ -18,6 +18,7 @@ secrets, exported private configs, or unencrypted backups.
 
 - [Architecture notes](architecture.md)
 - [Service metadata schema and review rules](service-metadata.md)
+- [Generated foundation recovery reference](generated/foundation-recovery.md)
 
 ## Operations and runbooks
 
@@ -51,6 +52,13 @@ secrets, exported private configs, or unencrypted backups.
 
 - [Generated service metadata](generated/services.md)
 - [Generated PVE VM summary](generated/pve-vms.md)
+- [Generated foundation recovery reference](generated/foundation-recovery.md)
+
+## Foundation recovery checks
+
+- Offline-safe validation and generated-doc freshness: `make foundation-generate` / `make foundation-check`
+- Explicit online read-only health probes: `make foundation-health`
+- Non-goals: these commands do not deploy, restore, upgrade, or mutate OPNsense, TrueNAS, DNS, Harbor, Authentik, sing-box, PVE, switches, or K3s state.
 
 ## Decisions and historical context
 

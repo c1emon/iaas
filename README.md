@@ -16,7 +16,7 @@ Packer build, OpenTofu apply/destroy, or Ansible mutation access.
 ## Capability map
 
 - `docs/` — architecture, operations, decisions, generated references.
-- `inventory/` — operator-authored source of truth for PVE, VMs, and services.
+- `inventory/` — operator-authored source of truth for PVE, VMs, services, and foundation recovery metadata.
 - `infra/tofu/` — PVE VM lifecycle and local state handling.
 - `infra/packer/` — Debian 13 template build helper.
 - `ansible/` — OPNsense, switch, and PVE guest workflows.
@@ -26,8 +26,8 @@ Packer build, OpenTofu apply/destroy, or Ansible mutation access.
 
 | Class | Meaning | Examples |
 | --- | --- | --- |
-| Offline-safe | No live infrastructure access, no runtime secrets, no mutation. | `make generate`, `make check-generated`, `make check`, `make secret-scan`, `make pve-ansible-syntax` |
-| Online read-only | Contacts live infrastructure and requires runtime context, but should not change state. | `make pve-health`, `make pve-preflight`, `make pve-verify-guests`, `ansible/playbooks/opnsense/readonly.yml`, `ansible/playbooks/switches/readonly-facts.yml` |
+| Offline-safe | No live infrastructure access, no runtime secrets, no mutation. | `make generate`, `make check-generated`, `make check`, `make foundation-check`, `make secret-scan`, `make pve-ansible-syntax` |
+| Online read-only | Contacts live infrastructure and requires runtime context, but should not change state. | `make foundation-health`, `make pve-health`, `make pve-preflight`, `make pve-verify-guests`, `ansible/playbooks/opnsense/readonly.yml`, `ansible/playbooks/switches/readonly-facts.yml` |
 | Mutation-capable | May create, update, delete, upload, reboot, or otherwise change live state. | `make pve-apply`, `make pve-destroy`, `make pve-packer-build`, `ansible/playbooks/opnsense/manage-*.yml`, `ansible/playbooks/switches/config-plan.yml` when `switch_config_apply=true` |
 
 ## Source of truth
@@ -37,6 +37,7 @@ Packer build, OpenTofu apply/destroy, or Ansible mutation access.
 | `inventory/pve-cluster.yml` | Cluster defaults, placement rules, template inputs, and cloud-init user material references. |
 | `inventory/vms.yml` | VM declarations, lifecycle class, networking, boot, and passthrough intent. |
 | `inventory/services.yml` | Declared service catalog and endpoint review metadata. |
+| `inventory/foundation.yml` | Foundation hosts, recovery-critical services, restore order, health checks, break-glass references, and storage-network facts. |
 
 ## Committed generated outputs
 
@@ -46,6 +47,7 @@ Packer build, OpenTofu apply/destroy, or Ansible mutation access.
 | `ansible/inventories/generated/pve.yml` | Reviewable non-sensitive generated inventory. |
 | `docs/generated/pve-vms.md` | Reviewable non-sensitive VM summary. |
 | `docs/generated/services.md` | Reviewable non-sensitive service summary. |
+| `docs/generated/foundation-recovery.md` | Reviewable non-sensitive foundation recovery reference. |
 | `infra/packer/proxmox/debian-13/template-build.env` | Committed non-secret defaults only. |
 
 ## Common workflows
@@ -64,6 +66,7 @@ Packer build, OpenTofu apply/destroy, or Ansible mutation access.
 | Switch fact collection | Online read-only | `ansible/playbooks/switches/README.md` |
 | Switch config apply | Mutation-capable | `ansible/playbooks/switches/README.md` and `ansible/roles/switch_config/README.md` |
 | Service metadata review | Offline-safe | `docs/service-metadata.md` and `docs/generated/services.md` |
+| Foundation recovery review | Offline-safe / Online read-only | `make foundation-check`, `docs/generated/foundation-recovery.md`; explicit live probes via `make foundation-health` |
 
 ## Runtime parameters and secret injection
 
@@ -86,6 +89,7 @@ detailed state/cache/secret handling runbook.
 - State, cache, and secrets: [`docs/pve-state-cache-secrets.md`](docs/pve-state-cache-secrets.md)
 - OPNsense management: [`docs/opnsense-management.md`](docs/opnsense-management.md)
 - Service metadata: [`docs/service-metadata.md`](docs/service-metadata.md)
+- Foundation recovery reference: [`docs/generated/foundation-recovery.md`](docs/generated/foundation-recovery.md)
 - PCI passthrough readiness: [`docs/runbooks/pve-pci-passthrough-readiness.md`](docs/runbooks/pve-pci-passthrough-readiness.md)
 - Decisions: [`docs/decisions/pve-automation-preflight.md`](docs/decisions/pve-automation-preflight.md), [`docs/decisions/iaas-automation-roadmap-research.md`](docs/decisions/iaas-automation-roadmap-research.md)
 - Historical / remediation planning: [`docs/review-remediation-roadmap.md`](docs/review-remediation-roadmap.md)
