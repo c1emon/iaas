@@ -1,0 +1,14 @@
+---
+vm_baseline_packages: []
+vm_baseline_time_sync_packages: []
+
+vm_baseline_update_cache: false
+vm_baseline_cache_valid_time: 3600
+
+vm_baseline_services: []
+
+vm_baseline_hostname_mode: converge
+vm_baseline_report_reboot_required: true
+vm_baseline_network_validation_mode: report
+vm_baseline_network_gateway: ""
+vm_baseline_network_dns: []

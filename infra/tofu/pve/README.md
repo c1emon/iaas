@@ -135,6 +135,30 @@ Guest verification results:
 
 Guest verification stays outside `make check` and GitHub Actions cloud CI.
 
+Guest bootstrap is a separate Ansible step that follows the cloud-init render:
+
+1. OpenTofu renders the guest identity and network inputs.
+2. `make pve-bootstrap-guests` applies the shared `vm_baseline` role.
+3. `make pve-verify-guests` performs the read-only follow-up check.
+
+Bootstrap uses the generated `pve_vms` inventory, the inventory-provided `ops`
+SSH user, and sudo escalation through the same generated metadata. It does not
+mutate PVE lifecycle state, does not manage private keys, and does not edit
+guest network configuration in the first version; network checks are report-only.
+
+Ordinary VMs and future K3s nodes can reuse the same `vm_baseline` role as long
+as they follow the generated inventory contract for hostname and network
+identity.
+
+Example commands:
+
+```bash
+op run --env-file .env.pve-opentofu.tpl -- make pve-bootstrap-guests-syntax
+op run --env-file .env.pve-opentofu.tpl -- make pve-bootstrap-guests ANSIBLE_LIMIT=dev-web-01
+op run --env-file .env.pve-opentofu.tpl -- make pve-bootstrap-guests
+op run --env-file .env.pve-opentofu.tpl -- make pve-verify-guests
+```
+
 The provider uses `bpg/proxmox` `~> 0.109.0` with `ssh { agent = true username = "pve-ops" }` and token-based API auth.
 
 ## Safety notes

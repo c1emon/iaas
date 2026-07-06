@@ -1,0 +1,12 @@
+---
+- name: Ensure baseline services are started and enabled
+  ansible.builtin.systemd_service:
+    name: "{{ item.name }}"
+    enabled: "{{ item.enabled | default(true) }}"
+    state: "{{ item.state | default('started') }}"
+  loop: "{{ vm_baseline_services }}"
+  loop_control:
+    label: "{{ item.name | default('unnamed service') }}"
+  when:
+    - item.name is defined
+    - item.name | length > 0

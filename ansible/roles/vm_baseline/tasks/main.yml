@@ -1,0 +1,15 @@
+---
+- name: Install baseline packages
+  ansible.builtin.import_tasks: packages.yml
+
+- name: Manage baseline services
+  ansible.builtin.import_tasks: services.yml
+
+- name: Converge or validate hostname
+  ansible.builtin.import_tasks: hostname.yml
+
+- name: Report reboot-required state
+  ansible.builtin.import_tasks: reboot.yml
+
+- name: Report guest network facts
+  ansible.builtin.import_tasks: network.yml
