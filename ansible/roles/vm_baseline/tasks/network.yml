@@ -1,0 +1,53 @@
+---
+- name: Record guest network facts
+  ansible.builtin.set_fact:
+    vm_baseline_expected_ipv4: "{{ ansible_host | default('') }}"
+    vm_baseline_expected_gateway: "{{ vm_baseline_network_gateway }}"
+    vm_baseline_expected_dns: "{{ vm_baseline_network_dns }}"
+    vm_baseline_actual_ipv4: "{{ ansible_default_ipv4.address | default('') }}"
+    vm_baseline_actual_gateway: "{{ ansible_default_ipv4.gateway | default('') }}"
+    vm_baseline_actual_dns: "{{ ansible_dns.nameservers | default([]) }}"
+  changed_when: false
+  when: vm_baseline_network_validation_mode != 'disabled'
+
+- name: Build guest network comparison
+  ansible.builtin.set_fact:
+    vm_baseline_network_ip_ok: >-
+      {{ vm_baseline_expected_ipv4 | length == 0 or
+         vm_baseline_actual_ipv4 == vm_baseline_expected_ipv4 }}
+    vm_baseline_network_gateway_ok: >-
+      {{ vm_baseline_expected_gateway | length == 0 or
+         vm_baseline_actual_gateway == vm_baseline_expected_gateway }}
+    vm_baseline_network_dns_missing: "{{ vm_baseline_expected_dns | reject('in', vm_baseline_actual_dns) | list }}"
+    vm_baseline_network_dns_ok: >-
+      {{ vm_baseline_expected_dns | reject('in', vm_baseline_actual_dns) | list | length == 0 }}
+  changed_when: false
+  when: vm_baseline_network_validation_mode != 'disabled'
+
+- name: Report guest network facts
+  ansible.builtin.debug:
+    msg: >-
+      Network facts for {{ inventory_hostname }}:
+      IP {{ 'PASS' if vm_baseline_network_ip_ok else 'WARN' }}
+      expected={{ vm_baseline_expected_ipv4 | default('') }}, actual={{ vm_baseline_actual_ipv4 | default('') }};
+      gateway {{ 'PASS' if vm_baseline_network_gateway_ok else 'WARN' }}
+      expected={{ vm_baseline_expected_gateway | default('') }}, actual={{ vm_baseline_actual_gateway | default('') }};
+      DNS {{ 'PASS' if vm_baseline_network_dns_ok else 'WARN' }}
+      expected={{ vm_baseline_expected_dns | default([]) | join(', ') }},
+      actual={{ vm_baseline_actual_dns | default([]) | join(', ') }}
+  when: vm_baseline_network_validation_mode == 'report'
+  changed_when: false
+
+- name: Assert guest network facts
+  ansible.builtin.assert:
+    that:
+      - vm_baseline_network_ip_ok
+      - vm_baseline_network_gateway_ok
+      - vm_baseline_network_dns_ok
+    fail_msg: >-
+      Guest network facts do not match inventory identity for {{ inventory_hostname }}:
+      expected ip={{ vm_baseline_expected_ipv4 }}, actual ip={{ vm_baseline_actual_ipv4 }};
+      expected gateway={{ vm_baseline_expected_gateway }}, actual gateway={{ vm_baseline_actual_gateway }};
+      expected dns={{ vm_baseline_expected_dns | join(', ') }}, actual dns={{ vm_baseline_actual_dns | join(', ') }};
+      missing dns={{ vm_baseline_network_dns_missing | join(', ') }}
+  when: vm_baseline_network_validation_mode == 'assert'

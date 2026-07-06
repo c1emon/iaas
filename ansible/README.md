@@ -57,7 +57,35 @@ not perform external DNS lookups.
 The canonical online guest verification command is repository-owned and lives at
 `make pve-verify-guests` from the repository root. It is Ansible-first, uses the
 generated PVE inventory, and never reads private keys from the repository.
-Offline syntax validation remains separate at `make pve-ansible-syntax`.
+Offline syntax validation remains separate at `make pve-ansible-syntax` for
+verification and `make pve-bootstrap-guests-syntax` for bootstrap.
+
+## PVE guest bootstrap
+
+The PVE guest bootstrap flow is:
+
+1. OpenTofu renders cloud-init identity and networking.
+2. Ansible bootstraps the guest OS with `vm_baseline`.
+3. Read-only guest verification confirms the result.
+
+Bootstrap runs against the generated `pve_vms` inventory and uses the existing
+`ops` SSH user plus sudo escalation from that inventory. It does not manage or
+print private keys, and it does not mutate PVE lifecycle state. The first
+version also keeps guest network configuration read-only; it only reports the
+declared IP, gateway, and DNS facts.
+
+The shared `vm_baseline` role is intended for ordinary VMs first and can be
+reused by future K3s nodes or other Debian guests that follow the same
+generated inventory contract.
+
+Example commands:
+
+```bash
+make pve-bootstrap-guests-syntax
+make pve-bootstrap-guests ANSIBLE_LIMIT=dev-web-01
+make pve-bootstrap-guests
+make pve-verify-guests
+```
 
 ## OPNsense playbooks
 
@@ -228,6 +256,11 @@ make pve-verify-guests
 That workflow is read-only: it confirms generated inventory assumptions, checks
 hostname/static IP/qemu-guest-agent/sudo/root-SSH state on reachable guests, and
 reports offline or DNS-mismatched guests as WARN without mutating anything.
+
+The bootstrap workflow is separate from verification. It installs baseline guest
+packages and services, converges or validates the hostname, reports reboot
+markers, and prints read-only network facts. It still leaves PVE lifecycle and
+guest network configuration untouched.
 
 If you only need syntax validation for the Ansible playbook, use:
 

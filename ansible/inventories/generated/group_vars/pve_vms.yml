@@ -1,0 +1,26 @@
+---
+# PVE guest bootstrap policy for repository-declared VMs.
+#
+# The vm_baseline role keeps package and service lists empty by default so the
+# reusable role provides mechanism, while inventory/group vars declare
+# environment policy. Common Debian VM examples include qemu-guest-agent,
+# systemd-timesyncd, sudo, curl, jq, iproute2, dnsutils, and ca-certificates.
+vm_baseline_packages:
+  - ca-certificates
+  - curl
+  - dnsutils
+  - iproute2
+  - jq
+  - qemu-guest-agent
+  - sudo
+
+vm_baseline_time_sync_packages:
+  - systemd-timesyncd
+
+vm_baseline_services:
+  - name: qemu-guest-agent
+    enabled: true
+    state: started
+  - name: systemd-timesyncd
+    enabled: true
+    state: started

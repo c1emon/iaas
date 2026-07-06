@@ -1,0 +1,12 @@
+---
+- name: Bootstrap PVE guests
+  hosts: pve_vms
+  become: true
+  become_method: ansible.builtin.sudo
+  gather_facts: true
+
+  roles:
+    - role: vm_baseline
+      vars:
+        vm_baseline_network_gateway: "{{ pve_gateway | default('') }}"
+        vm_baseline_network_dns: "{{ pve_dns | default([]) }}"

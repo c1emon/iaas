@@ -1,15 +1,18 @@
 TOFU ?= tofu
 UV ?= uv
 ROOT ?= $(abspath ../../../)
+ANSIBLE_CONFIG ?= $(ROOT)/ansible/ansible.cfg
 STATE_FILE ?= terraform.tfstate
 BACKUP_DIR ?= $(ROOT)/.cache/tofu-state-backups
 USER_DATA_DIR ?= $(ROOT)/.cache/pve-cloud-init/user-data
 ANSIBLE_INVENTORY ?= $(ROOT)/ansible/inventories/generated/pve.yml
 ANSIBLE_PLAYBOOK ?= $(ROOT)/ansible/playbooks/pve/verify-guests.yml
+ANSIBLE_BOOTSTRAP_PLAYBOOK ?= $(ROOT)/ansible/playbooks/pve/bootstrap-guests.yml
 ANSIBLE_LIMIT ?= pve_vms
+ANSIBLE_ARGS ?=
 PACKER_BUILD_SCRIPT ?= $(ROOT)/infra/packer/proxmox/debian-13/build-template.sh
 
-.PHONY: backup-state generate check-generated validate-source validate-ansible validate fmt init pve-preflight pve-health check-pve render-user-data upload-user-data verify-user-data verify-guests verify-guests-syntax plan apply destroy tofu-plan tofu-apply tofu-destroy packer-build ansible-check ansible-syntax
+.PHONY: backup-state generate check-generated validate-source validate-ansible validate fmt init pve-preflight pve-health check-pve render-user-data upload-user-data verify-user-data verify-guests verify-guests-syntax bootstrap-guests bootstrap-guests-syntax plan apply destroy tofu-plan tofu-apply tofu-destroy packer-build ansible-check ansible-syntax
 
 backup-state:
 	@mkdir -p "$(BACKUP_DIR)"
@@ -25,7 +28,7 @@ validate-source:
 	$(UV) run --directory "$(ROOT)" python -m scripts.pve_inventory.cli
 
 validate-ansible:
-	$(UV) run --directory "$(ROOT)" ansible-inventory -i "$(ANSIBLE_INVENTORY)" --list >/dev/null
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-inventory -i "$(ANSIBLE_INVENTORY)" --list >/dev/null
 
 validate: validate-source validate-ansible check-generated init
 	$(TOFU) validate
@@ -61,10 +64,16 @@ verify-user-data: require-pve-target
 	$(UV) run --directory "$(ROOT)" python -m scripts.pve_inventory.cloud_init verify --output-dir "$(USER_DATA_DIR)" --storage-id "$(STORAGE_ID)" --pve-host "$(PVE_HOST)" --ssh-user "$(PVE_SSH_USER)"
 
 verify-guests:
-	$(UV) run --directory "$(ROOT)" ansible-playbook -i "$(ANSIBLE_INVENTORY)" "$(ANSIBLE_PLAYBOOK)"
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(ANSIBLE_INVENTORY)" "$(ANSIBLE_PLAYBOOK)"
 
 verify-guests-syntax:
-	$(UV) run --directory "$(ROOT)" ansible-playbook --syntax-check -i "$(ANSIBLE_INVENTORY)" "$(ANSIBLE_PLAYBOOK)"
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook --syntax-check -i "$(ANSIBLE_INVENTORY)" "$(ANSIBLE_PLAYBOOK)"
+
+bootstrap-guests:
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(ANSIBLE_INVENTORY)" -l "$(ANSIBLE_LIMIT)" $(ANSIBLE_ARGS) "$(ANSIBLE_BOOTSTRAP_PLAYBOOK)"
+
+bootstrap-guests-syntax:
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook --syntax-check -i "$(ANSIBLE_INVENTORY)" -l "$(ANSIBLE_LIMIT)" $(ANSIBLE_ARGS) "$(ANSIBLE_BOOTSTRAP_PLAYBOOK)"
 
 ansible-check: verify-guests
 

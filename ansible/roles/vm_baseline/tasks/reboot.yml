@@ -1,0 +1,37 @@
+---
+- name: Check reboot-required markers
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /var/run/reboot-required
+    - /run/reboot-required
+  register: vm_baseline_reboot_markers
+  changed_when: false
+  when: vm_baseline_report_reboot_required
+
+- name: Summarize reboot-required markers
+  ansible.builtin.set_fact:
+    vm_baseline_reboot_required: >-
+      {{ vm_baseline_reboot_markers.results
+         | map(attribute='stat.exists')
+         | select('equalto', true)
+         | list
+         | length > 0 }}
+    vm_baseline_reboot_required_paths: >-
+      {{ vm_baseline_reboot_markers.results
+         | selectattr('stat.exists', 'equalto', true)
+         | map(attribute='stat.path')
+         | list }}
+  when: vm_baseline_report_reboot_required
+  changed_when: false
+
+- name: Report reboot-required state
+  ansible.builtin.debug:
+    msg: >-
+      Reboot required for {{ inventory_hostname }}:
+      {{ vm_baseline_reboot_required | default(false) }}
+      {% if vm_baseline_reboot_required_paths | default([]) | length > 0 %}
+      (markers: {{ vm_baseline_reboot_required_paths | join(', ') }})
+      {% endif %}
+  when: vm_baseline_report_reboot_required
+  changed_when: false

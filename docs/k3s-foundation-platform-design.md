@@ -44,6 +44,89 @@ K3s is the application orchestration layer. Proxmox VE remains the VM lifecycle
 layer, TrueNAS remains the storage platform, and OPNsense remains the network
 edge and firewall authority.
 
+### K3s node placement and operating system
+
+The first K3s implementation should use virtual-machine nodes rather than
+bare-metal nodes. K3s VMs should be distributed across different Proxmox VE
+nodes where available, but if the available PVE nodes do not provide three
+independent physical failure domains the cluster must still be documented as
+recovery-backed rather than true quorum HA.
+
+Phase one K3s nodes should use Debian cloud images with cloud-init and Ansible
+bootstrap. NixOS, Talos Linux, Flatcar, Fedora CoreOS, or other atomic node
+operating systems are not adopted in phase one. The platform relies on
+reproducible OpenTofu VM creation, cloud-init network initialization, Ansible
+idempotent host bootstrap, pinned K3s versions, PVE snapshots, K3s/etcd
+backups, and Flux recovery procedures for rollback and rebuild.
+
+Atomic or immutable node operating systems may be revisited later only after the
+VM, multi-NIC, K3s, Cilium, Flux, and storage paths are stable and OS drift or
+node upgrade rollback becomes a real operational problem.
+
+### K3s node network model
+
+K3s VMs may use multiple NICs in phase one. Each NIC must have a single clear
+responsibility, and K3s must not rely on automatic interface selection.
+
+The target network model is:
+
+```text
+K3s VM
+├─ mgmt0
+│  ├─ SSH / Ansible / kubeconfig management access
+│  ├─ default route and internet access
+│  ├─ OS package updates and image pulls
+│  └─ default Pod egress path unless a later Cilium egress policy overrides it
+├─ cluster0
+│  ├─ K3s node-ip and server advertise-address
+│  ├─ K3s server/agent and etcd peer communication
+│  ├─ Cilium node-to-node underlay
+│  └─ isolated L2 network with no default gateway
+├─ storage0
+│  ├─ TrueNAS CSI data path
+│  ├─ NFS / iSCSI / future storage transport access
+│  └─ storage VLAN with no default gateway
+└─ ingress0
+   ├─ Cilium Gateway entrypoints
+   ├─ LoadBalancer / VIP announcement
+   ├─ externally reachable service access
+   └─ not used for K3s node identity or Cilium node-to-node underlay
+```
+
+The `mgmt0` interface is the only phase-one default-route owner. `cluster0`,
+`storage0`, and `ingress0` should not receive default gateways unless a later
+design explicitly introduces policy routing or dedicated egress behavior.
+
+K3s node identity must be explicit:
+
+```yaml
+node-ip: <cluster0-ip>
+advertise-address: <cluster0-ip>
+```
+
+`node-ip` is the Kubernetes InternalIP for the node. It should not be assigned
+from the storage or ingress network. If a dedicated `cluster0` network is not
+available during an early lab phase, the management IP may be used temporarily,
+but storage and ingress IPs must still be excluded from node identity.
+
+Cilium depends on a working underlay network. It is responsible for Pod,
+Service, policy, Gateway, LoadBalancer, and optional egress-network behavior; it
+is not responsible for making K3s node underlay connectivity work. K3s
+server/agent connectivity, kubelet-to-apiserver connectivity, etcd peer traffic,
+node access to Harbor/DNS/TrueNAS, VLANs, routes, and firewall rules must work
+before Cilium is installed.
+
+The ingress/service NIC is dedicated to externally reachable service entrypoints,
+including Cilium Gateway and LoadBalancer/VIP advertisement. It is not the K3s
+node identity network and is not used for Cilium node-to-node underlay traffic
+in phase one.
+
+Cloud-init should configure multi-NIC VM networking using deterministic MAC
+addresses from OpenTofu and `network-config` MAC matching. Interface names such
+as `mgmt0`, `cluster0`, `storage0`, and `ingress0` should be assigned with
+`match.macaddress` and `set-name`. The current VM automation must be extended
+before this target model can be fully provisioned.
+
 ### Repository boundaries
 
 K3s-related automation should be split by responsibility rather than placed in a
@@ -260,6 +343,17 @@ Only VM-based K3s nodes should connect to the storage VLAN in the first phase.
 Bare-metal K3s nodes should not host workloads that require block storage or
 storage VLAN access.
 
+The storage VLAN is a storage data-plane network, not a general application or
+management network. K3s VM `storage0` interfaces may access the TrueNAS storage
+endpoint; ordinary LAN clients, bare-metal K3s nodes, and ingress/service
+networks should not be given storage VLAN access in phase one.
+
+The TrueNAS CSI endpoint used by K3s must use the storage VLAN address. The
+Linux route to that endpoint should be a connected or explicit storage route via
+`storage0`, not the node default route. Ordinary Pod egress continues to use the
+node default route on `mgmt0` unless a later Cilium Egress Gateway or policy
+routing design overrides it.
+
 ### Gateway implementation
 
 Cilium Gateway is the first implementation candidate. Traefik remains the
@@ -267,6 +361,11 @@ fallback and comparison point.
 
 Only one Gateway implementation should own a production hostname/VIP set at a
 time.
+
+Gateway and LoadBalancer VIPs should be announced on the ingress/service network
+in phase one. The ingress/service network is externally reachable by clients,
+OPNsense, reverse proxies, or other approved service consumers. It should not be
+used as the K3s node identity network or as the Cilium node-to-node underlay.
 
 ### GitOps
 
@@ -294,6 +393,64 @@ It does not need to cover the full deploy/upgrade/drift lifecycle in the first
 iteration.
 
 The committed recovery reference is generated at `docs/generated/foundation-recovery.md`. Offline freshness checks are safe without live infrastructure access (`make foundation-check`), while `make foundation-health` is an explicit online read-only probe path.
+
+### K3s automation route
+
+K3s operational automation should be layered rather than implemented as one
+large playbook or one large GitOps tree:
+
+```text
+OpenTofu
+  → creates PVE VMs, disks, NICs, deterministic MAC addresses, and cloud-init media
+
+cloud-init
+  → provides first boot identity, SSH access, initial users, and initial network config
+
+Ansible common VM bootstrap
+  → converges ordinary VM baseline: hostname, packages, qemu-guest-agent,
+    time sync, SSH/sudo policy, apt configuration, and read-only network validation
+
+Ansible K3s node bootstrap
+  → installs K3s host prerequisites, renders /etc/rancher/k3s/config.yaml,
+    installs pinned K3s server/agent versions, and performs initial health checks
+
+Cilium bootstrap
+  → provides the first cluster CNI and validates Pod/Service connectivity
+
+Flux bootstrap
+  → reconciles ongoing platform state from Git
+
+TrueNAS CSI and Gateway PoCs
+  → validate storage and ingress before production workloads depend on them
+```
+
+Cloud-init should not become the long-term host configuration system. It only
+needs to make a VM reachable and correctly networked enough for Ansible to
+converge it. Ordinary VMs and K3s VMs should share the common VM bootstrap role;
+K3s nodes add only the K3s-specific prerequisite and install roles.
+
+The recommended implementation sequence is:
+
+1. add a common Ansible VM bootstrap workflow for existing single-NIC VMs;
+2. extend PVE VM inventory, validation, OpenTofu, and cloud-init to support
+   multi-NIC cloud-init VMs;
+3. add K3s node bootstrap roles and pinned K3s install configuration;
+4. bootstrap Cilium with explicit device/underlay assumptions;
+5. bootstrap Flux for platform resources;
+6. run TrueNAS official CSI and Gateway validation PoCs;
+7. add Day-2 health, upgrade, backup, and restore-drill commands.
+
+Long-term ownership should remain split:
+
+```text
+iaas repository
+  → VM lifecycle, K3s bootstrap, Cilium baseline, Gateway baseline,
+    TrueNAS CSI baseline, StorageClasses, platform validation, recovery runbooks
+
+apps GitOps repository
+  → ordinary application workloads, application HelmRelease/Kustomization objects,
+    application HTTPRoutes, and day-to-day application upgrades
+```
 
 ### Foundation health checks
 
@@ -330,6 +487,38 @@ part of the K3s persistent-volume design.
 JuiceFS remains a supplemental option for existing `datafs`/`confs` use cases,
 but it is not the default storage layer for K3s control-plane data, embedded
 databases, or GitOps source-of-truth configuration.
+
+### TrueNAS CSI validation scope
+
+The official TrueNAS CSI driver is the first storage implementation candidate,
+but it must pass a validation PoC before production workloads rely on it.
+`democratic-csi` remains the fallback if the official driver cannot satisfy the
+required behavior.
+
+The first PoC should validate at least:
+
+- NFS RWX dynamic provisioning, multi-node mount, reclaim behavior, expansion,
+  and node reboot recovery;
+- block RWO provisioning, attach/detach, rescheduling to another VM node, stale
+  attachment recovery, filesystem resize, and node-failure behavior;
+- snapshot and restore behavior where supported by the selected driver and
+  backend;
+- compatibility with K3s VM nodes that access TrueNAS only through `storage0`;
+- failure behavior when a node loses storage VLAN connectivity.
+
+StorageClass names should remain backend-abstract so the CSI implementation can
+change without rewriting application manifests:
+
+```text
+shared-rwx
+block-rwo
+cache-local
+```
+
+Workloads that require `shared-rwx` or `block-rwo` storage must be scheduled only
+on VM-based K3s nodes with storage VLAN access. This may be enforced later with
+node labels, taints, affinity, or admission policy. `cache-local` remains for
+rebuildable cache, temporary, preview, and transcode data.
 
 ## Foundation service management model
 
@@ -409,7 +598,12 @@ configuration.
 - automatic upgrades of foundation services;
 - using JuiceFS as the default K3s PVC or database storage layer;
 - building a separate Nomad/Foundation scheduler;
-- fully converting foundation hosts to NixOS.
+- fully converting foundation hosts to NixOS;
+- using NixOS, Talos Linux, Flatcar, Fedora CoreOS, or another atomic node OS
+  for K3s VM nodes;
+- using the ingress/service network as the K3s node identity or Cilium
+  node-to-node underlay network;
+- giving bare-metal K3s nodes or ordinary LAN clients storage VLAN access.
 
 ## Initial validation checklist
 
@@ -427,12 +621,23 @@ configuration.
 
 ### K3s platform interfaces
 
+- [ ] Add common Ansible VM bootstrap for ordinary VMs and future K3s nodes.
+- [ ] Add multi-NIC PVE VM support using deterministic MAC addresses and
+      cloud-init network-config.
+- [ ] Confirm K3s VM nodes are distributed across available PVE nodes.
+- [ ] Confirm `mgmt0` is the only default-route owner.
+- [ ] Confirm `cluster0` is available for K3s node identity and Cilium underlay.
 - [ ] Verify Cilium installation and selected LB/IPAM mode.
+- [ ] Verify Cilium node-to-node traffic uses the selected cluster underlay.
 - [ ] Verify Cilium Gateway against required HTTP/TLS/Auth use cases.
 - [ ] Keep Traefik as fallback until Cilium Gateway passes validation.
+- [ ] Confirm Gateway/LoadBalancer VIPs are announced on the ingress/service
+      network, not on the storage or cluster network.
 - [ ] PoC official TrueNAS CSI for NFS RWX and block RWO.
 - [ ] Validate democratic-csi fallback separately.
 - [ ] Confirm storage VLAN access is limited to VM K3s nodes.
+- [ ] Confirm TrueNAS CSI endpoints use storage VLAN addresses and storage
+      routes, not the node default route.
 - [ ] Validate Flux bootstrap and offline recovery materials.
 - [ ] Confirm OPNsense exposes only stable Gateway/VIP entrypoints in the first
       phase.

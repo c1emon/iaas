@@ -1,0 +1,28 @@
+---
+- name: Record expected hostname identity
+  ansible.builtin.set_fact:
+    vm_baseline_expected_hostname: "{{ inventory_hostname }}"
+    vm_baseline_current_hostname: "{{ ansible_hostname | default('') }}"
+  changed_when: false
+
+- name: Converge hostname to inventory identity
+  ansible.builtin.hostname:
+    name: "{{ vm_baseline_expected_hostname }}"
+  when: vm_baseline_hostname_mode == 'converge'
+
+- name: Validate hostname against inventory identity
+  ansible.builtin.assert:
+    that:
+      - vm_baseline_current_hostname == vm_baseline_expected_hostname
+    fail_msg: >-
+      Hostname mismatch for {{ inventory_hostname }}: expected
+      {{ vm_baseline_expected_hostname }}, got {{ vm_baseline_current_hostname }}
+  when: vm_baseline_hostname_mode == 'validate'
+
+- name: Report hostname management disabled
+  ansible.builtin.debug:
+    msg: >-
+      Hostname management disabled for {{ inventory_hostname }}; expected
+      {{ vm_baseline_expected_hostname }}, current {{ vm_baseline_current_hostname }}
+  when: vm_baseline_hostname_mode == 'disabled'
+  changed_when: false
