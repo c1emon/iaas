@@ -24,9 +24,15 @@ locals {
     for name, vm in local.cloud_init_vms : name => "${local.snippets_datastore}:snippets/${local.cluster.automation.cloud_init.snippet_file_prefix}-${vm.vmid}-user-data.yml"
   }
 
+  network_data_file_ids = {
+    for name, vm in local.cloud_init_vms : name => "${local.snippets_datastore}:snippets/${local.cluster.automation.cloud_init.snippet_file_prefix}-${vm.vmid}-network-config.yml"
+    if length(try(vm.nics, [])) > 0
+  }
+
   vm_tags = {
     for name, vm in local.vms_by_name : name => distinct(compact(concat(
-      ["managed-by-opentofu", vm.lifecycle_class, vm.network.name],
+      ["managed-by-opentofu", vm.lifecycle_class],
+      [for nic in try(vm.nics, []) : nic.network.name],
       try(vm.tags, [])
     )))
   }

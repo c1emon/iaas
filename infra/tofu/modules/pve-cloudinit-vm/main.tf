@@ -2,6 +2,7 @@ locals {
   vm_is_protected    = var.prevent_destroy
   vm_passthrough     = try(var.vm.passthrough == null ? [] : var.vm.passthrough, [])
   vm_has_passthrough = length(local.vm_passthrough) > 0
+  vm_nics              = try(var.vm.nics, [])
 }
 
 resource "proxmox_virtual_environment_vm" "protected" {
@@ -41,8 +42,13 @@ resource "proxmox_virtual_environment_vm" "protected" {
     size         = var.vm.resources.root_disk_gib
   }
 
-  network_device {
-    bridge = var.vm.network.bridge
+  dynamic "network_device" {
+    for_each = local.vm_nics
+
+    content {
+      bridge      = network_device.value.network.bridge
+      mac_address = network_device.value.mac_address
+    }
   }
 
   dynamic "hostpci" {
@@ -60,18 +66,8 @@ resource "proxmox_virtual_environment_vm" "protected" {
   initialization {
     datastore_id = var.cloud_init_datastore_id
 
-    ip_config {
-      ipv4 {
-        address = var.vm.static_ip
-        gateway = var.vm.gateway
-      }
-    }
-
-    dns {
-      servers = var.vm.dns
-    }
-
-    user_data_file_id = var.user_data_file_id
+    user_data_file_id    = var.user_data_file_id
+    network_data_file_id = var.network_data_file_id
   }
 
   efi_disk {
@@ -85,7 +81,10 @@ resource "proxmox_virtual_environment_vm" "protected" {
   }
 
   lifecycle {
-    ignore_changes  = [initialization[0].user_data_file_id]
+    ignore_changes = [
+      initialization[0].user_data_file_id,
+      initialization[0].network_data_file_id,
+    ]
     prevent_destroy = true
 
     precondition {
@@ -132,8 +131,13 @@ resource "proxmox_virtual_environment_vm" "unprotected" {
     size         = var.vm.resources.root_disk_gib
   }
 
-  network_device {
-    bridge = var.vm.network.bridge
+  dynamic "network_device" {
+    for_each = local.vm_nics
+
+    content {
+      bridge      = network_device.value.network.bridge
+      mac_address = network_device.value.mac_address
+    }
   }
 
   dynamic "hostpci" {
@@ -151,18 +155,8 @@ resource "proxmox_virtual_environment_vm" "unprotected" {
   initialization {
     datastore_id = var.cloud_init_datastore_id
 
-    ip_config {
-      ipv4 {
-        address = var.vm.static_ip
-        gateway = var.vm.gateway
-      }
-    }
-
-    dns {
-      servers = var.vm.dns
-    }
-
-    user_data_file_id = var.user_data_file_id
+    user_data_file_id    = var.user_data_file_id
+    network_data_file_id = var.network_data_file_id
   }
 
   efi_disk {
@@ -176,7 +170,10 @@ resource "proxmox_virtual_environment_vm" "unprotected" {
   }
 
   lifecycle {
-    ignore_changes = [initialization[0].user_data_file_id]
+    ignore_changes = [
+      initialization[0].user_data_file_id,
+      initialization[0].network_data_file_id,
+    ]
 
     precondition {
       condition     = !local.vm_has_passthrough || (var.template.bios == "ovmf" && var.template.machine == "q35" && var.template.cpu_type == "host" && try(var.vm.ha.enabled, false) == false)

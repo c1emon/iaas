@@ -8,5 +8,9 @@
   roles:
     - role: vm_baseline
       vars:
-        vm_baseline_network_gateway: "{{ pve_gateway | default('') }}"
-        vm_baseline_network_dns: "{{ pve_dns | default([]) }}"
+        vm_baseline_connection_nic: >-
+          {{ (pve_nics | default([]) | selectattr('ansible_connection', 'equalto', true) | list | first | default({})) }}
+        vm_baseline_network_gateway: >-
+          {{ vm_baseline_connection_nic.get('gateway', '') }}
+        vm_baseline_network_dns: >-
+          {{ vm_baseline_connection_nic.get('dns', []) }}

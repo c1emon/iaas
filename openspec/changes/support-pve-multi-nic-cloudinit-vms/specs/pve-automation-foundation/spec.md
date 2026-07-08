@@ -10,16 +10,16 @@ The system SHALL use operator-authored YAML inventory as the source of truth for
 - **AND** it SHALL generate human-readable VM documentation from the same declaration
 - **AND** it SHALL avoid requiring duplicate manual VM definitions in OpenTofu and Ansible
 
-#### Scenario: Declare a legacy single-NIC VM
-- **WHEN** an operator declares a VM using the existing `network`, `static_ip`, `gateway`, and `dns` fields
-- **THEN** validation and generation SHALL continue to treat that VM as a single-NIC VM
-- **AND** generated OpenTofu and Ansible artifacts SHALL preserve existing behavior when the source YAML is unchanged
+#### Scenario: Reject legacy single-NIC VM fields
+- **WHEN** an operator declares a VM using the removed top-level `network`, `static_ip`, `gateway`, or `dns` fields
+- **THEN** validation SHALL reject the declaration
+- **AND** the error message SHALL point to the deprecated top-level fields
 
 #### Scenario: Declare a multi-NIC VM
 - **WHEN** an operator declares a VM with a `nics` list
-- **THEN** each NIC SHALL declare a stable name, role, logical network, static CIDR address, and deterministic MAC address
-- **AND** each NIC MAY declare a gateway and DNS settings subject to validation
-- **AND** the declaration SHALL identify exactly one management NIC used for generated Ansible connectivity
+- **THEN** each NIC SHALL declare a stable name, semantic role, logical network, static CIDR address, and deterministic MAC address
+- **AND** each NIC MAY declare explicit `default_route` and `ansible_connection` metadata, plus optional gateway and DNS settings subject to validation
+- **AND** the declaration SHALL NOT require any particular role in the generic base model
 
 #### Scenario: Keep generated files reviewable and non-sensitive
 - **WHEN** the generator emits OpenTofu, Ansible, documentation, or cloud-init metadata outputs
@@ -29,7 +29,7 @@ The system SHALL use operator-authored YAML inventory as the source of truth for
 - **AND** validation SHALL detect when committed generated files are stale relative to source YAML
 
 #### Scenario: Reject inconsistent source data before provisioning
-- **WHEN** YAML inventory contains duplicate VM IDs, duplicate hostnames, duplicate IP addresses, duplicate MAC addresses, unknown nodes, unknown templates, unknown networks, invalid NIC roles, missing management NICs, multiple management NICs, or multiple default gateways for one VM
+- **WHEN** YAML inventory contains duplicate VM IDs, duplicate hostnames, duplicate IP addresses, duplicate MAC addresses, unknown nodes, unknown templates, unknown networks, invalid NIC roles, multiple default-route NICs, or multiple Ansible-connection NICs for one VM
 - **THEN** the system SHALL reject the inventory before OpenTofu apply
 - **AND** it SHALL report the validation failure to the operator
 
@@ -44,7 +44,7 @@ The system SHALL use OpenTofu with the `bpg/proxmox` provider to manage new PVE 
 #### Scenario: Provision a VM with static cloud-init network configuration
 - **WHEN** an operator declares a VM on one or more attachable logical networks with static IP addresses
 - **THEN** OpenTofu SHALL create or update the VM from the declared template
-- **AND** it SHALL configure hostname, static IP addresses, gateways, DNS, and SSH access through cloud-init/OpenTofu initialization or runtime-rendered cloud-init snippets as appropriate
+- **AND** it SHALL configure hostname, static IP addresses, explicit default routes, DNS, and SSH access through cloud-init/OpenTofu initialization or runtime-rendered cloud-init snippets as appropriate
 - **AND** it SHALL attach each declared VM NIC to the pre-existing bridge resolved from that NIC's logical network declaration
 - **AND** it SHALL set declared deterministic MAC addresses on VM NICs when the VM uses explicit NIC declarations
 - **AND** it SHALL use a full clone from the Packer-managed template
@@ -107,7 +107,7 @@ The system SHALL render runtime cloud-init user-data and network-config snippets
 #### Scenario: Render snippets for an operation
 - **WHEN** an operator renders runtime cloud-init snippets for declared PVE VMs
 - **THEN** the system SHALL write user-data files for declared VMs to the ignored cloud-init cache directory
-- **AND** it SHALL write network-config files for declared VMs that require explicit cloud-init network configuration
+- **AND** it SHALL write network-config files for declared VMs that have at least one explicit NIC
 - **AND** it SHALL write a manifest describing each rendered snippet file, VM identity, snippet kind, storage file ID, byte count, and SHA-256 checksum
 - **AND** it SHALL treat the rendered files and manifest as the source of truth for later upload and verify steps in that operation
 - **AND** it SHALL NOT write plaintext passwords, private keys, or token secrets into committed generated files
@@ -143,18 +143,19 @@ The system SHALL generate cloud-init network-config for VMs that declare multipl
 - **AND** each declared NIC SHALL receive its declared static CIDR address
 
 #### Scenario: Configure the default route
-- **WHEN** a multi-NIC VM declares a gateway on its management NIC
-- **THEN** the rendered network-config SHALL configure exactly one default route through that gateway
-- **AND** non-management NICs SHALL NOT receive a default route in the first version
+- **WHEN** a NIC declares `default_route: true`
+- **THEN** the rendered network-config SHALL configure a default route through that NIC's gateway
+- **AND** validation SHALL reject more than one `default_route: true` NIC for one VM
 
-#### Scenario: Configure DNS for management connectivity
-- **WHEN** a multi-NIC VM declares DNS settings
-- **THEN** rendered cloud-init network-config SHALL apply DNS settings from the management NIC or VM-level compatibility fields
-- **AND** validation SHALL reject conflicting DNS declarations that cannot be rendered deterministically
+#### Scenario: Configure DNS for declared NICs
+- **WHEN** a NIC declares DNS settings
+- **THEN** rendered cloud-init network-config SHALL apply DNS settings on that NIC
+- **AND** validation SHALL reject conflicting NIC metadata that cannot be rendered deterministically
 
-#### Scenario: Use management NIC for generated Ansible inventory
+#### Scenario: Use explicit Ansible connection metadata for generated inventory
 - **WHEN** Ansible inventory is generated for a multi-NIC VM
-- **THEN** `ansible_host` SHALL be the host address from the NIC with role `management`
+- **THEN** `ansible_host` SHALL be the host address from the NIC with `ansible_connection: true`
+- **AND** VMs without such a NIC SHALL NOT be emitted under `pve_vms`
 - **AND** the generated inventory SHALL expose declared NIC metadata for later validation and bootstrap workflows
 
 ### Requirement: Multi-NIC validation rules
@@ -172,13 +173,14 @@ The system SHALL validate multi-NIC VM declarations before generated artifacts a
 - **AND** the network SHALL be approved for VM attachment
 - **AND** the NIC static IP SHALL be inside that network's CIDR and not equal to the network or broadcast address
 
-#### Scenario: Validate management NIC requirements
+#### Scenario: Validate generic NIC metadata
 - **WHEN** a VM uses explicit NIC declarations
-- **THEN** exactly one NIC SHALL have role `management`
-- **AND** the management NIC SHALL provide the generated Ansible connection address
-- **AND** the management NIC SHALL be the only NIC allowed to declare a default gateway in the first version
+- **THEN** the VM SHALL allow zero or more NICs
+- **AND** the VM SHALL allow zero or one `ansible_connection: true` NIC
+- **AND** the VM SHALL allow zero or one `default_route: true` NIC
+- **AND** the VM SHALL permit NIC roles such as `management`, `cluster`, `storage`, or `ingress` without requiring any specific one in the generic base model
 
 #### Scenario: Reject invalid mixed declarations
-- **WHEN** a VM declares both explicit `nics` and incompatible legacy single-NIC fields
-- **THEN** validation SHALL either normalize only documented compatibility fields or reject the ambiguous declaration
-- **AND** the failure message SHALL identify the conflicting VM fields for operator correction
+- **WHEN** a VM declares both explicit `nics` and legacy top-level NIC fields
+- **THEN** validation SHALL reject the declaration
+- **AND** the failure message SHALL identify the deprecated top-level VM fields for operator correction

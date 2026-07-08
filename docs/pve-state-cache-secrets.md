@@ -12,8 +12,8 @@ the default validation path.
 | --- | --- | --- | --- |
 | PVE OpenTofu local state | `infra/tofu/pve/terraform.tfstate` | Ignored | Sensitive local state; keep private to the operator workstation. |
 | PVE state backups | `.cache/tofu-state-backups/` | Ignored | Sensitive snapshots of local state. |
-| Rendered cloud-init snippets | `.cache/pve-cloud-init/user-data/` | Ignored | May include password hashes, SSH keys, hostnames, IPs, and user data. |
-| Cloud-init snippet manifest | `.cache/pve-cloud-init/user-data/manifest.json` | Ignored | Sensitive-adjacent runtime metadata with snippet names, VM identity, checksums, and source tfvars provenance. |
+| Rendered cloud-init snippets | `.cache/pve-cloud-init/user-data/` | Ignored | May include password hashes, SSH keys, hostnames, IPs, user-data, and network-config. |
+| Cloud-init snippet manifest | `.cache/pve-cloud-init/user-data/manifest.json` | Ignored | Sensitive-adjacent runtime metadata with snippet kinds, names, VM identity, checksums, and source tfvars provenance. |
 | Local Packer cache | `.cache/packer/` | Ignored | Runtime cache only; current remote wrapper caches on the PVE node under `/var/cache/astra/packer`. |
 | OPNsense exports/snapshots | `exports/opnsense/` | Ignored | Treat as environment-derived and review before sharing. |
 | Generated PVE OpenTofu input | `infra/tofu/pve/generated.auto.tfvars.json` | Committed | Reviewable non-sensitive generated artifact. |
@@ -85,7 +85,7 @@ Only delete `.cache/tofu-state-backups/` after confirming no backup is needed fo
 local recovery. Never commit `.cache` contents. Treat state backups, rendered
 cloud-init snippets, and their manifest/checksum files as sensitive-adjacent;
 rendered artifacts may contain password hashes, authorized SSH keys, usernames,
-checksums, and host identity data.
+checksums, host identity data, and guest network topology.
 
 ## Runtime secret injection conventions
 
@@ -137,6 +137,9 @@ or verify helpers, or guest verification):
 - Confirm ignored cache paths do not contain stale cloud-init snippets or state
   backups that could confuse the operation.
 - Review the live command and target context before pressing enter.
+- For explicit-NIC VMs that declare at least one NIC, confirm the rendered
+  manifest includes both `user-data` and `network-config` snippets and that
+  upload/verify consumes the manifest rather than rerendering.
 
 After a failed local workflow:
 

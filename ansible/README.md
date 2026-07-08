@@ -51,8 +51,9 @@ artifact and 1Password runtime injection rules used by PVE, OPNsense, switch,
 Packer, and guest workflows.
 
 For PVE guest verification, DNS means the guest resolver configuration only:
-the workflow checks `resolv.conf` nameserver entries against `pve_dns` and does
-not perform external DNS lookups.
+the workflow checks `resolv.conf` nameserver entries against the NIC in
+`pve_nics` marked `ansible_connection: true` and does not perform external DNS
+lookups.
 
 The canonical online guest verification command is repository-owned and lives at
 `make pve-verify-guests` from the repository root. It is Ansible-first, uses the
@@ -72,7 +73,7 @@ Bootstrap runs against the generated `pve_vms` inventory and uses the existing
 `ops` SSH user plus sudo escalation from that inventory. It does not manage or
 print private keys, and it does not mutate PVE lifecycle state. The first
 version also keeps guest network configuration read-only; it only reports the
-declared IP, gateway, and DNS facts.
+declared IP, gateway, and DNS facts from the Ansible-connection NIC.
 
 The shared `vm_baseline` role is intended for ordinary VMs first and can be
 reused by future K3s nodes or other Debian guests that follow the same

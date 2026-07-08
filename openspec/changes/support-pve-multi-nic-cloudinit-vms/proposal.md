@@ -1,26 +1,25 @@
 ## Why
 
 K3s VM nodes need distinct management, cluster-underlay, storage, and ingress
-interfaces, but the current PVE VM model supports only one NIC and one
-cloud-init IP configuration per VM. Multi-NIC cloud-init support is needed before
-the K3s bootstrap design can provision predictable node networking.
+interfaces. The PVE VM inventory has now been migrated to the explicit generic
+NIC model, with K3s-specific role constraints to be specialized later.
 
 ## What Changes
 
-- Extend VM inventory to support an ordered list of declared NICs with roles,
-  logical networks, static IPs, deterministic MAC addresses, optional gateway,
-  and optional DNS settings.
-- Preserve backward compatibility for existing single-NIC VM declarations where
-  practical, or provide a generated migration path without changing existing VM
-  behavior.
+- Extend VM inventory to support an ordered list of declared NICs with semantic
+  roles, logical networks, static IPs, deterministic MAC addresses, explicit
+  default-route metadata, explicit Ansible-connection metadata, optional
+  gateways, and optional DNS settings.
+- Use the explicit `nics` model everywhere and avoid any legacy single-NIC VM
+  shape in source inventory or generated artifacts.
 - Generate OpenTofu VM inputs that can attach multiple NICs to resolved PVE
   bridges and pass deterministic MAC addresses to the provider.
 - Generate cloud-init `network-config` snippets that match NICs by MAC address,
-  assign stable interface names, configure addresses, and enforce a single
-  default route.
+  assign stable interface names, configure addresses, and honor explicit
+  default-route metadata.
 - Update validation to reject duplicate MACs, duplicate IPs, invalid CIDRs,
-  non-attachable networks, multiple default gateways, missing management NICs,
-  and inconsistent DNS/gateway declarations.
+  non-attachable networks, duplicate default routes, duplicate Ansible
+  connection NICs, and legacy top-level NIC fields.
 - Keep PVE host bridge/VLAN creation out of scope; this change only attaches VM
   NICs to existing approved bridges.
 
@@ -33,8 +32,8 @@ the K3s bootstrap design can provision predictable node networking.
 ### Modified Capabilities
 
 - `pve-automation-foundation`: VM source-of-truth, generation, validation,
-  OpenTofu lifecycle, and cloud-init behavior are extended from single-NIC to
-  multi-NIC guest networking.
+  OpenTofu lifecycle, and cloud-init behavior use the explicit generic NIC
+  model for multi-NIC guest networking.
 
 ## Impact
 

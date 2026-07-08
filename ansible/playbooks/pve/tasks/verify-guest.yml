@@ -6,6 +6,8 @@
     pve_guest_tags: "{{ hostvars[pve_guest_name].get('pve_tags', []) }}"
     pve_guest_declared_ip: "{{ hostvars[pve_guest_name].get('ansible_host') | string }}"
     pve_guest_ssh_user: "{{ hostvars[pve_guest_name].get('ansible_user') | default('ops') }}"
+    pve_guest_connection_nic: >-
+      {{ hostvars[pve_guest_name].get('pve_nics', []) | selectattr('ansible_connection', 'equalto', true) | list | first | default({}) }}
   changed_when: false
 
 - name: Record inventory metadata checks for {{ pve_guest_name }}
@@ -191,7 +193,7 @@
     pve_guest_dns_result:
       severity: "{{ 'PASS' if pve_guest_dns_present else 'WARN' }}"
       line: "{{ ('PASS' if pve_guest_dns_present else 'WARN') ~ ' guest.' ~ pve_guest_name ~ '.dns.' ~ pve_guest_dns ~ ': ' ~ ('resolver config exposes declared DNS server ' ~ pve_guest_dns if pve_guest_dns_present else 'resolver config does not expose declared DNS server ' ~ pve_guest_dns) }}"
-  loop: "{{ pve_guest_hostvars.get('pve_dns', []) }}"
+  loop: "{{ pve_guest_connection_nic.get('dns', []) }}"
   loop_control:
     loop_var: pve_guest_dns
     label: "{{ pve_guest_dns }}"

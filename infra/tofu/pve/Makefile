@@ -12,7 +12,7 @@ ANSIBLE_LIMIT ?= pve_vms
 ANSIBLE_ARGS ?=
 PACKER_BUILD_SCRIPT ?= $(ROOT)/infra/packer/proxmox/debian-13/build-template.sh
 
-.PHONY: backup-state generate check-generated validate-source validate-ansible validate fmt init pve-preflight pve-health check-pve render-user-data upload-user-data verify-user-data verify-guests verify-guests-syntax bootstrap-guests bootstrap-guests-syntax plan apply destroy tofu-plan tofu-apply tofu-destroy packer-build ansible-check ansible-syntax
+.PHONY: backup-state generate check-generated validate-source validate-ansible validate fmt init pve-preflight pve-health check-pve render-cloud-init upload-cloud-init verify-cloud-init render-user-data upload-user-data verify-user-data verify-guests verify-guests-syntax bootstrap-guests bootstrap-guests-syntax plan apply destroy tofu-plan tofu-apply tofu-destroy packer-build ansible-check ansible-syntax
 
 backup-state:
 	@mkdir -p "$(BACKUP_DIR)"
@@ -54,14 +54,20 @@ require-pve-target: require-storage-id
 	@test -n "$(PVE_HOST)" || { printf 'error: PVE_HOST is required\n' >&2; exit 1; }
 	@test -n "$(PVE_SSH_USER)" || { printf 'error: PVE_SSH_USER is required\n' >&2; exit 1; }
 
-render-user-data: require-storage-id
+render-cloud-init: require-storage-id
 	$(UV) run --directory "$(ROOT)" python -m scripts.pve_inventory.cloud_init render --output-dir "$(USER_DATA_DIR)" --storage-id "$(STORAGE_ID)"
 
-upload-user-data: require-pve-target
+upload-cloud-init: require-pve-target
 	$(UV) run --directory "$(ROOT)" python -m scripts.pve_inventory.cloud_init upload --output-dir "$(USER_DATA_DIR)" --storage-id "$(STORAGE_ID)" --pve-host "$(PVE_HOST)" --ssh-user "$(PVE_SSH_USER)"
 
-verify-user-data: require-pve-target
+verify-cloud-init: require-pve-target
 	$(UV) run --directory "$(ROOT)" python -m scripts.pve_inventory.cloud_init verify --output-dir "$(USER_DATA_DIR)" --storage-id "$(STORAGE_ID)" --pve-host "$(PVE_HOST)" --ssh-user "$(PVE_SSH_USER)"
+
+render-user-data: render-cloud-init
+
+upload-user-data: upload-cloud-init
+
+verify-user-data: verify-cloud-init
 
 verify-guests:
 	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(ANSIBLE_INVENTORY)" "$(ANSIBLE_PLAYBOOK)"
@@ -82,13 +88,13 @@ ansible-syntax: verify-guests-syntax
 packer-build:
 	bash "$(PACKER_BUILD_SCRIPT)"
 
-plan: render-user-data
+plan: render-cloud-init
 	$(MAKE) backup-state BACKUP_PHASE=before
 	$(TOFU) plan
 
 apply:
-	$(MAKE) render-user-data
-	$(MAKE) upload-user-data verify-user-data
+	$(MAKE) render-cloud-init
+	$(MAKE) upload-cloud-init verify-cloud-init
 	$(MAKE) backup-state BACKUP_PHASE=before
 	$(TOFU) apply
 	$(MAKE) backup-state BACKUP_PHASE=after

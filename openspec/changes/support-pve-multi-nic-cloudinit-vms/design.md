@@ -1,22 +1,24 @@
 ## Context
 
-The current PVE VM automation model is intentionally single-NIC. A VM declares
-one logical network, one static IP, one gateway, and one DNS list; the OpenTofu
-module renders one `network_device` block and one Proxmox initialization
-`ip_config`. Runtime cloud-init support renders user-data snippets only.
+The current PVE VM automation model has been migrated to the explicit generic
+NIC model. A VM declares a `nics` list with semantic roles, explicit route and
+Ansible-connectivity metadata, and deterministic MAC addresses. Runtime
+cloud-init support renders user-data plus network-config snippets when NICs are
+present.
 
-The K3s platform design now requires VM nodes with separate management,
-cluster-underlay, storage, and ingress/service interfaces. Those interfaces need
-stable MAC addresses, predictable guest interface names, exactly one default
-route, and clear validation before OpenTofu applies changes.
+The K3s platform design will eventually require VM nodes with separate
+management, cluster-underlay, storage, and ingress/service interfaces. The base
+PVE model should stay generic now, with those K3s-specific roles and constraints
+specialized later. Multi-NIC guests still need stable MAC addresses, predictable
+guest interface names, explicit route metadata, explicit Ansible-connection
+metadata, and clear validation before OpenTofu applies changes.
 
 ## Goals / Non-Goals
 
 **Goals:**
 
 - Represent multiple NICs per VM in repository YAML inventory.
-- Preserve existing single-NIC VM behavior or provide a safe compatibility
-  normalization path.
+- Use the explicit `nics` model in source inventory and generated artifacts.
 - Validate NIC roles, networks, IPs, MAC addresses, gateways, DNS settings, and
   generated metadata offline before OpenTofu runs.
 - Generate OpenTofu input for multiple PVE VM `network_device` attachments.
@@ -24,8 +26,8 @@ route, and clear validation before OpenTofu applies changes.
   guest interface names.
 - Upload and verify network-config snippets with the same exact-artifact model
   used for runtime user-data snippets.
-- Render Ansible inventory so `ansible_host` remains the management IP for
-  multi-NIC guests.
+- Render Ansible inventory so `ansible_host` comes from the NIC explicitly
+  marked for Ansible connectivity.
 
 **Non-Goals:**
 
@@ -40,12 +42,10 @@ route, and clear validation before OpenTofu applies changes.
 
 ## Decisions
 
-### Add `nics` while retaining the legacy single-NIC shape
+### Use `nics` as the source-of-truth VM network shape
 
-VM declarations should support a new `nics` list. Existing fields such as
-`network`, `static_ip`, `gateway`, and `dns` should continue to normalize to a
-single management NIC so existing inventory and generated artifacts do not need a
-large immediate migration.
+VM declarations should use a `nics` list. Legacy top-level single-NIC fields are
+not accepted. The generic base model does not require a management NIC.
 
 Example target shape:
 
@@ -70,15 +70,15 @@ Alternative considered: replace the single-NIC schema immediately. This was
 rejected because existing VM examples and tests should remain valid while the
 new multi-NIC model is introduced.
 
-### Treat the management NIC as the Ansible connection NIC
+### Treat Ansible connectivity as explicit metadata
 
 For multi-NIC VMs, generated Ansible inventory should set `ansible_host` to the
-host address of the NIC with role `management`. The management NIC is also the
-only default-route owner in the first version.
+host address of the NIC explicitly marked `ansible_connection: true`. Default
+routes should be driven by explicit `default_route: true` metadata, not by the
+NIC role.
 
-Alternative considered: allow any NIC to provide `ansible_host`. This was
-rejected because it makes K3s storage or ingress networks accidental management
-paths and weakens validation.
+Alternative considered: require a management NIC again. This was rejected
+because the generic base model should not encode K3s-specific role semantics.
 
 ### Require deterministic operator-declared MAC addresses for multi-NIC VMs
 
@@ -96,7 +96,7 @@ order is too fragile for multi-NIC K3s nodes.
 The existing runtime cloud-init renderer should be extended to render a
 network-config artifact for each VM that uses `nics`. OpenTofu should reference
 both snippets through the provider's custom cloud-init mechanism where supported.
-Single-NIC legacy VMs may continue to use provider `ip_config` until migrated.
+The base model no longer uses provider `ip_config` for VM networking.
 
 Alternative considered: encode multi-NIC network YAML inside user-data. This was
 rejected because cloud-init has a dedicated network-config channel and Proxmox
@@ -104,10 +104,10 @@ supports custom network snippets.
 
 ### Use dynamic OpenTofu `network_device` blocks
 
-The PVE cloud-init VM module should render one network device per normalized NIC.
-Each network device should resolve its bridge from the logical network and set
-the declared MAC address when provided. Existing single-NIC VMs should still
-render one network device.
+The PVE cloud-init VM module should render one network device per NIC. Each
+network device should resolve its bridge from the logical network and set the
+declared MAC address. Explicit zero-NIC declarations should remain valid and
+render no devices.
 
 Alternative considered: create separate modules for single-NIC and multi-NIC
 VMs. This was rejected because it would duplicate VM lifecycle behavior and make
@@ -129,13 +129,13 @@ separate, explicit capability.
 - **Wrong MAC assignment can swap guest interfaces** → Require explicit MACs,
   validate uniqueness, render MAC-based cloud-init matching, and include
   generated artifacts for review.
-- **Multiple default gateways can break routing** → Offline validation rejects
-  more than one gateway/default-route owner per VM.
+- **Multiple default routes can break routing** → Offline validation rejects
+  more than one `default_route: true` NIC per VM.
 - **Provider cloud-init custom network support may differ by version** → Confirm
   the exact `bpg/proxmox` attribute names during implementation and spike one
   multi-NIC VM plan before broad refactoring.
-- **Existing single-NIC VMs may show noisy diffs** → Preserve legacy normalization
-  and generated output where source YAML is unchanged.
+- **Explicit NIC migration may show output churn** → Regenerate committed outputs
+  from the explicit `nics` source of truth and review the diffs carefully.
 - **Non-attachable storage networks could be accidentally exposed** → Require
   network declarations to opt into VM attachment and keep current non-attachable
   networks rejected.
@@ -144,21 +144,19 @@ separate, explicit capability.
 
 ## Migration Plan
 
-1. Add normalized NIC data model and validation while preserving current
-   single-NIC declarations.
+1. Use the explicit NIC data model as the only VM network declaration shape.
 2. Extend generated OpenTofu tfvars and Ansible inventory with normalized NIC
    metadata.
 3. Extend cloud-init rendering to emit network-config artifacts and a manifest.
 4. Extend upload/verify wrappers or calls to handle both user-data and
    network-config snippets.
 5. Update the OpenTofu VM module to render dynamic network devices and reference
-   network-config snippets for multi-NIC VMs.
-6. Add tests for existing single-NIC compatibility and new multi-NIC examples.
-7. Update documentation with migration examples and the K3s NIC model.
+   network-config snippets for VMs with NICs.
+6. Add tests for explicit inventory, zero-NIC support, and legacy-field rejection.
+7. Update documentation with the explicit model and the K3s NIC specialization.
 
-Rollback is source-based: existing VMs can keep the legacy single-NIC shape. If a
-new multi-NIC VM plan is wrong before apply, correct the YAML and re-render. If a
-VM was created with wrong NICs, destroy/recreate only that VM when it is safe, or
+Rollback is source-based: correct the explicit NIC YAML and re-render. If a VM
+was created with wrong NICs, destroy/recreate only that VM when it is safe, or
 repair it manually in PVE and reconcile inventory afterward.
 
 ## Open Questions

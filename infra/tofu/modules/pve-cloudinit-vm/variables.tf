@@ -20,7 +20,7 @@ variable "template" {
 
 variable "vm" {
   type        = any
-  description = "Single VM declaration from generated.auto.tfvars.json."
+  description = "Single VM declaration from generated.auto.tfvars.json using explicit NIC metadata."
 }
 
 variable "started" {
@@ -37,6 +37,12 @@ variable "user_data_file_id" {
   type        = string
   default     = null
   description = "Cloud-init user-data snippet file id such as images:snippets/opentofu-vm-500-user-data.yml; set null for passthrough VMs."
+}
+
+variable "network_data_file_id" {
+  type        = string
+  default     = null
+  description = "Cloud-init network-config snippet file id such as images:snippets/opentofu-vm-500-network-config.yml; set null for zero-NIC VMs."
 }
 
 variable "prevent_destroy" {
