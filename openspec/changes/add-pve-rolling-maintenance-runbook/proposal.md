@@ -7,13 +7,14 @@ This repository should not jump straight to automated maintenance playbooks. Rol
 ## What Changes
 
 - Add a PVE rolling maintenance runbook at `docs/runbooks/pve-rolling-maintenance.md`.
-- Define safe boundaries for reboot-only and package-update maintenance.
+- Define safe boundaries for reboot-only and package-update maintenance, with reboot performed only when planned or required.
 - Require `make pve-health` as the main precheck, per-node continue gate, and post-maintenance health gate.
 - Recommend `make pve-verify-guests` before/after maintenance to capture guest runtime baseline and outcome.
-- Distinguish multi-node rolling maintenance from single-node maintenance where downtime may be unavoidable.
+- Distinguish multi-node rolling maintenance from single-node maintenance where downtime may be unavoidable, and require live quorum plus workload-placement checks before calling a procedure rolling.
 - Document per-node operator flow: choose node, inspect VMs, decide migrate/shutdown/defer, perform manual maintenance, wait for node return, run health checks, then decide whether to continue.
 - Document VM handling policy for long-lived, ephemeral lab, and passthrough VMs.
-- Document Ceph handling as conditional/future only; do not automate or require Ceph operations in non-Ceph environments.
+- Require recovery evidence and alternate console access appropriate to the maintenance scope before mutation begins.
+- Document Ceph handling as conditional/future only; defer maintenance when Ceph is present but no reviewed environment-specific procedure exists.
 - Define abort and continue criteria.
 - Keep this change docs-only: no playbooks, scripts, Make targets, migrations, reboots, updates, or notifications.
 
@@ -33,7 +34,7 @@ This repository should not jump straight to automated maintenance playbooks. Rol
   - OpenSpec requirements for maintenance boundaries.
 - Operational impact:
   - Operators gain a repeatable manual maintenance procedure before any future automation.
-  - The runbook reduces risk by making prechecks, per-node checks, guest checks, and abort rules explicit.
+  - The runbook reduces risk by making recovery prerequisites, prechecks, per-node checks, guest checks, and abort rules explicit.
   - No live infrastructure behavior changes.
 - Non-goals:
   - Automated VM migration, node maintenance mode, node reboot, package update, PVE upgrade, Ceph `noout`, notification delivery, internal CI triggers, or automatic remediation.
