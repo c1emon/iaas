@@ -110,8 +110,8 @@ The system SHALL keep online checks, planning, and mutation-capable operations o
 - **AND** the default offline check SHALL NOT depend on PVE online preflight or PVE cluster health targets
 
 #### Scenario: Preserve explicit planning and mutation operations
-- **WHEN** operators need to run OpenTofu plan, OpenTofu apply, OpenTofu destroy, Packer template builds, Ansible mutation, PVE maintenance, VM migration, or node reboot workflows
-- **THEN** those operations SHALL remain explicit commands
+- **WHEN** operators need to run OpenTofu plan, OpenTofu apply, OpenTofu destroy, Packer template builds, Ansible mutation, PVE maintenance, VM migration, package updates, node reboot workflows, or Ceph mutation
+- **THEN** those operations SHALL remain explicit commands or manual runbook steps
 - **AND** they SHALL NOT be dependencies of the aggregate offline check
 - **AND** they SHALL NOT run automatically in the initial cloud CI workflow
 
@@ -200,7 +200,7 @@ The system SHALL keep newly added P0 hygiene checks compatible with cloud CI and
 - **WHEN** GitHub Actions or another CI platform runs P0 hygiene checks
 - **THEN** it SHALL invoke repository-owned targets
 - **AND** it SHALL NOT define or require PVE, OPNsense, switch, 1Password, SSH, or apply-capable secrets
-- **AND** it SHALL NOT run PVE preflight, PVE cluster health checks, OpenTofu plan/apply/destroy, Packer build, Ansible guest verification, PVE maintenance, or infrastructure mutation
+- **AND** it SHALL NOT run PVE preflight, PVE cluster health checks, PVE rolling maintenance, OpenTofu plan/apply/destroy, Packer build, Ansible guest verification, or infrastructure mutation
 
 #### Scenario: Runtime state artifacts are accidentally tracked
 - **WHEN** local OpenTofu state, provider directories, virtual environments, caches, Ansible collections, or platform metadata files are accidentally added to source control

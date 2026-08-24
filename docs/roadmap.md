@@ -42,12 +42,6 @@ context unless this page or OpenSpec says otherwise.
 - Preserve the current YAML source-of-truth model until scale or multi-operator
   workflow justifies a stronger inventory system.
 
-## In progress
-
-| Work | Current status | Notes |
-|---|---|---|
-| `add-pve-rolling-maintenance-runbook` | In progress | Active OpenSpec change with tasks still unchecked; intended to document rolling PVE maintenance before any deeper automation. |
-
 ## Complete pending archive
 
 These active changes appear implementation-complete and should be verified and
@@ -75,6 +69,7 @@ archived OpenSpec changes.
 |---|---|
 | PVE automation foundation, inventory validation, validation entrypoints, and reliability milestone. | `openspec/changes/archive/2026-06-22-add-pve-automation-foundation/`, `openspec/changes/archive/2026-06-22-split-pve-inventory-validation/`, `openspec/changes/archive/2026-06-23-add-iaas-validation-entrypoints/`, `openspec/changes/archive/2026-06-23-complete-p0-iaas-reliability/` |
 | PVE online safety rails and runtime verification. | `openspec/changes/archive/2026-06-24-add-pve-online-preflight/`, `openspec/changes/archive/2026-06-26-add-pve-guest-verification/` |
+| PVE rolling maintenance procedure. | [`docs/runbooks/pve-rolling-maintenance.md`](runbooks/pve-rolling-maintenance.md), `openspec/changes/archive/2026-08-25-add-pve-rolling-maintenance-runbook/` |
 | PVE implementation/package maintenance and adapter consolidation. | `openspec/changes/archive/2026-06-28-consolidate-pve-api-runtime-adapters/`, `openspec/changes/archive/2026-06-28-reorganize-pve-health-check-packages/`, `openspec/changes/archive/2026-06-28-reorganize-pve-inventory-packages/`, `openspec/changes/archive/2026-06-28-reorganize-pve-cloud-init-packages/`, `openspec/changes/archive/2026-06-28-extract-python-common-primitives/` |
 | Operator documentation reorganization. | `openspec/changes/archive/2026-06-30-reorganize-operator-documentation/`, [root operator manual](../README.md) |
 | Roadmap consolidation. | `openspec/changes/archive/2026-06-30-consolidate-documentation-roadmaps/`, [current roadmap](roadmap.md) |
