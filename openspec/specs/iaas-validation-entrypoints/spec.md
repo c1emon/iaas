@@ -30,7 +30,7 @@ The system SHALL expose root-level commands for routine offline validation that 
 - **AND** it SHALL include relevant Python tests for PVE inventory validation and service Markdown rendering hardening
 - **AND** it SHALL include YAML linting for source-of-truth files
 - **AND** it SHALL include OpenTofu formatting and offline validation where practical
-- **AND** it SHALL include Python static type checking, Ansible linting, and strict OpenSpec validation through repository-owned command targets
+- **AND** it SHALL include Python static type checking, Ansible linting, strict OpenSpec validation, and OPNsense desired-state validation through repository-owned command targets
 - **AND** it SHALL fail when any required validation fails
 - **AND** it SHALL NOT perform online infrastructure access or mutation
 

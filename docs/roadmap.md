@@ -71,6 +71,7 @@ archived OpenSpec changes.
 | PVE online safety rails and runtime verification. | `openspec/changes/archive/2026-06-24-add-pve-online-preflight/`, `openspec/changes/archive/2026-06-26-add-pve-guest-verification/` |
 | PVE rolling maintenance procedure. | [`docs/runbooks/pve-rolling-maintenance.md`](runbooks/pve-rolling-maintenance.md), `openspec/changes/archive/2026-08-25-add-pve-rolling-maintenance-runbook/` |
 | PVE protected/unprotected VM resource parity guard. | `openspec/changes/archive/2026-08-25-guard-pve-cloudinit-vm-resource-parity/`, `scripts/tests/test_pve_cloudinit_vm_resource_parity.py` |
+| OPNsense desired-state validation admission gate. | `openspec/changes/archive/2026-08-25-validate-opnsense-mutation-inputs/`, `make opnsense-validate` |
 | PVE implementation/package maintenance and adapter consolidation. | `openspec/changes/archive/2026-06-28-consolidate-pve-api-runtime-adapters/`, `openspec/changes/archive/2026-06-28-reorganize-pve-health-check-packages/`, `openspec/changes/archive/2026-06-28-reorganize-pve-inventory-packages/`, `openspec/changes/archive/2026-06-28-reorganize-pve-cloud-init-packages/`, `openspec/changes/archive/2026-06-28-extract-python-common-primitives/` |
 | Operator documentation reorganization. | `openspec/changes/archive/2026-06-30-reorganize-operator-documentation/`, [root operator manual](../README.md) |
 | Roadmap consolidation. | `openspec/changes/archive/2026-06-30-consolidate-documentation-roadmaps/`, [current roadmap](roadmap.md) |
@@ -85,12 +86,9 @@ this roadmap consolidation.
 
 | Item | Source / reason |
 |---|---|
-| OPNsense vars validation | Remaining remediation backlog: validate interface/name, ports, networks, booleans, and unknown keys before firewall changes. |
-| OpenTofu protected/unprotected VM consistency guards | Remaining remediation backlog: add comments and structure checks without merging resources that use different lifecycle settings. |
 | OpenSpec archive cleanup | Several complete active changes should be verified and archived to reduce planning drift. |
 | Documentation cleanup | Keep `docs/README.md`, this roadmap, and historical labels aligned; avoid treating old proposal queues as current status. |
 | Architecture TODO consolidation | `docs/architecture.md` still tracks service placement, DNS/domain, monitoring, backup, and switch/management-port TODOs. Summarize or split them into focused docs when they become implementation work. |
-| PVE rolling maintenance runbook | Active change exists; finish it before adding playbook automation. |
 | Service metadata and exposure details | Continue improving service metadata and generated docs before coupling DNS, reverse proxy, or firewall mutation. |
 
 ## Deferred / scale-triggered ideas
