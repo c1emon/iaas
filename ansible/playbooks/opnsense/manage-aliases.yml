@@ -15,6 +15,25 @@
     opnsense_alias_source: "{{ ansible_project_dir }}/vars/opnsense/aliases.yml"
 
   tasks:
+    - name: Validate desired OPNsense aliases locally
+      ansible.builtin.command:
+        argv:
+          - uv
+          - run
+          - --directory
+          - "{{ ansible_project_dir }}/.."
+          - python
+          - -m
+          - scripts.opnsense_validation
+          - --resource
+          - aliases
+          - --file
+          - "{{ opnsense_alias_source }}"
+      args:
+        chdir: "{{ ansible_project_dir }}/.."
+      changed_when: false
+      check_mode: false
+
     - name: Load desired OPNsense aliases
       ansible.builtin.include_vars:
         file: "{{ opnsense_alias_source }}"

@@ -38,6 +38,25 @@
       - state
 
   tasks:
+    - name: Validate desired OPNsense PBR gateways locally
+      ansible.builtin.command:
+        argv:
+          - uv
+          - run
+          - --directory
+          - "{{ ansible_project_dir }}/.."
+          - python
+          - -m
+          - scripts.opnsense_validation
+          - --resource
+          - gateways
+          - --file
+          - "{{ opnsense_gateway_source }}"
+      args:
+        chdir: "{{ ansible_project_dir }}/.."
+      changed_when: false
+      check_mode: false
+
     - name: Load desired OPNsense PBR gateways
       ansible.builtin.include_vars:
         file: "{{ opnsense_gateway_source }}"

@@ -14,6 +14,9 @@ from scripts.common.errors import ValidationError
 from scripts.opnsense_validation import RESOURCE_PATHS, validate_all, validate_document
 
 
+ROOT = Path(__file__).resolve().parents[2]
+
+
 def _document(resource: str) -> dict[str, Any]:
     return yaml.safe_load(RESOURCE_PATHS[resource].read_text(encoding="utf-8"))
 
@@ -66,3 +69,27 @@ def test_cli_reports_expected_error_without_traceback_or_payload(tmp_path: Path)
     assert "opnsense validation failed: opnsense_aliases[0]" in result.stderr
     assert "Traceback" not in result.stderr
     assert "secret-value" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("playbook", "resource", "source_variable", "mutation"),
+    [
+        ("manage-aliases.yml", "aliases", "opnsense_alias_source", "oxlorg.opnsense.alias_multi:"),
+        ("manage-vips.yml", "vips", "opnsense_vip_source", "oxlorg.opnsense.interface_vip:"),
+        ("manage-gateways.yml", "gateways", "opnsense_gateway_source", "oxlorg.opnsense.gateway:"),
+        ("manage-filter-rules.yml", "filter-rules", "opnsense_filter_rule_source", "oxlorg.opnsense.rule_multi:"),
+    ],
+)
+def test_supported_mutation_playbooks_validate_before_credentials_and_mutation(
+    playbook: str, resource: str, source_variable: str, mutation: str
+) -> None:
+    source = (ROOT / "ansible/playbooks/opnsense" / playbook).read_text(encoding="utf-8")
+    validator = source.index("scripts.opnsense_validation")
+    assert source.index(f"- {resource}", validator) > validator
+    assert source.index(f'"{{{{ {source_variable} }}}}"', validator) > validator
+    assert validator < source.index("ansible.builtin.include_vars:")
+    assert validator < source.index("tasks/api-credential-preflight.yml")
+    assert validator < source.index(mutation)
+    assert validator < source.index("oxlorg.opnsense.reload:")
+    assert "changed_when: false" in source[: source.index("ansible.builtin.include_vars:")]
+    assert "check_mode: false" in source[: source.index("ansible.builtin.include_vars:")]

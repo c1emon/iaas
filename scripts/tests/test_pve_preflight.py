@@ -221,5 +221,5 @@ def test_make_check_and_offline_ci_do_not_invoke_preflight() -> None:
     make_text = MAKEFILE_PATH.read_text(encoding="utf-8")
     workflow_text = WORKFLOW_PATH.read_text(encoding="utf-8")
 
-    assert "check: check-generated test lint-yaml typecheck ansible-lint openspec-validate tofu-fmt tofu-validate" in make_text
+    assert "check: check-generated test lint-yaml typecheck ansible-lint openspec-validate tofu-fmt tofu-validate opnsense-validate" in make_text
     assert "pve-preflight" not in workflow_text

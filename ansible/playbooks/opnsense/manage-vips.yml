@@ -15,6 +15,25 @@
     opnsense_vip_source: "{{ ansible_project_dir }}/vars/opnsense/vips.yml"
 
   tasks:
+    - name: Validate desired OPNsense IP Alias VIPs locally
+      ansible.builtin.command:
+        argv:
+          - uv
+          - run
+          - --directory
+          - "{{ ansible_project_dir }}/.."
+          - python
+          - -m
+          - scripts.opnsense_validation
+          - --resource
+          - vips
+          - --file
+          - "{{ opnsense_vip_source }}"
+      args:
+        chdir: "{{ ansible_project_dir }}/.."
+      changed_when: false
+      check_mode: false
+
     - name: Load desired OPNsense IP Alias VIPs
       ansible.builtin.include_vars:
         file: "{{ opnsense_vip_source }}"

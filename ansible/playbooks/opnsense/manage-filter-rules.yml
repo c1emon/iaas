@@ -30,6 +30,25 @@
       - destination_net
 
   tasks:
+    - name: Validate desired OPNsense new filter rules locally
+      ansible.builtin.command:
+        argv:
+          - uv
+          - run
+          - --directory
+          - "{{ ansible_project_dir }}/.."
+          - python
+          - -m
+          - scripts.opnsense_validation
+          - --resource
+          - filter-rules
+          - --file
+          - "{{ opnsense_filter_rule_source }}"
+      args:
+        chdir: "{{ ansible_project_dir }}/.."
+      changed_when: false
+      check_mode: false
+
     - name: Load desired OPNsense new filter rules
       ansible.builtin.include_vars:
         file: "{{ opnsense_filter_rule_source }}"

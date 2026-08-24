@@ -102,6 +102,21 @@ Before any future write playbook:
 op run --env-file ../.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/snapshot.yml
 ```
 
+Validate all repository-owned alias, VIP, PBR gateway, and new filter-rule
+desired-state files without credentials or OPNsense access:
+
+```bash
+cd ..
+make opnsense-validate
+```
+
+Each supported mutation playbook runs the same resource-scoped validation before
+loading variables or checking API credentials. This checks local syntax and
+repository ownership only; it does not prove that appliance interfaces, aliases,
+or gateways exist. Do not edit desired-state files concurrently with a running
+playbook, because the local validation and subsequent variable load are adjacent
+but not content-digest bound.
+
 Additively apply reviewed firewall aliases from `ansible/vars/opnsense/aliases.yml`:
 
 ```bash
