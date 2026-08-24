@@ -30,13 +30,17 @@ def test_committed_supported_desired_state_passes_without_rewrite() -> None:
     [
         ("aliases", lambda document: document["opnsense_aliases"][0].update({"unexpected": True}), "unknown keys"),
         ("aliases", lambda document: document["opnsense_aliases"][0].update({"enabled": "true"}), "enabled: must be a boolean"),
+        ("aliases", lambda document: document["opnsense_aliases"][0].update({"name": "bad alias"}), "name: has invalid syntax"),
         ("vips", lambda document: document["opnsense_vips"][0].update({"address": "10.1.0.253"}), "address: must be an IP address with prefix"),
+        ("vips", lambda document: document["opnsense_vips"][0].update({"interface": "LAN"}), "interface: has invalid syntax"),
         ("vips", lambda document: document["opnsense_vips"].append(deepcopy(document["opnsense_vips"][0])), "duplicate managed identity"),
         ("gateways", lambda document: document["opnsense_gateways"][0].update({"default_gw": True}), "default_gw: must be false"),
         ("gateways", lambda document: document["opnsense_gateways"][0].update({"priority": 256}), "priority: must be within 1..255"),
         ("gateways", lambda document: document["opnsense_gateways"][0].update({"latency_low": 501}), "latency_low must not exceed"),
+        ("gateways", lambda document: document["opnsense_gateways"][0].update({"ip_protocol": "inet6"}), "gateway and monitor must be inet6"),
         ("filter-rules", lambda document: document["opnsense_filter_rules"][0].update({"description": "manual"}), "description: is generated"),
         ("filter-rules", lambda document: document["opnsense_filter_rules"][0].update({"destination_port": "70000"}), "destination_port: must be within 1..65535"),
+        ("filter-rules", lambda document: document["opnsense_filter_rules"].append(deepcopy(document["opnsense_filter_rules"][0])), "duplicate managed identity"),
         ("filter-rules", lambda document: document["opnsense_filter_rules"][3].update({"destination_net": ["opt8"]}), "deny rule must not include"),
     ],
 )
