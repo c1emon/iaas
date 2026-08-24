@@ -98,6 +98,7 @@ detailed state/cache/secret handling runbook.
 - Service metadata: [`docs/service-metadata.md`](docs/service-metadata.md)
 - Foundation recovery reference: [`docs/generated/foundation-recovery.md`](docs/generated/foundation-recovery.md)
 - PCI passthrough readiness: [`docs/runbooks/pve-pci-passthrough-readiness.md`](docs/runbooks/pve-pci-passthrough-readiness.md)
+- PVE rolling maintenance: [`docs/runbooks/pve-rolling-maintenance.md`](docs/runbooks/pve-rolling-maintenance.md)
 - Decisions: [`docs/decisions/pve-automation-preflight.md`](docs/decisions/pve-automation-preflight.md), [`docs/decisions/iaas-automation-roadmap-research.md`](docs/decisions/iaas-automation-roadmap-research.md)
 - Historical / remediation planning: [`docs/review-remediation-roadmap.md`](docs/review-remediation-roadmap.md)
 - Current roadmap and backlog: [`docs/roadmap.md`](docs/roadmap.md)

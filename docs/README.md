@@ -24,6 +24,7 @@ secrets, exported private configs, or unencrypted backups.
 
 - [PVE state, cache, and secret operations](pve-state-cache-secrets.md)
 - [PVE PCI passthrough readiness](runbooks/pve-pci-passthrough-readiness.md)
+- [PVE rolling maintenance](runbooks/pve-rolling-maintenance.md)
 - [PVE automation preflight decision](decisions/pve-automation-preflight.md)
 
 ## PVE
