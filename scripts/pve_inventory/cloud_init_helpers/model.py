@@ -24,6 +24,7 @@ class CloudInitSnippet:
     content: str
     byte_count: int = 0
     sha256: str = ""
+    kind: str = "user-data"
 
 
 def snippet_storage_path(storage_id: str, file_name: str) -> str:
@@ -61,3 +62,8 @@ def validate_sha256_hex(value: str) -> str:
     require(isinstance(value, str), "sha256 must be a string")
     require(_SAFE_SHA256_RE.fullmatch(value) is not None, "sha256 must be a 64-character hexadecimal digest")
     return value
+
+
+def validate_snippet_kind(kind: str) -> str:
+    require(kind in {"user-data", "network-config"}, "kind must be user-data or network-config")
+    return kind

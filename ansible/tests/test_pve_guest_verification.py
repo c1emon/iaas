@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 ANSIBLE_DIR = ROOT / "ansible"
 PLAYBOOK = ANSIBLE_DIR / "playbooks" / "pve" / "verify-guests.yml"
 TASKS_FILE = ANSIBLE_DIR / "playbooks" / "pve" / "tasks" / "verify-guest.yml"
+BOOTSTRAP_PLAYBOOK = ANSIBLE_DIR / "playbooks" / "pve" / "bootstrap-guests.yml"
 ROOT_MAKEFILE = ROOT / "Makefile"
 MODULE_MAKEFILE = ROOT / "infra" / "tofu" / "pve" / "Makefile"
 
@@ -48,7 +49,16 @@ def _base_hostvars() -> dict[str, Any]:
         "ansible_become_method": "sudo",
         "pve_ansible_groups": ["dev", "web"],
         "pve_tags": ["dev", "web"],
-        "pve_dns": ["10.10.0.254"],
+        "pve_nics": [
+            {
+                "name": "mgmt0",
+                "role": "management",
+                "ansible_connection": True,
+                "default_route": True,
+                "gateway": "10.10.0.254",
+                "dns": ["10.10.0.254"],
+            }
+        ],
     }
 
 
@@ -134,9 +144,12 @@ def test_unreachable_guest_reports_warn_and_continues(tmp_path: Path) -> None:
 
 def test_dns_mismatch_is_warning_class_in_native_tasks() -> None:
     tasks_file = TASKS_FILE.read_text(encoding="utf-8")
+    bootstrap_playbook = BOOTSTRAP_PLAYBOOK.read_text(encoding="utf-8")
 
     assert "ansible.builtin.slurp:" in tasks_file
     assert "ansible.builtin.command: resolvectl dns" in tasks_file
     assert "pve_guest_dns_present" in tasks_file
     assert "severity: \"{{ 'PASS' if pve_guest_dns_present else 'WARN' }}\"" in tasks_file
-    assert "WARN') ~ ' guest.' ~ pve_guest_name ~ '.dns.'" in tasks_file
+    assert "'PASS' if pve_guest_dns_present else 'WARN'" in tasks_file
+    assert "~ pve_guest_name ~ '.dns.' ~ pve_guest_dns" in tasks_file
+    assert "selectattr('ansible_connection', 'equalto', true)" in bootstrap_playbook

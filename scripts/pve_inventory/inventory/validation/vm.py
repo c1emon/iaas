@@ -13,12 +13,23 @@ from scripts.common.validation import as_list, as_mapping, require_bool, require
 DNS_LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 ANSIBLE_GROUP_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 PVE_TAG_RE = re.compile(r"^[a-z0-9]+(?:[._-][a-z0-9]+)*$")
+NIC_NAME_RE = DNS_LABEL_RE
+NIC_ROLE_RE = DNS_LABEL_RE
+MAC_ADDRESS_RE = re.compile(r"^[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}$")
+LINUX_INTERFACE_NAME_MAX_LENGTH = 15
 
 
 def parse_static_ip(value: str) -> tuple[str, int, str]:
     """Split a CIDR-style static IP into host, prefix, and network string."""
     interface = ipaddress.ip_interface(value)
     return str(interface.ip), int(interface.network.prefixlen), str(interface.network)
+
+
+def parse_mac_address(value: str, context: str) -> str:
+    """Validate and normalize a MAC address string."""
+    require(isinstance(value, str) and value, f"{context}: must be a non-empty string")
+    require(MAC_ADDRESS_RE.fullmatch(value) is not None, f"{context}: must be a MAC address in colon-separated hex format")
+    return value.lower()
 
 
 def _require_pattern(value: Any, context: str, pattern: re.Pattern[str], description: str) -> str:
@@ -41,6 +52,126 @@ def _normalize_string_list(value: Any, context: str, item_description: str, patt
         seen.add(text)
         normalized.append(text)
     return normalized
+
+
+def _normalize_dns_list(value: Any, context: str) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        raw_items: list[Any] = [value]
+    else:
+        raw_items = as_list(value, context)
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for index, item in enumerate(raw_items):
+        item_context = f"{context}[{index}]"
+        require(isinstance(item, str) and item, f"{item_context}: must be a non-empty string")
+        try:
+            ipaddress.ip_address(item)
+        except ValueError as exc:
+            raise ValidationError(f"{item_context}: must be a valid IP address") from exc
+        require(item not in seen, f"{context}: duplicate DNS entry {item}")
+        seen.add(item)
+        normalized.append(item)
+    return normalized
+
+
+def _normalize_nic_name(value: Any, context: str) -> str:
+    name = _require_pattern(value, context, NIC_NAME_RE, "a lower-case DNS-label-safe value")
+    require(
+        len(name) <= LINUX_INTERFACE_NAME_MAX_LENGTH,
+        f"{context}: must be at most {LINUX_INTERFACE_NAME_MAX_LENGTH} characters because it becomes a Linux interface name",
+    )
+    return name
+
+
+def _normalize_nic_role(value: Any, context: str) -> str:
+    return _require_pattern(value, context, NIC_ROLE_RE, "a lower-case DNS-label-safe value")
+
+
+def _normalize_nic(
+    nic_doc: dict[str, Any],
+    cluster_state: dict[str, Any],
+    ctx: str,
+    seen_ips: set[str],
+    seen_macs: set[str],
+) -> dict[str, Any]:
+    require_unknown_keys(nic_doc, {"name", "role", "network", "macaddr", "mac_address", "static_ip", "gateway", "dns", "default_route", "ansible_connection"}, f"{ctx}: nic")
+
+    name = _normalize_nic_name(nic_doc.get("name"), f"{ctx}.name")
+    role = _normalize_nic_role(nic_doc.get("role"), f"{ctx}.role")
+    network_name = nic_doc.get("network")
+    require(isinstance(network_name, str) and network_name, f"{ctx}.network must be a non-empty string")
+    network_name_str = cast(str, network_name)
+    network = cluster_state["networks"].get(network_name_str)
+    require(network is not None, f"{ctx}: network must reference a declared network")
+    network = cast(dict[str, Any], network)
+    require(network.get("attach_vms") is True, f"{ctx}: network {network_name_str} is not attachable for VMs")
+
+    mac_value = nic_doc.get("mac_address", nic_doc.get("macaddr"))
+    require(mac_value is not None, f"{ctx}: macaddr must be provided")
+    mac_address = parse_mac_address(cast(str, mac_value), f"{ctx}.macaddr")
+    require(mac_address not in seen_macs, f"{ctx}.macaddr: duplicate MAC {mac_address}")
+    seen_macs.add(mac_address)
+
+    static_ip = nic_doc.get("static_ip")
+    require(isinstance(static_ip, str), f"{ctx}: static_ip must be a string")
+    try:
+        host_ip, prefix_length, network_cidr = parse_static_ip(cast(str, static_ip))
+    except ValueError as exc:
+        raise ValidationError(f"{ctx}.static_ip: must be a valid CIDR-style IP interface") from exc
+    cidr = ipaddress.ip_network(network["cidr"], strict=False)
+    require(prefix_length == cidr.prefixlen, f"{ctx}.static_ip: must use prefix /{cidr.prefixlen}")
+    ip_addr = ipaddress.ip_address(host_ip)
+    require(ip_addr.version == cidr.version, f"{ctx}.static_ip: address family must match {network_name_str} ({network['cidr']})")
+    require(ip_addr in cidr, f"{ctx}.static_ip: must be inside {network_name_str} ({network['cidr']})")
+    require(ip_addr != cidr.network_address, f"{ctx}.static_ip: must not be the network address {cidr.network_address}")
+    require(ip_addr != cidr.broadcast_address, f"{ctx}.static_ip: must not be the broadcast address {cidr.broadcast_address}")
+    require(host_ip not in seen_ips, f"{ctx}.static_ip: duplicate IP {host_ip}")
+    seen_ips.add(host_ip)
+
+    gateway = nic_doc.get("gateway")
+    default_route_raw = nic_doc.get("default_route")
+    if default_route_raw is not None:
+        default_route_raw = require_bool(default_route_raw, f"{ctx}.default_route")
+    if gateway is not None:
+        require(isinstance(gateway, str) and gateway, f"{ctx}.gateway must be a non-empty string")
+        try:
+            ipaddress.ip_address(gateway)
+        except ValueError as exc:
+            raise ValidationError(f"{ctx}.gateway: must be a valid IP address") from exc
+        require(gateway == network.get("gateway"), f"{ctx}: gateway must match the selected network")
+        default_route = True
+    else:
+        default_route = bool(default_route_raw) if default_route_raw is not None else False
+        require(not default_route, f"{ctx}.default_route: default_route true requires gateway")
+
+    dns = _normalize_dns_list(nic_doc.get("dns"), f"{ctx}.dns")
+
+    ansible_connection_raw = nic_doc.get("ansible_connection")
+    ansible_connection = require_bool(ansible_connection_raw, f"{ctx}.ansible_connection") if ansible_connection_raw is not None else False
+
+    return {
+        "name": name,
+        "role": role,
+        "network": {
+            "name": network_name_str,
+            "bridge": network.get("bridge"),
+            "cidr": network.get("cidr"),
+            "gateway": network.get("gateway"),
+            "dns": network.get("dns"),
+            "attach_vms": network.get("attach_vms"),
+        },
+        "mac_address": mac_address,
+        "static_ip": cast(str, static_ip),
+        "ip_address": host_ip,
+        "prefix_length": prefix_length,
+        "network_cidr": network_cidr,
+        "gateway": gateway,
+        "default_route": default_route,
+        "ansible_connection": ansible_connection,
+        "dns": dns,
+    }
 
 
 def normalize_vm_resources(vm_doc: dict[str, Any], cluster_vm_defaults: dict[str, Any], ctx: str) -> dict[str, int]:
@@ -110,6 +241,7 @@ def validate_vms(vms_doc: dict[str, Any], cluster_state: dict[str, Any]) -> list
     seen_ids: set[int] = set()
     seen_names: set[str] = set()
     seen_ips: set[str] = set()
+    seen_macs: set[str] = set()
     passthrough_usage: dict[tuple[str, str], str] = {}
     normalized: list[dict[str, Any]] = []
 
@@ -120,10 +252,7 @@ def validate_vms(vms_doc: dict[str, Any], cluster_state: dict[str, Any]) -> list
         vmid = vm_doc.get("vmid")
         lifecycle = vm_doc.get("lifecycle_class")
         node = vm_doc.get("node")
-        network_name = vm_doc.get("network")
-        static_ip = vm_doc.get("static_ip")
-        gateway = vm_doc.get("gateway")
-        dns = as_list(vm_doc.get("dns"), f"{ctx}.dns")
+        raw_nics = vm_doc.get("nics")
         ansible_groups = _normalize_string_list(vm_doc.get("ansible_groups"), f"{ctx}.ansible_groups", "a lower-case Ansible-safe identifier", ANSIBLE_GROUP_RE, "ansible_groups value")
         tags = _normalize_string_list(vm_doc.get("tags"), f"{ctx}.tags", "a lower-case PVE tag token", PVE_TAG_RE, "tag")
         ha = as_mapping(vm_doc.get("ha"), f"{ctx}.ha")
@@ -149,29 +278,20 @@ def validate_vms(vms_doc: dict[str, Any], cluster_state: dict[str, Any]) -> list
         require(isinstance(node, str) and node in cluster_state["nodes"], f"{ctx}: node must reference a declared PVE node")
         node_str = cast(str, node)
 
-        require(isinstance(network_name, str), f"{ctx}: network must be a string")
-        network_name_str = cast(str, network_name)
-        network = cluster_state["networks"].get(network_name_str)
-        require(network is not None, f"{ctx}: network must reference a declared network")
-        network = cast(dict[str, Any], network)
-        require(network.get("attach_vms") is True, f"{ctx}: network {network_name_str} is not attachable for VMs")
-
-        require(isinstance(static_ip, str), f"{ctx}: static_ip must be a string")
-        try:
-            host_ip, prefix_length, network_cidr = parse_static_ip(cast(str, static_ip))
-        except ValueError as exc:
-            raise ValidationError(f"{ctx}.static_ip: must be a valid CIDR-style IP interface") from exc
-        cidr = ipaddress.ip_network(network["cidr"], strict=False)
-        require(prefix_length == cidr.prefixlen, f"{ctx}.static_ip: must use prefix /{cidr.prefixlen}")
-        ip_addr = ipaddress.ip_address(host_ip)
-        require(ip_addr.version == cidr.version, f"{ctx}.static_ip: address family must match {network_name_str} ({network['cidr']})")
-        require(ip_addr in cidr, f"{ctx}.static_ip: must be inside {network_name_str} ({network['cidr']})")
-        require(ip_addr != cidr.network_address, f"{ctx}.static_ip: must not be the network address {cidr.network_address}")
-        require(ip_addr != cidr.broadcast_address, f"{ctx}.static_ip: must not be the broadcast address {cidr.broadcast_address}")
-        require(host_ip not in seen_ips, f"{ctx}.static_ip: duplicate IP {host_ip}")
-        seen_ips.add(host_ip)
-        require(gateway == network.get("gateway"), f"{ctx}: gateway must match the selected network")
-        require(dns == [network.get("dns")], f"{ctx}: dns must match the selected network")
+        require("nics" in vm_doc, f"{ctx}: nics must be provided")
+        legacy_fields = [field for field in ("network", "static_ip", "gateway", "dns") if field in vm_doc]
+        require(not legacy_fields, f"{ctx}: legacy NIC fields are not supported: {', '.join(legacy_fields)}")
+        nic_entries = as_list(raw_nics, f"{ctx}.nics")
+        nics = [
+            _normalize_nic(cast(dict[str, Any], as_mapping(nic, f"{ctx}.nics[{nic_index}]")), cluster_state, f"{ctx}.nics[{nic_index}]", seen_ips, seen_macs)
+            for nic_index, nic in enumerate(nic_entries)
+        ]
+        nic_names = [nic["name"] for nic in nics]
+        require(len(set(nic_names)) == len(nic_names), f"{ctx}.nics: duplicate NIC name")
+        default_route_nics = [nic for nic in nics if nic["default_route"]]
+        require(len(default_route_nics) <= 1, f"{ctx}.nics: explicit NIC declarations may have at most one default route")
+        ansible_connection_nics = [nic for nic in nics if nic["ansible_connection"]]
+        require(len(ansible_connection_nics) <= 1, f"{ctx}.nics: explicit NIC declarations may have at most one ansible_connection NIC")
         require(isinstance(ha.get("enabled"), bool) and ha.get("enabled") is False, f"{ctx}: HA must stay disabled in section 2")
         require(ha.get("group") is None, f"{ctx}: HA group must be null until HA automation is implemented")
         require(ha.get("state") is None, f"{ctx}: HA state must be null until HA automation is implemented")
@@ -199,48 +319,34 @@ def validate_vms(vms_doc: dict[str, Any], cluster_state: dict[str, Any]) -> list
             passthrough_usage,
         )
 
-        normalized.append(
-            {
-                "name": name_str,
-                "vmid": vmid_int,
-                "lifecycle_class": lifecycle_str,
-                "node": node_str,
-                "network": {
-                    "name": network_name_str,
-                    "bridge": network.get("bridge"),
-                    "cidr": network.get("cidr"),
-                    "gateway": network.get("gateway"),
-                    "dns": network.get("dns"),
-                    "attach_vms": network.get("attach_vms"),
-                },
-                "static_ip": cast(str, static_ip),
-                "ip_address": host_ip,
-                "prefix_length": prefix_length,
-                "network_cidr": network_cidr,
-                "gateway": gateway,
-                "dns": dns,
-                "ansible_groups": list(ansible_groups),
-                "tags": list(tags),
-                "pool": pool,
-                "ha": {"enabled": False, "group": None, "state": None},
-                "resources": resources,
-                "boot": boot,
-                "template": {
-                    "name": template_name,
-                    "vmid": template.get("vmid"),
-                    "vm_name": template.get("name"),
-                    "node": template.get("node"),
-                    "storage_role": template_storage_role,
-                    "disk_size_gib": template.get("disk_size_gib"),
-                    "cpu_type": template.get("cpu_type"),
-                    "bios": template.get("bios"),
-                    "machine": template.get("machine"),
-                    "scsi_controller": template.get("scsi_controller"),
-                    "primary_disk": template.get("primary_disk"),
-                },
-                "storage": storage,
-                "passthrough": normalized_passthrough,
-            }
-        )
+        vm_record: dict[str, Any] = {
+            "name": name_str,
+            "vmid": vmid_int,
+            "lifecycle_class": lifecycle_str,
+            "node": node_str,
+            "nics": nics,
+            "ansible_groups": list(ansible_groups),
+            "tags": list(tags),
+            "pool": pool,
+            "ha": {"enabled": False, "group": None, "state": None},
+            "resources": resources,
+            "boot": boot,
+            "template": {
+                "name": template_name,
+                "vmid": template.get("vmid"),
+                "vm_name": template.get("name"),
+                "node": template.get("node"),
+                "storage_role": template_storage_role,
+                "disk_size_gib": template.get("disk_size_gib"),
+                "cpu_type": template.get("cpu_type"),
+                "bios": template.get("bios"),
+                "machine": template.get("machine"),
+                "scsi_controller": template.get("scsi_controller"),
+                "primary_disk": template.get("primary_disk"),
+            },
+            "storage": storage,
+            "passthrough": normalized_passthrough,
+        }
+        normalized.append(vm_record)
 
     return normalized

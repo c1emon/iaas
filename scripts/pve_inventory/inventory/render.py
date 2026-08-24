@@ -2,12 +2,31 @@
 
 from __future__ import annotations
 
+import copy
 import json
 from typing import Any
 
 import yaml
 
 from scripts.common.errors import require
+
+
+class IndentedSafeDumper(yaml.SafeDumper):
+    """YAML dumper that indents sequences under mapping keys for yamllint."""
+
+    def increase_indent(self, flow: bool = False, indentless: bool = False) -> Any:
+        return super().increase_indent(flow, False)
+
+
+def _ansible_connection_nic(vm: dict[str, Any]) -> dict[str, Any] | None:
+    for nic in vm.get("nics", []):
+        if nic.get("ansible_connection"):
+            return nic
+    return None
+
+
+def _format_dns(dns: list[str]) -> str:
+    return ", ".join(dns) if dns else "-"
 
 
 def build_tfvars(model: dict[str, Any]) -> str:
@@ -23,19 +42,19 @@ def build_ansible_inventory(model: dict[str, Any]) -> str:
     """Render the generated Ansible inventory."""
     groups: dict[str, dict[str, Any]] = {}
     for vm in model["vms"]:
+        connection_nic = _ansible_connection_nic(vm)
+        if connection_nic is None:
+            continue
         hostvars = {
             "ansible_connection": "ssh",
-            "ansible_host": vm["ip_address"],
+            "ansible_host": connection_nic["ip_address"],
             "ansible_user": model["cluster"]["automation"]["ansible_user"],
             "ansible_become": False,
             "ansible_become_method": "sudo",
             "ansible_python_interpreter": "auto_silent",
             "pve_vmid": vm["vmid"],
             "pve_node": vm["node"],
-            "pve_network": vm["network"]["name"],
-            "pve_bridge": vm["network"]["bridge"],
-            "pve_gateway": vm["gateway"],
-            "pve_dns": vm["dns"],
+            "pve_nics": copy.deepcopy(vm["nics"]),
             "pve_ansible_groups": vm["ansible_groups"],
             "pve_tags": vm["tags"],
             "pve_pool": vm["pool"],
@@ -55,12 +74,12 @@ def build_ansible_inventory(model: dict[str, Any]) -> str:
             groups.setdefault(group_name, {"hosts": {}})["hosts"][vm["name"]] = {}
 
     inventory = {"all": {"children": groups}}
-    return yaml.safe_dump(inventory, sort_keys=False, default_flow_style=False)
+    return yaml.dump(inventory, Dumper=IndentedSafeDumper, sort_keys=False, default_flow_style=False, explicit_start=True)
 
 
 def build_markdown(model: dict[str, Any]) -> str:
     """Render a compact Markdown summary of declared VMs."""
-    lines = ["# PVE VMs", "", "| Name | VMID | Lifecycle | Node | Network | IP | Template | Disk datastore | CPU | Memory | Disk | Started | On boot | Groups | Tags | Passthrough |", "|---|---:|---|---|---|---|---|---|---:|---:|---:|---|---|---|---|---|"]
+    lines = ["# PVE VMs", "", "| Name | VMID | Lifecycle | Node | NIC | Network | MAC | IP | Gateway | Default route | Ansible conn | DNS | Template | Disk datastore | CPU | Memory | Disk | Started | On boot | Groups | Tags | Passthrough |", "|---|---:|---|---|---|---|---|---|---|---|---|---|---|---:|---:|---:|---|---|---|---|---|"]
     for vm in model["vms"]:
         if vm["passthrough"]:
             passthrough = "; ".join(
@@ -74,9 +93,29 @@ def build_markdown(model: dict[str, Any]) -> str:
         template = f"{vm['template']['name']} ({vm['template']['vmid']})"
         started = "yes" if vm["boot"]["started"] else "no"
         on_boot = "yes" if vm["boot"]["on_boot"] else "no"
-        lines.append(
-            f"| {vm['name']} | {vm['vmid']} | {vm['lifecycle_class']} | {vm['node']} | {vm['network']['name']} | {vm['ip_address']}/{vm['prefix_length']} | {template} | {vm['storage']['disk_datastore_id']} | {vm['resources']['cores']} | {vm['resources']['memory_mib']} | {vm['resources']['root_disk_gib']} | {started} | {on_boot} | {groups} | {tags} | {passthrough} |"
-        )
+        nics = vm["nics"] or [{}]
+        for nic in nics:
+            if nic:
+                nic_name = f"{nic['name']} ({nic['role']})"
+                network = f"{nic['network']['name']} / {nic['network']['bridge']}"
+                mac_address = nic["mac_address"]
+                ip_address = f"{nic['ip_address']}/{nic['prefix_length']}"
+                gateway = nic["gateway"] or "-"
+                default_route = "yes" if nic.get("default_route") else "no"
+                ansible_connection = "yes" if nic.get("ansible_connection") else "no"
+                dns = _format_dns(nic["dns"])
+            else:
+                nic_name = "-"
+                network = "-"
+                mac_address = "-"
+                ip_address = "-"
+                gateway = "-"
+                default_route = "-"
+                ansible_connection = "-"
+                dns = "-"
+            lines.append(
+                f"| {vm['name']} | {vm['vmid']} | {vm['lifecycle_class']} | {vm['node']} | {nic_name} | {network} | {mac_address} | {ip_address} | {gateway} | {default_route} | {ansible_connection} | {dns} | {template} | {vm['storage']['disk_datastore_id']} | {vm['resources']['cores']} | {vm['resources']['memory_mib']} | {vm['resources']['root_disk_gib']} | {started} | {on_boot} | {groups} | {tags} | {passthrough} |"
+            )
     lines.extend(["", "## Cluster defaults", "", f"- Default template: {model['cluster']['default_template']}", f"- VM cores: {model['cluster']['vm_defaults']['cores']}", f"- VM memory MiB: {model['cluster']['vm_defaults']['memory_mib']}", f"- VM root disk GiB: {model['cluster']['vm_defaults']['root_disk_gib']}"])
     return "\n".join(lines) + "\n"
 

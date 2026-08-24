@@ -100,11 +100,11 @@ def test_fake_api_checks_cover_nodes_storage_templates_vmids_and_pci(monkeypatch
             {"vmid": 1000, "node": "cohe", "name": "prod-app-01", "template": False},
         ],
         "https://pve.example.invalid/api2/json/nodes/cohe/qemu/500/config": {
-            "tags": ",".join(["managed-by-opentofu", vms["dev-web-01"]["lifecycle_class"], vms["dev-web-01"]["network"]["name"], *vms["dev-web-01"]["tags"]]),
+            "tags": ",".join(["managed-by-opentofu", vms["dev-web-01"]["lifecycle_class"], vms["dev-web-01"]["nics"][0]["network"]["name"], *vms["dev-web-01"]["tags"]]),
             "description": "Managed by OpenTofu for astra-pve",
         },
         "https://pve.example.invalid/api2/json/nodes/cohe/qemu/1000/config": {
-            "tags": ",".join(["managed-by-opentofu", vms["prod-app-01"]["lifecycle_class"], vms["prod-app-01"]["network"]["name"], *vms["prod-app-01"]["tags"]]),
+            "tags": ",".join(["managed-by-opentofu", vms["prod-app-01"]["lifecycle_class"], vms["prod-app-01"]["nics"][0]["network"]["name"], *vms["prod-app-01"]["tags"]]),
             "description": "Managed by OpenTofu for astra-pve",
         },
         "https://pve.example.invalid/api2/json/cluster/mapping/pci": [{"name": "iGpu0", "nodes": [{"node": "cohe"}]}],
@@ -221,5 +221,5 @@ def test_make_check_and_offline_ci_do_not_invoke_preflight() -> None:
     make_text = MAKEFILE_PATH.read_text(encoding="utf-8")
     workflow_text = WORKFLOW_PATH.read_text(encoding="utf-8")
 
-    assert "check: check-generated test lint-yaml tofu-fmt tofu-validate" in make_text
+    assert "check: check-generated test lint-yaml typecheck ansible-lint openspec-validate tofu-fmt tofu-validate" in make_text
     assert "pve-preflight" not in workflow_text

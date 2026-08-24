@@ -3,7 +3,7 @@
 This directory is the root module for the PVE VM lifecycle foundation in
 `add-pve-automation-foundation`.
 
-OpenTofu owns VM lifecycle, cloud-init identity, and bridge attachment.
+OpenTofu owns VM lifecycle, cloud-init identity, and VM NIC attachment.
 Packer owns the reusable template. Ansible owns guest OS service configuration
 and read-only verification. YAML inventory is the source of truth.
 
@@ -26,6 +26,69 @@ and read-only verification. YAML inventory is the source of truth.
 - `br_dev` maps to `10.10.0.0/24` with gateway/DNS `10.10.0.254`.
 - `br_prod` maps to `10.50.0.0/24` with gateway/DNS `10.50.0.254`.
 - PVE host bridge configuration is a prerequisite and is not mutated here.
+
+## VM network inventory
+
+VM declarations use the explicit `nics` model. Zero-NIC VMs are valid and VMs
+with NICs render dynamic network devices plus cloud-init network-config:
+
+```yaml
+- name: dev-web-01
+  vmid: 500
+  lifecycle_class: ephemeral_lab
+  node: cohe
+  network: dev
+  static_ip: 10.10.0.20/24
+  gateway: 10.10.0.254
+  dns: [10.10.0.254]
+```
+
+Explicit multi-NIC declarations use reviewed deterministic MAC addresses and
+stable guest interface names. Cloud-init network-config matches by MAC address
+and applies `set-name`, avoiding fragile guest NIC ordering:
+
+```yaml
+- name: k3s-cp-01
+  vmid: 1101
+  lifecycle_class: long_lived
+  node: cohe
+  nics:
+    - name: mgmt0
+      role: management
+      network: prod
+      macaddr: bc:24:11:00:11:01
+      static_ip: 10.50.0.31/24
+      gateway: 10.50.0.254
+      dns: [10.50.0.254]
+    - name: cluster0
+      role: cluster
+      network: k3s-cluster
+      macaddr: bc:24:11:00:21:01
+      static_ip: 10.20.0.31/24
+    - name: storage0
+      role: storage
+      network: k3s-storage
+      macaddr: bc:24:11:00:31:01
+      static_ip: 10.30.0.31/24
+    - name: ingress0
+      role: ingress
+      network: k3s-ingress
+      macaddr: bc:24:11:00:41:01
+      static_ip: 10.40.0.31/24
+```
+
+K3s-target VM role convention:
+
+- `mgmt0` / `management` — recommended future K3s management interface and the
+  usual Ansible connection NIC, but not required by the generic base model.
+- `cluster0` / `cluster` — Cilium/K3s node-to-node underlay traffic.
+- `storage0` / `storage` — storage replication or data-plane traffic when an
+  attachable storage-like VM network is explicitly introduced.
+- `ingress0` / `ingress` — service or load-balancer ingress traffic.
+
+Every explicit NIC needs a unique MAC address. Plan MACs in inventory first,
+review generated artifacts, then render cloud-init snippets. Do not rely on
+Proxmox-generated MACs or guest names such as `ens18` for multi-NIC guests.
 
 ## State
 
@@ -75,8 +138,10 @@ op run --env-file .env.pve-opentofu.tpl -- make ansible-check
 
 `make generate` renders committed outputs from YAML. `make validate` validates
 source YAML, generated inventory, and OpenTofu config. `make plan` renders
-local cloud-init snippets only. `make apply` uploads and verifies snippets
-before applying OpenTofu changes. `make pve-preflight` is the explicit read-only
+local cloud-init snippets only. For VMs with NICs this includes both user-data
+and network-config snippets plus manifest entries. `make apply` uploads and
+verifies all manifest-recorded snippets before applying OpenTofu changes.
+`make pve-preflight` is the explicit read-only
 PVE readiness check and `make pve-check-pve` is a compatibility alias. Guest
 verification is separate and read-only: `make verify-guests` (or root
 `make pve-verify-guests`) invokes the Ansible-first playbook with the generated
@@ -170,8 +235,11 @@ The provider uses `bpg/proxmox` `~> 0.109.0` with `ssh { agent = true username =
 - HA stays disabled for passthrough VMs, and this module does not move VMs between nodes or mutate host IOMMU/VFIO state.
 - See `docs/runbooks/pve-pci-passthrough-readiness.md` for the host-side readiness checklist.
 - Future TODO: manage PCI resource mappings with `bpg/proxmox` `proxmox_hardware_mapping_pci` from a separate high-privilege bootstrap root such as `infra/tofu/pve-mappings/`; keep this VM lifecycle root limited to consuming mapping names.
-- `initialization[0].user_data_file_id` drift is ignored because the provider can otherwise churn externally managed cloud-init snippets; IP configuration remains managed here and DNS is out of scope.
+- `initialization[0].user_data_file_id` and `initialization[0].network_data_file_id` drift is ignored because the provider can otherwise churn externally managed cloud-init snippets.
 - OpenTofu manages VM lifecycle only. It does not create `pve-ops@pve`, its tokens, or the bootstrap ACLs.
+- The workflow does not create or modify PVE bridges, VLAN devices, SDN zones,
+  OPNsense interfaces, switch ports, firewall rules, DNS records, or post-boot
+  guest network state.
 - DNS verification in Section 6 is resolver-config only; it checks guest
   nameserver entries and does not manage external DNS records or name
   resolution.
@@ -198,17 +266,23 @@ Risk/behavior notes:
 
 ## Section 4A cloud-init flow
 
-Section 4A renders runtime cloud-init user-data snippets for each VM,
-uploads them into isolated NFS-backed `images` snippets storage, and references them with
-`user_data_file_id`.
+Section 4A renders runtime cloud-init snippets for each VM, uploads them into
+isolated NFS-backed `images` snippets storage, and references them with
+`user_data_file_id` plus `network_data_file_id` when a VM needs explicit
+network-config.
 
 - Snippet name: `opentofu-vm-<vmid>-user-data.yml`
 - File ID: `images:snippets/opentofu-vm-<vmid>-user-data.yml`
+- Multi-NIC network-config snippet name: `opentofu-vm-<vmid>-network-config.yml`
+- Multi-NIC network-config file ID: `images:snippets/opentofu-vm-<vmid>-network-config.yml`
+- Each explicit VM NIC `name` becomes the cloud-init guest interface name; it
+  must be a lower-case DNS-label-safe value no longer than Linux's 15-character
+  interface-name limit.
 - Cloud-init media/drive datastore: the `memory` role/datastore. Snippets stay
   on `images`, while VM root/EFI disks and cloud-init drive media use `memory`.
 - Retention: snippets stay in storage for the VM lifetime; do not delete them immediately after upload.
 
-Use `op run --env-file .env.pve-opentofu.tpl -- make render-user-data STORAGE_ID=images` to create local snippets plus `manifest.json`. `make plan` stays local. `make apply` renders once, then `upload-user-data` and `verify-user-data` consume the existing manifest/snippet files before the OpenTofu apply.
+Use `op run --env-file .env.pve-opentofu.tpl -- make render-cloud-init STORAGE_ID=images` to create local snippets plus `manifest.json`. The legacy `render-user-data` target is kept as a compatibility alias. `make plan` stays local. `make apply` renders once, then `upload-cloud-init` and `verify-cloud-init` consume the existing manifest/snippet files before the OpenTofu apply. Compatibility aliases `upload-user-data` and `verify-user-data` remain available.
 
 Required runtime env vars from `op run` (driven by the inventory-defined cloud-init users):
 
@@ -219,7 +293,7 @@ Required runtime env vars from `op run` (driven by the inventory-defined cloud-i
 
 The runtime helper hashes passwords locally, writes only ignored cache files, and never logs plaintext secrets or password hashes.
 
-`upload-user-data` and `verify-user-data` read the existing manifest and exact local snippet files; they do not rerender user-data. `verify-user-data` passes the manifest checksum to the host-side wrapper, which checks remote content before accepting it.
+Upload and verify targets read the existing manifest and exact local snippet files; they do not rerender user-data or network-config. Verify passes the manifest checksum to the host-side wrapper, which checks remote content before accepting it.
 
 Snippet upload and verify use the audited host-side wrapper `/usr/local/sbin/astra-pve-snippet-upload`; it does not rely on broad `sudo install` privileges. The wrapper installs files `0600` on non-NFS snippet storage and `0644` on NFS-backed storage to remain readable when root-squash or server-side ownership mapping is in effect. This is an intentional tradeoff for the isolated `images` NFS storage; do not use this mode on broadly shared or untrusted storage. Keep `STORAGE_ID` aligned with `local.snippets_datastore`.
 

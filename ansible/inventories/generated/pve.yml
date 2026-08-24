@@ -1,3 +1,4 @@
+---
 all:
   children:
     pve_vms:
@@ -11,17 +12,32 @@ all:
           ansible_python_interpreter: auto_silent
           pve_vmid: 500
           pve_node: cohe
-          pve_network: dev
-          pve_bridge: br_dev
-          pve_gateway: 10.10.0.254
-          pve_dns:
-          - 10.10.0.254
+          pve_nics:
+            - name: mgmt0
+              role: management
+              network:
+                name: dev
+                bridge: br_dev
+                cidr: 10.10.0.0/24
+                gateway: 10.10.0.254
+                dns: 10.10.0.254
+                attach_vms: true
+              mac_address: 52:54:00:00:01:f4
+              static_ip: 10.10.0.20/24
+              ip_address: 10.10.0.20
+              prefix_length: 24
+              network_cidr: 10.10.0.0/24
+              gateway: 10.10.0.254
+              default_route: true
+              ansible_connection: true
+              dns:
+                - 10.10.0.254
           pve_ansible_groups:
-          - dev
-          - web
+            - dev
+            - web
           pve_tags:
-          - dev
-          - web
+            - dev
+            - web
           pve_pool: null
           pve_template: debian_13_genericcloud
           pve_template_vmid: 9001
@@ -42,17 +58,32 @@ all:
           ansible_python_interpreter: auto_silent
           pve_vmid: 1000
           pve_node: cohe
-          pve_network: prod
-          pve_bridge: br_prod
-          pve_gateway: 10.50.0.254
-          pve_dns:
-          - 10.50.0.254
+          pve_nics:
+            - name: mgmt0
+              role: management
+              network:
+                name: prod
+                bridge: br_prod
+                cidr: 10.50.0.0/24
+                gateway: 10.50.0.254
+                dns: 10.50.0.254
+                attach_vms: true
+              mac_address: 52:54:00:00:03:e8
+              static_ip: 10.50.0.20/24
+              ip_address: 10.50.0.20
+              prefix_length: 24
+              network_cidr: 10.50.0.0/24
+              gateway: 10.50.0.254
+              default_route: true
+              ansible_connection: true
+              dns:
+                - 10.50.0.254
           pve_ansible_groups:
-          - prod
-          - app
+            - prod
+            - app
           pve_tags:
-          - prod
-          - app
+            - prod
+            - app
           pve_pool: null
           pve_template: debian_13_genericcloud
           pve_template_vmid: 9001
@@ -73,18 +104,33 @@ all:
           ansible_python_interpreter: auto_silent
           pve_vmid: 501
           pve_node: cohe
-          pve_network: dev
-          pve_bridge: br_dev
-          pve_gateway: 10.10.0.254
-          pve_dns:
-          - 10.10.0.254
+          pve_nics:
+            - name: mgmt0
+              role: management
+              network:
+                name: dev
+                bridge: br_dev
+                cidr: 10.10.0.0/24
+                gateway: 10.10.0.254
+                dns: 10.10.0.254
+                attach_vms: true
+              mac_address: 52:54:00:00:01:f5
+              static_ip: 10.10.0.21/24
+              ip_address: 10.10.0.21
+              prefix_length: 24
+              network_cidr: 10.10.0.0/24
+              gateway: 10.10.0.254
+              default_route: true
+              ansible_connection: true
+              dns:
+                - 10.10.0.254
           pve_ansible_groups:
-          - lab
-          - media
+            - lab
+            - media
           pve_tags:
-          - lab
-          - media
-          - igpu
+            - lab
+            - media
+            - igpu
           pve_pool: null
           pve_template: debian_13_genericcloud
           pve_template_vmid: 9001

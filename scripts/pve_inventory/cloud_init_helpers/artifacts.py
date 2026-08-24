@@ -8,7 +8,7 @@ from typing import Any, cast
 from scripts.common.errors import ValidationError, require
 from scripts.common.io import load_json, write_text
 
-from .model import CloudInitSnippet, MANIFEST_FILE_NAME, MANIFEST_SCHEMA_VERSION, sha256_hex, validate_sha256_hex, validate_snippet_file_name, validate_storage_id
+from .model import CloudInitSnippet, MANIFEST_FILE_NAME, MANIFEST_SCHEMA_VERSION, sha256_hex, validate_sha256_hex, validate_snippet_file_name, validate_snippet_kind, validate_storage_id
 
 
 def manifest_path(output_dir: Path) -> Path:
@@ -26,6 +26,7 @@ def build_manifest(snippets: list[CloudInitSnippet], tfvars_path: Path, storage_
         "storage_id": storage_id,
         "snippets": [
             {
+                "kind": snippet.kind,
                 "vmid": snippet.vmid,
                 "name": snippet.name,
                 "file_name": snippet.file_name,
@@ -55,6 +56,7 @@ def write_rendered_artifacts(snippets: list[CloudInitSnippet], tfvars_path: Path
                 content=snippet.content,
                 byte_count=len(snippet_bytes),
                 sha256=sha256_hex(snippet_bytes),
+                kind=snippet.kind,
             )
         )
     manifest = build_manifest(written_snippets, tfvars_path, storage_id)
@@ -81,18 +83,21 @@ def load_rendered_artifacts(output_dir: Path, storage_id: str) -> list[CloudInit
         require(isinstance(raw_entry, dict), f"{manifest_file}: snippets entries must be objects")
         entry = cast(dict[str, Any], raw_entry)
         vmid = entry.get("vmid")
+        kind = entry.get("kind", "user-data")
         name = entry.get("name")
         file_name = entry.get("file_name")
         file_id = entry.get("file_id")
         byte_count = entry.get("byte_count")
         expected_sha256 = entry.get("sha256")
         require(isinstance(vmid, int), f"{manifest_file}: snippet vmid must be an integer")
+        require(isinstance(kind, str) and kind, f"{manifest_file}: snippet kind must be a non-empty string")
         require(isinstance(name, str) and name, f"{manifest_file}: snippet name must be a non-empty string")
         require(isinstance(file_name, str) and file_name, f"{manifest_file}: snippet file_name must be a non-empty string")
         require(isinstance(file_id, str) and file_id, f"{manifest_file}: snippet file_id must be a non-empty string")
         require(isinstance(byte_count, int) and byte_count >= 0, f"{manifest_file}: snippet byte_count must be a non-negative integer")
         require(isinstance(expected_sha256, str), f"{manifest_file}: snippet sha256 must be a 64-character hex string")
         vmid_int = cast(int, vmid)
+        kind_str = validate_snippet_kind(cast(str, kind))
         name_str = cast(str, name)
         file_name_str = cast(str, file_name)
         file_id_str = cast(str, file_id)
@@ -124,6 +129,7 @@ def load_rendered_artifacts(output_dir: Path, storage_id: str) -> list[CloudInit
                 content=content,
                 byte_count=byte_count_int,
                 sha256=actual_sha256,
+                kind=kind_str,
             )
         )
     snippets.sort(key=lambda item: (item.vmid, item.name))

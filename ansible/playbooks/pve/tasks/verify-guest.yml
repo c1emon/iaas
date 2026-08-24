@@ -6,6 +6,11 @@
     pve_guest_tags: "{{ hostvars[pve_guest_name].get('pve_tags', []) }}"
     pve_guest_declared_ip: "{{ hostvars[pve_guest_name].get('ansible_host') | string }}"
     pve_guest_ssh_user: "{{ hostvars[pve_guest_name].get('ansible_user') | default('ops') }}"
+    pve_guest_connection_nic: >-
+      {{
+        hostvars[pve_guest_name].get('pve_nics', [])
+        | selectattr('ansible_connection', 'equalto', true) | list | first | default({})
+      }}
   changed_when: false
 
 - name: Record inventory metadata checks for {{ pve_guest_name }}
@@ -14,13 +19,35 @@
   vars:
     pve_guest_inventory_results:
       - severity: "{{ 'PASS' if pve_guest_ssh_user == 'ops' else 'FAIL' }}"
-        line: "{{ ('PASS' if pve_guest_ssh_user == 'ops' else 'FAIL') ~ ' inventory.' ~ pve_guest_name ~ '.user: ' ~ ('ansible_user is ops' if pve_guest_ssh_user == 'ops' else 'ansible_user must be ops, got ' ~ (pve_guest_ssh_user | string)) }}"
+        line: >-
+          {{ ('PASS' if pve_guest_ssh_user == 'ops' else 'FAIL') ~ ' inventory.'
+          ~ pve_guest_name ~ '.user: ' ~ ('ansible_user is ops'
+          if pve_guest_ssh_user == 'ops' else 'ansible_user must be ops, got '
+          ~ (pve_guest_ssh_user | string)) }}
       - severity: "{{ 'PASS' if pve_guest_hostvars.get('ansible_connection') == 'ssh' else 'FAIL' }}"
-        line: "{{ ('PASS' if pve_guest_hostvars.get('ansible_connection') == 'ssh' else 'FAIL') ~ ' inventory.' ~ pve_guest_name ~ '.connection: ' ~ ('ansible_connection is ssh' if pve_guest_hostvars.get('ansible_connection') == 'ssh' else 'ansible_connection must be ssh, got ' ~ (pve_guest_hostvars.get('ansible_connection') | string)) }}"
+        line: >-
+          {{ ('PASS' if pve_guest_hostvars.get('ansible_connection') == 'ssh'
+          else 'FAIL') ~ ' inventory.' ~ pve_guest_name ~ '.connection: '
+          ~ ('ansible_connection is ssh'
+          if pve_guest_hostvars.get('ansible_connection') == 'ssh'
+          else 'ansible_connection must be ssh, got '
+          ~ (pve_guest_hostvars.get('ansible_connection') | string)) }}
       - severity: "{{ 'PASS' if pve_guest_hostvars.get('ansible_become') is sameas false else 'FAIL' }}"
-        line: "{{ ('PASS' if pve_guest_hostvars.get('ansible_become') is sameas false else 'FAIL') ~ ' inventory.' ~ pve_guest_name ~ '.become: ' ~ ('ansible_become is false' if pve_guest_hostvars.get('ansible_become') is sameas false else 'ansible_become must be false, got ' ~ (pve_guest_hostvars.get('ansible_become') | string)) }}"
+        line: >-
+          {{ ('PASS' if pve_guest_hostvars.get('ansible_become') is sameas false
+          else 'FAIL') ~ ' inventory.' ~ pve_guest_name ~ '.become: '
+          ~ ('ansible_become is false'
+          if pve_guest_hostvars.get('ansible_become') is sameas false
+          else 'ansible_become must be false, got '
+          ~ (pve_guest_hostvars.get('ansible_become') | string)) }}
       - severity: "{{ 'PASS' if pve_guest_hostvars.get('ansible_become_method') == 'sudo' else 'FAIL' }}"
-        line: "{{ ('PASS' if pve_guest_hostvars.get('ansible_become_method') == 'sudo' else 'FAIL') ~ ' inventory.' ~ pve_guest_name ~ '.become_method: ' ~ ('ansible_become_method is sudo' if pve_guest_hostvars.get('ansible_become_method') == 'sudo' else 'ansible_become_method must be sudo, got ' ~ (pve_guest_hostvars.get('ansible_become_method') | string)) }}"
+        line: >-
+          {{ ('PASS' if pve_guest_hostvars.get('ansible_become_method') == 'sudo'
+          else 'FAIL') ~ ' inventory.' ~ pve_guest_name ~ '.become_method: '
+          ~ ('ansible_become_method is sudo'
+          if pve_guest_hostvars.get('ansible_become_method') == 'sudo'
+          else 'ansible_become_method must be sudo, got '
+          ~ (pve_guest_hostvars.get('ansible_become_method') | string)) }}
       - severity: PASS
         line: "PASS inventory.{{ pve_guest_name }}.group.pve_vms: host is present in pve_vms"
   changed_when: false
@@ -32,7 +59,12 @@
     pve_guest_group_present: "{{ pve_guest_name in (groups.get(pve_guest_expected_group, []) | default([])) }}"
     pve_guest_group_result:
       severity: "{{ 'PASS' if pve_guest_group_present else 'FAIL' }}"
-      line: "{{ ('PASS' if pve_guest_group_present else 'FAIL') ~ ' inventory.' ~ pve_guest_name ~ '.group.' ~ pve_guest_expected_group ~ ': ' ~ ('inventory group ' ~ pve_guest_expected_group ~ ' contains ' ~ pve_guest_name if pve_guest_group_present else 'inventory is missing group ' ~ pve_guest_expected_group) }}"
+      line: >-
+        {{ ('PASS' if pve_guest_group_present else 'FAIL') ~ ' inventory.'
+        ~ pve_guest_name ~ '.group.' ~ pve_guest_expected_group ~ ': '
+        ~ ('inventory group ' ~ pve_guest_expected_group ~ ' contains '
+        ~ pve_guest_name if pve_guest_group_present
+        else 'inventory is missing group ' ~ pve_guest_expected_group) }}
   loop: "{{ pve_guest_ansible_groups }}"
   loop_control:
     loop_var: pve_guest_expected_group
@@ -45,7 +77,10 @@
   vars:
     pve_guest_tag_metadata_result:
       severity: "{{ 'PASS' if pve_guest_tags is sequence else 'FAIL' }}"
-      line: "{{ ('PASS' if pve_guest_tags is sequence else 'FAIL') ~ ' inventory.' ~ pve_guest_name ~ '.tags: inventory exposes ' ~ (pve_guest_tags | length | string) ~ ' declared tag(s)' }}"
+      line: >-
+        {{ ('PASS' if pve_guest_tags is sequence else 'FAIL') ~ ' inventory.'
+        ~ pve_guest_name ~ '.tags: inventory exposes '
+        ~ (pve_guest_tags | length | string) ~ ' declared tag(s)' }}
   changed_when: false
 
 - name: Gather read-only guest facts for {{ pve_guest_name }}
@@ -63,10 +98,14 @@
   ansible.builtin.set_fact:
     pve_guest_results: "{{ pve_guest_results + [pve_guest_reachability_result] }}"
   vars:
-    pve_guest_probe_detail: "{{ (pve_guest_setup.msg | default(pve_guest_setup.stderr) | default('unreachable')) | string }}"
+    pve_guest_probe_detail: >-
+      {{ (pve_guest_setup.msg | default(pve_guest_setup.stderr)
+      | default('unreachable')) | string }}
     pve_guest_reachability_result:
       severity: WARN
-      line: "WARN ssh.{{ pve_guest_name }}.reachability: {{ pve_guest_declared_ip }} is unreachable or unauthorized: {{ pve_guest_probe_detail }}"
+      line: >-
+        WARN ssh.{{ pve_guest_name }}.reachability: {{ pve_guest_declared_ip }}
+        is unreachable or unauthorized: {{ pve_guest_probe_detail }}
   when: pve_guest_setup.unreachable | default(false) or pve_guest_setup.failed | default(false)
   changed_when: false
 
@@ -130,7 +169,11 @@
     pve_guest_hostname_ok: "{{ pve_guest_hostname == pve_guest_name }}"
     pve_guest_hostname_result:
       severity: "{{ 'PASS' if pve_guest_hostname_ok else 'FAIL' }}"
-      line: "{{ ('PASS' if pve_guest_hostname_ok else 'FAIL') ~ ' guest.' ~ pve_guest_name ~ '.hostname: ' ~ ('hostname matches ' ~ pve_guest_name if pve_guest_hostname_ok else 'hostname mismatch: expected ' ~ pve_guest_name ~ ', got ' ~ pve_guest_hostname) }}"
+      line: >-
+        {{ ('PASS' if pve_guest_hostname_ok else 'FAIL') ~ ' guest.'
+        ~ pve_guest_name ~ '.hostname: ' ~ ('hostname matches ' ~ pve_guest_name
+        if pve_guest_hostname_ok else 'hostname mismatch: expected '
+        ~ pve_guest_name ~ ', got ' ~ pve_guest_hostname) }}
   when: not (pve_guest_setup.unreachable | default(false) or pve_guest_setup.failed | default(false))
   changed_when: false
 
@@ -139,10 +182,15 @@
     pve_guest_results: "{{ pve_guest_results + [pve_guest_ip_result] }}"
   vars:
     pve_guest_all_ipv4: "{{ pve_guest_facts.ansible_all_ipv4_addresses | default([]) }}"
-    pve_guest_ip_ok: "{{ pve_guest_declared_ip in pve_guest_all_ipv4 }}"
+    pve_guest_ip_ok: >-
+      {{ (pve_guest_declared_ip | default('')) in (pve_guest_all_ipv4 | default([])) }}
     pve_guest_ip_result:
       severity: "{{ 'PASS' if pve_guest_ip_ok else 'FAIL' }}"
-      line: "{{ ('PASS' if pve_guest_ip_ok else 'FAIL') ~ ' guest.' ~ pve_guest_name ~ '.ip: ' ~ ('declared static IP ' ~ pve_guest_declared_ip ~ ' is present' if pve_guest_ip_ok else 'declared static IP ' ~ pve_guest_declared_ip ~ ' is not present in guest IPs ' ~ (pve_guest_all_ipv4 | string)) }}"
+      line: >-
+        {{ ('PASS' if pve_guest_ip_ok else 'FAIL') ~ ' guest.' ~ pve_guest_name
+        ~ '.ip: ' ~ ('declared static IP ' ~ pve_guest_declared_ip ~ ' is present'
+        if pve_guest_ip_ok else 'declared static IP ' ~ pve_guest_declared_ip
+        ~ ' is not present in guest IPs ' ~ (pve_guest_all_ipv4 | string)) }}
   when: not (pve_guest_setup.unreachable | default(false) or pve_guest_setup.failed | default(false))
   changed_when: false
 
@@ -155,7 +203,10 @@
     pve_guest_qga_ok: "{{ pve_guest_qga_service.get('state') == 'running' }}"
     pve_guest_qga_result:
       severity: "{{ 'PASS' if pve_guest_qga_ok else 'FAIL' }}"
-      line: "{{ ('PASS' if pve_guest_qga_ok else 'FAIL') ~ ' guest.' ~ pve_guest_name ~ '.qemu-guest-agent: ' ~ ('qemu-guest-agent is running' if pve_guest_qga_ok else 'qemu-guest-agent is not running/visible') }}"
+      line: >-
+        {{ ('PASS' if pve_guest_qga_ok else 'FAIL') ~ ' guest.' ~ pve_guest_name
+        ~ '.qemu-guest-agent: ' ~ ('qemu-guest-agent is running'
+        if pve_guest_qga_ok else 'qemu-guest-agent is not running/visible') }}
   when: not (pve_guest_setup.unreachable | default(false) or pve_guest_setup.failed | default(false))
   changed_when: false
 
@@ -166,7 +217,10 @@
     pve_guest_sudo_ok: "{{ pve_guest_sudo_check.rc | default(1) == 0 }}"
     pve_guest_sudo_result:
       severity: "{{ 'PASS' if pve_guest_sudo_ok else 'FAIL' }}"
-      line: "{{ ('PASS' if pve_guest_sudo_ok else 'FAIL') ~ ' guest.' ~ pve_guest_name ~ '.sudo: ' ~ ('ops can run sudo -n true' if pve_guest_sudo_ok else 'ops cannot run sudo -n true') }}"
+      line: >-
+        {{ ('PASS' if pve_guest_sudo_ok else 'FAIL') ~ ' guest.' ~ pve_guest_name
+        ~ '.sudo: ' ~ ('ops can run sudo -n true'
+        if pve_guest_sudo_ok else 'ops cannot run sudo -n true') }}
   when: not (pve_guest_setup.unreachable | default(false) or pve_guest_setup.failed | default(false))
   changed_when: false
 
@@ -174,11 +228,21 @@
   ansible.builtin.set_fact:
     pve_guest_results: "{{ pve_guest_results + [pve_guest_root_ssh_result] }}"
   vars:
-    pve_guest_root_login: "{{ (pve_guest_sshd_config.stdout_lines | default([]) | select('match', '^permitrootlogin ') | list | first | default('permitrootlogin unknown')).split()[1] | lower }}"
-    pve_guest_root_ssh_ok: "{{ pve_guest_root_login in ['no', 'prohibit-password', 'without-password', 'forced-commands-only'] }}"
+    pve_guest_root_login: >-
+      {{ (pve_guest_sshd_config.stdout_lines | default([])
+      | select('match', '^permitrootlogin ') | list | first
+      | default('permitrootlogin unknown')).split()[1] | lower }}
+    pve_guest_root_ssh_ok: >-
+      {{ pve_guest_root_login in [
+        'no', 'prohibit-password', 'without-password', 'forced-commands-only'
+      ] }}
     pve_guest_root_ssh_result:
       severity: "{{ 'PASS' if pve_guest_root_ssh_ok else 'FAIL' }}"
-      line: "{{ ('PASS' if pve_guest_root_ssh_ok else 'FAIL') ~ ' guest.' ~ pve_guest_name ~ '.root-ssh: ' ~ ('effective sshd config disables root login (' ~ pve_guest_root_login ~ ')' if pve_guest_root_ssh_ok else 'effective sshd config allows root login (' ~ pve_guest_root_login ~ ')') }}"
+      line: >-
+        {{ ('PASS' if pve_guest_root_ssh_ok else 'FAIL') ~ ' guest.'
+        ~ pve_guest_name ~ '.root-ssh: ' ~ ('effective sshd config disables root login ('
+        ~ pve_guest_root_login ~ ')' if pve_guest_root_ssh_ok
+        else 'effective sshd config allows root login (' ~ pve_guest_root_login ~ ')') }}
   when: not (pve_guest_setup.unreachable | default(false) or pve_guest_setup.failed | default(false))
   changed_when: false
 
@@ -186,12 +250,21 @@
   ansible.builtin.set_fact:
     pve_guest_results: "{{ pve_guest_results + [pve_guest_dns_result] }}"
   vars:
-    pve_guest_resolv_text: "{{ (pve_guest_resolv_conf.content | default('') | b64decode) if pve_guest_resolv_conf.content is defined else '' }}"
-    pve_guest_dns_present: "{{ ('nameserver ' ~ pve_guest_dns) in pve_guest_resolv_text or pve_guest_dns in (pve_guest_resolvectl_dns.stdout | default('')) }}"
+    pve_guest_resolv_text: >-
+      {{ (pve_guest_resolv_conf.content | default('') | b64decode)
+      if pve_guest_resolv_conf.content is defined else '' }}
+    pve_guest_dns_present: >-
+      {{ ('nameserver ' ~ pve_guest_dns) in pve_guest_resolv_text
+      or pve_guest_dns in (pve_guest_resolvectl_dns.stdout | default('')) }}
     pve_guest_dns_result:
       severity: "{{ 'PASS' if pve_guest_dns_present else 'WARN' }}"
-      line: "{{ ('PASS' if pve_guest_dns_present else 'WARN') ~ ' guest.' ~ pve_guest_name ~ '.dns.' ~ pve_guest_dns ~ ': ' ~ ('resolver config exposes declared DNS server ' ~ pve_guest_dns if pve_guest_dns_present else 'resolver config does not expose declared DNS server ' ~ pve_guest_dns) }}"
-  loop: "{{ pve_guest_hostvars.get('pve_dns', []) }}"
+      line: >-
+        {{ ('PASS' if pve_guest_dns_present else 'WARN') ~ ' guest.'
+        ~ pve_guest_name ~ '.dns.' ~ pve_guest_dns ~ ': '
+        ~ ('resolver config exposes declared DNS server ' ~ pve_guest_dns
+        if pve_guest_dns_present
+        else 'resolver config does not expose declared DNS server ' ~ pve_guest_dns) }}
+  loop: "{{ pve_guest_connection_nic.get('dns', []) }}"
   loop_control:
     loop_var: pve_guest_dns
     label: "{{ pve_guest_dns }}"

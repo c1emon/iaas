@@ -22,6 +22,7 @@ from scripts.pve_inventory.cloud_init_helpers.model import CloudInitSnippet
 from scripts.pve_inventory.cloud_init_helpers.render import render_snippets
 from scripts.pve_inventory.cloud_init_helpers import ssh as cloud_init_ssh
 from scripts.common.io import load_yaml
+from scripts.pve_inventory.checks.preflight.model import derive_expected_resources
 from scripts.pve_inventory.inventory.model import build_model
 from scripts.pve_inventory.inventory.render import render_outputs
 from scripts.pve_inventory.inventory.validation.cluster import validate_cluster
@@ -43,6 +44,34 @@ def vms_model() -> dict[str, Any]:
     return build_model(cluster, validate_vms(load_yaml(VMS_PATH), cluster))
 
 
+def explicit_multi_nic_doc() -> dict[str, Any]:
+    doc = copy.deepcopy(load_yaml(VMS_PATH))
+    vm = doc["vms"][2]
+    vm["nics"] = [
+        {
+            "name": "mgmt0",
+            "role": "management",
+            "network": "dev",
+            "macaddr": "52:54:00:10:00:01",
+            "static_ip": "10.10.0.21/24",
+            "ansible_connection": True,
+        },
+        {
+            "name": "cluster0",
+            "role": "cluster",
+            "network": "prod",
+            "mac_address": "52:54:00:10:00:02",
+            "static_ip": "10.50.0.22/24",
+            "gateway": "10.50.0.254",
+            "default_route": True,
+            "dns": ["10.50.0.254"],
+        },
+    ]
+    for field in ("network", "static_ip", "gateway", "dns"):
+        vm.pop(field, None)
+    return doc
+
+
 def template_env_text() -> str:
     model = build_model(cluster_state(), [])
     return render_outputs(model)["template_build_env"]
@@ -51,7 +80,16 @@ def template_env_text() -> str:
 def test_generated_docs_render_passthrough_details() -> None:
     docs = render_outputs(vms_model())["docs"]
     assert "hostpci0:iGpu0 (pcie=true, rombar=true, xvga=false)" in docs
-    assert "| media-lab-01 | 501 | ephemeral_lab | cohe | dev | 10.10.0.21/24 |" in docs
+    assert "| media-lab-01 | 501 | ephemeral_lab | cohe | mgmt0 (management) | dev / br_dev | 52:54:00:00:01:f5 | 10.10.0.21/24 | 10.10.0.254 | yes | yes | 10.10.0.254 |" in docs
+
+
+def test_generated_ansible_inventory_has_no_removed_nic_aliases() -> None:
+    inventory = render_outputs(vms_model())["ansible"]
+
+    assert "ansible_host:" in inventory
+    assert "pve_nics:" in inventory
+    for alias in ("pve_network", "pve_bridge", "pve_gateway", "pve_dns", "pve_management_nic"):
+        assert alias not in inventory
 
 
 def test_passthrough_vms_get_cloud_init_user_data(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -64,6 +102,7 @@ def test_passthrough_vms_get_cloud_init_user_data(monkeypatch: pytest.MonkeyPatc
 
     snippet_names = {snippet.name for snippet in snippets}
     assert snippet_names == {"dev-web-01", "prod-app-01", "media-lab-01"}
+    assert {snippet.kind for snippet in snippets} == {"user-data", "network-config"}
     media_snippet = next(snippet for snippet in snippets if snippet.name == "media-lab-01")
     assert media_snippet.file_name == "opentofu-vm-501-user-data.yml"
     assert media_snippet.file_id == "images:snippets/opentofu-vm-501-user-data.yml"
@@ -74,6 +113,228 @@ def test_passthrough_vms_get_cloud_init_user_data(monkeypatch: pytest.MonkeyPatc
     assert "sudo:\n  - ALL=(ALL) ALL" in media_snippet.content
     assert "name: ops" in media_snippet.content
     assert "sudo:\n  - ALL=(ALL) NOPASSWD:ALL" in media_snippet.content
+
+
+def test_explicit_multi_nic_vms_render_network_config_and_user_data(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("PVE_VM_CLEMON_PASSWORD", "clemon-password")
+    monkeypatch.setenv("PVE_VM_CLEMON_PUBLIC_KEY", "ssh-ed25519 AAAAclemon clemon@example")
+    monkeypatch.setenv("PVE_VM_OPS_PASSWORD", "ops-password")
+    monkeypatch.setenv("PVE_VM_OPS_PUBLIC_KEY", "ssh-ed25519 AAAAops ops@example")
+
+    cluster = cluster_state()
+    model = build_model(cluster, validate_vms(explicit_multi_nic_doc(), cluster))
+    tfvars_path = tmp_path / "generated.auto.tfvars.json"
+    tfvars_path.write_text(render_outputs(model)["tfvars"], encoding="utf-8")
+    snippets = render_snippets(tfvars_path, "images")
+    write_rendered_artifacts(snippets, tfvars_path, "images", tmp_path)
+
+    assert any(snippet.kind == "network-config" for snippet in snippets)
+    media_user_data = next(snippet for snippet in snippets if snippet.name == "media-lab-01" and snippet.kind == "user-data")
+    media_network = next(snippet for snippet in snippets if snippet.name == "media-lab-01" and snippet.kind == "network-config")
+    assert media_user_data.file_name == "opentofu-vm-501-user-data.yml"
+    assert media_network.file_name == "opentofu-vm-501-network-config.yml"
+    network_doc = yaml.safe_load(media_network.content)
+    assert network_doc["network"]["version"] == 2
+    assert set(network_doc["network"]["ethernets"]) == {"mgmt0", "cluster0"}
+    assert network_doc["network"]["ethernets"]["mgmt0"]["match"]["macaddress"] == "52:54:00:10:00:01"
+    assert network_doc["network"]["ethernets"]["mgmt0"]["set-name"] == "mgmt0"
+    assert network_doc["network"]["ethernets"]["mgmt0"]["addresses"] == ["10.10.0.21/24"]
+    assert "routes" not in network_doc["network"]["ethernets"]["mgmt0"]
+    assert "nameservers" not in network_doc["network"]["ethernets"]["mgmt0"]
+    assert network_doc["network"]["ethernets"]["cluster0"]["match"]["macaddress"] == "52:54:00:10:00:02"
+    assert network_doc["network"]["ethernets"]["cluster0"]["addresses"] == ["10.50.0.22/24"]
+    assert network_doc["network"]["ethernets"]["cluster0"]["routes"] == [{"to": "default", "via": "10.50.0.254"}]
+    assert network_doc["network"]["ethernets"]["cluster0"]["nameservers"]["addresses"] == ["10.50.0.254"]
+
+    manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
+    assert {entry["kind"] for entry in manifest["snippets"]} == {"user-data", "network-config"}
+    network_entry = next(entry for entry in manifest["snippets"] if entry["name"] == "media-lab-01" and entry["kind"] == "network-config")
+    assert network_entry["file_id"] == "images:snippets/opentofu-vm-501-network-config.yml"
+    assert network_entry["byte_count"] == len((tmp_path / network_entry["file_name"]).read_bytes())
+
+
+def test_validation_normalizes_explicit_nics_and_connection_metadata() -> None:
+    cluster = cluster_state()
+    normalized = validate_vms(explicit_multi_nic_doc(), cluster)
+    media_vm = next(vm for vm in normalized if vm["name"] == "media-lab-01")
+
+    assert [nic["name"] for nic in media_vm["nics"]] == ["mgmt0", "cluster0"]
+    assert media_vm["nics"][0]["ansible_connection"] is True
+    assert media_vm["nics"][0]["default_route"] is False
+    assert media_vm["nics"][1]["default_route"] is True
+    assert media_vm["nics"][1]["gateway"] == "10.50.0.254"
+    assert media_vm["nics"][1]["dns"] == ["10.50.0.254"]
+
+
+def test_validation_rejects_explicit_nics_mixed_with_legacy_fields() -> None:
+    doc = explicit_multi_nic_doc()
+    doc["vms"][2]["network"] = "dev"
+
+    with pytest.raises(ValidationError, match="legacy NIC fields are not supported: network"):
+        validate_vms(doc, cluster_state())
+
+
+def test_validation_allows_explicit_nics_without_default_route() -> None:
+    cluster = cluster_state()
+    cluster["networks"]["nogw"] = {
+        "bridge": "br_nogw",
+        "cidr": "10.60.0.0/24",
+        "gateway": None,
+        "dns": None,
+        "attach_vms": True,
+    }
+    doc = explicit_multi_nic_doc()
+    doc["vms"][2]["nics"][0].pop("gateway", None)
+    doc["vms"][2]["nics"][0].pop("default_route", None)
+    doc["vms"][2]["nics"][1]["network"] = "nogw"
+    doc["vms"][2]["nics"][1]["static_ip"] = "10.60.0.22/24"
+    doc["vms"][2]["nics"][1].pop("gateway", None)
+    doc["vms"][2]["nics"][1].pop("default_route", None)
+
+    normalized = validate_vms(doc, cluster)
+    media_vm = next(vm for vm in normalized if vm["name"] == "media-lab-01")
+    assert all(not nic["default_route"] for nic in media_vm["nics"])
+
+
+def test_validation_allows_explicit_zero_nic_vm_and_skips_inventory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("PVE_VM_CLEMON_PASSWORD", "clemon-password")
+    monkeypatch.setenv("PVE_VM_CLEMON_PUBLIC_KEY", "ssh-ed25519 AAAAclemon clemon@example")
+    monkeypatch.setenv("PVE_VM_OPS_PASSWORD", "ops-password")
+    monkeypatch.setenv("PVE_VM_OPS_PUBLIC_KEY", "ssh-ed25519 AAAAops ops@example")
+
+    cluster = cluster_state()
+    doc = copy.deepcopy(load_yaml(VMS_PATH))
+    vm = doc["vms"][2]
+    vm["nics"] = []
+    for field in ("network", "static_ip", "gateway", "dns"):
+        vm.pop(field, None)
+
+    model = build_model(cluster, validate_vms(doc, cluster))
+    outputs = render_outputs(model)
+    inventory = yaml.safe_load(outputs["ansible"])
+    assert "media-lab-01" not in inventory["all"]["children"].get("pve_vms", {}).get("hosts", {})
+
+    tfvars_path = tmp_path / "generated.auto.tfvars.json"
+    tfvars_path.write_text(outputs["tfvars"], encoding="utf-8")
+    snippets = render_snippets(tfvars_path, "images")
+    assert any(snippet.name == "media-lab-01" and snippet.kind == "user-data" for snippet in snippets)
+    assert not any(snippet.name == "media-lab-01" and snippet.kind == "network-config" for snippet in snippets)
+
+
+def test_validation_skips_inventory_when_no_nic_is_marked_for_ansible_connection() -> None:
+    cluster = cluster_state()
+    doc = explicit_multi_nic_doc()
+    doc["vms"][2]["nics"][0].pop("ansible_connection", None)
+    doc["vms"][2]["nics"][1].pop("ansible_connection", None)
+
+    model = build_model(cluster, validate_vms(doc, cluster))
+    inventory = yaml.safe_load(render_outputs(model)["ansible"])
+    assert "media-lab-01" not in inventory["all"]["children"].get("pve_vms", {}).get("hosts", {})
+
+
+def test_validation_allows_explicit_nics_without_management_role() -> None:
+    doc = explicit_multi_nic_doc()
+    doc["vms"][2]["nics"][0]["role"] = "cluster"
+    doc["vms"][2]["nics"][1]["role"] = "storage"
+
+    normalized = validate_vms(doc, cluster_state())
+    media_vm = next(vm for vm in normalized if vm["name"] == "media-lab-01")
+    assert [nic["role"] for nic in media_vm["nics"]] == ["cluster", "storage"]
+    assert media_vm["nics"][0]["ansible_connection"] is True
+
+
+def test_validation_rejects_duplicate_default_routes() -> None:
+    doc = explicit_multi_nic_doc()
+    doc["vms"][2]["nics"][0]["gateway"] = "10.10.0.254"
+    doc["vms"][2]["nics"][0]["default_route"] = True
+
+    with pytest.raises(ValidationError, match="at most one default route"):
+        validate_vms(doc, cluster_state())
+
+
+def test_validation_rejects_duplicate_ansible_connection_nics() -> None:
+    doc = explicit_multi_nic_doc()
+    doc["vms"][2]["nics"][1]["ansible_connection"] = True
+
+    with pytest.raises(ValidationError, match="at most one ansible_connection NIC"):
+        validate_vms(doc, cluster_state())
+
+
+def test_preflight_expected_tags_include_all_nic_networks() -> None:
+    cluster = cluster_state()
+    model = build_model(cluster, validate_vms(explicit_multi_nic_doc(), cluster))
+    resources = derive_expected_resources(model)
+    media_expectation = next(item for item in resources.vmid_expectations if item["name"] == "media-lab-01")
+
+    assert media_expectation["tags"] == ["managed-by-opentofu", "ephemeral_lab", "dev", "prod", "lab", "media", "igpu"]
+
+
+def test_validation_rejects_duplicate_nic_names() -> None:
+    doc = explicit_multi_nic_doc()
+    doc["vms"][2]["nics"][1]["name"] = "mgmt0"
+
+    with pytest.raises(ValidationError, match="duplicate NIC name"):
+        validate_vms(doc, cluster_state())
+
+
+def test_validation_enforces_linux_nic_name_length() -> None:
+    doc = explicit_multi_nic_doc()
+    doc["vms"][2]["nics"][0]["name"] = "managementnic00"
+
+    normalized = validate_vms(doc, cluster_state())
+    media_vm = next(vm for vm in normalized if vm["name"] == "media-lab-01")
+    assert media_vm["nics"][0]["name"] == "managementnic00"
+
+    doc["vms"][2]["nics"][0]["name"] = "managementnic000"
+    with pytest.raises(ValidationError, match=r"nics\[0\]\.name: must be at most 15 characters"):
+        validate_vms(doc, cluster_state())
+
+
+def test_validation_rejects_explicit_nic_mac_and_gateway_errors() -> None:
+    doc = explicit_multi_nic_doc()
+    doc["vms"][2]["nics"][1]["mac_address"] = "not-a-mac"
+
+    with pytest.raises(ValidationError, match="must be a MAC address"):
+        validate_vms(doc, cluster_state())
+
+    doc = explicit_multi_nic_doc()
+    doc["vms"][2]["nics"][1]["gateway"] = "10.50.0.254"
+    doc["vms"][2]["nics"].append(
+        {
+            "name": "storage0",
+            "role": "storage",
+            "network": "prod",
+            "macaddr": "52:54:00:10:00:03",
+            "static_ip": "10.50.0.23/24",
+            "gateway": "10.50.0.254",
+        }
+    )
+
+    with pytest.raises(ValidationError, match="at most one default route"):
+        validate_vms(doc, cluster_state())
+
+
+@pytest.mark.parametrize(
+    ("network", "message"),
+    [
+        ("missing", "must reference a declared network"),
+        ("storage", "is not attachable for VMs"),
+    ],
+)
+def test_validation_rejects_explicit_nic_network_errors(network: str, message: str) -> None:
+    doc = explicit_multi_nic_doc()
+    doc["vms"][2]["nics"][0]["network"] = network
+
+    with pytest.raises(ValidationError, match=message):
+        validate_vms(doc, cluster_state())
+
+
+def test_validation_rejects_explicit_nic_invalid_cidr() -> None:
+    doc = explicit_multi_nic_doc()
+    doc["vms"][2]["nics"][0]["static_ip"] = "not-a-cidr"
+
+    with pytest.raises(ValidationError, match="must be a valid CIDR-style IP interface"):
+        validate_vms(doc, cluster_state())
 
 
 def test_cloud_init_render_writes_manifest_and_exact_bytes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -96,8 +357,10 @@ def test_cloud_init_render_writes_manifest_and_exact_bytes(monkeypatch: pytest.M
     snippet_names = {entry["file_name"] for entry in manifest["snippets"]}
     assert snippet_names == {snippet.file_name for snippet in snippets}
 
+    assert {entry["kind"] for entry in manifest["snippets"]} == {"user-data", "network-config"}
     media_entry = next(entry for entry in manifest["snippets"] if entry["name"] == "media-lab-01")
     media_bytes = (tmp_path / media_entry["file_name"]).read_bytes()
+    assert media_entry["kind"] == "user-data"
     assert media_entry["file_id"] == "images:snippets/opentofu-vm-501-user-data.yml"
     assert media_entry["byte_count"] == len(media_bytes)
     assert media_entry["sha256"] == hashlib.sha256(media_bytes).hexdigest()
@@ -471,9 +734,9 @@ def test_validation_rejects_raw_pci_mapping_values() -> None:
 
 def test_validation_rejects_malformed_static_ip_with_vm_field_context() -> None:
     doc = copy.deepcopy(load_yaml(VMS_PATH))
-    doc["vms"][0]["static_ip"] = "not-a-cidr"
+    doc["vms"][0]["nics"][0]["static_ip"] = "not-a-cidr"
 
-    with pytest.raises(ValidationError, match=r"vms\.vms\[0\]\.static_ip: must be a valid CIDR-style IP interface"):
+    with pytest.raises(ValidationError, match=r"vms\.vms\[0\]\.nics\[0\]\.static_ip: must be a valid CIDR-style IP interface"):
         validate_vms(doc, cluster_state())
 
 
@@ -524,17 +787,17 @@ def test_validation_rejects_invalid_and_duplicate_string_lists(field: str, value
 @pytest.mark.parametrize(
     ("static_ip", "message"),
     [
-        ("not-a-cidr", r"vms\.vms\[0\]\.static_ip: must be a valid CIDR-style IP interface"),
-        ("10.10.0.20/25", r"vms\.vms\[0\]\.static_ip: must use prefix /24"),
-        ("2001:db8::20/24", r"vms\.vms\[0\]\.static_ip: address family must match dev \(10.10.0.0/24\)"),
-        ("10.20.0.20/24", r"vms\.vms\[0\]\.static_ip: must be inside dev \(10.10.0.0/24\)"),
-        ("10.10.0.0/24", r"vms\.vms\[0\]\.static_ip: must not be the network address 10.10.0.0"),
-        ("10.10.0.255/24", r"vms\.vms\[0\]\.static_ip: must not be the broadcast address 10.10.0.255"),
+        ("not-a-cidr", r"vms\.vms\[0\]\.nics\[0\]\.static_ip: must be a valid CIDR-style IP interface"),
+        ("10.10.0.20/25", r"vms\.vms\[0\]\.nics\[0\]\.static_ip: must use prefix /24"),
+        ("2001:db8::20/24", r"vms\.vms\[0\]\.nics\[0\]\.static_ip: address family must match dev \(10.10.0.0/24\)"),
+        ("10.20.0.20/24", r"vms\.vms\[0\]\.nics\[0\]\.static_ip: must be inside dev \(10.10.0.0/24\)"),
+        ("10.10.0.0/24", r"vms\.vms\[0\]\.nics\[0\]\.static_ip: must not be the network address 10.10.0.0"),
+        ("10.10.0.255/24", r"vms\.vms\[0\]\.nics\[0\]\.static_ip: must not be the broadcast address 10.10.0.255"),
     ],
 )
 def test_validation_rejects_static_ip_shape_prefix_and_network_bounds(static_ip: str, message: str) -> None:
     doc = copy.deepcopy(load_yaml(VMS_PATH))
-    doc["vms"][0]["static_ip"] = static_ip
+    doc["vms"][0]["nics"][0]["static_ip"] = static_ip
 
     with pytest.raises(ValidationError, match=message):
         validate_vms(doc, cluster_state())
@@ -542,24 +805,24 @@ def test_validation_rejects_static_ip_shape_prefix_and_network_bounds(static_ip:
 
 def test_validation_rejects_duplicate_static_ip() -> None:
     doc = copy.deepcopy(load_yaml(VMS_PATH))
-    doc["vms"][1]["network"] = "dev"
-    doc["vms"][1]["gateway"] = "10.10.0.254"
-    doc["vms"][1]["dns"] = ["10.10.0.254"]
-    doc["vms"][1]["static_ip"] = doc["vms"][0]["static_ip"]
+    doc["vms"][1]["nics"][0]["network"] = "dev"
+    doc["vms"][1]["nics"][0]["static_ip"] = doc["vms"][0]["nics"][0]["static_ip"]
 
-    with pytest.raises(ValidationError, match=r"vms\.vms\[1\]\.static_ip: duplicate IP 10.10.0.20"):
+    with pytest.raises(ValidationError, match=r"vms\.vms\[1\]\.nics\[0\]\.static_ip: duplicate IP 10.10.0.20"):
         validate_vms(doc, cluster_state())
 
 
 def test_current_vm_inventory_remains_valid() -> None:
     normalized = validate_vms(load_yaml(VMS_PATH), cluster_state())
     assert [vm["name"] for vm in normalized] == ["dev-web-01", "prod-app-01", "media-lab-01"]
+    assert all(len(vm["nics"]) == 1 for vm in normalized)
+    assert all(vm["nics"][0]["ansible_connection"] is True for vm in normalized)
 
 
 def test_pve_cli_validation_failure_exits_1_without_traceback(tmp_path: Path) -> None:
     vms_copy = tmp_path / "vms.yml"
     doc = copy.deepcopy(load_yaml(VMS_PATH))
-    doc["vms"][0]["static_ip"] = "not-a-cidr"
+    doc["vms"][0]["nics"][0]["static_ip"] = "not-a-cidr"
     vms_copy.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
 
     result = subprocess.run(

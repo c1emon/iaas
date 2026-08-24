@@ -40,13 +40,20 @@
         pve_guest_skip_count: "{{ pve_guest_results | selectattr('severity', 'equalto', 'SKIP') | list | length }}"
       changed_when: false
 
+    - name: Build the operator summary
+      ansible.builtin.set_fact:
+        pve_guest_summary: >-
+          summary: {{ pve_guest_pass_count }} pass, {{ pve_guest_warn_count }} warn,
+          {{ pve_guest_fail_count }} fail, {{ pve_guest_skip_count }} skip
+      changed_when: false
+
     - name: Render the operator report
       ansible.builtin.set_fact:
         pve_guest_report: |-
           {% for result in pve_guest_results %}
           {{ result.line }}
           {% endfor %}
-          summary: {{ pve_guest_pass_count }} pass, {{ pve_guest_warn_count }} warn, {{ pve_guest_fail_count }} fail, {{ pve_guest_skip_count }} skip
+          {{ pve_guest_summary }}
       changed_when: false
 
     - name: Print the verification summary

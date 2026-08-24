@@ -128,6 +128,30 @@ def build_user_data(vm: dict[str, Any], users: list[dict[str, Any]], defaults: d
     return "#cloud-config\n" + yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
 
 
+def _dns_for_nic(nic: dict[str, Any]) -> list[str]:
+    dns = nic.get("dns") or []
+    return list(dict.fromkeys(dns))
+
+
+def build_network_config(vm: dict[str, Any]) -> str:
+    nics: list[dict[str, Any]] = vm["nics"]
+    ethernets: dict[str, Any] = {}
+    for nic in nics:
+        entry: dict[str, Any] = {
+            "match": {"macaddress": nic["mac_address"]},
+            "set-name": nic["name"],
+            "addresses": [nic["static_ip"]],
+        }
+        if nic.get("default_route"):
+            entry["routes"] = [{"to": "default", "via": nic["gateway"]}]
+        dns = _dns_for_nic(nic)
+        if dns:
+            entry["nameservers"] = {"addresses": dns}
+        ethernets[nic["name"]] = entry
+    data = {"network": {"version": 2, "ethernets": ethernets}}
+    return yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
+
+
 def render_snippets(tfvars_path: Path, storage_id: str) -> list[CloudInitSnippet]:
     payload = load_generated_tfvars(tfvars_path)
     vms = payload.get("vms", [])
@@ -166,5 +190,21 @@ def render_snippets(tfvars_path: Path, storage_id: str) -> list[CloudInitSnippet
                 sha256=sha256_hex(content_bytes),
             )
         )
+        if vm.get("nics"):
+            network_file_name = f"{snippet_file_prefix}-{vmid}-network-config.yml"
+            network_content = build_network_config(vm)
+            network_content_bytes = network_content.encode("utf-8")
+            snippets.append(
+                CloudInitSnippet(
+                    vmid=vmid,
+                    name=name,
+                    file_name=network_file_name,
+                    file_id=snippet_storage_path(snippets_datastore, network_file_name),
+                    content=network_content,
+                    byte_count=len(network_content_bytes),
+                    sha256=sha256_hex(network_content_bytes),
+                    kind="network-config",
+                )
+            )
     snippets.sort(key=lambda item: (item.vmid, item.name))
     return snippets

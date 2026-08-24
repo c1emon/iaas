@@ -25,7 +25,8 @@ class DerivedResources:
 
 def _expected_vm_tags(vm: dict[str, Any]) -> list[str]:
     """Preserve the ownership tag set used by OpenTofu-managed VMs."""
-    tags = ["managed-by-opentofu", vm["lifecycle_class"], vm["network"]["name"], *vm["tags"]]
+    networks = [nic["network"]["name"] for nic in vm.get("nics") or []]
+    tags = ["managed-by-opentofu", vm["lifecycle_class"], *networks, *vm["tags"]]
     seen: set[str] = set()
     ordered: list[str] = []
     for tag in tags:
@@ -64,7 +65,8 @@ def derive_expected_resources(model: dict[str, Any]) -> DerivedResources:
 
     for vm in vms:
         node = vm["node"]
-        bridges_by_node.setdefault(node, set()).add(vm["network"]["bridge"])
+        for nic in vm.get("nics") or []:
+            bridges_by_node.setdefault(node, set()).add(nic["network"]["bridge"])
         add_storage(node, vm["storage"]["disk_role"])
         add_storage(node, cluster["automation"]["cloud_init"]["snippet_storage_role"])
         add_storage(vm["template"]["node"], vm["template"]["storage_role"])
