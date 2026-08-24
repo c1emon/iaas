@@ -11,8 +11,8 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "ansible>=13.7.0",
-    "ansible-lint>=26.4.0",
+    "ansible>=14.3.1",
+    "ansible-lint>=26.8.0",
     "httpx>=0.28.1",
     "paramiko>=3.5.1",
     "pyright>=1.1.411",
