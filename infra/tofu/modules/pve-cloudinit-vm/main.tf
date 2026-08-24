@@ -5,6 +5,10 @@ locals {
   vm_nics            = try(var.vm.nics, [])
 }
 
+# These distinct resource addresses preserve the static lifecycle boundary:
+# only the protected resource has literal prevent_destroy = true. The parity
+# guard normalizes only labels, complementary counts, and that literal line.
+# parity-guard: protected-begin
 resource "proxmox_virtual_environment_vm" "protected" {
   count = local.vm_is_protected ? 1 : 0
 
@@ -93,7 +97,9 @@ resource "proxmox_virtual_environment_vm" "protected" {
     }
   }
 }
+# parity-guard: protected-end
 
+# parity-guard: unprotected-begin
 resource "proxmox_virtual_environment_vm" "unprotected" {
   count = local.vm_is_protected ? 0 : 1
 
@@ -181,3 +187,4 @@ resource "proxmox_virtual_environment_vm" "unprotected" {
     }
   }
 }
+# parity-guard: unprotected-end
