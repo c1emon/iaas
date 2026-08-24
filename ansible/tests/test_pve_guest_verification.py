@@ -150,5 +150,6 @@ def test_dns_mismatch_is_warning_class_in_native_tasks() -> None:
     assert "ansible.builtin.command: resolvectl dns" in tasks_file
     assert "pve_guest_dns_present" in tasks_file
     assert "severity: \"{{ 'PASS' if pve_guest_dns_present else 'WARN' }}\"" in tasks_file
-    assert "WARN') ~ ' guest.' ~ pve_guest_name ~ '.dns.'" in tasks_file
+    assert "'PASS' if pve_guest_dns_present else 'WARN'" in tasks_file
+    assert "~ pve_guest_name ~ '.dns.' ~ pve_guest_dns" in tasks_file
     assert "selectattr('ansible_connection', 'equalto', true)" in bootstrap_playbook

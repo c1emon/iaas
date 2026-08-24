@@ -6,6 +6,7 @@ operators and CI, while keeping online infrastructure checks, planning, and
 mutation-capable operations explicit.
 
 ## Requirements
+
 ### Requirement: Root offline validation command surface
 The system SHALL expose root-level commands for routine offline validation that can be run by both local operators and CI.
 
@@ -29,7 +30,15 @@ The system SHALL expose root-level commands for routine offline validation that 
 - **AND** it SHALL include relevant Python tests for PVE inventory validation and service Markdown rendering hardening
 - **AND** it SHALL include YAML linting for source-of-truth files
 - **AND** it SHALL include OpenTofu formatting and offline validation where practical
+- **AND** it SHALL include Python static type checking, Ansible linting, and strict OpenSpec validation through repository-owned command targets
+- **AND** it SHALL fail when any required validation fails
 - **AND** it SHALL NOT perform online infrastructure access or mutation
+
+#### Scenario: Install locked toolchains before validation
+- **WHEN** cloud CI validates a pull request or main-branch update
+- **THEN** it SHALL install the committed Python and Node validation toolchains
+- **AND** it SHALL invoke the same repository-owned aggregate offline command used by operators
+- **AND** it SHALL report validation failures without executing online or mutation workflows
 
 ### Requirement: Validation CLI failures are operator-readable
 The system SHALL convert expected repository validation failures at CLI boundaries into stable operator-readable errors.
@@ -96,12 +105,12 @@ The system SHALL provide an initial CI workflow that runs offline validation wit
 The system SHALL keep online checks, planning, and mutation-capable operations outside the default offline validation path.
 
 #### Scenario: Preserve explicit online PVE checks
-- **WHEN** operators need to validate live PVE state
-- **THEN** they SHALL use an explicit online target or workflow separate from the aggregate offline check
-- **AND** the default offline check SHALL NOT depend on that online target
+- **WHEN** operators need to validate live PVE readiness or health
+- **THEN** they SHALL use explicit online targets or workflows separate from the aggregate offline check
+- **AND** the default offline check SHALL NOT depend on PVE online preflight or PVE cluster health targets
 
 #### Scenario: Preserve explicit planning and mutation operations
-- **WHEN** operators need to run OpenTofu plan, OpenTofu apply, OpenTofu destroy, Packer template builds, or Ansible mutation
+- **WHEN** operators need to run OpenTofu plan, OpenTofu apply, OpenTofu destroy, Packer template builds, Ansible mutation, PVE maintenance, VM migration, or node reboot workflows
 - **THEN** those operations SHALL remain explicit commands
 - **AND** they SHALL NOT be dependencies of the aggregate offline check
 - **AND** they SHALL NOT run automatically in the initial cloud CI workflow
@@ -191,7 +200,7 @@ The system SHALL keep newly added P0 hygiene checks compatible with cloud CI and
 - **WHEN** GitHub Actions or another CI platform runs P0 hygiene checks
 - **THEN** it SHALL invoke repository-owned targets
 - **AND** it SHALL NOT define or require PVE, OPNsense, switch, 1Password, SSH, or apply-capable secrets
-- **AND** it SHALL NOT run PVE preflight, OpenTofu plan/apply/destroy, Packer build, Ansible guest verification, or infrastructure mutation
+- **AND** it SHALL NOT run PVE preflight, PVE cluster health checks, OpenTofu plan/apply/destroy, Packer build, Ansible guest verification, PVE maintenance, or infrastructure mutation
 
 #### Scenario: Runtime state artifacts are accidentally tracked
 - **WHEN** local OpenTofu state, provider directories, virtual environments, caches, Ansible collections, or platform metadata files are accidentally added to source control

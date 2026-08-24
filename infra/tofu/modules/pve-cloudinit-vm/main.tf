@@ -2,7 +2,7 @@ locals {
   vm_is_protected    = var.prevent_destroy
   vm_passthrough     = try(var.vm.passthrough == null ? [] : var.vm.passthrough, [])
   vm_has_passthrough = length(local.vm_passthrough) > 0
-  vm_nics              = try(var.vm.nics, [])
+  vm_nics            = try(var.vm.nics, [])
 }
 
 resource "proxmox_virtual_environment_vm" "protected" {

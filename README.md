@@ -7,8 +7,15 @@ implementation detail. No real secrets are committed.
 The safest first workflow is the offline validation gate:
 
 ```bash
+uv sync --locked --dev
+pnpm install --frozen-lockfile
 make generate && make check-generated && make check
 ```
+
+`make check` is offline-only: it checks generated output, tests, inventory YAML,
+Python types, self-contained PVE/OPNsense Ansible playbooks and the VM baseline
+role, strict OpenSpec contracts, and OpenTofu formatting/validation. It does not
+need runtime credentials or contact infrastructure.
 
 That gate does not require runtime secrets, live PVE, OPNsense, switch, guest,
 Packer build, OpenTofu apply/destroy, or Ansible mutation access.
@@ -93,5 +100,5 @@ detailed state/cache/secret handling runbook.
 - PCI passthrough readiness: [`docs/runbooks/pve-pci-passthrough-readiness.md`](docs/runbooks/pve-pci-passthrough-readiness.md)
 - Decisions: [`docs/decisions/pve-automation-preflight.md`](docs/decisions/pve-automation-preflight.md), [`docs/decisions/iaas-automation-roadmap-research.md`](docs/decisions/iaas-automation-roadmap-research.md)
 - Historical / remediation planning: [`docs/review-remediation-roadmap.md`](docs/review-remediation-roadmap.md)
-- Planned consolidated roadmap entrypoint: `docs/roadmap.md` (tracked by `consolidate-documentation-roadmaps`; not present yet)
+- Current roadmap and backlog: [`docs/roadmap.md`](docs/roadmap.md)
 - Detailed module READMEs: [`infra/tofu/pve/README.md`](infra/tofu/pve/README.md), [`infra/packer/proxmox/debian-13/README.md`](infra/packer/proxmox/debian-13/README.md), [`ansible/README.md`](ansible/README.md), [`ansible/playbooks/opnsense/README.md`](ansible/playbooks/opnsense/README.md), [`ansible/playbooks/switches/README.md`](ansible/playbooks/switches/README.md), [`ansible/roles/switch_config/README.md`](ansible/roles/switch_config/README.md), [`scripts/README.md`](scripts/README.md)

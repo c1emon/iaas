@@ -46,7 +46,6 @@ context unless this page or OpenSpec says otherwise.
 
 | Work | Current status | Notes |
 |---|---|---|
-| `consolidate-documentation-roadmaps` | In progress | Adds this roadmap, labels historical planning docs, and updates documentation links. |
 | `add-pve-rolling-maintenance-runbook` | In progress | Active OpenSpec change with tasks still unchecked; intended to document rolling PVE maintenance before any deeper automation. |
 
 ## Complete pending archive
@@ -59,6 +58,7 @@ archive state.
 |---|---|
 | `manage-opnsense-filter-rules` | OPNsense filter rule management. |
 | `support-opnsense-filter-rule-net-arrays` | OPNsense network-array support for filter rules. |
+| `support-opnsense-filter-rule-port-arrays` | OPNsense port-array support for filter rules. |
 | `refine-opnsense-filter-rule-identity-input` | OPNsense filter rule identity input refinement. |
 | `manage-opnsense-pbr-gateways` | OPNsense policy-based routing gateway management. |
 | `make-opnsense-filter-rule-inverts-optional` | Optional invert flags for OPNsense filter rules. |
@@ -77,6 +77,7 @@ archived OpenSpec changes.
 | PVE online safety rails and runtime verification. | `openspec/changes/archive/2026-06-24-add-pve-online-preflight/`, `openspec/changes/archive/2026-06-26-add-pve-guest-verification/` |
 | PVE implementation/package maintenance and adapter consolidation. | `openspec/changes/archive/2026-06-28-consolidate-pve-api-runtime-adapters/`, `openspec/changes/archive/2026-06-28-reorganize-pve-health-check-packages/`, `openspec/changes/archive/2026-06-28-reorganize-pve-inventory-packages/`, `openspec/changes/archive/2026-06-28-reorganize-pve-cloud-init-packages/`, `openspec/changes/archive/2026-06-28-extract-python-common-primitives/` |
 | Operator documentation reorganization. | `openspec/changes/archive/2026-06-30-reorganize-operator-documentation/`, [root operator manual](../README.md) |
+| Roadmap consolidation. | `openspec/changes/archive/2026-06-30-consolidate-documentation-roadmaps/`, [current roadmap](roadmap.md) |
 | Review remediation phases 1, 2, 3a, and 4a. | [historical remediation roadmap](review-remediation-roadmap.md) |
 | OPNsense alias/VIP configuration and export support. | Archived OpenSpec history under `openspec/changes/archive/`. |
 | Switch/SKS8300 automation migration and read-only export workflow. | Archived OpenSpec history under `openspec/changes/archive/`. |

@@ -3,7 +3,9 @@
 ## Purpose
 
 Provide a safe declarative SKS8300-series configuration resource workflow that plans, diffs, applies only with explicit opt-in, verifies post-state, and remains separate from read-only facts collection.
+
 ## Requirements
+
 ### Requirement: Separate SKS8300 configuration workflow
 The system SHALL provide XikeOS configuration management through a configuration workflow separate from the read-only facts workflow, using native `c1emon.xikeos` resource modules directly as the primary lifecycle engine and repository role/playbook code only for policy orchestration.
 
@@ -105,3 +107,47 @@ The system SHALL include safety guardrails for SKS8300/XikeOS configuration work
 - **WHEN** the workflow previews or applies configuration changes
 - **THEN** it SHALL produce an auditable report of requested resources, collection module command summaries, change status, and module lifecycle result
 - **AND** sensitive values SHALL be redacted from logs and reports
+
+### Requirement: SKS8300 interface VLAN resource intent
+The system SHALL support SKS8300 interface VLAN configuration through declarative `interfaces` resource intent in the existing configuration workflow.
+
+#### Scenario: Declare access port VLAN intent
+- **WHEN** an operator declares an interface resource with `mode: access` and an `access_vlan`
+- **THEN** the configuration workflow SHALL validate the interface name, mode, and VLAN ID
+- **AND** it SHALL plan changes by comparing the declared access VLAN against current parsed interface state
+- **AND** it SHALL render interface configuration commands only from validated intent
+
+#### Scenario: Declare trunk tagged VLAN intent
+- **WHEN** an operator declares an interface resource with `mode: trunk` and `tagged_vlans`
+- **THEN** the configuration workflow SHALL validate the tagged VLAN ID list
+- **AND** it SHALL plan mode and tagged membership changes from current parsed interface state
+- **AND** it SHALL verify post-state tagged VLAN membership after apply
+
+#### Scenario: Declare hybrid tagged and untagged VLAN intent
+- **WHEN** an operator declares an interface resource with `mode: hybrid`, `tagged_vlans`, and `untagged_vlans`
+- **THEN** the configuration workflow SHALL validate all VLAN ID lists
+- **AND** it SHALL plan tagged and untagged membership changes separately
+- **AND** it SHALL verify that post-state satisfies the declared mode and VLAN membership
+
+### Requirement: Interface configuration safety guardrails
+The system SHALL include safety guardrails specific to SKS8300 interface VLAN resources.
+
+#### Scenario: Reject unsupported interface fields
+- **WHEN** an operator declares unsupported interface fields or raw interface commands
+- **THEN** the configuration workflow SHALL reject the intent before rendering commands
+- **AND** it SHALL report the unsupported fields without applying changes
+
+#### Scenario: Reject inconsistent interface mode fields
+- **WHEN** an operator declares interface fields inconsistent with the selected mode
+- **THEN** the configuration workflow SHALL reject the intent before rendering commands
+- **AND** it SHALL explain the mode-specific field requirement that failed
+
+#### Scenario: Keep port changes apply-gated
+- **WHEN** an operator runs the interface VLAN workflow without `switch_config_apply: true`
+- **THEN** the workflow SHALL collect current state and produce a plan only
+- **AND** it SHALL NOT send interface configuration commands to the switch
+
+#### Scenario: Verify interface post-state after apply
+- **WHEN** interface configuration commands have been applied
+- **THEN** the workflow SHALL re-collect or inspect interface state
+- **AND** it SHALL fail verification if mode, access VLAN, tagged VLANs, or untagged VLANs do not satisfy declared intent

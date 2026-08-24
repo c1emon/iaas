@@ -16,6 +16,7 @@ PVE_TAG_RE = re.compile(r"^[a-z0-9]+(?:[._-][a-z0-9]+)*$")
 NIC_NAME_RE = DNS_LABEL_RE
 NIC_ROLE_RE = DNS_LABEL_RE
 MAC_ADDRESS_RE = re.compile(r"^[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}$")
+LINUX_INTERFACE_NAME_MAX_LENGTH = 15
 
 
 def parse_static_ip(value: str) -> tuple[str, int, str]:
@@ -76,7 +77,12 @@ def _normalize_dns_list(value: Any, context: str) -> list[str]:
 
 
 def _normalize_nic_name(value: Any, context: str) -> str:
-    return _require_pattern(value, context, NIC_NAME_RE, "a lower-case DNS-label-safe value")
+    name = _require_pattern(value, context, NIC_NAME_RE, "a lower-case DNS-label-safe value")
+    require(
+        len(name) <= LINUX_INTERFACE_NAME_MAX_LENGTH,
+        f"{context}: must be at most {LINUX_INTERFACE_NAME_MAX_LENGTH} characters because it becomes a Linux interface name",
+    )
+    return name
 
 
 def _normalize_nic_role(value: Any, context: str) -> str:

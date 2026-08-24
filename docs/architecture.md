@@ -87,13 +87,14 @@ Traefik-Dev / Traefik-Infra / Traefik-App
 - API 只读检查
 - 配置 snapshot
 - 本地只读导出
+- 手写、受审查的 firewall aliases、IP Alias VIP、PBR gateway 与新的 API-backed filter rules
 
 当前暂不接管：
 
 - ISC DHCP
 - DHCPv6 / Prefix Delegation
 - Interfaces / VLANs
-- Firewall rules
+- legacy firewall rules 与管理访问规则
 - NAT
 - WAN / PPPoE
 

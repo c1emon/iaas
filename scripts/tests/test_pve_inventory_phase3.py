@@ -277,6 +277,19 @@ def test_validation_rejects_duplicate_nic_names() -> None:
         validate_vms(doc, cluster_state())
 
 
+def test_validation_enforces_linux_nic_name_length() -> None:
+    doc = explicit_multi_nic_doc()
+    doc["vms"][2]["nics"][0]["name"] = "managementnic00"
+
+    normalized = validate_vms(doc, cluster_state())
+    media_vm = next(vm for vm in normalized if vm["name"] == "media-lab-01")
+    assert media_vm["nics"][0]["name"] == "managementnic00"
+
+    doc["vms"][2]["nics"][0]["name"] = "managementnic000"
+    with pytest.raises(ValidationError, match=r"nics\[0\]\.name: must be at most 15 characters"):
+        validate_vms(doc, cluster_state())
+
+
 def test_validation_rejects_explicit_nic_mac_and_gateway_errors() -> None:
     doc = explicit_multi_nic_doc()
     doc["vms"][2]["nics"][1]["mac_address"] = "not-a-mac"

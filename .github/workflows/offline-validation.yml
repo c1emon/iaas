@@ -21,6 +21,15 @@ jobs:
 
       - uses: astral-sh/setup-uv@v5
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.22.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+
       - uses: opentofu/setup-opentofu@v1
         with:
           tofu_version: latest
@@ -34,6 +43,8 @@ jobs:
           sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
 
       - run: uv sync --locked --dev
+
+      - run: pnpm install --frozen-lockfile
 
       - run: make check
 

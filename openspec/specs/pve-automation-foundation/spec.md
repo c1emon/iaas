@@ -275,9 +275,14 @@ The system SHALL validate multi-NIC VM declarations before generated artifacts a
 
 #### Scenario: Validate NIC identity
 - **WHEN** a VM declares NICs
-- **THEN** each NIC name SHALL be unique within the VM
+- **THEN** each NIC name SHALL be unique within the VM and a lower-case DNS-label-safe Linux interface name of at most 15 characters
 - **AND** each NIC MAC address SHALL be globally unique across declared VMs
 - **AND** each NIC static IP host address SHALL be globally unique across declared VMs
+
+#### Scenario: Reject a NIC name that cannot be rendered by Linux
+- **WHEN** a VM NIC name contains more than 15 characters
+- **THEN** offline inventory validation SHALL reject the declaration before generating cloud-init network-config
+- **AND** the validation error SHALL identify the NIC name field and its 15-character limit
 
 #### Scenario: Validate NIC networks
 - **WHEN** a VM declares a NIC on a logical network

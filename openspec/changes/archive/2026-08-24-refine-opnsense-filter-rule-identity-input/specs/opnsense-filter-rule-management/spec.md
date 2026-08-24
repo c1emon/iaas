@@ -1,13 +1,13 @@
 ## MODIFIED Requirements
 
-### Requirement: Strict generated description identity
+### Requirement: Strict description identity
 The system SHALL derive each managed filter rule `description` from required `scope` and `slug` fields as `iaas:opnsense:filter:<scope>:<slug>`, SHALL use that generated description as the immutable identity, and SHALL require both `scope` and `slug` to match `^[a-z0-9][a-z0-9-]*$`.
 
-#### Scenario: Managed rule has valid identity parts
+#### Scenario: Managed rule has valid identity description
 - **WHEN** every declared filter rule has `scope` and `slug` values using lowercase letters, numbers, and hyphens
 - **THEN** the workflow generates descriptions in `iaas:opnsense:filter:<scope>:<slug>` format and allows validation to continue
 
-#### Scenario: Managed rule has invalid identity parts
+#### Scenario: Managed rule has invalid identity description
 - **WHEN** a declared filter rule has a missing `scope` or `slug`, uppercase letters, underscores, spaces, appended labels, or otherwise fails the required identity part pattern
 - **THEN** the workflow fails before attempting OPNsense API write calls and reports the invalid identity part format
 
@@ -18,11 +18,11 @@ The system SHALL derive each managed filter rule `description` from required `sc
 ### Requirement: Unique managed filter rule identity
 The system SHALL require all generated managed filter rule descriptions to be globally unique.
 
-#### Scenario: Duplicate generated descriptions are declared
+#### Scenario: Duplicate managed descriptions are declared
 - **WHEN** two or more declared filter rules have `scope` and `slug` values that generate the same `description`
 - **THEN** the workflow fails before attempting OPNsense API write calls and reports duplicate managed filter rule identities
 
-#### Scenario: Generated descriptions are unique
+#### Scenario: Managed descriptions are unique
 - **WHEN** every declared filter rule has a distinct generated `description`
 - **THEN** the workflow can match each declared rule to at most one desired identity
 

@@ -10,8 +10,10 @@
     pve_bootstrap_sudo_commands:
       - /usr/local/sbin/astra-pve-template-build
       - /usr/local/sbin/astra-pve-snippet-upload
-    pve_bootstrap_template_wrapper_sudoers_src: "{{ playbook_dir }}/../../../infra/pve-node/sudoers.d/astra-pve-template-build"
-    pve_bootstrap_snippet_wrapper_sudoers_src: "{{ playbook_dir }}/../../../infra/pve-node/sudoers.d/astra-pve-snippet-upload"
+    pve_bootstrap_template_wrapper_sudoers_src: >-
+      {{ playbook_dir }}/../../../infra/pve-node/sudoers.d/astra-pve-template-build
+    pve_bootstrap_snippet_wrapper_sudoers_src: >-
+      {{ playbook_dir }}/../../../infra/pve-node/sudoers.d/astra-pve-snippet-upload
     pve_bootstrap_wrapper_src: "{{ playbook_dir }}/../../../infra/pve-node/bin/astra-pve-template-build"
     pve_bootstrap_snippet_wrapper_src: "{{ playbook_dir }}/../../../infra/pve-node/bin/astra-pve-snippet-upload"
     pve_bootstrap_wrapper_dest: /usr/local/sbin/astra-pve-template-build

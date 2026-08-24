@@ -275,6 +275,9 @@ network-config.
 - File ID: `images:snippets/opentofu-vm-<vmid>-user-data.yml`
 - Multi-NIC network-config snippet name: `opentofu-vm-<vmid>-network-config.yml`
 - Multi-NIC network-config file ID: `images:snippets/opentofu-vm-<vmid>-network-config.yml`
+- Each explicit VM NIC `name` becomes the cloud-init guest interface name; it
+  must be a lower-case DNS-label-safe value no longer than Linux's 15-character
+  interface-name limit.
 - Cloud-init media/drive datastore: the `memory` role/datastore. Snippets stay
   on `images`, while VM root/EFI disks and cloud-init drive media use `memory`.
 - Retention: snippets stay in storage for the VM lifetime; do not delete them immediately after upload.
