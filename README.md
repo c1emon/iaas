@@ -8,14 +8,15 @@ The safest first workflow is the offline validation gate:
 
 ```bash
 uv sync --locked --dev
-pnpm install --frozen-lockfile
 make generate && make check-generated && make check
 ```
 
 `make check` is offline-only: it checks generated output, tests, inventory YAML,
 Python types, self-contained PVE/OPNsense Ansible playbooks and the VM baseline
-role, strict OpenSpec contracts, and OpenTofu formatting/validation. It does not
-need runtime credentials or contact infrastructure.
+role, OPNsense desired-state validation, and OpenTofu formatting/validation. It
+does not need runtime credentials or contact infrastructure. OpenSpec is an
+external workflow plugin, not a repository dependency or default validation
+gate.
 
 That gate does not require runtime secrets, live PVE, OPNsense, switch, guest,
 Packer build, OpenTofu apply/destroy, or Ansible mutation access.

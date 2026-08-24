@@ -4,11 +4,10 @@ INVENTORY_DIR ?= $(ROOT)/inventory
 UV ?= uv
 TOFU ?= tofu
 GITLEAKS ?= gitleaks
-OPENSPEC ?= $(ROOT)/node_modules/.bin/openspec
 ANSIBLE_LINT_PATHS ?= $(ROOT)/ansible/playbooks/pve $(ROOT)/ansible/playbooks/opnsense $(ROOT)/ansible/roles/vm_baseline
 PACKER_BUILD_SCRIPT ?= $(ROOT)/infra/packer/proxmox/debian-13/build-template.sh
 
-.PHONY: generate check-generated test lint-yaml typecheck ansible-lint openspec-validate tofu-fmt tofu-validate opnsense-validate check secret-scan ansible-syntax pve-generate pve-check services-generate services-check foundation-generate foundation-check foundation-health pve-validate pve-fmt pve-preflight pve-health pve-check-pve pve-packer-build pve-plan pve-apply pve-destroy pve-verify-guests pve-bootstrap-guests pve-bootstrap-guests-syntax pve-ansible-check pve-ansible-syntax pve-backup-state
+.PHONY: generate check-generated test lint-yaml typecheck ansible-lint tofu-fmt tofu-validate opnsense-validate check secret-scan ansible-syntax pve-generate pve-check services-generate services-check foundation-generate foundation-check foundation-health pve-validate pve-fmt pve-preflight pve-health pve-check-pve pve-packer-build pve-plan pve-apply pve-destroy pve-verify-guests pve-bootstrap-guests pve-bootstrap-guests-syntax pve-ansible-check pve-ansible-syntax pve-backup-state
 
 generate:
 	$(MAKE) -C "$(PVE_DIR)" generate
@@ -32,10 +31,6 @@ typecheck:
 ansible-lint:
 	$(UV) run --directory "$(ROOT)" ansible-lint $(ANSIBLE_LINT_PATHS)
 
-openspec-validate:
-	@test -x "$(OPENSPEC)" || { printf 'error: OpenSpec is required (run pnpm install --frozen-lockfile)\n' >&2; exit 127; }
-	"$(OPENSPEC)" validate --all --strict
-
 tofu-fmt:
 	$(TOFU) -chdir="$(ROOT)/infra/tofu" fmt -recursive -check -diff
 
@@ -46,7 +41,7 @@ tofu-validate:
 opnsense-validate:
 	$(UV) run --directory "$(ROOT)" python -m scripts.opnsense_validation
 
-check: check-generated test lint-yaml typecheck ansible-lint openspec-validate tofu-fmt tofu-validate opnsense-validate
+check: check-generated test lint-yaml typecheck ansible-lint tofu-fmt tofu-validate opnsense-validate
 
 secret-scan:
 	@command -v "$(GITLEAKS)" >/dev/null 2>&1 || { printf 'error: gitleaks is required for secret-scan (install gitleaks or set GITLEAKS=/path/to/gitleaks)\n' >&2; exit 127; }

@@ -255,7 +255,7 @@ def test_offline_guards_keep_pve_health_outside_make_check_and_ci() -> None:
     pve_make_text = PVE_MAKEFILE_PATH.read_text(encoding="utf-8")
     workflow_text = WORKFLOW_PATH.read_text(encoding="utf-8")
 
-    assert "check: check-generated test lint-yaml typecheck ansible-lint openspec-validate tofu-fmt tofu-validate opnsense-validate" in make_text
+    assert "check: check-generated test lint-yaml typecheck ansible-lint tofu-fmt tofu-validate opnsense-validate" in make_text
     assert "pve-health" in make_text
     assert "validate: validate-source validate-ansible check-generated init" in pve_make_text
     assert "check-pve: pve-preflight" in pve_make_text
