@@ -44,6 +44,8 @@ jobs:
 
       - run: uv sync --locked --dev
 
+      - run: uv run ansible-galaxy collection install -r ansible/requirements.yml -p ansible/collections
+
       - run: pnpm install --frozen-lockfile
 
       - run: make check
