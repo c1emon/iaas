@@ -203,31 +203,9 @@ uv run yamllint vars/opnsense/gateways.yml playbooks/opnsense/manage-gateways.ym
 uv run ansible-lint playbooks/opnsense/manage-gateways.yml
 ```
 
-已知问题：`oxlorg.opnsense.gateway` 在读取现有 OPNsense 动态/虚拟 gateway 时，可能因为 API
-返回缺少 `fargw` 字段而失败，例如：
-
-```text
-Failed to translate API entry to Ansible entry!
-Failed field: 'far_gw'
-```
-
-这是 collection 的字段转换兼容性问题，不是 `gateways.yml` 输入错误。当前本机临时修复是 patch 已安装的
-collection 文件：
-
-```text
-~/.ansible/collections/ansible_collections/oxlorg/opnsense/plugins/module_utils/helper/main.py
-```
-
-在 `simplify_translate()` 的 typed field 循环里，对缺失字段跳过：
-
-```python
-if f not in simple:
-    continue
-```
-
-重新安装或升级 `oxlorg.opnsense` collection 后，这个本地 patch 可能会被覆盖；届时需要重新 patch，或等待
-upstream 修复。已知有类似 upstream issue 模式，例如缺失 API 字段导致 translation failure，但未找到专门针对
-`gateway` + `far_gw` 的 issue。
+`ansible/requirements.yml` 精确锁定 `oxlorg.opnsense` 26.1.11。该版本将 API 有时缺失的
+`fargw` 字段作为 `far_gw` 可选字段处理；不要 patch 本机安装的 collection 文件。若升级 collection，先在
+隔离环境运行本 playbook 的 syntax check，再确认该兼容性仍然存在。
 
 ## `manage-filter-rules.yml`
 

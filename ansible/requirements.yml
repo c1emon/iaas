@@ -1,6 +1,7 @@
 ---
 collections:
   - name: oxlorg.opnsense
+    version: "==26.1.11"
   - name: community.general
   - name: ansible.netcommon
   - name: c1emon.xikeos
