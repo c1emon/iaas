@@ -32,4 +32,3 @@ The system SHALL expose root-level commands for routine offline validation that 
 - **THEN** it SHALL install the committed Python and Node validation toolchains
 - **AND** it SHALL invoke the same repository-owned aggregate offline command used by operators
 - **AND** it SHALL report validation failures without executing online or mutation workflows
-

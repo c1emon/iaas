@@ -52,4 +52,3 @@ The module SHALL document why the two VM resources remain separate and how their
 - **WHEN** a future refactor proposes removing the duplicated resources or changing their addresses
 - **THEN** that work SHALL require a separate reviewed change with explicit state-migration and lifecycle-safety analysis
 - **AND** this parity change SHALL NOT perform that refactor
-
