@@ -60,6 +60,34 @@ def test_verify_with_matching_checksum_succeeds(tmp_path: Path) -> None:
     assert target_path.read_text(encoding="utf-8") == payload
 
 
+def test_verify_with_network_config_checksum_succeeds(tmp_path: Path) -> None:
+    storage = "images"
+    filename = "opentofu-vm-501-network-config.yml"
+    target_path = tmp_path / storage / "snippets" / filename
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = "version: 2\nethernets: {}\n"
+    target_path.write_text(payload, encoding="utf-8")
+
+    fake_pvesm = make_fake_pvesm(tmp_path, target_path)
+    env = os.environ | {
+        "ASTRA_PVE_SNIPPET_UPLOAD_PVESM": str(fake_pvesm),
+        "FAKE_PVESM_TARGET": str(target_path),
+    }
+
+    result = run_wrapper([
+        "--verify",
+        "--storage",
+        storage,
+        "--filename",
+        filename,
+        "--sha256",
+        hashlib.sha256(payload.encode("utf-8")).hexdigest(),
+    ], env)
+
+    assert result.returncode == 0
+    assert result.stderr == ""
+
+
 def test_verify_with_mismatched_checksum_fails_without_mutation(tmp_path: Path) -> None:
     storage = "images"
     filename = "opentofu-vm-501-user-data.yml"
