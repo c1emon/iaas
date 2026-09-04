@@ -37,16 +37,16 @@ Use environment variables:
 Preferred local execution with 1Password:
 
 ```bash
-cd ansible
-op run --env-file ../.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/readonly.yml
+cd automation/ansible
+op run --env-file ../../environments/astra/runtime/.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/readonly.yml
 ```
 
 ## Read-only configuration export
 
-Export selected OPNsense configuration and observed facts from `ansible/`:
+Export selected OPNsense configuration and observed facts from `automation/ansible/`:
 
 ```bash
-op run --env-file ../.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/export.yml
+op run --env-file ../../environments/astra/runtime/.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/export.yml
 ```
 
 The playbook writes raw review artifacts under `exports/opnsense/` at the repository root. The `exports/` path is
@@ -61,19 +61,19 @@ First-stage declarative-management candidates in the export are:
 
 Exported firewall aliases are observed live state. They may help review or prepare future desired state, but the alias
 management workflow does not read `exports/opnsense/firewall-aliases.json` directly. Edit the hand-written
-`ansible/vars/opnsense/aliases.yml` source instead.
+`environments/astra/ansible/vars/opnsense/aliases.yml` source instead.
 
-IP Alias VIP desired state is also hand-written in `ansible/vars/opnsense/vips.yml`. It is not generated from export
+IP Alias VIP desired state is also hand-written in `environments/astra/ansible/vars/opnsense/vips.yml`. It is not generated from export
 artifacts, and the VIP workflow does not read raw exports as apply input.
 
-PBR gateway desired state is hand-written in `ansible/vars/opnsense/gateways.yml`. It is not generated from export
+PBR gateway desired state is hand-written in `environments/astra/ansible/vars/opnsense/gateways.yml`. It is not generated from export
 artifacts, and the gateway workflow does not read raw exports as apply input.
 
-API-backed new filter rule desired state is hand-written in `ansible/vars/opnsense/filter-rules.yml`. It is not
+API-backed new filter rule desired state is hand-written in `environments/astra/ansible/vars/opnsense/filter-rules.yml`. It is not
 generated from `download_rules.csv` or `exports/opnsense/` artifacts, and the filter-rule workflow does not read raw
 exports as apply input.
 
-DNAT desired state has a placeholder file at `ansible/vars/opnsense/dnat.yml`, but DNAT management is intentionally not
+DNAT desired state has a placeholder file at `environments/astra/ansible/vars/opnsense/dnat.yml`, but DNAT management is intentionally not
 implemented yet. The placeholder playbook fails before any API write because the current `oxlorg.opnsense` collection
 does not provide a stable dedicated Destination NAT / port-forward module in this repository.
 
@@ -88,26 +88,25 @@ delegation, interfaces, legacy firewall rules, or NAT.
 
 ## Bootstrap workflow
 
-From `ansible/`:
+From `automation/ansible/`:
 
 ```bash
 uv sync
 uv run ansible-galaxy collection install -r requirements.yml
-op run --env-file ../.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/readonly.yml
+op run --env-file ../../environments/astra/runtime/.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/readonly.yml
 ```
 
 Before any future write playbook:
 
 ```bash
-op run --env-file ../.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/snapshot.yml
+op run --env-file ../../environments/astra/runtime/.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/snapshot.yml
 ```
 
 Validate all repository-owned alias, VIP, PBR gateway, and new filter-rule
 desired-state files without credentials or OPNsense access:
 
 ```bash
-cd ..
-make opnsense-validate
+make -C ../.. opnsense-validate
 ```
 
 Each supported mutation playbook runs the same resource-scoped validation before
@@ -117,45 +116,45 @@ or gateways exist. Do not edit desired-state files concurrently with a running
 playbook, because the local validation and subsequent variable load are adjacent
 but not content-digest bound.
 
-Additively apply reviewed firewall aliases from `ansible/vars/opnsense/aliases.yml`:
+Additively apply reviewed firewall aliases from `environments/astra/ansible/vars/opnsense/aliases.yml`:
 
 ```bash
-op run --env-file ../.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/manage-aliases.yml
+op run --env-file ../../environments/astra/runtime/.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/manage-aliases.yml
 ```
 
 Validate the alias management files before applying:
 
 ```bash
 uv run ansible-playbook --syntax-check playbooks/opnsense/manage-aliases.yml
-uv run yamllint vars/opnsense/aliases.yml playbooks/opnsense/manage-aliases.yml
+uv run yamllint ../../environments/astra/ansible/vars/opnsense/aliases.yml playbooks/opnsense/manage-aliases.yml
 uv run ansible-lint playbooks/opnsense/manage-aliases.yml
 ```
 
-Additively apply reviewed IP Alias VIPs from `ansible/vars/opnsense/vips.yml`:
+Additively apply reviewed IP Alias VIPs from `environments/astra/ansible/vars/opnsense/vips.yml`:
 
 ```bash
-op run --env-file ../.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/manage-vips.yml
+op run --env-file ../../environments/astra/runtime/.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/manage-vips.yml
 ```
 
 Validate the VIP management files before applying:
 
 ```bash
 uv run ansible-playbook --syntax-check playbooks/opnsense/manage-vips.yml
-uv run yamllint vars/opnsense/vips.yml playbooks/opnsense/manage-vips.yml
+uv run yamllint ../../environments/astra/ansible/vars/opnsense/vips.yml playbooks/opnsense/manage-vips.yml
 uv run ansible-lint playbooks/opnsense/manage-vips.yml
 ```
 
-Additively apply reviewed PBR gateways from `ansible/vars/opnsense/gateways.yml`:
+Additively apply reviewed PBR gateways from `environments/astra/ansible/vars/opnsense/gateways.yml`:
 
 ```bash
-op run --env-file ../.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/manage-gateways.yml
+op run --env-file ../../environments/astra/runtime/.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/manage-gateways.yml
 ```
 
 Validate the PBR gateway management files before applying:
 
 ```bash
 uv run ansible-playbook --syntax-check playbooks/opnsense/manage-gateways.yml
-uv run yamllint vars/opnsense/gateways.yml playbooks/opnsense/manage-gateways.yml
+uv run yamllint ../../environments/astra/ansible/vars/opnsense/gateways.yml playbooks/opnsense/manage-gateways.yml
 uv run ansible-lint playbooks/opnsense/manage-gateways.yml
 ```
 
@@ -163,17 +162,17 @@ For the FakeIP PBR design, aliases and IP Alias VIPs are prerequisites. PBR gate
 `GW_PROXY` for future firewall rules to reference. The firewall PBR rules themselves remain outside this gateway
 workflow and are a separate future capability.
 
-Additively apply reviewed API-backed new filter rules from `ansible/vars/opnsense/filter-rules.yml`:
+Additively apply reviewed API-backed new filter rules from `environments/astra/ansible/vars/opnsense/filter-rules.yml`:
 
 ```bash
-op run --env-file ../.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/manage-filter-rules.yml
+op run --env-file ../../environments/astra/runtime/.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/manage-filter-rules.yml
 ```
 
 Validate the filter rule management files before applying:
 
 ```bash
 uv run ansible-playbook --syntax-check playbooks/opnsense/manage-filter-rules.yml
-uv run yamllint vars/opnsense/filter-rules.yml playbooks/opnsense/manage-filter-rules.yml
+uv run yamllint ../../environments/astra/ansible/vars/opnsense/filter-rules.yml playbooks/opnsense/manage-filter-rules.yml
 uv run ansible-lint playbooks/opnsense/manage-filter-rules.yml
 ```
 
@@ -194,7 +193,7 @@ DNAT / port-forward management is represented only by a failing placeholder:
 uv run ansible-playbook playbooks/opnsense/manage-dnat.yml
 ```
 
-The placeholder loads `ansible/vars/opnsense/dnat.yml` for future review structure, then fails intentionally without
+The placeholder loads `environments/astra/ansible/vars/opnsense/dnat.yml` for future review structure, then fails intentionally without
 calling OPNsense APIs. Raw API DNAT workarounds require a separate reviewed change.
 
 ## Safety rules

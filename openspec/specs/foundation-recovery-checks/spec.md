@@ -54,17 +54,17 @@ The system SHALL validate foundation recovery metadata before generated recovery
 - **AND** generated documentation SHALL surface the accepted risk for operator review
 
 ### Requirement: Generated foundation recovery documentation
-The system SHALL generate committed, non-sensitive foundation recovery documentation from the foundation recovery inventory.
+The system SHALL generate committed, non-sensitive foundation recovery documentation from Astra's foundation recovery inventory.
 
 #### Scenario: Operator regenerates foundation recovery documentation
 - **WHEN** an operator runs the foundation recovery documentation generation command
-- **THEN** the system SHALL generate a Markdown document under `docs/generated/`
+- **THEN** the system SHALL generate `environments/astra/generated/docs/foundation-recovery.md`
 - **AND** the generated document SHALL include the minimum startup set, recovery order, foundation hosts, foundation services, dependencies, health checks, backup/restore metadata, break-glass metadata, storage-network facts, and warnings
 
 #### Scenario: Generated foundation recovery documentation is stale
-- **WHEN** the foundation recovery inventory changes without regenerating committed foundation recovery documentation
+- **WHEN** Astra's foundation inventory changes without regenerating committed recovery documentation
 - **THEN** the generated-output check SHALL fail
-- **AND** it SHALL report the stale foundation recovery documentation artifact
+- **AND** it SHALL report the stale environment-specific artifact
 
 #### Scenario: Generated foundation recovery documentation remains non-sensitive
 - **WHEN** foundation recovery documentation is generated or checked

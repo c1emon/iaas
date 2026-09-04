@@ -21,6 +21,6 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
-testpaths = ["ansible/tests", "scripts/tests"]
-norecursedirs = ["ansible/collections"]
+pythonpath = ["automation/src"]
+testpaths = ["tests"]
+norecursedirs = ["automation/ansible/collections"]

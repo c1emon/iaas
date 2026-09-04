@@ -1,0 +1,84 @@
+---
+- name: Additively manage OPNsense IP Alias Virtual IPs
+  hosts: opnsense
+  gather_facts: false
+  connection: local
+
+  module_defaults:
+    group/oxlorg.opnsense.all:
+      firewall: "{{ opnsense_api_host }}"
+      api_key: "{{ opnsense_api_key }}"
+      api_secret: "{{ opnsense_api_secret }}"
+      ssl_verify: "{{ opnsense_ssl_verify }}"
+
+  vars:
+    opnsense_vip_source: "{{ ansible_project_dir }}/../../environments/astra/ansible/vars/opnsense/vips.yml"
+
+  tasks:
+    - name: Validate desired OPNsense IP Alias VIPs locally
+      ansible.builtin.command:
+        argv:
+          - uv
+          - run
+          - --directory
+          - "{{ ansible_project_dir }}/../.."
+          - python
+          - -m
+          - iaas_automation.opnsense_validation
+          - --resource
+          - vips
+          - --file
+          - "{{ opnsense_vip_source }}"
+      args:
+        chdir: "{{ ansible_project_dir }}/../.."
+      environment:
+        PYTHONPATH: "{{ ansible_project_dir }}/../../automation/src"
+      changed_when: false
+      check_mode: false
+
+    - name: Load desired OPNsense IP Alias VIPs
+      ansible.builtin.include_vars:
+        file: "{{ opnsense_vip_source }}"
+
+    - name: Run OPNsense API credential preflight
+      ansible.builtin.import_tasks: tasks/api-credential-preflight.yml
+
+    - name: Assert desired VIPs use IP Alias-compatible fields
+      ansible.builtin.assert:
+        that:
+          - opnsense_vips is defined
+          - opnsense_vips is sequence
+          - opnsense_vips | rejectattr('description', 'defined') | list | length == 0
+          - opnsense_vips | rejectattr('interface', 'defined') | list | length == 0
+          - opnsense_vips | rejectattr('address', 'defined') | list | length == 0
+          - opnsense_vips | rejectattr('bind', 'defined') | list | length == 0
+          - opnsense_vips | rejectattr('expand', 'defined') | list | length == 0
+          - opnsense_vips | rejectattr('state', 'defined') | list | length == 0
+          - opnsense_vips | selectattr('state', 'in', ['present', 'absent']) | list | length == opnsense_vips | length
+          - opnsense_vips | selectattr('address', 'search', '/') | list | length == opnsense_vips | length
+        fail_msg: >-
+          Each desired VIP must define description, interface, CIDR address,
+          bind, expand, and state fields. State must be present or absent.
+
+    - name: Create, update, or remove declared IP Alias VIPs additively  # noqa: args[module]
+      oxlorg.opnsense.interface_vip:
+        description: "{{ item.description }}"
+        interface: "{{ item.interface }}"
+        address: "{{ item.address }}"
+        bind: "{{ item.bind }}"
+        expand: "{{ item.expand }}"
+        mode: ipalias
+        state: "{{ item.state }}"
+        reload: false
+      loop: "{{ opnsense_vips }}"
+      loop_control:
+        label: "{{ item.interface }} {{ item.address }} {{ item.description }}"
+      register: opnsense_vip_apply
+      when: opnsense_vips | length > 0
+
+    - name: Reload OPNsense interface_vip target after VIP changes  # noqa: args[module]
+      oxlorg.opnsense.reload:
+        target: interface_vip
+      when:
+        - opnsense_vip_apply is defined
+        - opnsense_vip_apply is changed

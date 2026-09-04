@@ -1,0 +1,91 @@
+"""Facade/orchestration for read-only online PVE preflight.
+
+This module keeps the public CLI surface small and delegates the actual
+checks to focused helpers so tests can keep importing the stable facade
+symbols from here.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+from typing import TYPE_CHECKING
+from pathlib import Path
+
+from iaas_automation.common.errors import ValidationError
+from iaas_automation.common.io import load_yaml
+
+from .checks.preflight.api import create_api_client, run_api_checks
+from .checks.preflight.model import derive_expected_resources
+from .checks.preflight.ssh import run_ssh_checks
+from .checks.results import has_failures, render_report
+from .inventory.model import build_model
+from .inventory.validation.cluster import validate_cluster
+from .inventory.validation.vm import validate_vms
+from .pve_api.errors import redact_sensitive_text
+from .pve_api.runtime import PveOnlineRuntimeContext, load_api_runtime_config, load_online_runtime_context
+
+if TYPE_CHECKING:
+    from .checks.preflight.api import ProxmoxAPI
+    from .checks.preflight.model import DerivedResources
+    from .checks.results import CheckResult
+    from .pve_api.protocol import PveReadOnlyApi
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    """Parse the tiny CLI surface used by the make targets."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--cluster", type=Path, required=True, help="Path to the PVE cluster inventory")
+    parser.add_argument("--vms", type=Path, required=True, help="Path to the VM inventory")
+    return parser.parse_args(argv)
+
+
+def run_preflight(
+    cluster_path: Path,
+    vms_path: Path,
+    environ: dict[str, str] | None = None,
+    api_client: PveReadOnlyApi | None = None,
+    ssh_runner=None,
+) -> list[CheckResult]:
+    """Run the full read-only preflight and return structured results."""
+    results: list[CheckResult] = []
+    if api_client is None:
+        # Validate the API runtime inputs before deriving the online context/client.
+        load_api_runtime_config(environ)
+    runtime: PveOnlineRuntimeContext = load_online_runtime_context(environ)
+
+    cluster_doc = load_yaml(cluster_path)
+    cluster_state = validate_cluster(cluster_doc)
+    vms_doc = load_yaml(vms_path)
+    vms = validate_vms(vms_doc, cluster_state)
+    model = build_model(cluster_state, vms)
+    expected: DerivedResources = derive_expected_resources(model)
+
+    client = api_client or create_api_client(runtime)
+    run_api_checks(runtime, client, model, expected, results)
+
+    if ssh_runner is None:
+        from subprocess import run as ssh_runner  # type: ignore[no-redef]
+    run_ssh_checks(runtime, results, runner=ssh_runner)
+    return results
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI entrypoint; non-zero only when blocking failures are present."""
+    args = parse_args(sys.argv[1:] if argv is None else argv)
+    try:
+        results = run_preflight(cluster_path=args.cluster, vms_path=args.vms)
+    except ValidationError as exc:
+        print(f"FAIL model.validation: {exc}")
+        return 1
+    except Exception as exc:  # pragma: no cover
+        print(f"FAIL preflight: {redact_sensitive_text(str(exc), [os.environ.get('TF_VAR_pve_api_token_secret', '')])}")
+        return 1
+
+    print(render_report(results), end="")
+    return 1 if has_failures(results) else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,19 @@
+## MODIFIED Requirements
+
+### Requirement: Playbook-level switch facts export workflow
+The system SHALL keep file persistence outside facts collection and SHALL preserve the existing configured export location after the playbook is relocated.
+
+#### Scenario: Export switch facts after collection
+- **WHEN** `automation/ansible/playbooks/switches/readonly-facts.yml` completes read-only collection and export is enabled
+- **THEN** the playbook-level workflow SHALL write configured structured exports from collection-native facts
+- **AND** exported data SHALL include `ansible_net_*` facts and `ansible_network_resources` when collected
+- **AND** files SHALL be written under the existing explicitly configured export directory
+
+#### Scenario: Avoid profile raw output exports in normal workflow
+- **WHEN** raw output export behavior is requested from the normal read-only facts workflow
+- **THEN** the export workflow SHALL NOT depend on SKS8300 profile command IDs or `switch_raw_export_items`
+- **AND** any raw command output export SHALL require a separately documented smoke, debug, or fallback workflow
+
+#### Scenario: Summarize collection outside facts collection
+- **WHEN** facts export is enabled by the playbook workflow
+- **THEN** the export workflow SHALL write a collection summary using output variables such as collection module name, requested gather subsets, requested network resources, transport, and terminal adapter

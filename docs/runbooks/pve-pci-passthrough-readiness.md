@@ -27,9 +27,9 @@ Use this as a host-side checklist before enabling a passthrough VM.
 
 - Keep VM lifecycle and hardware-mapping bootstrap separate.
 - `bpg/proxmox` `~> 0.109` provides `proxmox_hardware_mapping_pci`, which can manage PVE PCI resource mappings such as `iGpu0`.
-- If this repository later automates mapping creation, prefer a dedicated bootstrap root such as `infra/tofu/pve-mappings/` instead of the normal VM lifecycle root.
+- If this repository later automates mapping creation, prefer a dedicated bootstrap root such as `environments/astra/opentofu/pve-mappings/` instead of the normal VM lifecycle root.
 - Run that bootstrap root with explicit high-privilege credentials only when changing mappings; current research indicates hardware mapping management may require `root@pam` or equivalent elevated mapping permissions.
-- The normal `infra/tofu/pve` VM root should continue to consume mapping names through `hostpci { mapping = "..." }` and should not create, update, or delete cluster hardware mappings during routine VM applies.
+- The normal `environments/astra/opentofu/pve` VM root should continue to consume mapping names through `hostpci { mapping = "..." }` and should not create, update, or delete cluster hardware mappings during routine VM applies.
 - `make pve-preflight` now performs the repository-owned read-only PCI mapping check before VM apply; it does not create or modify mappings.
 
 Example future OpenTofu shape:

@@ -1,0 +1,140 @@
+---
+- name: Export selected OPNsense configuration and facts
+  hosts: opnsense
+  gather_facts: false
+  connection: local
+
+  module_defaults:
+    group/oxlorg.opnsense.all:
+      firewall: "{{ opnsense_api_host }}"
+      api_key: "{{ opnsense_api_key }}"
+      api_secret: "{{ opnsense_api_secret }}"
+      ssl_verify: "{{ opnsense_ssl_verify }}"
+
+  vars:
+    opnsense_export_dir: "{{ playbook_dir }}/../../../../exports/opnsense"
+    opnsense_config_candidate_exports:
+      - name: firewall-aliases
+        target: alias
+        description: Firewall aliases
+      - name: unbound-host-overrides
+        target: unbound_host
+        description: Unbound host overrides
+      - name: unbound-forwarding
+        target: unbound_forward
+        description: Unbound forwarding entries
+    opnsense_dhcp_fact_exports:
+      - name: dhcpv4-leases
+        module: dhcpv4
+        controller: leases
+        command: search_lease
+        description: DHCPv4 lease facts
+      - name: dhcpv6-leases
+        module: dhcpv6
+        controller: leases
+        command: search_lease
+        description: DHCPv6 lease facts
+      - name: dhcpv6-prefix-leases
+        module: dhcpv6
+        controller: leases
+        command: search_prefix
+        description: DHCPv6 prefix lease facts
+
+  tasks:
+    - name: Run OPNsense API credential preflight
+      ansible.builtin.import_tasks: tasks/api-credential-preflight.yml
+
+    - name: Create local OPNsense export directory
+      ansible.builtin.file:
+        path: "{{ opnsense_export_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Export first-stage declarative-management candidates
+      oxlorg.opnsense.list:
+        firewall: "{{ opnsense_api_host }}"
+        api_key: "{{ opnsense_api_key }}"
+        api_secret: "{{ opnsense_api_secret }}"
+        ssl_verify: "{{ opnsense_ssl_verify }}"
+        target: "{{ item.target }}"
+      loop: "{{ opnsense_config_candidate_exports }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: opnsense_config_candidate_results
+      changed_when: false
+
+    - name: Export observed-only DHCP facts
+      oxlorg.opnsense.raw:
+        firewall: "{{ opnsense_api_host }}"
+        api_key: "{{ opnsense_api_key }}"
+        api_secret: "{{ opnsense_api_secret }}"
+        ssl_verify: "{{ opnsense_ssl_verify }}"
+        module: "{{ item.module }}"
+        controller: "{{ item.controller }}"
+        command: "{{ item.command }}"
+        action: get
+      loop: "{{ opnsense_dhcp_fact_exports }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: opnsense_dhcp_fact_results
+      changed_when: false
+
+    - name: Write first-stage candidate export files
+      ansible.builtin.copy:
+        dest: "{{ opnsense_export_dir }}/{{ item.item.name }}.json"
+        mode: "0600"
+        content: |
+          {{ {
+            "category": "first-stage-management-candidate",
+            "description": item.item.description,
+            "target": item.item.target,
+            "managed_desired_state": false,
+            "review_required_before_promotion": true,
+            "result": item
+          } | to_nice_json }}
+      loop: "{{ opnsense_config_candidate_results.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+    - name: Write observed-only DHCP fact export files
+      ansible.builtin.copy:
+        dest: "{{ opnsense_export_dir }}/{{ item.item.name }}.json"
+        mode: "0600"
+        content: |
+          {{ {
+            "category": "observed-only-fact",
+            "description": item.item.description,
+            "endpoint": item.item.module ~ "/" ~ item.item.controller ~ "/" ~ item.item.command,
+            "managed_desired_state": false,
+            "review_required_before_promotion": true,
+            "result": item
+          } | to_nice_json }}
+      loop: "{{ opnsense_dhcp_fact_results.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+    - name: Write export README
+      ansible.builtin.copy:
+        dest: "{{ opnsense_export_dir }}/README.md"
+        mode: "0600"
+        content: |
+          # OPNsense local export
+
+          This directory is ignored by Git because raw exports may contain topology, lease, hostname, MAC address, and
+          IPv6 prefix data.
+
+          First-stage declarative-management candidates:
+
+          - `firewall-aliases.json`
+          - `unbound-host-overrides.json`
+          - `unbound-forwarding.json`
+
+          Observed-only DHCP facts, not managed desired state:
+
+          - `dhcpv4-leases.json`
+          - `dhcpv6-leases.json`
+          - `dhcpv6-prefix-leases.json`
+
+    - name: Show export location
+      ansible.builtin.debug:
+        msg: "Wrote read-only OPNsense export artifacts to {{ opnsense_export_dir }}"

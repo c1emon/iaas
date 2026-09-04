@@ -33,17 +33,18 @@ The operator documentation SHALL classify commands and workflows by operational 
 - **THEN** it SHALL state that the default offline gate does not require runtime secrets or live PVE, OPNsense, switch, guest, Packer build, OpenTofu apply/destroy, or Ansible mutation access
 
 ### Requirement: Source-of-truth and generated-output map
-The operator documentation SHALL identify human-authored source-of-truth files and committed generated outputs.
+The operator documentation SHALL identify Astra authored sources, their authority boundaries, and committed generated outputs.
 
 #### Scenario: Operator edits inventory
-- **WHEN** an operator wants to change declared infrastructure or service metadata
-- **THEN** the root README SHALL identify relevant source-of-truth files such as `inventory/pve-cluster.yml`, `inventory/vms.yml`, and `inventory/services.yml`
-- **AND** it SHALL direct the operator to generation and stale-output check workflows
+- **WHEN** an operator wants to change declared infrastructure, service, foundation, or device metadata
+- **THEN** the root README SHALL identify the relevant files under `environments/astra/inventory/` and `environments/astra/ansible/`
+- **AND** it SHALL identify the PVE cluster and VM inventories as authoritative for PVE topology and VM lifecycle facts
+- **AND** it SHALL direct the operator to the existing generation and stale-output check workflows
 
 #### Scenario: Operator reviews generated files
 - **WHEN** generated outputs are documented
-- **THEN** the root README SHALL summarize which generated outputs are committed and expected to remain non-sensitive
-- **AND** detailed state/cache/secret handling SHALL be linked to the appropriate runbook rather than fully duplicated
+- **THEN** the root README SHALL identify committed non-sensitive artifacts under `environments/astra/generated/`
+- **AND** detailed state, cache, and observation handling SHALL be linked rather than duplicated
 
 ### Requirement: Runtime parameter and secret guidance
 The operator documentation SHALL summarize runtime parameters and secret-injection conventions.

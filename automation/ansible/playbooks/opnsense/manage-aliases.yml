@@ -1,0 +1,74 @@
+---
+- name: Additively manage OPNsense firewall aliases
+  hosts: opnsense
+  gather_facts: false
+  connection: local
+
+  module_defaults:
+    group/oxlorg.opnsense.all:
+      firewall: "{{ opnsense_api_host }}"
+      api_key: "{{ opnsense_api_key }}"
+      api_secret: "{{ opnsense_api_secret }}"
+      ssl_verify: "{{ opnsense_ssl_verify }}"
+
+  vars:
+    opnsense_alias_source: "{{ ansible_project_dir }}/../../environments/astra/ansible/vars/opnsense/aliases.yml"
+
+  tasks:
+    - name: Validate desired OPNsense aliases locally
+      ansible.builtin.command:
+        argv:
+          - uv
+          - run
+          - --directory
+          - "{{ ansible_project_dir }}/../.."
+          - python
+          - -m
+          - iaas_automation.opnsense_validation
+          - --resource
+          - aliases
+          - --file
+          - "{{ opnsense_alias_source }}"
+      args:
+        chdir: "{{ ansible_project_dir }}/../.."
+      environment:
+        PYTHONPATH: "{{ ansible_project_dir }}/../../automation/src"
+      changed_when: false
+      check_mode: false
+
+    - name: Load desired OPNsense aliases
+      ansible.builtin.include_vars:
+        file: "{{ opnsense_alias_source }}"
+
+    - name: Run OPNsense API credential preflight
+      ansible.builtin.import_tasks: tasks/api-credential-preflight.yml
+
+    - name: Assert desired aliases use alias_multi-compatible fields
+      ansible.builtin.assert:
+        that:
+          - opnsense_aliases is defined
+          - opnsense_aliases is sequence
+          - opnsense_aliases | rejectattr('name', 'defined') | list | length == 0
+          - opnsense_aliases | rejectattr('type', 'defined') | list | length == 0
+          - opnsense_aliases | rejectattr('content', 'defined') | list | length == 0
+          - opnsense_aliases | rejectattr('description', 'defined') | list | length == 0
+          - opnsense_aliases | rejectattr('enabled', 'defined') | list | length == 0
+          - opnsense_aliases | rejectattr('state', 'defined') | list | length == 0
+        fail_msg: >-
+          Each desired alias must define name, type, content, description,
+          enabled, and state fields compatible with oxlorg.opnsense.alias_multi.
+
+    - name: Create or update desired aliases additively
+      oxlorg.opnsense.alias_multi:
+        aliases: "{{ opnsense_aliases }}"
+        multi_control:
+          output_info: true
+      register: opnsense_alias_apply
+      when: opnsense_aliases | length > 0
+
+    - name: Reload OPNsense alias target after alias changes
+      oxlorg.opnsense.reload:
+        target: alias
+      when:
+        - opnsense_alias_apply is defined
+        - opnsense_alias_apply is changed

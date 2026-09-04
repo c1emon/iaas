@@ -3,15 +3,17 @@
 ## Purpose
 
 Provide a caller-owned export workflow for writing collected switch facts and profile-approved raw outputs to repository files without making file persistence intrinsic to switch facts collection.
+
 ## Requirements
+
 ### Requirement: Playbook-level switch facts export workflow
-The system SHALL provide a caller-owned export workflow for writing collection-native switch facts to repository files without making file persistence an intrinsic behavior of facts collection.
+The system SHALL keep file persistence outside facts collection and SHALL preserve the existing configured export location after the playbook is relocated.
 
 #### Scenario: Export switch facts after collection
-- **WHEN** `playbooks/switches/readonly-facts.yml` completes read-only facts collection and export is enabled by the playbook workflow
-- **THEN** the playbook-level export workflow SHALL write configured structured exports from collection-native facts
-- **AND** the exported data SHALL include `ansible_net_*` facts and `ansible_network_resources` when collected
-- **AND** it SHALL write files under the configured switch export directory
+- **WHEN** `automation/ansible/playbooks/switches/readonly-facts.yml` completes read-only collection and export is enabled
+- **THEN** the playbook-level workflow SHALL write configured structured exports from collection-native facts
+- **AND** exported data SHALL include `ansible_net_*` facts and `ansible_network_resources` when collected
+- **AND** files SHALL be written under the existing explicitly configured export directory
 
 #### Scenario: Avoid profile raw output exports in normal workflow
 - **WHEN** raw output export behavior is requested from the normal read-only facts workflow

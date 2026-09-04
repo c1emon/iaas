@@ -1,0 +1,207 @@
+---
+- name: Additively manage OPNsense new firewall filter rules
+  hosts: opnsense
+  gather_facts: false
+  connection: local
+
+  module_defaults:
+    group/oxlorg.opnsense.all:
+      firewall: "{{ opnsense_api_host }}"
+      api_key: "{{ opnsense_api_key }}"
+      api_secret: "{{ opnsense_api_secret }}"
+      ssl_verify: "{{ opnsense_ssl_verify }}"
+
+  vars:
+    opnsense_filter_rule_source: >-
+      {{ ansible_project_dir }}/../../environments/astra/ansible/vars/opnsense/filter-rules.yml
+    opnsense_filter_rule_identity_part_pattern: ^[a-z0-9][a-z0-9-]*$
+    opnsense_filter_rule_required_fields:
+      - scope
+      - slug
+      - state
+      - enabled
+      - sequence
+      - interface
+      - direction
+      - action
+      - quick
+      - ip_protocol
+      - protocol
+      - source_net
+      - destination_net
+
+  tasks:
+    - name: Validate desired OPNsense new filter rules locally
+      ansible.builtin.command:
+        argv:
+          - uv
+          - run
+          - --directory
+          - "{{ ansible_project_dir }}/../.."
+          - python
+          - -m
+          - iaas_automation.opnsense_validation
+          - --resource
+          - filter-rules
+          - --file
+          - "{{ opnsense_filter_rule_source }}"
+      args:
+        chdir: "{{ ansible_project_dir }}/../.."
+      environment:
+        PYTHONPATH: "{{ ansible_project_dir }}/../../automation/src"
+      changed_when: false
+      check_mode: false
+
+    - name: Load desired OPNsense new filter rules
+      ansible.builtin.include_vars:
+        file: "{{ opnsense_filter_rule_source }}"
+
+    - name: Run OPNsense API credential preflight
+      ansible.builtin.import_tasks: tasks/api-credential-preflight.yml
+
+    - name: Assert desired filter rules are a sequence
+      ansible.builtin.assert:
+        that:
+          - opnsense_filter_rules is defined
+          - opnsense_filter_rules is sequence
+          - opnsense_filter_rules is not string
+        fail_msg: >-
+          opnsense_filter_rules must be defined as a YAML sequence in
+          environments/astra/ansible/vars/opnsense/filter-rules.yml.
+
+    - name: Assert desired filter rules define required fields
+      ansible.builtin.assert:
+        that:
+          - opnsense_filter_rules | rejectattr(item, 'defined') | list | length == 0
+        fail_msg: >-
+          Each desired OPNsense new filter rule must define all required fields:
+          {{ opnsense_filter_rule_required_fields | join(', ') }}.
+      loop: "{{ opnsense_filter_rule_required_fields }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: Assert desired filter rules omit generated description
+      ansible.builtin.assert:
+        that:
+          - opnsense_filter_rules | selectattr('description', 'defined') | list | length == 0
+        fail_msg: >-
+          Do not declare description directly in opnsense_filter_rules.
+          The workflow generates description from scope and slug.
+
+    - name: Assert desired filter rule states are valid
+      ansible.builtin.assert:
+        that:
+          - >-
+            opnsense_filter_rules | selectattr('state', 'in', ['present', 'absent'])
+            | list | length == opnsense_filter_rules | length
+        fail_msg: >-
+          Each desired OPNsense new filter rule must set state to present or absent.
+
+    - name: Assert desired filter rule identity parts use immutable format
+      ansible.builtin.assert:
+        that:
+          - >-
+            opnsense_filter_rules | selectattr(item, 'match', opnsense_filter_rule_identity_part_pattern)
+            | list | length == opnsense_filter_rules | length
+        fail_msg: >-
+          Each desired OPNsense new filter rule {{ item }} must match
+          {{ opnsense_filter_rule_identity_part_pattern }} and remain immutable.
+      loop:
+        - scope
+        - slug
+      loop_control:
+        label: "{{ item }}"
+
+    - name: Assert deny rules do not include their own interfaces as destinations
+      ansible.builtin.assert:
+        that:
+          - >-
+            item.action not in ['block', 'reject']
+            or item.destination_net is string
+            or item.interface | intersect(item.destination_net) | length == 0
+        fail_msg: >-
+          Rule {{ item.scope }}:{{ item.slug }} denies traffic to its own interface.
+          Remove {{ item.interface | intersect(item.destination_net) | join(', ') }}
+          from destination_net.
+      loop: "{{ opnsense_filter_rules }}"
+      loop_control:
+        label: "{{ item.scope }}:{{ item.slug }}"
+
+    - name: Initialize generated OPNsense new filter rule apply list
+      ansible.builtin.set_fact:
+        opnsense_filter_rule_apply_rules: []
+
+    - name: Generate module-compatible OPNsense new filter rules
+      ansible.builtin.set_fact:
+        opnsense_filter_rule_apply_rules: >-
+          {{
+            opnsense_filter_rule_apply_rules
+            + [
+              item
+              | combine(
+                  {
+                    'description': 'iaas:opnsense:filter:' ~ item.scope ~ ':' ~ item.slug,
+                    'source_invert': item.source_invert | default(false),
+                    'source_net': (
+                      item.source_net | join(',')
+                      if item.source_net is sequence and item.source_net is not string
+                      else item.source_net
+                    ),
+                    'source_port': (
+                      item.source_port | join(',')
+                      if item.source_port is defined
+                      and item.source_port is sequence
+                      and item.source_port is not string
+                      else item.source_port | default('')
+                    ),
+                    'destination_invert': item.destination_invert | default(false),
+                    'destination_net': (
+                      item.destination_net | join(',')
+                      if item.destination_net is sequence and item.destination_net is not string
+                      else item.destination_net
+                    ),
+                    'destination_port': (
+                      item.destination_port | join(',')
+                      if item.destination_port is defined
+                      and item.destination_port is sequence
+                      and item.destination_port is not string
+                      else item.destination_port | default('')
+                    )
+                  }
+                )
+              | dict2items
+              | rejectattr('key', 'in', ['scope', 'slug'])
+              | list
+              | items2dict
+            ]
+          }}
+      loop: "{{ opnsense_filter_rules }}"
+      loop_control:
+        label: "{{ item.scope }}:{{ item.slug }}"
+
+    - name: Assert generated filter rule descriptions are globally unique
+      ansible.builtin.assert:
+        that:
+          - >-
+            opnsense_filter_rule_apply_rules | map(attribute='description') | list | unique | list | length
+            == opnsense_filter_rule_apply_rules | length
+        fail_msg: >-
+          Generated OPNsense new filter rule descriptions must be globally unique.
+
+    - name: Create, update, or remove declared new filter rules additively  # noqa: args[module]
+      oxlorg.opnsense.rule_multi:
+        rules: "{{ opnsense_filter_rule_apply_rules }}"
+        match_fields:
+          - description
+        reload: false
+        multi_control:
+          output_info: true
+      register: opnsense_filter_rule_apply
+      when: opnsense_filter_rule_apply_rules | length > 0
+
+    - name: Reload OPNsense rule target after filter rule changes  # noqa: args[module]
+      oxlorg.opnsense.reload:
+        target: rule
+      when:
+        - opnsense_filter_rule_apply is defined
+        - opnsense_filter_rule_apply is changed

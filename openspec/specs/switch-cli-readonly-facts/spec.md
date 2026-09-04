@@ -3,7 +3,9 @@
 ## Purpose
 
 Provide a safe read-only SSH network CLI workflow for collecting and parsing SKS8300-12X switch version and VLAN facts without mutating switch configuration, with file export handled by caller-owned workflows.
+
 ## Requirements
+
 ### Requirement: SSH network CLI read-only switch collection
 The system SHALL collect XikeOS switch data over encrypted SSH using Ansible `network_cli` and the native `c1emon.xikeos` facts interface without mutating switch configuration.
 
@@ -21,10 +23,10 @@ The system SHALL collect XikeOS switch data over encrypted SSH using Ansible `ne
 - **AND** it SHALL NOT use Cisco IOS configuration or resource modules for collecting read-only facts
 
 ### Requirement: Role-based read-only facts workflow packaging
-The system SHALL expose the XikeOS read-only facts workflow through the switch read-only playbook using collection-native facts without requiring a separate role when the role would only wrap `c1emon.xikeos.xikeos_facts`.
+The system SHALL expose the XikeOS read-only facts workflow through the relocated reusable switch playbook using collection-native facts without requiring a role that only wraps the collection call.
 
 #### Scenario: Run read-only facts through playbook entrypoint
-- **WHEN** the operator runs `ansible/playbooks/switches/readonly-facts.yml`
+- **WHEN** the operator runs `automation/ansible/playbooks/switches/readonly-facts.yml` with the Astra inventory
 - **THEN** the playbook SHALL collect facts with `c1emon.xikeos.xikeos_facts`
 - **AND** the workflow SHALL expose collection-native `ansible_net_*` and `ansible_network_resources` data to caller-owned export tasks
 - **AND** file export, if desired, SHALL be performed by playbook-level or caller-owned tasks after facts collection completes
@@ -36,7 +38,7 @@ The system SHALL expose the XikeOS read-only facts workflow through the switch r
 
 #### Scenario: Keep host connection settings outside playbook implementation
 - **WHEN** the read-only facts workflow is used for a switch host
-- **THEN** host connection settings such as `ansible_connection`, `ansible_network_os`, `ansible_user`, `ansible_password`, and `ansible_port` SHALL remain supplied by inventory or runtime variables rather than being hard-coded in tasks
+- **THEN** host connection settings SHALL remain supplied by Astra inventory or runtime variables rather than being hard-coded in reusable tasks
 
 ### Requirement: SSH credential configuration
 The system SHALL obtain switch SSH credentials from runtime-provided SSH credential variables rather than Telnet credential variables.

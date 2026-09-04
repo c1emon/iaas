@@ -1,0 +1,22 @@
+---
+- name: Plan SKS8300 declarative switch configuration
+  hosts: switches
+  gather_facts: false
+  connection: ansible.netcommon.network_cli
+
+  vars:
+    ansible_connection: ansible.netcommon.network_cli
+    ansible_network_os: c1emon.xikeos.xikeos
+    switch_vlan_source: >-
+      {{ ansible_project_dir }}/ansible/vars/switches/{{ inventory_hostname }}-vlans.yml
+    switch_config_apply: false
+    switch_config_allowed_states:
+      - merged
+
+  pre_tasks:
+    - name: Load desired SKS8300 collection-native configuration
+      ansible.builtin.include_vars:
+        file: "{{ switch_vlan_source }}"
+
+  roles:
+    - switch_config

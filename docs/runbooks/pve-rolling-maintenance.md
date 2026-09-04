@@ -44,7 +44,7 @@ not a routine maintenance gate. Run it only when a separately approved VM
 lifecycle change is planned during or after this window.
 It does not prove evacuation capacity, target-node storage compatibility, or
 passthrough migratability. The command contracts and their runtime prerequisites
-are documented in [the PVE automation guide](../../infra/tofu/pve/README.md).
+are documented in [the PVE automation guide](../../environments/astra/opentofu/pve/README.md).
 
 Choose the flow from observed live conditions, not from the declared inventory
 node count:
