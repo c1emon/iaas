@@ -37,7 +37,7 @@ Use environment variables:
 Preferred local execution with 1Password:
 
 ```bash
-cd ansible
+cd automation/ansible
 op run --env-file ../../environments/astra/runtime/.env.opnsense.tpl -- uv run ansible-playbook playbooks/opnsense/readonly.yml
 ```
 
@@ -106,8 +106,7 @@ Validate all repository-owned alias, VIP, PBR gateway, and new filter-rule
 desired-state files without credentials or OPNsense access:
 
 ```bash
-cd ..
-make opnsense-validate
+make -C ../.. opnsense-validate
 ```
 
 Each supported mutation playbook runs the same resource-scoped validation before
@@ -127,7 +126,7 @@ Validate the alias management files before applying:
 
 ```bash
 uv run ansible-playbook --syntax-check playbooks/opnsense/manage-aliases.yml
-uv run yamllint vars/opnsense/aliases.yml playbooks/opnsense/manage-aliases.yml
+uv run yamllint ../../environments/astra/ansible/vars/opnsense/aliases.yml playbooks/opnsense/manage-aliases.yml
 uv run ansible-lint playbooks/opnsense/manage-aliases.yml
 ```
 
@@ -141,7 +140,7 @@ Validate the VIP management files before applying:
 
 ```bash
 uv run ansible-playbook --syntax-check playbooks/opnsense/manage-vips.yml
-uv run yamllint vars/opnsense/vips.yml playbooks/opnsense/manage-vips.yml
+uv run yamllint ../../environments/astra/ansible/vars/opnsense/vips.yml playbooks/opnsense/manage-vips.yml
 uv run ansible-lint playbooks/opnsense/manage-vips.yml
 ```
 
@@ -155,7 +154,7 @@ Validate the PBR gateway management files before applying:
 
 ```bash
 uv run ansible-playbook --syntax-check playbooks/opnsense/manage-gateways.yml
-uv run yamllint vars/opnsense/gateways.yml playbooks/opnsense/manage-gateways.yml
+uv run yamllint ../../environments/astra/ansible/vars/opnsense/gateways.yml playbooks/opnsense/manage-gateways.yml
 uv run ansible-lint playbooks/opnsense/manage-gateways.yml
 ```
 
@@ -173,7 +172,7 @@ Validate the filter rule management files before applying:
 
 ```bash
 uv run ansible-playbook --syntax-check playbooks/opnsense/manage-filter-rules.yml
-uv run yamllint vars/opnsense/filter-rules.yml playbooks/opnsense/manage-filter-rules.yml
+uv run yamllint ../../environments/astra/ansible/vars/opnsense/filter-rules.yml playbooks/opnsense/manage-filter-rules.yml
 uv run ansible-lint playbooks/opnsense/manage-filter-rules.yml
 ```
 

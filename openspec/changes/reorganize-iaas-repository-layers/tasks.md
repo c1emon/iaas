@@ -28,7 +28,7 @@
 
 - [x] 5.1 Move reusable Ansible configuration, requirements, playbooks, roles, and utilities to `automation/ansible/`.
 - [x] 5.2 Move reusable OpenTofu modules to `automation/opentofu/modules/` and update module sources.
-- [x] 5.3 Move Packer and PVE-node automation under `automation/`, preserving their existing external interfaces.
+- [x] 5.3 Move Packer and PVE-node automation under `automation/`; require the generated Packer environment file explicitly through `TEMPLATE_BUILD_ENV` without a sibling-file fallback.
 - [x] 5.4 Run focused Ansible, OpenTofu, Packer, wrapper, sudoers-path, and executable-mode checks.
 
 ## 6. Complete the cutover

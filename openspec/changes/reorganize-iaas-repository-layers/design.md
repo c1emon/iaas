@@ -68,7 +68,7 @@ pyproject.toml
 
 `environments/astra/inventory/pve-cluster.yml` is authoritative for the PVE cluster topology, networks, storage roles, templates, VMID policy, and PCI mappings. `environments/astra/inventory/vms.yml` is authoritative for VM declarations and lifecycle intent.
 
-Repository validation, rendering, health/preflight expectations, and environment deployment inputs derive their PVE/VM facts from these declarations. Validation continues to enforce structure, references, uniqueness, network relationships, provider limits, lifecycle safety, and secret exclusion. Existing host-side wrapper protection envelopes remain independent defense-in-depth limits; this change does not redesign them or unrelated Packer fallback defaults.
+Repository validation, rendering, health/preflight expectations, and environment deployment inputs derive their PVE/VM facts from these declarations. Validation continues to enforce structure, references, uniqueness, network relationships, provider limits, lifecycle safety, and secret exclusion. Existing host-side wrapper protection envelopes remain independent defense-in-depth limits; this change does not redesign them.
 
 Service and foundation inventories keep their existing domain ownership and reference VMs where required. Ansible inventory and variables remain authored environment data. This change does not impose a repository-wide rule that every repeated value must be generated from one global source; it only removes conflicting PVE/VM facts where the current automation depends on them.
 
@@ -129,5 +129,5 @@ Current code, CI, docs, and this change's deltas use the new paths. Base specs r
 2. Remove concrete Astra PVE/VM policy from reusable validation where it currently exists.
 3. Move the Python package and tests, updating imports and entrypoints without compatibility shims.
 4. Move Astra data, generated artifacts, runtime templates, and the OpenTofu root; update all consumers.
-5. Move reusable Ansible, OpenTofu modules, Packer, and PVE-node automation without redesigning their external interfaces.
+5. Move reusable Ansible, OpenTofu modules, Packer, and PVE-node automation. The relocated Packer trigger requires the generated environment file to be selected explicitly through `TEMPLATE_BUILD_ENV`; it has no sibling-file fallback.
 6. Remove old supported paths, update docs and configuration, and run final offline/OpenSpec/GitNexus checks.

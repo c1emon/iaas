@@ -74,7 +74,7 @@
           - opnsense_gateways is not string
         fail_msg: >-
           opnsense_gateways must be defined as a YAML sequence in
-          vars/opnsense/gateways.yml.
+          environments/astra/ansible/vars/opnsense/gateways.yml.
 
     - name: Assert desired gateways define required PBR fields
       ansible.builtin.assert:

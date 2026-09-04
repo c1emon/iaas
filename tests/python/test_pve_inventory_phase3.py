@@ -907,11 +907,13 @@ def test_template_build_script_requires_explicit_environment_file() -> None:
     script = ROOT / "automation" / "packer" / "proxmox" / "debian-13" / "build-template.sh"
     env = os.environ.copy()
     env.pop("TEMPLATE_BUILD_ENV", None)
+    source = script.read_text(encoding="utf-8")
 
     result = subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True)
 
     assert result.returncode != 0
     assert "TEMPLATE_BUILD_ENV" in result.stderr
+    assert "source template-build.env" not in source
 
 
 def test_template_build_script_shell_quotes_remote_args(tmp_path: Path) -> None:

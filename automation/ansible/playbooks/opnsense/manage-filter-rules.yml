@@ -67,7 +67,7 @@
           - opnsense_filter_rules is not string
         fail_msg: >-
           opnsense_filter_rules must be defined as a YAML sequence in
-          vars/opnsense/filter-rules.yml.
+          environments/astra/ansible/vars/opnsense/filter-rules.yml.
 
     - name: Assert desired filter rules define required fields
       ansible.builtin.assert:

@@ -1,6 +1,10 @@
 """Smoke checks for native XikeOS switch automation migration."""
 
 from pathlib import Path
+import os
+import subprocess
+
+import yaml
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -92,3 +96,50 @@ def test_switch_config_config_vars_example_uses_resource_schema() -> None:
     assert "state: merged" in example
     assert "config:" in example
     assert "switch_config_intent" not in example
+
+
+def test_switch_config_plan_resolves_relocated_vlan_source_with_jinja(tmp_path: Path) -> None:
+    playbook = yaml.safe_load(
+        (ANSIBLE_DIR / "playbooks/switches/config-plan.yml").read_text(encoding="utf-8")
+    )
+    probe = [
+        {
+            "hosts": "sw-core",
+            "gather_facts": False,
+            "connection": "local",
+            "vars": {"switch_vlan_source": playbook[0]["vars"]["switch_vlan_source"]},
+            "tasks": [
+                {
+                    "ansible.builtin.include_vars": {"file": "{{ switch_vlan_source }}"},
+                },
+                {
+                    "ansible.builtin.assert": {
+                        "that": [
+                            "switch_config_resources is mapping",
+                            "switch_config_resources.vlans is sequence",
+                        ]
+                    }
+                },
+            ],
+        }
+    ]
+    result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "ansible-playbook",
+            "-i",
+            str(ENV_ANSIBLE_DIR / "inventory.yml"),
+            "/dev/stdin",
+        ],
+        cwd=ROOT,
+        input=yaml.safe_dump(probe, sort_keys=False),
+        capture_output=True,
+        text=True,
+        env=os.environ
+        | {
+            "ANSIBLE_CONFIG": str(ANSIBLE_DIR / "ansible.cfg"),
+            "ANSIBLE_LOCAL_TEMP": str(tmp_path / "ansible-local"),
+        },
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

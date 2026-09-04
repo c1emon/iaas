@@ -105,7 +105,7 @@ uv run ansible-playbook --syntax-check playbooks/opnsense/manage-aliases.yml
 Lint：
 
 ```bash
-uv run yamllint vars/opnsense/aliases.yml playbooks/opnsense/manage-aliases.yml
+uv run yamllint ../../environments/astra/ansible/vars/opnsense/aliases.yml playbooks/opnsense/manage-aliases.yml
 uv run ansible-lint playbooks/opnsense/manage-aliases.yml
 ```
 
@@ -151,7 +151,7 @@ uv run ansible-playbook --syntax-check playbooks/opnsense/manage-vips.yml
 Lint：
 
 ```bash
-uv run yamllint vars/opnsense/vips.yml playbooks/opnsense/manage-vips.yml
+uv run yamllint ../../environments/astra/ansible/vars/opnsense/vips.yml playbooks/opnsense/manage-vips.yml
 uv run ansible-lint playbooks/opnsense/manage-vips.yml
 ```
 
@@ -199,7 +199,7 @@ uv run ansible-playbook --syntax-check playbooks/opnsense/manage-gateways.yml
 Lint：
 
 ```bash
-uv run yamllint vars/opnsense/gateways.yml playbooks/opnsense/manage-gateways.yml
+uv run yamllint ../../environments/astra/ansible/vars/opnsense/gateways.yml playbooks/opnsense/manage-gateways.yml
 uv run ansible-lint playbooks/opnsense/manage-gateways.yml
 ```
 
@@ -262,7 +262,7 @@ uv run ansible-playbook --syntax-check playbooks/opnsense/manage-filter-rules.ym
 Lint：
 
 ```bash
-uv run yamllint vars/opnsense/filter-rules.yml playbooks/opnsense/manage-filter-rules.yml
+uv run yamllint ../../environments/astra/ansible/vars/opnsense/filter-rules.yml playbooks/opnsense/manage-filter-rules.yml
 uv run ansible-lint playbooks/opnsense/manage-filter-rules.yml
 ```
 
@@ -305,7 +305,7 @@ uv run ansible-playbook --syntax-check playbooks/opnsense/manage-dnat.yml
 Lint：
 
 ```bash
-uv run yamllint vars/opnsense/dnat.yml playbooks/opnsense/manage-dnat.yml
+uv run yamllint ../../environments/astra/ansible/vars/opnsense/dnat.yml playbooks/opnsense/manage-dnat.yml
 uv run ansible-lint playbooks/opnsense/manage-dnat.yml
 ```
 

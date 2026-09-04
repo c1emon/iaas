@@ -279,8 +279,8 @@ cloud-init identity, and network inputs; Packer owns template creation.
 Run these before committing Ansible workflow changes:
 
 ```bash
-uv run pytest tests/test_xikeos_migration.py
-uv run python -m compileall filter_plugins module_utils
+uv run pytest ../../tests/ansible/test_xikeos_migration.py
+uv run python -m compileall module_utils
 uv run yamllint roles/switch_config/defaults/main.yml \
   roles/switch_config/tasks/main.yml \
   roles/switch_config/tasks/validate.yml \

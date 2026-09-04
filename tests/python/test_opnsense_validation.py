@@ -103,3 +103,32 @@ def test_supported_mutation_playbooks_validate_before_credentials_and_mutation(
     assert '"{{ ansible_project_dir }}/../../.."' not in source
     assert "changed_when: false" in source[: source.index("ansible.builtin.include_vars:")]
     assert "check_mode: false" in source[: source.index("ansible.builtin.include_vars:")]
+
+
+def test_dnat_placeholder_resolves_relocated_source_and_fails_closed(tmp_path: Path) -> None:
+    playbook_path = ROOT / "automation/ansible/playbooks/opnsense/manage-dnat.yml"
+
+    result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "ansible-playbook",
+            "-i",
+            str(ROOT / "environments/astra/ansible/inventory.yml"),
+            "--limit",
+            "soter",
+            str(playbook_path),
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        env=os.environ
+        | {
+            "ANSIBLE_CONFIG": str(ROOT / "automation/ansible/ansible.cfg"),
+            "ANSIBLE_LOCAL_TEMP": str(tmp_path / "ansible-local"),
+        },
+    )
+    assert result.returncode != 0
+    output = result.stdout + result.stderr
+    assert "Stop because OPNsense DNAT management is not implemented" in output
+    assert "environments/astra/ansible/vars/opnsense/dnat.yml" in output
