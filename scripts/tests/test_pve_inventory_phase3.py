@@ -39,6 +39,33 @@ def cluster_state() -> dict[str, Any]:
     return validate_cluster(load_yaml(CLUSTER_PATH))
 
 
+def test_cluster_validation_uses_declared_policy_values() -> None:
+    document = copy.deepcopy(load_yaml(CLUSTER_PATH))
+    document["cluster"]["name"] = "lab-pve"
+    document["reserved_vm_id_ranges"]["templates"] = [9100, 9600]
+    document["templates"]["debian_13_genericcloud"]["vmid"] = 9200
+    document["storage_roles"]["memory"]["datastore"] = "fast-nvme"
+    document["networks"]["dev"].update({"bridge": "vmbr20", "cidr": "192.0.2.0/24", "gateway": "192.0.2.1", "dns": "192.0.2.53"})
+    document["cluster"]["automation"]["template_build"]["build_bridge"] = "vmbr20"
+    document["vm_defaults"]["cores"] = 4
+
+    cluster = validate_cluster(document)
+
+    assert cluster["name"] == "lab-pve"
+    assert cluster["reserved_vm_id_ranges"]["templates"] == [9100, 9600]
+    assert cluster["storage_roles"]["memory"]["datastore"] == "fast-nvme"
+    assert cluster["networks"]["dev"]["bridge"] == "vmbr20"
+    assert cluster["vm_defaults"]["cores"] == 4
+
+
+def test_cluster_validation_rejects_overlapping_declared_vmid_ranges() -> None:
+    document = copy.deepcopy(load_yaml(CLUSTER_PATH))
+    document["reserved_vm_id_ranges"]["long_lived"] = [9400, 9600]
+
+    with pytest.raises(ValidationError, match="ranges must not overlap"):
+        validate_cluster(document)
+
+
 def vms_model() -> dict[str, Any]:
     cluster = cluster_state()
     return build_model(cluster, validate_vms(load_yaml(VMS_PATH), cluster))

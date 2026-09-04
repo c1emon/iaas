@@ -41,7 +41,8 @@ def derive_expected_resources(model: dict[str, Any]) -> DerivedResources:
     cluster = model["cluster"]
     vms = model["vms"]
 
-    required_nodes = {vm["node"] for vm in vms} | {vm["template"]["node"] for vm in vms}
+    declared_templates = list(cluster["templates"].items())
+    required_nodes = {vm["node"] for vm in vms} | {template["node"] for _, template in declared_templates}
     declared_nodes = set(cluster["nodes"])
     optional_nodes = declared_nodes - required_nodes
 
@@ -63,15 +64,29 @@ def derive_expected_resources(model: dict[str, Any]) -> DerivedResources:
                 }
             )
 
+    template_build = cluster["automation"]["template_build"]
+    template_build_template = cluster["templates"][template_build["template_key"]]
+    template_build_node = template_build_template["node"]
+    add_storage(template_build_node, template_build["import_storage_role"])
+    add_storage(template_build_node, template_build["disk_storage_role"])
+
+    cloud_init = cluster["automation"]["cloud_init"]
+    for node in required_nodes:
+        add_storage(node, cloud_init["drive_storage_role"])
+        add_storage(node, cloud_init["snippet_storage_role"])
+
+    for _, template in declared_templates:
+        add_storage(template["node"], template["storage_role"])
+
     for vm in vms:
         node = vm["node"]
         for nic in vm.get("nics") or []:
             bridges_by_node.setdefault(node, set()).add(nic["network"]["bridge"])
         add_storage(node, vm["storage"]["disk_role"])
-        add_storage(node, cluster["automation"]["cloud_init"]["snippet_storage_role"])
-        add_storage(vm["template"]["node"], vm["template"]["storage_role"])
-        add_storage(vm["template"]["node"], cluster["automation"]["template_build"]["import_storage_role"])
-        add_storage(vm["template"]["node"], cluster["automation"]["template_build"]["disk_storage_role"])
+
+    build_bridge = template_build.get("build_bridge")
+    if isinstance(build_bridge, str):
+        bridges_by_node.setdefault(template_build_node, set()).add(build_bridge)
 
         for mapping in vm.get("passthrough") or []:
             mappings_by_node.setdefault(node, set()).add(mapping["mapping"])
@@ -82,14 +97,13 @@ def derive_expected_resources(model: dict[str, Any]) -> DerivedResources:
         optional_mapping_nodes[mapping_name] = declared_mapping_nodes - used_nodes
 
     templates_by_vmid: dict[int, dict[str, Any]] = {}
-    for vm in vms:
-        template = vm["template"]
+    for template_key, template in declared_templates:
         templates_by_vmid.setdefault(
             template["vmid"],
             {
-                "key": template["name"],
+                "key": template_key,
                 "vmid": template["vmid"],
-                "name": template["vm_name"],
+                "name": template["name"],
                 "node": template["node"],
             },
         )

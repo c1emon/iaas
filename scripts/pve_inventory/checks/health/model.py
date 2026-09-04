@@ -52,6 +52,14 @@ def derive_health_expectations(model: dict[str, Any]) -> HealthExpectations:
         required_datastores_by_node[vm["node"]].add(cluster["storage_roles"][vm["template"]["storage_role"]]["datastore"])
     for template in templates.values():
         required_datastores_by_node[template["node"]].add(cluster["storage_roles"][template["storage_role"]]["datastore"])
+    template_build = cluster["automation"]["template_build"]
+    template_build_node = templates[template_build["template_key"]]["node"]
+    required_datastores_by_node[template_build_node].update(
+        {
+            cluster["storage_roles"][template_build["import_storage_role"]]["datastore"],
+            cluster["storage_roles"][template_build["disk_storage_role"]]["datastore"],
+        }
+    )
     for node in required_nodes:
         required_datastores_by_node[node].update(shared_datastores)
 

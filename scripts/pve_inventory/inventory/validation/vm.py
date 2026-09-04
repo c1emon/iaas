@@ -270,10 +270,11 @@ def validate_vms(vms_doc: dict[str, Any], cluster_state: dict[str, Any]) -> list
 
         require(isinstance(lifecycle, str) and lifecycle in {"ephemeral_lab", "long_lived"}, f"{ctx}: lifecycle_class must be ephemeral_lab or long_lived")
         lifecycle_str = cast(str, lifecycle)
-        if lifecycle_str == "ephemeral_lab":
-            require(500 <= vmid_int <= 800, f"{ctx}: ephemeral_lab VMIDs must be within 500-800")
-        if lifecycle_str == "long_lived":
-            require(1000 <= vmid_int <= 2000, f"{ctx}: long_lived VMIDs must be within 1000-2000")
+        lifecycle_range = cluster_state["reserved_vm_id_ranges"][lifecycle_str]
+        require(
+            lifecycle_range[0] <= vmid_int <= lifecycle_range[1],
+            f"{ctx}: {lifecycle_str} VMID must be within the declared {lifecycle_str} range",
+        )
 
         require(isinstance(node, str) and node in cluster_state["nodes"], f"{ctx}: node must reference a declared PVE node")
         node_str = cast(str, node)

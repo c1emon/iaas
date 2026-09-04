@@ -6,8 +6,52 @@ import ipaddress
 import re
 from typing import Any, cast
 
-from scripts.common.errors import require
+from scripts.common.errors import ValidationError, require
 from scripts.common.validation import as_list, as_mapping, require_bool, require_non_empty_string, require_positive_int, require_unknown_keys, require_url_like
+
+
+PVE_VMID_MIN = 100
+PVE_VMID_MAX = 999_999_999
+VMID_RANGE_NAMES = {"templates", "long_lived", "ephemeral_lab"}
+PVE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def _require_ip(value: Any, context: str) -> str:
+    text = require_non_empty_string(value, context)
+    try:
+        ipaddress.ip_address(text)
+    except ValueError as exc:
+        raise ValidationError(f"{context}: must be a valid IP address") from exc
+    return text
+
+
+def _validate_vmid_ranges(value: Any) -> dict[str, list[int]]:
+    ranges = as_mapping(value, "cluster.reserved_vm_id_ranges")
+    require_unknown_keys(ranges, VMID_RANGE_NAMES, "cluster.reserved_vm_id_ranges")
+    normalized: dict[str, list[int]] = {}
+    for name in sorted(VMID_RANGE_NAMES):
+        bounds = as_list(ranges.get(name), f"cluster.reserved_vm_id_ranges.{name}")
+        require(len(bounds) == 2, f"cluster.reserved_vm_id_ranges.{name}: must contain exactly two bounds")
+        lower, upper = bounds
+        require(
+            isinstance(lower, int) and not isinstance(lower, bool) and isinstance(upper, int) and not isinstance(upper, bool),
+            f"cluster.reserved_vm_id_ranges.{name}: bounds must be integers",
+        )
+        lower_int, upper_int = cast(int, lower), cast(int, upper)
+        require(PVE_VMID_MIN <= lower_int <= upper_int <= PVE_VMID_MAX, f"cluster.reserved_vm_id_ranges.{name}: bounds must be within {PVE_VMID_MIN}-{PVE_VMID_MAX}")
+        normalized[name] = [lower_int, upper_int]
+
+    names = sorted(normalized)
+    for index, left_name in enumerate(names):
+        left = normalized[left_name]
+        for right_name in names[index + 1 :]:
+            right = normalized[right_name]
+            require(left[1] < right[0] or right[1] < left[0], f"cluster.reserved_vm_id_ranges.{left_name} and {right_name}: ranges must not overlap")
+    return normalized
+
+
+def _in_range(value: int, bounds: list[int]) -> bool:
+    return bounds[0] <= value <= bounds[1]
 
 
 def validate_automation(cluster_doc: dict[str, Any], storage_roles: dict[str, Any], templates: dict[str, Any], networks: dict[str, Any]) -> dict[str, Any]:
@@ -179,75 +223,94 @@ def validate_cluster(cluster_doc: dict[str, Any]) -> dict[str, Any]:
     """Validate cluster policy and return normalized state for rendering."""
     require(cluster_doc.get("schema_version") == 1, "cluster: schema_version must be 1")
     cluster = as_mapping(cluster_doc.get("cluster"), "cluster.cluster")
-    require(cluster.get("name") == "astra-pve", "cluster: cluster name must be astra-pve")
-    require(cluster.get("default_template") == "debian_13_genericcloud", "cluster: default_template must be debian_13_genericcloud")
+    name = require_non_empty_string(cluster.get("name"), "cluster.cluster.name")
+    require(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name) is not None, "cluster.cluster.name must be PVE-safe")
+    default_template = require_non_empty_string(cluster.get("default_template"), "cluster.cluster.default_template")
 
-    reserved = as_mapping(cluster_doc.get("reserved_vm_id_ranges"), "cluster.reserved_vm_id_ranges")
-    require(reserved.get("templates") == [9000, 9500], "cluster: template VMID range must be 9000-9500")
-    require(reserved.get("long_lived") == [1000, 2000], "cluster: long-lived VMID range must be 1000-2000")
-    require(reserved.get("ephemeral_lab") == [500, 800], "cluster: ephemeral/lab VMID range must be 500-800")
+    reserved = _validate_vmid_ranges(cluster_doc.get("reserved_vm_id_ranges"))
 
     storage_roles = as_mapping(cluster_doc.get("storage_roles"), "cluster.storage_roles")
-    memory = as_mapping(storage_roles.get("memory"), "cluster.storage_roles.memory")
-    images = as_mapping(storage_roles.get("images"), "cluster.storage_roles.images")
-    require(memory.get("datastore") == "memory", "cluster: memory storage role must target datastore 'memory'")
-    require(memory.get("content") == ["disk"], "cluster: memory storage role must carry disk content")
-    require(images.get("datastore") == "images", "cluster: images storage role must target datastore 'images'")
-    require(images.get("content") == ["iso", "import", "snippets"], "cluster: images storage role content mismatch")
+    require(storage_roles, "cluster.storage_roles must be a non-empty mapping")
+    datastores: set[str] = set()
+    for role_name, role_value in storage_roles.items():
+        role_context = f"cluster.storage_roles.{role_name}"
+        role = as_mapping(role_value, role_context)
+        datastore = require_non_empty_string(role.get("datastore"), f"{role_context}.datastore")
+        require(datastore not in datastores, f"{role_context}.datastore: datastore is already used by another role")
+        datastores.add(datastore)
+        content = as_list(role.get("content"), f"{role_context}.content")
+        require(content and all(isinstance(item, str) and item for item in content), f"{role_context}.content: must be a non-empty list of strings")
 
     networks = as_mapping(cluster_doc.get("networks"), "cluster.networks")
-    expected_networks = {
-        "mgmt": ("vmbr0", "10.1.0.0/24", "10.1.0.254", False),
-        "storage": ("storage", "10.1.1.0/24", None, False),
-        "dev": ("br_dev", "10.10.0.0/24", "10.10.0.254", True),
-        "prod": ("br_prod", "10.50.0.0/24", "10.50.0.254", True),
-    }
-    for name, (bridge, cidr, gateway, attach_vms) in expected_networks.items():
-        net = as_mapping(networks.get(name), f"cluster.networks.{name}")
-        require(net.get("bridge") == bridge, f"cluster: {name} bridge must be {bridge}")
-        require(net.get("cidr") == cidr, f"cluster: {name} CIDR must be {cidr}")
-        require(net.get("gateway") == gateway, f"cluster: {name} gateway mismatch")
-        require(net.get("attach_vms") is attach_vms, f"cluster: {name} attach_vms mismatch")
+    require(networks, "cluster.networks must be a non-empty mapping")
+    for network_name, network_value in networks.items():
+        network_context = f"cluster.networks.{network_name}"
+        network = as_mapping(network_value, network_context)
+        require_non_empty_string(network.get("bridge"), f"{network_context}.bridge")
+        cidr = require_non_empty_string(network.get("cidr"), f"{network_context}.cidr")
+        try:
+            network_obj = ipaddress.ip_network(cidr, strict=False)
+        except ValueError as exc:
+            raise ValidationError(f"{network_context}.cidr: must be a valid network") from exc
+        gateway = network.get("gateway")
+        if gateway is not None:
+            gateway_text = _require_ip(gateway, f"{network_context}.gateway")
+            require(ipaddress.ip_address(gateway_text) in network_obj, f"{network_context}.gateway: must belong to the declared network")
+        dns = network.get("dns")
+        if dns is not None:
+            dns_values = dns if isinstance(dns, list) else [dns]
+            require(dns_values and all(isinstance(item, str) for item in dns_values), f"{network_context}.dns: must be an IP address or list of IP addresses")
+            for dns_index, dns_value in enumerate(dns_values):
+                _require_ip(dns_value, f"{network_context}.dns[{dns_index}]")
+        require(isinstance(network.get("attach_vms"), bool), f"{network_context}.attach_vms: must be a boolean")
 
     templates = as_mapping(cluster_doc.get("templates"), "cluster.templates")
+    require(templates, "cluster.templates must be a non-empty mapping")
+    require(default_template in templates, "cluster: default_template must reference a declared template")
     automation = validate_automation(cluster_doc, storage_roles, templates, networks)
 
     nodes = as_mapping(cluster_doc.get("nodes"), "cluster.nodes")
-    require("cohe" in nodes, "cluster: cohe node must be present")
-    cohe = as_mapping(nodes["cohe"], "cluster.nodes.cohe")
-    require(cohe.get("mgmt_ip") == "10.1.0.72", "cluster: cohe mgmt_ip must be 10.1.0.72")
-    require(cohe.get("storage_ip") == "10.1.1.72", "cluster: cohe storage_ip must be 10.1.1.72")
-    require(cohe.get("ssh_host") == "cohe", "cluster: cohe ssh_host must be 'cohe'")
-    if "node3" in nodes:
-        node3 = as_mapping(nodes["node3"], "cluster.nodes.node3")
-        require(node3.get("mgmt_ip") == "10.1.0.73", "cluster: node3 mgmt_ip must be 10.1.0.73")
-        require(node3.get("storage_ip") == "10.1.1.73", "cluster: node3 storage_ip must be 10.1.1.73")
+    require(nodes, "cluster.nodes must be a non-empty mapping")
+    node_ips: set[str] = set()
+    node_ssh_hosts: set[str] = set()
+    for node_name, node_value in nodes.items():
+        node_context = f"cluster.nodes.{node_name}"
+        node = as_mapping(node_value, node_context)
+        for address_field in ("mgmt_ip", "storage_ip"):
+            address = _require_ip(node.get(address_field), f"{node_context}.{address_field}")
+            require(address not in node_ips, f"{node_context}.{address_field}: duplicate node address")
+            node_ips.add(address)
+        ssh_host = require_non_empty_string(node.get("ssh_host"), f"{node_context}.ssh_host")
+        require(ssh_host not in node_ssh_hosts, f"{node_context}.ssh_host: duplicate SSH host")
+        node_ssh_hosts.add(ssh_host)
 
     vm_defaults = as_mapping(cluster_doc.get("vm_defaults"), "cluster.vm_defaults")
-    require(vm_defaults.get("cores") == 2, "cluster: vm_defaults.cores must be 2")
-    require(vm_defaults.get("memory_mib") == 2048, "cluster: vm_defaults.memory_mib must be 2048")
-    require(vm_defaults.get("root_disk_gib") == 20, "cluster: vm_defaults.root_disk_gib must be 20")
-    require(vm_defaults.get("cpu_type") == "host", "cluster: vm_defaults.cpu_type must be host")
-    require(vm_defaults.get("bios") == "ovmf", "cluster: vm_defaults.bios must be ovmf")
-    require(vm_defaults.get("machine") == "q35", "cluster: vm_defaults.machine must be q35")
-    require(vm_defaults.get("clone_mode") == "full", "cluster: vm_defaults.clone_mode must be full")
-    require(vm_defaults.get("scsi_controller") == "virtio-scsi-single", "cluster: vm_defaults.scsi_controller mismatch")
-    require(vm_defaults.get("primary_disk") == "scsi0", "cluster: vm_defaults.primary_disk must be scsi0")
-    require(vm_defaults.get("primary_nics") == 1, "cluster: vm_defaults.primary_nics must be 1")
-    require(vm_defaults.get("pool") is None, "cluster: vm_defaults.pool must be null")
+    for field in ("cores", "memory_mib", "root_disk_gib", "primary_nics"):
+        require_positive_int(vm_defaults.get(field), f"cluster.vm_defaults.{field}")
+    for field in ("cpu_type", "bios", "machine", "clone_mode", "scsi_controller", "primary_disk"):
+        require_non_empty_string(vm_defaults.get(field), f"cluster.vm_defaults.{field}")
+    require(vm_defaults.get("pool") is None or isinstance(vm_defaults.get("pool"), str), "cluster.vm_defaults.pool must be null or a string")
 
-    require(cluster.get("default_template") in templates, "cluster: default_template must reference a declared template")
+    template_vmids: set[int] = set()
+    template_names: set[str] = set()
     for template_name, template_value in templates.items():
         tctx = f"cluster.templates.{template_name}"
         template = as_mapping(template_value, tctx)
         vmid = template.get("vmid")
         require(isinstance(vmid, int), f"{tctx}: vmid must be an integer")
-        require(9000 <= cast(int, vmid) <= 9500, f"{tctx}: vmid must be within 9000-9500")
+        vmid_int = cast(int, vmid)
+        require(_in_range(vmid_int, reserved["templates"]), f"{tctx}: vmid must be within the declared template VMID range")
+        require(vmid_int not in template_vmids, f"{tctx}: duplicate template VMID {vmid_int}")
+        template_vmids.add(vmid_int)
         require(template.get("node") in nodes, f"{tctx}: node must reference a declared PVE node")
 
         for field in ("name", "storage_role", "source_storage_role", "cpu_type", "bios", "machine", "clone_mode", "scsi_controller", "primary_disk"):
             value = template.get(field)
             require(isinstance(value, str) and value, f"{tctx}: {field} must be a non-empty string")
+        template_name_value = cast(str, template["name"])
+        require(re.fullmatch(PVE_NAME_RE, template_name_value) is not None, f"{tctx}.name must be PVE-safe")
+        require(template_name_value not in template_names, f"{tctx}: duplicate template name {template_name_value}")
+        template_names.add(template_name_value)
 
         require_positive_int(template.get("disk_size_gib"), f"{tctx}.disk_size_gib")
         require_positive_int(template.get("primary_nics"), f"{tctx}.primary_nics")
@@ -261,16 +324,27 @@ def validate_cluster(cluster_doc: dict[str, Any]) -> dict[str, Any]:
         require(source_storage_role in storage_roles, f"{tctx}: source_storage_role must reference a declared storage role")
 
     pci_mappings = as_mapping(cluster_doc.get("pci_mappings"), "cluster.pci_mappings")
-    igpu = as_mapping(pci_mappings.get("iGpu0"), "cluster.pci_mappings.iGpu0")
-    require(igpu.get("ha_allowed") is False, "cluster: iGpu0 must not allow HA")
-    defaults = as_mapping(igpu.get("defaults"), "cluster.pci_mappings.iGpu0.defaults")
-    require(defaults == {"pcie": True, "rombar": True, "xvga": False}, "cluster: iGpu0 defaults mismatch")
-    mapping_nodes = as_mapping(igpu.get("nodes"), "cluster.pci_mappings.iGpu0.nodes")
-    require({"cohe", "node3"}.issubset(mapping_nodes), "cluster: iGpu0 must be available on cohe and node3")
+    for mapping_name, mapping_value in pci_mappings.items():
+        mapping_context = f"cluster.pci_mappings.{mapping_name}"
+        mapping = as_mapping(mapping_value, mapping_context)
+        require_non_empty_string(mapping_name, f"{mapping_context}: mapping name")
+        require_non_empty_string(mapping.get("type"), f"{mapping_context}.type")
+        require(mapping.get("ha_allowed") is False, f"{mapping_context}.ha_allowed must be false for passthrough safety")
+        mapping_defaults = as_mapping(mapping.get("defaults"), f"{mapping_context}.defaults")
+        require_unknown_keys(mapping_defaults, {"pcie", "rombar", "xvga"}, f"{mapping_context}.defaults")
+        for flag in ("pcie", "rombar", "xvga"):
+            require(isinstance(mapping_defaults.get(flag), bool), f"{mapping_context}.defaults.{flag}: must be a boolean")
+        mapping_nodes = as_mapping(mapping.get("nodes"), f"{mapping_context}.nodes")
+        require(mapping_nodes, f"{mapping_context}.nodes must be a non-empty mapping")
+        for node_name, node_mapping_value in mapping_nodes.items():
+            require(node_name in nodes, f"{mapping_context}.nodes.{node_name}: node must reference a declared PVE node")
+            node_mapping = as_mapping(node_mapping_value, f"{mapping_context}.nodes.{node_name}")
+            require_non_empty_string(node_mapping.get("path"), f"{mapping_context}.nodes.{node_name}.path")
+            require_positive_int(node_mapping.get("iommu_group"), f"{mapping_context}.nodes.{node_name}.iommu_group")
 
     return {
-        "name": cluster.get("name"),
-        "default_template": cluster.get("default_template"),
+        "name": name,
+        "default_template": default_template,
         "reserved_vm_id_ranges": reserved,
         "storage_roles": storage_roles,
         "automation": automation,
