@@ -6,13 +6,14 @@ shared across repository-owned inventory tooling without coupling domain package
 to each other.
 
 ## Requirements
+
 ### Requirement: Explicit common primitive package
 The system SHALL provide an explicit Python common primitive package for helper code that is shared across repository-owned inventory tooling.
 
 #### Scenario: Inventory tools use shared primitive helpers
 - **WHEN** PVE inventory or service metadata code needs shared validation errors, assertion helpers, basic YAML/JSON/text I/O, CLI validation failure handling, generated-output content comparison, or Markdown table-cell escaping
-- **THEN** those shared helpers SHALL be available from a `scripts.common` package or equivalent explicit common primitive layer
-- **AND** callers SHALL NOT need to import domain-neutral helpers through `scripts.pve_inventory` or `scripts.services_inventory` packages
+- **THEN** those shared helpers SHALL be available from `iaas_automation.common`
+- **AND** callers SHALL NOT need to import domain-neutral helpers through `iaas_automation.pve_inventory` or `iaas_automation.services_inventory`
 
 #### Scenario: Common helpers remain domain-neutral
 - **WHEN** helper code is added to the common primitive layer
@@ -24,13 +25,13 @@ The system SHALL keep inventory domain packages dependent on common primitives r
 
 #### Scenario: Services inventory no longer imports PVE internals
 - **WHEN** service metadata validation, rendering, I/O, or CLI code uses shared helper behavior
-- **THEN** it SHALL import that helper behavior from the common primitive layer
-- **AND** it SHALL NOT import `scripts.pve_inventory.errors`, `scripts.pve_inventory.validation_common`, `scripts.pve_inventory.io`, or other PVE inventory internals for domain-neutral helper behavior
+- **THEN** it SHALL import that helper behavior from `iaas_automation.common`
+- **AND** it SHALL NOT import PVE inventory internals for domain-neutral helper behavior
 
 #### Scenario: Common primitives avoid domain imports
 - **WHEN** Python imports for the common primitive layer are evaluated
-- **THEN** common primitive modules SHALL NOT import from `scripts.pve_inventory` or `scripts.services_inventory`
-- **AND** common primitive modules SHALL be reusable by both PVE inventory and service metadata tooling without creating import cycles
+- **THEN** `iaas_automation.common` SHALL NOT import from `iaas_automation.pve_inventory` or `iaas_automation.services_inventory`
+- **AND** common primitive modules SHALL be reusable by both domains without creating import cycles
 
 ### Requirement: Refactor preserves inventory tool behavior
 The system SHALL preserve existing operator-visible behavior while moving primitive helper ownership.
