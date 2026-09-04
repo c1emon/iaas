@@ -48,7 +48,7 @@
       args:
         chdir: "{{ ansible_project_dir }}/../.."
       environment:
-        PYTHONPATH: "{{ ansible_project_dir }}/../src"
+        PYTHONPATH: "{{ ansible_project_dir }}/../../automation/src"
       changed_when: false
       check_mode: false
 

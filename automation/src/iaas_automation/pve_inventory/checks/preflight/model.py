@@ -83,13 +83,12 @@ def derive_expected_resources(model: dict[str, Any]) -> DerivedResources:
         for nic in vm.get("nics") or []:
             bridges_by_node.setdefault(node, set()).add(nic["network"]["bridge"])
         add_storage(node, vm["storage"]["disk_role"])
+        for mapping in vm.get("passthrough") or []:
+            mappings_by_node.setdefault(node, set()).add(mapping["mapping"])
 
     build_bridge = template_build.get("build_bridge")
     if isinstance(build_bridge, str):
         bridges_by_node.setdefault(template_build_node, set()).add(build_bridge)
-
-        for mapping in vm.get("passthrough") or []:
-            mappings_by_node.setdefault(node, set()).add(mapping["mapping"])
 
     for mapping_name, mapping in cluster["pci_mappings"].items():
         declared_mapping_nodes = set(mapping.get("nodes", {}))

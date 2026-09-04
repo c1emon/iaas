@@ -3,12 +3,13 @@ set -euo pipefail
 
 # Thin local trigger only: validate inputs, then hand off to the remote wrapper.
 
-script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-template_build_env=${TEMPLATE_BUILD_ENV:-${script_dir}/template-build.env}
-if [[ -r ${template_build_env} ]]; then
-  # shellcheck disable=SC1090
-  . "${template_build_env}"
+template_build_env=${TEMPLATE_BUILD_ENV:?set TEMPLATE_BUILD_ENV to the generated template build environment file}
+if [[ ! -r ${template_build_env} ]]; then
+  printf 'TEMPLATE_BUILD_ENV is not readable: %s\n' "${template_build_env}" >&2
+  exit 1
 fi
+# shellcheck disable=SC1090
+. "${template_build_env}"
 
 # Local settings are sourced from the generated env; only ssh transport is required here.
 readonly PVE_HOST="${PVE_HOST:?set PVE_HOST to the selected PVE build node SSH host}"

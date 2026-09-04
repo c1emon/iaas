@@ -30,8 +30,8 @@ Remote commands run as `pve-ops` and use `sudo` for the wrapper entrypoint,
 with a sudoers template allowing only `/usr/local/sbin/astra-pve-template-build`.
 
 The root `make pve-packer-build` target passes the generated Astra environment
-file through `TEMPLATE_BUILD_ENV`; the script retains its sibling file only as
-a standalone fallback for another environment.
+file through `TEMPLATE_BUILD_ENV`. Direct script invocation must set
+`TEMPLATE_BUILD_ENV` to an environment-specific generated file.
 
 Wrapper runtime dependencies on the PVE node: `/usr/bin/curl`,
 `/usr/bin/shasum`, `/usr/bin/cp`, `/usr/bin/virt-customize`,

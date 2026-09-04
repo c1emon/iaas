@@ -99,7 +99,7 @@ def test_supported_mutation_playbooks_validate_before_credentials_and_mutation(
     assert validator < source.index(mutation)
     assert validator < source.index("oxlorg.opnsense.reload:")
     assert "../../environments/astra/ansible/vars/opnsense" in source
-    assert 'PYTHONPATH: "{{ ansible_project_dir }}/../src"' in source
+    assert 'PYTHONPATH: "{{ ansible_project_dir }}/../../automation/src"' in source
     assert '"{{ ansible_project_dir }}/../../.."' not in source
     assert "changed_when: false" in source[: source.index("ansible.builtin.include_vars:")]
     assert "check_mode: false" in source[: source.index("ansible.builtin.include_vars:")]

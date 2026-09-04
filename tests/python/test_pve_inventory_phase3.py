@@ -903,6 +903,17 @@ def test_template_build_env_honors_caller_overrides(tmp_path: Path) -> None:
     assert result.stdout == "override-url|9999"
 
 
+def test_template_build_script_requires_explicit_environment_file() -> None:
+    script = ROOT / "automation" / "packer" / "proxmox" / "debian-13" / "build-template.sh"
+    env = os.environ.copy()
+    env.pop("TEMPLATE_BUILD_ENV", None)
+
+    result = subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True)
+
+    assert result.returncode != 0
+    assert "TEMPLATE_BUILD_ENV" in result.stderr
+
+
 def test_template_build_script_shell_quotes_remote_args(tmp_path: Path) -> None:
     ssh_bin = tmp_path / "ssh"
     capture_path = tmp_path / "ssh-argv.txt"
@@ -919,6 +930,7 @@ def test_template_build_script_shell_quotes_remote_args(tmp_path: Path) -> None:
         "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
         "SSH_CAPTURE": str(capture_path),
         "PVE_HOST": "pve-01.example.invalid",
+        "TEMPLATE_BUILD_ENV": str(ROOT / "environments" / "astra" / "generated" / "packer" / "debian-13.env"),
         "PVE_USER": "pve-ops",
         "TEMPLATE_VMID": "9001",
         "TEMPLATE_NAME": "debian-13-tmpl-20260621",
@@ -960,6 +972,7 @@ def test_template_build_script_rejects_shell_unsafe_template_name(tmp_path: Path
     env = os.environ | {
         "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
         "PVE_HOST": "pve-01.example.invalid",
+        "TEMPLATE_BUILD_ENV": str(ROOT / "environments" / "astra" / "generated" / "packer" / "debian-13.env"),
         "TEMPLATE_VMID": "9001",
         "TEMPLATE_NAME": "bad template name",
         "IMAGE_URL_PREFIX": "https://images.example.invalid/",

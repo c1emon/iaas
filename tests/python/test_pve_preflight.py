@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from email.message import Message
 import urllib.error
 from pathlib import Path
@@ -64,6 +65,19 @@ def test_expected_resources_derive_from_validated_model() -> None:
     assert {item["vmid"] for item in expected.vmid_expectations} == {500, 1000, 501}
     assert expected.mappings_by_node["cohe"] == {"iGpu0"}
     assert expected.optional_mapping_nodes["iGpu0"] == {"node3"}
+
+
+def test_expected_resources_collects_passthrough_mappings_from_every_vm() -> None:
+    cluster = validate_cluster(load_yaml(CLUSTER_PATH))
+    vms_doc = deepcopy(load_yaml(VMS_PATH))
+    vms_doc["vms"][0]["passthrough"] = [
+        {"mapping": "iGpu0", "pcie": True, "rombar": True, "xvga": False}
+    ]
+    vms_doc["vms"][-1]["passthrough"] = []
+
+    model = build_model(cluster, validate_vms(vms_doc, cluster))
+
+    assert derive_expected_resources(model).mappings_by_node["cohe"] == {"iGpu0"}
 
 
 def test_result_aggregation_and_exit_semantics() -> None:
