@@ -1,6 +1,6 @@
 # Service Metadata Inventory
 
-`inventory/services.yml` is an operator-authored service catalog.
+`environments/astra/inventory/services.yml` is an operator-authored service catalog.
 
 ## Schema
 
@@ -10,7 +10,7 @@
 Each service record includes:
 
 - `name` (required, slug)
-- `owner_vm` (required, must match a VM name from `inventory/vms.yml`)
+- `owner_vm` (required, must match a VM name from `environments/astra/inventory/vms.yml`)
 - `description` (optional)
 - `endpoints` (required, non-empty)
 

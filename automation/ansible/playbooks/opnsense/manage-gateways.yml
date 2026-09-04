@@ -1,0 +1,140 @@
+---
+- name: Additively manage OPNsense PBR gateways
+  hosts: opnsense
+  gather_facts: false
+  connection: local
+
+  module_defaults:
+    group/oxlorg.opnsense.all:
+      firewall: "{{ opnsense_api_host }}"
+      api_key: "{{ opnsense_api_key }}"
+      api_secret: "{{ opnsense_api_secret }}"
+      ssl_verify: "{{ opnsense_ssl_verify }}"
+
+  vars:
+    opnsense_gateway_source: "{{ ansible_project_dir }}/../../environments/astra/ansible/vars/opnsense/gateways.yml"
+    opnsense_gateway_required_fields:
+      - name
+      - interface
+      - ip_protocol
+      - gateway
+      - default_gw
+      - far_gw
+      - monitor_disable
+      - monitor_noroute
+      - monitor
+      - force_down
+      - latency_low
+      - latency_high
+      - loss_low
+      - loss_high
+      - interval
+      - time_period
+      - loss_interval
+      - data_length
+      - priority
+      - weight
+      - description
+      - state
+
+  tasks:
+    - name: Validate desired OPNsense PBR gateways locally
+      ansible.builtin.command:
+        argv:
+          - uv
+          - run
+          - --directory
+          - "{{ ansible_project_dir }}/../.."
+          - python
+          - -m
+          - iaas_automation.opnsense_validation
+          - --resource
+          - gateways
+          - --file
+          - "{{ opnsense_gateway_source }}"
+      args:
+        chdir: "{{ ansible_project_dir }}/../.."
+      environment:
+        PYTHONPATH: "{{ ansible_project_dir }}/../src"
+      changed_when: false
+      check_mode: false
+
+    - name: Load desired OPNsense PBR gateways
+      ansible.builtin.include_vars:
+        file: "{{ opnsense_gateway_source }}"
+
+    - name: Run OPNsense API credential preflight
+      ansible.builtin.import_tasks: tasks/api-credential-preflight.yml
+
+    - name: Assert desired gateways are a sequence
+      ansible.builtin.assert:
+        that:
+          - opnsense_gateways is defined
+          - opnsense_gateways is sequence
+          - opnsense_gateways is not string
+        fail_msg: >-
+          opnsense_gateways must be defined as a YAML sequence in
+          vars/opnsense/gateways.yml.
+
+    - name: Assert desired gateways define required PBR fields
+      ansible.builtin.assert:
+        that:
+          - opnsense_gateways | rejectattr(item, 'defined') | list | length == 0
+        fail_msg: >-
+          Each desired PBR gateway must define all gateway management fields:
+          {{ opnsense_gateway_required_fields | join(', ') }}.
+      loop: "{{ opnsense_gateway_required_fields }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: Assert desired gateways stay within PBR safety boundary
+      ansible.builtin.assert:
+        that:
+          - >-
+            opnsense_gateways | selectattr('state', 'in', ['present', 'absent'])
+            | list | length == opnsense_gateways | length
+          - >-
+            opnsense_gateways | selectattr('default_gw', 'equalto', false)
+            | list | length == opnsense_gateways | length
+        fail_msg: >-
+          Each desired PBR gateway must set state to present or absent and
+          default_gw to false. This workflow must not manage default-route
+          ownership.
+
+    - name: Create, update, or remove declared PBR gateways additively  # noqa: args[module]
+      oxlorg.opnsense.gateway:
+        name: "{{ item.name }}"
+        interface: "{{ item.interface }}"
+        ip_protocol: "{{ item.ip_protocol }}"
+        gateway: "{{ item.gateway }}"
+        default_gw: "{{ item.default_gw }}"
+        far_gw: "{{ item.far_gw }}"
+        monitor_disable: "{{ item.monitor_disable }}"
+        monitor_noroute: "{{ item.monitor_noroute }}"
+        monitor: "{{ item.monitor }}"
+        force_down: "{{ item.force_down }}"
+        latency_low: "{{ item.latency_low }}"
+        latency_high: "{{ item.latency_high }}"
+        loss_low: "{{ item.loss_low }}"
+        loss_high: "{{ item.loss_high }}"
+        interval: "{{ item.interval }}"
+        time_period: "{{ item.time_period }}"
+        loss_interval: "{{ item.loss_interval }}"
+        data_length: "{{ item.data_length }}"
+        priority: "{{ item.priority }}"
+        weight: "{{ item.weight }}"
+        description: "{{ item.description }}"
+        state: "{{ item.state }}"
+        reload: false
+      loop: "{{ opnsense_gateways }}"
+      loop_control:
+        label: "{{ item.name }} {{ item.gateway }} {{ item.state }}"
+      register: opnsense_gateway_apply
+      when: opnsense_gateways | length > 0
+
+    - name: Reload OPNsense gateway target after gateway changes  # noqa: args[module]
+      oxlorg.opnsense.reload:
+        target: gateway
+      when:
+        - opnsense_gateway_apply is defined
+        - opnsense_gateway_apply is changed

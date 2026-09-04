@@ -30,7 +30,7 @@ terraform.rc
 *.tfvars.json
 *.auto.tfvars
 *.auto.tfvars.json
-!infra/tofu/pve/generated.auto.tfvars.json
+!environments/astra/generated/opentofu/pve.tfvars.json
 *.tfoverride
 *.tfplan
 crash.log
@@ -38,7 +38,6 @@ crash.*.log
 
 # Ansible
 *.retry
-ansible/collections/
 collections/
 
 # Python / tooling caches

@@ -392,7 +392,7 @@ should cover:
 It does not need to cover the full deploy/upgrade/drift lifecycle in the first
 iteration.
 
-The committed recovery reference is generated at `docs/generated/foundation-recovery.md`. Offline freshness checks are safe without live infrastructure access (`make foundation-check`), while `make foundation-health` is an explicit online read-only probe path.
+The committed recovery reference is generated at `environments/astra/generated/docs/foundation-recovery.md`. Offline freshness checks are safe without live infrastructure access (`make foundation-check`), while `make foundation-health` is an explicit online read-only probe path.
 
 ### K3s automation route
 

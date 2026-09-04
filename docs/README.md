@@ -1,73 +1,33 @@
 # Documentation Index
 
-Use this index after the root [operator manual](../README.md). Do not commit
-secrets, exported private configs, or unencrypted backups.
+Start with the [root operator manual](../README.md). Do not commit secrets,
+local state, raw exports, or unencrypted backups.
 
-## Start here
-
-- [Root operator manual](../README.md) — safe first commands, source-of-truth
-  files, generated outputs, runtime parameters, and safety classes.
-
-## Planning
-
-- Current roadmap and backlog: [Roadmap and backlog](roadmap.md)
-- Historical remediation context: [Review remediation roadmap](review-remediation-roadmap.md)
-- Historical research context: [IaaS automation roadmap research](decisions/iaas-automation-roadmap-research.md)
-
-## Architecture and inventory
+## Current operations
 
 - [Architecture notes](architecture.md)
-- [Service metadata schema and review rules](service-metadata.md)
-- [Generated foundation recovery reference](generated/foundation-recovery.md)
-
-## Operations and runbooks
-
 - [PVE state, cache, and secret operations](pve-state-cache-secrets.md)
-- [PVE PCI passthrough readiness](runbooks/pve-pci-passthrough-readiness.md)
 - [PVE rolling maintenance](runbooks/pve-rolling-maintenance.md)
-- [PVE automation preflight decision](decisions/pve-automation-preflight.md)
+- [PVE PCI passthrough readiness](runbooks/pve-pci-passthrough-readiness.md)
+- [OPNsense management](opnsense-management.md)
+- [Service metadata](service-metadata.md)
+- [Astra OpenTofu root](../environments/astra/opentofu/pve/README.md)
+- [Reusable Ansible automation](../automation/ansible/README.md)
+- [Future platform boundary](../platform/README.md)
 
-## PVE
+Committed generated references live under
+`environments/astra/generated/docs/`:
 
-- [OpenTofu PVE VM lifecycle](../infra/tofu/pve/README.md)
-- [Debian 13 PVE template foundation](../infra/packer/proxmox/debian-13/README.md)
-- [Generated PVE VM summary](generated/pve-vms.md)
+- [PVE VMs](../environments/astra/generated/docs/pve-vms.md)
+- [Services](../environments/astra/generated/docs/services.md)
+- [Foundation recovery](../environments/astra/generated/docs/foundation-recovery.md)
 
-## OPNsense
+## Historical context
 
-- [OPNsense management plan](opnsense-management.md)
-- [Ansible automation overview](../ansible/README.md)
-- [OPNsense playbooks](../ansible/playbooks/opnsense/README.md)
-
-## Switches
-
-- [Switch playbooks](../ansible/playbooks/switches/README.md)
-- [switch_config role](../ansible/roles/switch_config/README.md)
-
-## Service metadata
-
-- [Service metadata schema and review rules](service-metadata.md)
-- [Generated service metadata](generated/services.md)
-
-## Generated references
-
-- [Generated service metadata](generated/services.md)
-- [Generated PVE VM summary](generated/pve-vms.md)
-- [Generated foundation recovery reference](generated/foundation-recovery.md)
-
-## Foundation recovery checks
-
-- Offline-safe validation and generated-doc freshness: `make foundation-generate` / `make foundation-check`
-- Explicit online read-only health probes: `make foundation-health`
-- Non-goals: these commands do not deploy, restore, upgrade, or mutate OPNsense, TrueNAS, DNS, Harbor, Authentik, sing-box, PVE, switches, or K3s state.
-
-## Decisions and historical context
-
-- [PVE automation preflight decision](decisions/pve-automation-preflight.md)
 - [Roadmap and backlog](roadmap.md)
-- Historical research: [IaaS automation roadmap research](decisions/iaas-automation-roadmap-research.md)
-- Historical remediation plan: [Review remediation roadmap](review-remediation-roadmap.md)
+- [PVE automation preflight decision](decisions/pve-automation-preflight.md)
+- [IaaS automation roadmap research](decisions/iaas-automation-roadmap-research.md)
+- [Review remediation roadmap](review-remediation-roadmap.md)
 
-## Other references
-
-- [Repository scripts](../scripts/README.md)
+These historical documents may use paths that predate the repository-layer
+cutover; current commands and paths are defined by the root operator manual.

@@ -35,7 +35,7 @@ jobs:
 
       - run: uv sync --locked --dev
 
-      - run: uv run ansible-galaxy collection install -r ansible/requirements.yml -p ansible/collections
+      - run: uv run ansible-galaxy collection install -r automation/ansible/requirements.yml -p automation/ansible/collections
 
       - run: make check
 

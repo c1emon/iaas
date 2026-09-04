@@ -1,45 +1,55 @@
 ROOT ?= $(abspath .)
-PVE_DIR ?= $(ROOT)/infra/tofu/pve
-INVENTORY_DIR ?= $(ROOT)/inventory
+ASTRA ?= $(ROOT)/environments/astra
+AUTOMATION ?= $(ROOT)/automation
+PVE_DIR ?= $(ASTRA)/opentofu/pve
+INVENTORY_DIR ?= $(ASTRA)/inventory
+GENERATED_DIR ?= $(ASTRA)/generated
+ANSIBLE_CONFIG ?= $(AUTOMATION)/ansible/ansible.cfg
+ANSIBLE_INVENTORY ?= $(GENERATED_DIR)/ansible/pve.yml
+ANSIBLE_PLAYBOOK ?= $(AUTOMATION)/ansible/playbooks/pve/verify-guests.yml
+ANSIBLE_BOOTSTRAP_PLAYBOOK ?= $(AUTOMATION)/ansible/playbooks/pve/bootstrap-guests.yml
+ANSIBLE_LIMIT ?= pve_vms
+ANSIBLE_ARGS ?=
 UV ?= uv
 TOFU ?= tofu
 GITLEAKS ?= gitleaks
-ANSIBLE_LINT_PATHS ?= $(ROOT)/ansible/playbooks/pve $(ROOT)/ansible/playbooks/opnsense $(ROOT)/ansible/roles/vm_baseline
-PACKER_BUILD_SCRIPT ?= $(ROOT)/infra/packer/proxmox/debian-13/build-template.sh
+PYTHON ?= PYTHONPATH="$(AUTOMATION)/src" $(UV) run --directory "$(ROOT)" python
+ANSIBLE_LINT_PATHS ?= $(AUTOMATION)/ansible/playbooks/pve $(AUTOMATION)/ansible/playbooks/opnsense $(AUTOMATION)/ansible/roles/vm_baseline
+PACKER_BUILD_SCRIPT ?= $(AUTOMATION)/packer/proxmox/debian-13/build-template.sh
+TEMPLATE_BUILD_ENV ?= $(GENERATED_DIR)/packer/debian-13.env
+PVE_TFVARS ?= $(GENERATED_DIR)/opentofu/pve.tfvars.json
+PVE_DOCS ?= $(GENERATED_DIR)/docs/pve-vms.md
+SERVICES_DOCS ?= $(GENERATED_DIR)/docs/services.md
+FOUNDATION_DOCS ?= $(GENERATED_DIR)/docs/foundation-recovery.md
+PVE_USER_DATA_DIR ?= $(ROOT)/.cache/pve-cloud-init/user-data
+BACKUP_DIR ?= $(ROOT)/.cache/tofu-state-backups
 
-.PHONY: generate check-generated test lint-yaml typecheck ansible-lint tofu-fmt tofu-validate opnsense-validate check secret-scan ansible-syntax pve-generate pve-check services-generate services-check foundation-generate foundation-check foundation-health pve-validate pve-fmt pve-preflight pve-health pve-check-pve pve-packer-build pve-plan pve-apply pve-destroy pve-verify-guests pve-bootstrap-guests pve-bootstrap-guests-syntax pve-ansible-check pve-ansible-syntax pve-backup-state
+.PHONY: generate check-generated test lint-yaml typecheck ansible-lint tofu-fmt tofu-validate opnsense-validate check secret-scan ansible-syntax pve-generate pve-check services-generate services-check foundation-generate foundation-check foundation-health pve-validate pve-fmt pve-preflight pve-health pve-packer-build pve-plan pve-apply pve-destroy pve-verify-guests pve-bootstrap-guests pve-bootstrap-guests-syntax pve-ansible-syntax pve-backup-state render-cloud-init upload-cloud-init verify-cloud-init
 
-generate:
-	$(MAKE) -C "$(PVE_DIR)" generate
-	$(MAKE) services-generate
-	$(MAKE) foundation-generate
+generate: pve-generate services-generate foundation-generate
 
-check-generated:
-	$(MAKE) -C "$(PVE_DIR)" check-generated
-	$(MAKE) services-check
-	$(MAKE) foundation-check
+check-generated: pve-check services-check foundation-check
 
 test:
-	$(UV) run --directory "$(ROOT)" pytest
+	PYTHONPATH="$(AUTOMATION)/src" $(UV) run --directory "$(ROOT)" pytest
 
 lint-yaml:
-	$(UV) run --directory "$(ROOT)" yamllint "$(INVENTORY_DIR)"
+	$(UV) run --directory "$(ROOT)" yamllint "$(INVENTORY_DIR)" "$(ASTRA)/ansible"
 
 typecheck:
-	$(UV) run --directory "$(ROOT)" pyright
+	PYTHONPATH="$(AUTOMATION)/src" $(UV) run --directory "$(ROOT)" pyright
 
 ansible-lint:
-	$(UV) run --directory "$(ROOT)" ansible-lint $(ANSIBLE_LINT_PATHS)
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-lint $(ANSIBLE_LINT_PATHS)
 
 tofu-fmt:
-	$(TOFU) -chdir="$(ROOT)/infra/tofu" fmt -recursive -check -diff
+	$(TOFU) -chdir="$(AUTOMATION)/opentofu" fmt -recursive -check -diff
+	$(TOFU) -chdir="$(PVE_DIR)" fmt -recursive -check -diff
 
-tofu-validate:
-	$(TOFU) -chdir="$(PVE_DIR)" init -backend=false
-	$(TOFU) -chdir="$(PVE_DIR)" validate
+tofu-validate: pve-validate
 
 opnsense-validate:
-	$(UV) run --directory "$(ROOT)" python -m scripts.opnsense_validation
+	$(PYTHON) -m iaas_automation.opnsense_validation --vars-dir "$(ASTRA)/ansible/vars/opnsense"
 
 check: check-generated test lint-yaml typecheck ansible-lint tofu-fmt tofu-validate opnsense-validate
 
@@ -50,67 +60,85 @@ secret-scan:
 ansible-syntax: pve-ansible-syntax
 
 pve-generate:
-	$(MAKE) -C "$(PVE_DIR)" generate
+	$(PYTHON) -m iaas_automation.pve_inventory.cli --cluster "$(INVENTORY_DIR)/pve-cluster.yml" --vms "$(INVENTORY_DIR)/vms.yml" --tfvars "$(PVE_TFVARS)" --ansible "$(ANSIBLE_INVENTORY)" --docs "$(PVE_DOCS)" --template-build-env "$(TEMPLATE_BUILD_ENV)" --generate
 
 pve-check:
-	$(MAKE) -C "$(PVE_DIR)" check-generated
+	$(PYTHON) -m iaas_automation.pve_inventory.cli --cluster "$(INVENTORY_DIR)/pve-cluster.yml" --vms "$(INVENTORY_DIR)/vms.yml" --tfvars "$(PVE_TFVARS)" --ansible "$(ANSIBLE_INVENTORY)" --docs "$(PVE_DOCS)" --template-build-env "$(TEMPLATE_BUILD_ENV)" --check
 
 services-generate:
-	$(UV) run --directory "$(ROOT)" python -m scripts.services_inventory.cli --generate
+	$(PYTHON) -m iaas_automation.services_inventory.cli --services "$(INVENTORY_DIR)/services.yml" --vms "$(INVENTORY_DIR)/vms.yml" --docs "$(SERVICES_DOCS)" --generate
 
 services-check:
-	$(UV) run --directory "$(ROOT)" python -m scripts.services_inventory.cli --check
+	$(PYTHON) -m iaas_automation.services_inventory.cli --services "$(INVENTORY_DIR)/services.yml" --vms "$(INVENTORY_DIR)/vms.yml" --docs "$(SERVICES_DOCS)" --check
 
 foundation-generate:
-	$(UV) run --directory "$(ROOT)" python -m scripts.foundation_inventory.cli --generate
+	$(PYTHON) -m iaas_automation.foundation_inventory.cli --inventory "$(INVENTORY_DIR)/foundation.yml" --docs "$(FOUNDATION_DOCS)" --generate
 
 foundation-check:
-	$(UV) run --directory "$(ROOT)" python -m scripts.foundation_inventory.cli --check
+	$(PYTHON) -m iaas_automation.foundation_inventory.cli --inventory "$(INVENTORY_DIR)/foundation.yml" --docs "$(FOUNDATION_DOCS)" --check
 
 foundation-health:
-	$(UV) run --directory "$(ROOT)" python -m scripts.foundation_inventory.cli --health
+	$(PYTHON) -m iaas_automation.foundation_inventory.cli --inventory "$(INVENTORY_DIR)/foundation.yml" --health
 
-pve-validate:
-	$(MAKE) -C "$(PVE_DIR)" validate
+pve-validate: pve-check
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-inventory -i "$(ANSIBLE_INVENTORY)" --list >/dev/null
+	$(TOFU) -chdir="$(PVE_DIR)" init -backend=false
+	$(TOFU) -chdir="$(PVE_DIR)" validate
 
 pve-fmt:
-	$(MAKE) -C "$(PVE_DIR)" fmt
+	$(TOFU) -chdir="$(PVE_DIR)" fmt -recursive
 
 pve-preflight:
-	$(MAKE) -C "$(PVE_DIR)" pve-preflight
+	$(PYTHON) -m iaas_automation.pve_inventory.preflight --cluster "$(INVENTORY_DIR)/pve-cluster.yml" --vms "$(INVENTORY_DIR)/vms.yml"
 
 pve-health:
-	$(MAKE) -C "$(PVE_DIR)" pve-health
-
-pve-check-pve:
-	$(MAKE) -C "$(PVE_DIR)" pve-preflight
+	$(PYTHON) -m iaas_automation.pve_inventory.health --cluster "$(INVENTORY_DIR)/pve-cluster.yml" --vms "$(INVENTORY_DIR)/vms.yml"
 
 pve-packer-build:
-	bash "$(PACKER_BUILD_SCRIPT)"
+	TEMPLATE_BUILD_ENV="$(TEMPLATE_BUILD_ENV)" bash "$(PACKER_BUILD_SCRIPT)"
 
-pve-plan:
-	$(MAKE) -C "$(PVE_DIR)" plan
+require-storage-id:
+	@test -n "$(STORAGE_ID)" || { printf 'error: STORAGE_ID is required\n' >&2; exit 1; }
 
-pve-apply:
-	$(MAKE) -C "$(PVE_DIR)" apply
+require-pve-target: require-storage-id
+	@test -n "$(PVE_HOST)" || { printf 'error: PVE_HOST is required\n' >&2; exit 1; }
+	@test -n "$(PVE_SSH_USER)" || { printf 'error: PVE_SSH_USER is required\n' >&2; exit 1; }
 
-pve-destroy:
-	$(MAKE) -C "$(PVE_DIR)" destroy
+render-cloud-init: require-storage-id
+	$(PYTHON) -m iaas_automation.pve_inventory.cloud_init render --tfvars "$(PVE_TFVARS)" --output-dir "$(PVE_USER_DATA_DIR)" --storage-id "$(STORAGE_ID)"
 
-pve-verify-guests:
-	$(MAKE) -C "$(PVE_DIR)" verify-guests
+upload-cloud-init: require-pve-target
+	$(PYTHON) -m iaas_automation.pve_inventory.cloud_init upload --tfvars "$(PVE_TFVARS)" --output-dir "$(PVE_USER_DATA_DIR)" --storage-id "$(STORAGE_ID)" --pve-host "$(PVE_HOST)" --ssh-user "$(PVE_SSH_USER)"
 
-pve-bootstrap-guests:
-	$(MAKE) -C "$(PVE_DIR)" bootstrap-guests
-
-pve-bootstrap-guests-syntax:
-	$(MAKE) -C "$(PVE_DIR)" bootstrap-guests-syntax
-
-pve-ansible-check:
-	$(MAKE) pve-verify-guests
-
-pve-ansible-syntax:
-	$(MAKE) -C "$(PVE_DIR)" ansible-syntax
+verify-cloud-init: require-pve-target
+	$(PYTHON) -m iaas_automation.pve_inventory.cloud_init verify --tfvars "$(PVE_TFVARS)" --output-dir "$(PVE_USER_DATA_DIR)" --storage-id "$(STORAGE_ID)" --pve-host "$(PVE_HOST)" --ssh-user "$(PVE_SSH_USER)"
 
 pve-backup-state:
-	$(MAKE) -C "$(PVE_DIR)" backup-state
+	@mkdir -p "$(BACKUP_DIR)"
+	@stamp="$$(date +%Y%m%dT%H%M%S)_$$$$"; phase="$${BACKUP_PHASE:-snapshot}"; if [ -f "$(PVE_DIR)/terraform.tfstate" ]; then cp "$(PVE_DIR)/terraform.tfstate" "$(BACKUP_DIR)/$${stamp}-$${phase}-terraform.tfstate"; fi
+
+pve-plan: render-cloud-init
+	$(MAKE) pve-backup-state BACKUP_PHASE=before
+	$(TOFU) -chdir="$(PVE_DIR)" plan -var-file="$(PVE_TFVARS)"
+
+pve-apply: render-cloud-init upload-cloud-init verify-cloud-init
+	$(MAKE) pve-backup-state BACKUP_PHASE=before
+	$(TOFU) -chdir="$(PVE_DIR)" apply -var-file="$(PVE_TFVARS)"
+	$(MAKE) pve-backup-state BACKUP_PHASE=after
+
+pve-destroy:
+	$(MAKE) pve-backup-state BACKUP_PHASE=before
+	$(TOFU) -chdir="$(PVE_DIR)" destroy -var-file="$(PVE_TFVARS)"
+	$(MAKE) pve-backup-state BACKUP_PHASE=after
+
+pve-verify-guests:
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(ANSIBLE_INVENTORY)" "$(ANSIBLE_PLAYBOOK)"
+
+pve-bootstrap-guests:
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(ANSIBLE_INVENTORY)" -l "$(ANSIBLE_LIMIT)" $(ANSIBLE_ARGS) "$(ANSIBLE_BOOTSTRAP_PLAYBOOK)"
+
+pve-bootstrap-guests-syntax:
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook --syntax-check -i "$(ANSIBLE_INVENTORY)" -l "$(ANSIBLE_LIMIT)" $(ANSIBLE_ARGS) "$(ANSIBLE_BOOTSTRAP_PLAYBOOK)"
+
+pve-ansible-syntax:
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook --syntax-check -i "$(ANSIBLE_INVENTORY)" "$(ANSIBLE_PLAYBOOK)"
