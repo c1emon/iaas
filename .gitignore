@@ -66,3 +66,7 @@ exports/
 .ansible/
 .opencode
 .slim/deepwork/
+
+# Claude Code generated project files
+/CLAUDE.md
+/.claude/
