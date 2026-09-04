@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="drawio" version="26.0.0">
+  <diagram id="k3s-automation-core" name="Core Flow">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="2" value="Existing VM fact and lifecycle foundation" style="swimlane;startSize=30;horizontal=1;rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="60" y="40" width="1480" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="3" value="vms.yml" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="2">
+          <mxGeometry x="30" y="80" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="4" value="Validate + normalize&#xa;VM model" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="2">
+          <mxGeometry x="220" y="80" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="5" value="Generated&#xa;OpenTofu tfvars" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="2">
+          <mxGeometry x="460" y="45" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="6" value="Template full clone&#xa;+ cloud-init" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="2">
+          <mxGeometry x="720" y="45" width="200" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="14" value="Generated Ansible inventory&#xa;+ VM architecture" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="2">
+          <mxGeometry x="460" y="125" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="15" value="vm_baseline + optional egress policy" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="2">
+          <mxGeometry x="1020" y="80" width="180" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="7" value="New compositional K3s automation capability" style="swimlane;startSize=30;horizontal=1;rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="60" y="320" width="1480" height="300" as="geometry" />
+        </mxCell>
+        <mxCell id="8" value="K3s intent overlay&#xa;vm_ref + node NIC role" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="7">
+          <mxGeometry x="30" y="85" width="180" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="9" value="Compose VM facts&#xa;+ offline validation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="7">
+          <mxGeometry x="270" y="85" width="200" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="10" value="Read-only preflight&#xa;host + egress reachability" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="7">
+          <mxGeometry x="530" y="85" width="200" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="11" value="Registry / service proxy&#xa;+ embedded-etcd deploy" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="7">
+          <mxGeometry x="790" y="85" width="220" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="12" value="Read-only bootstrap&#xa;verification" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="7">
+          <mxGeometry x="1070" y="85" width="190" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="16" value="Protected etcd&#xa;snapshot" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="7">
+          <mxGeometry x="1310" y="55" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="17" value="Serial controlled&#xa;upgrade" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="7">
+          <mxGeometry x="1310" y="165" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="13" value="Deferred platform layers: Cilium, Flux, CSI, Gateway, applications" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="440" y="710" width="720" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="20" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;" edge="1" parent="2" source="3" target="4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="21" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;" edge="1" parent="2" source="4" target="5"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="22" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;" edge="1" parent="2" source="5" target="6"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="23" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;" edge="1" parent="2" source="4" target="14"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="24" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;" edge="1" parent="2" source="6" target="15"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="25" value="host facts" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;" edge="1" parent="2" source="14" target="15"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="26" value="VM facts" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;" edge="1" parent="1" source="14" target="9"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="27" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;" edge="1" parent="7" source="8" target="9"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="28" value="prepared host" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;" edge="1" parent="1" source="15" target="10"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="29" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;" edge="1" parent="7" source="9" target="10"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="30" value="explicit mutation" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;" edge="1" parent="7" source="10" target="11"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="31" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;" edge="1" parent="7" source="11" target="12"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="32" value="day-2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;" edge="1" parent="7" source="12" target="16"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="33" value="upgrade gate" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;" edge="1" parent="7" source="16" target="17"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="34" value="verify each stage" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;" edge="1" parent="7" source="17" target="12"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1270" y="260" /><mxPoint x="1165" y="260" /></Array></mxGeometry></mxCell>
+        <mxCell id="35" value="later change" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;dashed=1;endArrow=block;" edge="1" parent="1" source="12" target="13"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
