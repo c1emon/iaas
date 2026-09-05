@@ -135,9 +135,8 @@ before this target model can be fully provisioned.
 K3s-related automation should be split by responsibility rather than placed in a
 single catch-all GitOps tree.
 
-This repository remains the IaaS and platform repository. It is responsible for
-the parts required to create, connect, operate, and recover the application
-platform:
+The target is an explicit three-way ownership model. This IaaS repository owns
+the infrastructure and K3s handoff boundary:
 
 ```text
 iaas repository
@@ -146,19 +145,28 @@ iaas repository
 ├─ OPNsense and switch automation
 ├─ foundation service recovery model
 ├─ K3s node bootstrap
-├─ Cilium baseline configuration
-├─ Gateway baseline configuration
-├─ TrueNAS CSI / StorageClass baseline
-├─ Flux bootstrap
-├─ platform validation checks
+├─ same-model K3s readiness verification
+├─ non-secret platform handoff bundle
 └─ disaster recovery runbooks
 ```
 
-Application workloads should live in a separate GitOps application repository
-once the platform is past initial PoC:
+Shared in-cluster platform desired state belongs to an independently operated
+external platform repository:
 
 ```text
-apps GitOps repository
+external platform repository
+├─ Cilium and cluster networking policy
+├─ Gateway and ingress platform services
+├─ TrueNAS CSI / StorageClass baseline
+├─ Flux bootstrap and reconciliation roots
+├─ certificates and observability
+└─ shared platform recovery procedures
+```
+
+Ordinary application releases belong to application repositories:
+
+```text
+application repositories
 ├─ cluster application overlays
 ├─ HelmRelease / Kustomization definitions for applications
 ├─ application values and runtime configuration references
@@ -171,20 +179,22 @@ Flux may read from both repositories:
 
 ```text
 Flux
-├─ source: iaas repository
-│  └─ cluster bootstrap and core platform primitives
-└─ source: apps GitOps repository
+├─ source: external platform repository
+│  └─ shared cluster platform desired state
+└─ source: application repositories
    └─ application workloads and day-to-day app releases
 ```
 
-Temporary application PoCs may live in this repository while the platform is
-being validated, but they should be isolated under an explicit PoC path and
-migrated out before becoming routine application operations. The long-term rule
-is:
+The `platform/` directory in this repository only documents the handoff
+boundary. It is not a platform implementation root, and this repository does
+not retain compatibility aliases for one. The IaaS workflow does not invoke the
+external platform pipeline or claim that handoff has completed. The long-term
+rule is:
 
 ```text
-cluster creation, platform wiring, and recovery belong here;
-ordinary application deployment and upgrades belong in the apps GitOps repo.
+IaaS infrastructure and K3s lifecycle belong here;
+shared in-cluster platform desired state belongs in the external platform repo;
+ordinary application deployment and upgrades belong in application repos.
 ```
 
 ### Foundation plane
@@ -372,11 +382,11 @@ used as the K3s node identity network or as the Cilium node-to-node underlay.
 
 ### GitOps
 
-Flux is the GitOps controller choice.
+Flux is the GitOps controller choice for the external platform repository.
 
-Flux must not depend on Authentik login to recover the cluster. kubeconfig,
-Flux bootstrap material, age keys, and required manifests need an offline
-recovery path.
+The external platform repository's Flux workflow must not depend on Authentik
+login to recover the cluster. Its kubeconfig, Flux bootstrap material, age
+keys, and required manifests need an offline recovery path.
 
 ### Foundation inventory scope
 
@@ -417,14 +427,15 @@ Ansible K3s node bootstrap
   → installs K3s host prerequisites, renders /etc/rancher/k3s/config.yaml,
     installs pinned K3s server/agent versions, and performs initial health checks
 
-Cilium bootstrap
-  → provides the first cluster CNI and validates Pod/Service connectivity
+K3s readiness and platform handoff
+  → verifies the declared cluster and emits a non-secret bundle for the external
+    platform repository; it does not install or configure shared platform state
 
-Flux bootstrap
-  → reconciles ongoing platform state from Git
+External platform repository
+  → installs Flux, configures Cilium/Gateway/CSI, and verifies first reconciliation
 
-TrueNAS CSI and Gateway PoCs
-  → validate storage and ingress before production workloads depend on them
+Application repositories
+  → deliver ordinary application resources after the platform repository is ready
 ```
 
 Cloud-init should not become the long-term host configuration system. It only
@@ -438,21 +449,27 @@ The recommended implementation sequence is:
 2. extend PVE VM inventory, validation, OpenTofu, and cloud-init to support
    multi-NIC cloud-init VMs;
 3. add K3s node bootstrap roles and pinned K3s install configuration;
-4. bootstrap Cilium with explicit device/underlay assumptions;
-5. bootstrap Flux for platform resources;
-6. run TrueNAS official CSI and Gateway validation PoCs;
-7. add Day-2 health, upgrade, backup, and restore-drill commands.
+4. add same-model K3s readiness verification and the external platform handoff;
+5. have the external platform repository bootstrap Cilium, Flux, CSI, and
+   Gateway and validate its first reconciliation;
+6. have application repositories deliver ordinary application resources;
+7. add Day-2 health, upgrade, backup, and restore-drill commands in the owning
+   repository for each layer.
 
 Long-term ownership should remain split:
 
 ```text
 iaas repository
-  → VM lifecycle, K3s bootstrap, Cilium baseline, Gateway baseline,
-    TrueNAS CSI baseline, StorageClasses, platform validation, recovery runbooks
+  → VM lifecycle, K3s bootstrap and readiness, handoff bundle, foundation
+    recovery, and IaaS/K3s runbooks
 
-apps GitOps repository
-  → ordinary application workloads, application HelmRelease/Kustomization objects,
-    application HTTPRoutes, and day-to-day application upgrades
+external platform repository
+  → Cilium, Gateway, CSI/StorageClasses, Flux, shared platform validation,
+    recovery, and platform desired state
+
+application repositories
+  → ordinary application workloads, application HelmRelease/Kustomization
+    objects, application HTTPRoutes, and day-to-day application upgrades
 ```
 
 ### Foundation health checks
@@ -641,7 +658,8 @@ configuration.
 - [ ] Confirm storage VLAN access is limited to VM K3s nodes.
 - [ ] Confirm TrueNAS CSI endpoints use storage VLAN addresses and storage
       routes, not the node default route.
-- [ ] Validate Flux bootstrap and offline recovery materials.
+- [ ] The external platform repository validates Flux bootstrap and offline
+      recovery materials.
 - [ ] Confirm OPNsense exposes only stable Gateway/VIP entrypoints in the first
       phase.
 

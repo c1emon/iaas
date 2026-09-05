@@ -33,3 +33,17 @@
 
 这些内容用于理解设计、决策和历史证据；如果其中的操作叙述与手册不同，以
 `operations/` 中的当前手册为准。
+
+## 当前仓库所有权边界
+
+当前采用三方所有权模型：
+
+- IaaS 仓库负责 PVE/VM 生命周期、K3s 节点生命周期与只读验证，以及交付
+  给平台仓库的非秘密 handoff bundle。
+- 外部 platform repository 负责 Flux、Cilium、CSI、Gateway、证书、可观测性
+  等共享 in-cluster desired state。
+- application repositories 负责普通应用发布、应用配置和应用路由资源。
+
+本仓库的 `platform/` 仅记录外部 handoff 边界，不是 platform 实现根，也不
+提供兼容别名。平台仓库的传输、签名、CI 触发和消费结果不由本仓库执行或
+背书。
