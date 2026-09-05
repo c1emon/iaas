@@ -1,0 +1,248 @@
+---
+# The caller must supply the output of the offline K3s validator as
+# k3s_upgrade_plan.  This playbook deliberately does not infer an inventory
+# group, expand a partial scope, or calculate a version transition itself.
+- name: Validate the explicit whole-cluster upgrade invocation
+  hosts: localhost
+  gather_facts: false
+  vars:
+    k3s_upgrade_model_path: ""
+    k3s_upgrade_scope: []
+    k3s_upgrade_target_version: ""
+    k3s_upgrade_observed_versions: {}
+    k3s_upgrade_plan: {}
+    k3s_upgrade_observed_versions_path: ""
+    k3s_upgrade_plan_path: ""
+    k3s_upgrade_runtime_secret_file: ""
+    k3s_upgrade_synthetic: false
+  tasks:
+    - name: Require explicit model, whole-cluster scope, target, observations, and plan source
+      ansible.builtin.assert:
+        that:
+          - k3s_upgrade_model_path | string | length > 0
+          - k3s_upgrade_target_version | string | length > 0
+          - k3s_upgrade_scope is string or k3s_upgrade_scope is sequence
+          - k3s_upgrade_scope | string | length > 0
+          - >-
+            (k3s_upgrade_observed_versions is mapping and k3s_upgrade_observed_versions | length > 0)
+            or k3s_upgrade_observed_versions_path | string | length > 0
+          - >-
+            (k3s_upgrade_plan is mapping and k3s_upgrade_plan | length > 0)
+            or k3s_upgrade_plan_path | string | length > 0
+        fail_msg: >-
+          k3s upgrade requires an explicit model path, non-empty list scope,
+          exact target, observed versions, and validated upgrade plan
+        quiet: true
+      changed_when: false
+
+    - name: Load the explicit non-secret observed-version input when supplied by path
+      ansible.builtin.include_vars:
+        file: "{{ k3s_upgrade_observed_versions_path }}"
+        name: k3s_upgrade_observed_file
+      when: k3s_upgrade_observed_versions_path | string | length > 0
+
+    - name: Load the explicit non-secret validated upgrade plan when supplied by path
+      ansible.builtin.include_vars:
+        file: "{{ k3s_upgrade_plan_path }}"
+        name: k3s_upgrade_plan_file
+      when: k3s_upgrade_plan_path | string | length > 0
+
+    - name: Select path-provided upgrade data without changing its meaning
+      ansible.builtin.set_fact:
+        k3s_upgrade_observed_versions: >-
+          {{ k3s_upgrade_observed_file if k3s_upgrade_observed_versions_path | string | length > 0
+             else k3s_upgrade_observed_versions }}
+        k3s_upgrade_plan: >-
+          {{ k3s_upgrade_plan_file if k3s_upgrade_plan_path | string | length > 0
+             else k3s_upgrade_plan }}
+      changed_when: false
+
+    - name: Load the validated composed K3s model
+      ansible.builtin.include_vars:
+        file: "{{ k3s_upgrade_model_path }}"
+        name: k3s_upgrade_model
+
+    - name: Require the composed model and target to agree
+      ansible.builtin.assert:
+        that:
+          - k3s_upgrade_model.schema_version | default(0) | int == 1
+          - k3s_upgrade_model.cluster is mapping
+          - k3s_upgrade_model.cluster.datastore | default('') == 'embedded-etcd'
+          - k3s_upgrade_model.cluster.version == k3s_upgrade_target_version
+          - k3s_upgrade_model.nodes is sequence
+          - k3s_upgrade_model.nodes | length > 0
+        fail_msg: k3s upgrade model must be a schema-1 embedded-etcd model with the exact target version
+        quiet: true
+      changed_when: false
+
+    - name: Normalize the explicit scope and declared node references
+      ansible.builtin.set_fact:
+        k3s_upgrade_scope_normalized: >-
+          {{ k3s_upgrade_scope.split(',')
+             if k3s_upgrade_scope is string
+             else k3s_upgrade_scope }}
+        k3s_upgrade_declared_refs: "{{ k3s_upgrade_model.nodes | map(attribute='vm_ref') | list }}"
+      changed_when: false
+
+    - name: Reject implicit, partial, duplicate, or unknown scopes
+      ansible.builtin.assert:
+        that:
+          - k3s_upgrade_scope_normalized | length == k3s_upgrade_declared_refs | length
+          - k3s_upgrade_scope_normalized | unique | length == k3s_upgrade_scope_normalized | length
+          - (k3s_upgrade_scope_normalized | difference(k3s_upgrade_declared_refs) | length) == 0
+          - (k3s_upgrade_declared_refs | difference(k3s_upgrade_scope_normalized) | length) == 0
+          - >-
+            (k3s_upgrade_scope_normalized
+             | reject('in', ['all', '*', 'all_hosts', 'all-hosts', 'pve_vms', 'pve-vms'])
+             | list | length) == k3s_upgrade_scope_normalized | length
+          - >-
+            (k3s_upgrade_scope_normalized
+             | reject('search', '[*?\\[\\]]') | list | length) == k3s_upgrade_scope_normalized | length
+          - >-
+            (k3s_upgrade_scope_normalized
+             | select('in', groups['all'] | default([])) | list | length)
+            == k3s_upgrade_scope_normalized | length
+        fail_msg: >-
+          upgrade scope must explicitly name every declared node exactly once;
+          wildcards and partial scopes are forbidden
+        quiet: true
+      changed_when: false
+
+    - name: Derive exact-target skips and pending nodes from observations
+      ansible.builtin.set_fact:
+        k3s_upgrade_expected_skipped: >-
+          {{ k3s_upgrade_observed_versions | dict2items
+             | selectattr('value', 'equalto', k3s_upgrade_target_version)
+             | map(attribute='key') | list }}
+        k3s_upgrade_expected_pending: >-
+          {{ k3s_upgrade_scope_normalized
+             | difference(k3s_upgrade_observed_versions | dict2items
+                         | selectattr('value', 'equalto', k3s_upgrade_target_version)
+                         | map(attribute='key') | list) | list }}
+      changed_when: false
+
+    - name: Enforce complete observations and a matching validated plan
+      ansible.builtin.assert:
+        that:
+          - (k3s_upgrade_observed_versions.keys() | difference(k3s_upgrade_scope_normalized) | length) == 0
+          - (k3s_upgrade_scope_normalized | difference(k3s_upgrade_observed_versions.keys() | list) | length) == 0
+          - k3s_upgrade_plan.target_version == k3s_upgrade_target_version
+          - (k3s_upgrade_plan.scope | default([]) | list | sort) == (k3s_upgrade_scope_normalized | list | sort)
+          - k3s_upgrade_plan.skipped is sequence
+          - k3s_upgrade_plan.to_upgrade is sequence
+          - >-
+            (k3s_upgrade_plan.skipped | union(k3s_upgrade_plan.to_upgrade) | sort)
+            == (k3s_upgrade_scope_normalized | sort)
+          - (k3s_upgrade_plan.skipped | intersect(k3s_upgrade_plan.to_upgrade) | length) == 0
+          - (k3s_upgrade_plan.skipped | sort) == (k3s_upgrade_expected_skipped | sort)
+          - (k3s_upgrade_plan.to_upgrade | sort) == (k3s_upgrade_expected_pending | sort)
+          - k3s_upgrade_plan.skipped | unique | length == k3s_upgrade_plan.skipped | length
+          - k3s_upgrade_plan.to_upgrade | unique | length == k3s_upgrade_plan.to_upgrade | length
+        fail_msg: >-
+          observed versions and the validated plan must cover exactly the explicit
+          whole-cluster scope; downgrade, skipped-minor, and unsupported mixed
+          transitions must already have been rejected by the validator
+        quiet: true
+      changed_when: false
+
+    - name: Publish the validated upgrade context for imported operation phases
+      ansible.builtin.set_fact:
+        k3s_upgrade_model_path: "{{ k3s_upgrade_model_path }}"
+        k3s_upgrade_scope_normalized: "{{ k3s_upgrade_scope_normalized }}"
+        k3s_upgrade_model: "{{ k3s_upgrade_model }}"
+        k3s_upgrade_api_host: >-
+          {{ (k3s_upgrade_model.nodes
+              | selectattr('role', 'equalto', 'server') | list | first).vm_ref }}
+        k3s_upgrade_snapshot_source_vm_ref: "{{ k3s_upgrade_model.cluster.snapshot.source_vm_ref }}"
+      changed_when: false
+
+- name: Re-run the same-scope K3s preflight
+  import_playbook: preflight.yml
+  vars:
+    k3s_model_path: "{{ hostvars['localhost'].k3s_upgrade_model_path | default(k3s_upgrade_model_path) }}"
+    k3s_preflight_scope: "{{ hostvars['localhost'].k3s_upgrade_scope_normalized }}"
+    k3s_runtime_secret_file: "{{ k3s_upgrade_runtime_secret_file }}"
+
+- name: Create the same-scope pre-upgrade K3s snapshot
+  import_playbook: snapshot.yml
+  vars:
+    k3s_model_path: "{{ hostvars['localhost'].k3s_upgrade_model_path | default(k3s_upgrade_model_path) }}"
+    k3s_snapshot_scope: "{{ [hostvars['localhost'].k3s_upgrade_snapshot_source_vm_ref] }}"
+    k3s_snapshot_source_vm_ref: "{{ hostvars['localhost'].k3s_upgrade_snapshot_source_vm_ref }}"
+    k3s_snapshot_synthetic: "{{ k3s_upgrade_synthetic | default(false) }}"
+
+- name: Upgrade declared servers one at a time
+  hosts: all
+  gather_facts: false
+  become: true
+  serial: 1
+  any_errors_fatal: true
+  vars:
+    k3s_upgrade_model: "{{ hostvars['localhost'].k3s_upgrade_model }}"
+    k3s_upgrade_scope_normalized: "{{ hostvars['localhost'].k3s_upgrade_scope_normalized }}"
+  tasks:
+    - name: Select the declared server represented by this inventory host
+      ansible.builtin.set_fact:
+        k3s_upgrade_current_node: >-
+          {{ k3s_upgrade_model.nodes
+             | selectattr('vm_ref', 'equalto', inventory_hostname) | list | first | default({}) }}
+      when: inventory_hostname in k3s_upgrade_scope_normalized
+      changed_when: false
+
+    - name: Run the serial server upgrade stage
+      ansible.builtin.include_role:
+        name: k3s_upgrade
+      vars:
+        k3s_upgrade_model: "{{ hostvars['localhost'].k3s_upgrade_model }}"
+        k3s_upgrade_node: "{{ k3s_upgrade_current_node }}"
+        k3s_upgrade_target_version: "{{ k3s_upgrade_target_version }}"
+        k3s_upgrade_observed_version: "{{ k3s_upgrade_observed_versions[inventory_hostname] }}"
+        k3s_upgrade_skip: "{{ inventory_hostname in (k3s_upgrade_plan.skipped | default([])) }}"
+        k3s_upgrade_synthetic_result: >-
+          {{ hostvars[inventory_hostname].k3s_upgrade_synthetic_result | default({}) }}
+        k3s_upgrade_api_host: "{{ hostvars['localhost'].k3s_upgrade_api_host }}"
+        k3s_upgrade_runtime_proxy: >-
+          {{ k3s_upgrade_model.cluster.artifacts[k3s_upgrade_current_node.architecture]
+             .proxy_url | default('') }}
+        k3s_upgrade_runtime_secret_file: "{{ hostvars['localhost'].k3s_upgrade_runtime_secret_file }}"
+      when:
+        - inventory_hostname in k3s_upgrade_scope_normalized
+        - k3s_upgrade_current_node.role == 'server'
+
+- name: Upgrade declared agents one at a time
+  hosts: all
+  gather_facts: false
+  become: true
+  serial: 1
+  any_errors_fatal: true
+  vars:
+    k3s_upgrade_model: "{{ hostvars['localhost'].k3s_upgrade_model }}"
+    k3s_upgrade_scope_normalized: "{{ hostvars['localhost'].k3s_upgrade_scope_normalized }}"
+  tasks:
+    - name: Select the declared agent represented by this inventory host
+      ansible.builtin.set_fact:
+        k3s_upgrade_current_node: >-
+          {{ k3s_upgrade_model.nodes
+             | selectattr('vm_ref', 'equalto', inventory_hostname) | list | first | default({}) }}
+      when: inventory_hostname in k3s_upgrade_scope_normalized
+      changed_when: false
+
+    - name: Run the serial agent upgrade stage
+      ansible.builtin.include_role:
+        name: k3s_upgrade
+      vars:
+        k3s_upgrade_model: "{{ hostvars['localhost'].k3s_upgrade_model }}"
+        k3s_upgrade_node: "{{ k3s_upgrade_current_node }}"
+        k3s_upgrade_target_version: "{{ k3s_upgrade_target_version }}"
+        k3s_upgrade_observed_version: "{{ k3s_upgrade_observed_versions[inventory_hostname] }}"
+        k3s_upgrade_skip: "{{ inventory_hostname in (k3s_upgrade_plan.skipped | default([])) }}"
+        k3s_upgrade_synthetic_result: >-
+          {{ hostvars[inventory_hostname].k3s_upgrade_synthetic_result | default({}) }}
+        k3s_upgrade_api_host: "{{ hostvars['localhost'].k3s_upgrade_api_host }}"
+        k3s_upgrade_runtime_proxy: >-
+          {{ k3s_upgrade_model.cluster.artifacts[k3s_upgrade_current_node.architecture]
+             .proxy_url | default('') }}
+        k3s_upgrade_runtime_secret_file: "{{ hostvars['localhost'].k3s_upgrade_runtime_secret_file }}"
+      when:
+        - inventory_hostname in k3s_upgrade_scope_normalized
+        - k3s_upgrade_current_node.role == 'agent'

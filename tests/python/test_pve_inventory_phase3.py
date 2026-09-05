@@ -66,6 +66,19 @@ def test_cluster_validation_rejects_overlapping_declared_vmid_ranges() -> None:
         validate_cluster(document)
 
 
+@pytest.mark.parametrize("architecture", [None, "x86_64", "arm64"])
+def test_cluster_validation_rejects_missing_alias_or_unsupported_template_architecture(architecture: str | None) -> None:
+    document = copy.deepcopy(load_yaml(CLUSTER_PATH))
+    template = document["templates"]["debian_13_genericcloud"]
+    if architecture is None:
+        template.pop("architecture")
+    else:
+        template["architecture"] = architecture
+
+    with pytest.raises(ValidationError, match="architecture.*canonical amd64"):
+        validate_cluster(document)
+
+
 def vms_model() -> dict[str, Any]:
     cluster = cluster_state()
     return build_model(cluster, validate_vms(load_yaml(VMS_PATH), cluster))
@@ -114,6 +127,7 @@ def test_generated_ansible_inventory_has_no_removed_nic_aliases() -> None:
     inventory = render_outputs(vms_model())["ansible"]
 
     assert "ansible_host:" in inventory
+    assert inventory.count("pve_architecture: amd64") == 3
     assert "pve_nics:" in inventory
     for alias in ("pve_network", "pve_bridge", "pve_gateway", "pve_dns", "pve_management_nic"):
         assert alias not in inventory

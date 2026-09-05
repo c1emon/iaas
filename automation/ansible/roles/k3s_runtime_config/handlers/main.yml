@@ -1,0 +1,36 @@
+---
+- name: Restart K3s runtime service
+  ansible.builtin.systemd:
+    name: "{{ k3s_runtime_service_name }}"
+    state: restarted
+    daemon_reload: true
+  register: k3s_runtime_config_restart
+  when: k3s_runtime_restart_services | bool
+  no_log: true
+  diff: false
+
+- name: Check restarted K3s runtime service health
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - "{{ k3s_runtime_service_name }}"
+  register: k3s_runtime_config_health
+  changed_when: false
+  failed_when: false
+  when:
+    - k3s_runtime_restart_services | bool
+    - k3s_runtime_config_restart is not skipped
+  no_log: true
+  diff: false
+
+- name: Require healthy K3s runtime after restart
+  ansible.builtin.assert:
+    that:
+      - k3s_runtime_config_health.rc | default(1) | int == 0
+      - k3s_runtime_config_health.stdout | default('') | trim == 'active'
+    fail_msg: K3s runtime service failed the post-restart health gate
+  when:
+    - k3s_runtime_restart_services | bool
+    - k3s_runtime_config_restart is not skipped
+  no_log: true

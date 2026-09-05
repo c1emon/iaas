@@ -336,6 +336,7 @@ def validate_vms(vms_doc: dict[str, Any], cluster_state: dict[str, Any]) -> list
                 "name": template_name,
                 "vmid": template.get("vmid"),
                 "vm_name": template.get("name"),
+                "architecture": template.get("architecture"),
                 "node": template.get("node"),
                 "storage_role": template_storage_role,
                 "disk_size_gib": template.get("disk_size_gib"),

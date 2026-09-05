@@ -1,0 +1,21 @@
+---
+# Consumes a validated composed model; does not resolve references or install K3s.
+k3s_runtime_model: {}  # noqa var-naming[no-role-prefix]
+k3s_runtime_node: {}  # noqa var-naming[no-role-prefix]
+k3s_runtime_state: present  # noqa var-naming[no-role-prefix]
+k3s_runtime_restart_services: true  # noqa var-naming[no-role-prefix]
+k3s_runtime_secret_file: ""  # noqa var-naming[no-role-prefix]
+k3s_runtime_join_token: ""  # noqa var-naming[no-role-prefix]
+k3s_runtime_tls_file_mode: "0600"  # noqa var-naming[no-role-prefix]
+k3s_runtime_config_dir: /etc/rancher/k3s  # noqa var-naming[no-role-prefix]
+k3s_runtime_config_path: /etc/rancher/k3s/config.yaml  # noqa var-naming[no-role-prefix]
+k3s_runtime_registries_path: /etc/rancher/k3s/registries.yaml  # noqa var-naming[no-role-prefix]
+k3s_runtime_service_env_path: >-  # noqa var-naming[no-role-prefix]
+  {{ '/etc/systemd/system/k3s.service.env'
+     if (k3s_runtime_node.role | default('server')) == 'server'
+     else '/etc/systemd/system/k3s-agent.service.env' }}
+k3s_runtime_service_name: >-  # noqa var-naming[no-role-prefix]
+  {{ 'k3s' if (k3s_runtime_node.role | default('server')) == 'server'
+     else 'k3s-agent' }}
+k3s_runtime_owner: root  # noqa var-naming[no-role-prefix]
+k3s_runtime_group: root  # noqa var-naming[no-role-prefix]

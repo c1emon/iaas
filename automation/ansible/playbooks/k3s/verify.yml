@@ -1,0 +1,122 @@
+---
+- name: K3s read-only bootstrap verification
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    k3s_model_path: ""
+    k3s_verify_scope: []
+    k3s_verify_results: []
+
+  tasks:
+    - name: Require an explicit composed K3s model path
+      ansible.builtin.assert:
+        that:
+          - k3s_model_path | string | length > 0
+        fail_msg: "k3s_model_path is required and must point to a validated composed model"
+      changed_when: false
+
+    - name: Load the validated composed K3s model
+      ansible.builtin.include_vars:
+        file: "{{ k3s_model_path }}"
+        name: k3s_model
+
+    - name: Require the composed verification model
+      ansible.builtin.assert:
+        that:
+          - k3s_model.schema_version | default(0) | int == 1
+          - k3s_model.cluster is mapping
+          - k3s_model.cluster.datastore | default('') == 'embedded-etcd'
+          - k3s_model.cluster.version | default('') is string
+          - k3s_model.cluster.version | default('') | length > 0
+          - k3s_model.nodes is sequence
+        fail_msg: "k3s_model_path must contain schema_version 1 with embedded-etcd and version"
+      changed_when: false
+
+    - name: Normalize the explicit verification scope
+      ansible.builtin.set_fact:
+        k3s_scope: >-
+          {{ k3s_verify_scope.split(',')
+             if k3s_verify_scope is string
+             else k3s_verify_scope | default([]) }}
+        k3s_declared_nodes: "{{ k3s_model.nodes }}"
+      changed_when: false
+
+    - name: Require a non-empty explicit scope
+      ansible.builtin.assert:
+        that:
+          - k3s_scope is sequence
+          - k3s_scope | length > 0
+        fail_msg: "k3s_verify_scope must explicitly name at least one composed K3s node"
+      changed_when: false
+
+    - name: Select only composed nodes in the explicit scope
+      ansible.builtin.set_fact:
+        k3s_selected_nodes: >-
+          {{ k3s_declared_nodes | selectattr('vm_ref', 'in', k3s_scope) | list }}
+        k3s_scope_unknown: >-
+          {{ k3s_scope | difference(k3s_declared_nodes | map(attribute='vm_ref') | list) }}
+      changed_when: false
+
+    - name: Reject scope entries outside the composed model
+      ansible.builtin.assert:
+        that:
+          - k3s_scope_unknown | length == 0
+          - k3s_selected_nodes | length > 0
+        fail_msg: >-
+          verification scope must name declared composed nodes; unknown:
+          {{ k3s_scope_unknown | join(', ') }}
+      changed_when: false
+
+    - name: Select a scoped server as the API verification source
+      ansible.builtin.set_fact:
+        k3s_verify_api_node: >-
+          {{ (k3s_selected_nodes | selectattr('role', 'equalto', 'server') | list | first) | default({}) }}
+      changed_when: false
+
+    - name: Require a scoped server for API and etcd verification
+      ansible.builtin.assert:
+        that:
+          - k3s_verify_api_node | length > 0
+        fail_msg: "verification scope must include at least one declared server"
+      changed_when: false
+
+    - name: Require every selected node to be present in the inventory
+      ansible.builtin.assert:
+        that:
+          - >-
+            (k3s_selected_nodes | selectattr('vm_ref', 'in', groups['all'] | default([]))
+            | list | length) == (k3s_selected_nodes | length)
+        fail_msg: "verification scope contains a declared node absent from the selected inventory"
+      changed_when: false
+
+    - name: Run reusable read-only checks for each selected node
+      ansible.builtin.include_role:
+        name: k3s_verify
+      vars:
+        k3s_verify_node: "{{ k3s_node }}"
+      loop: "{{ k3s_selected_nodes }}"
+      loop_control:
+        loop_var: k3s_node
+        label: "{{ k3s_node.vm_ref }}"
+
+    - name: Count verification outcomes
+      ansible.builtin.set_fact:
+        k3s_pass_count: "{{ k3s_verify_results | selectattr('severity', 'equalto', 'PASS') | list | length }}"
+        k3s_warn_count: "{{ k3s_verify_results | selectattr('severity', 'equalto', 'WARN') | list | length }}"
+        k3s_fail_count: "{{ k3s_verify_results | selectattr('severity', 'equalto', 'FAIL') | list | length }}"
+      changed_when: false
+
+    - name: Print the verification report
+      ansible.builtin.debug:
+        msg: |-
+          {% for result in k3s_verify_results %}
+          {{ result.line }}
+          {% endfor %}
+          summary: {{ k3s_pass_count }} pass, {{ k3s_warn_count }} warn, {{ k3s_fail_count }} fail
+      changed_when: false
+
+    - name: Block the selected scope on verification failures
+      ansible.builtin.fail:
+        msg: "K3s read-only verification found {{ k3s_fail_count }} blocking failure(s)"
+      when: k3s_fail_count | int > 0

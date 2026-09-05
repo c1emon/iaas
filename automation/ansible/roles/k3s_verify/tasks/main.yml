@@ -1,0 +1,193 @@
+---
+- name: Select synthetic or live read-only probe outputs
+  ansible.builtin.set_fact:
+    k3s_verify_synthetic_outputs: "{{ hostvars[k3s_verify_node.vm_ref].k3s_verify_command_outputs | default({}) }}"
+    k3s_verify_synthetic: >-
+      {{ (hostvars[k3s_verify_node.vm_ref].k3s_verify_command_outputs | default({})) is mapping
+         and (hostvars[k3s_verify_node.vm_ref].k3s_verify_command_outputs | default({}) | length > 0) }}
+  changed_when: false
+
+- name: Probe the Kubernetes API readiness endpoint
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - get
+      - --raw=/readyz
+  delegate_to: "{{ k3s_verify_node.vm_ref }}"
+  register: k3s_verify_api_command
+  changed_when: false
+  failed_when: false
+  ignore_unreachable: true
+  when:
+    - not k3s_verify_synthetic
+    - k3s_verify_node.vm_ref == k3s_verify_api_node.vm_ref
+
+- name: Read registered Kubernetes nodes
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - get
+      - nodes
+      - -o
+      - json
+  delegate_to: "{{ k3s_verify_node.vm_ref }}"
+  register: k3s_verify_nodes_command
+  changed_when: false
+  failed_when: false
+  ignore_unreachable: true
+  when:
+    - not k3s_verify_synthetic
+    - k3s_verify_node.vm_ref == k3s_verify_api_node.vm_ref
+
+- name: Read embedded-etcd readiness
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - get
+      - --raw=/readyz?verbose
+  delegate_to: "{{ k3s_verify_node.vm_ref }}"
+  register: k3s_verify_etcd_command
+  changed_when: false
+  failed_when: false
+  ignore_unreachable: true
+  when:
+    - not k3s_verify_synthetic
+    - k3s_verify_node.vm_ref == k3s_verify_api_node.vm_ref
+
+- name: Read the node's K3s service state
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - "{{ 'k3s' if k3s_verify_node.role == 'server' else 'k3s-agent' }}"
+  delegate_to: "{{ k3s_verify_node.vm_ref }}"
+  register: k3s_verify_service_command
+  changed_when: false
+  failed_when: false
+  ignore_unreachable: true
+
+- name: Normalize API, node, and etcd probe outputs
+  ansible.builtin.set_fact:
+    k3s_verify_api_output: >-
+      {{ k3s_verify_synthetic_outputs.api
+         | default(k3s_verify_synthetic_outputs.api_readyz | default({}))
+         if k3s_verify_synthetic else k3s_verify_api_command | default({}) }}
+    k3s_verify_nodes_output: >-
+      {{ k3s_verify_synthetic_outputs.nodes
+         | default(k3s_verify_synthetic_outputs.nodes_json | default({}))
+         if k3s_verify_synthetic else k3s_verify_nodes_command | default({}) }}
+    k3s_verify_etcd_output: >-
+      {{ k3s_verify_synthetic_outputs.etcd
+         | default(k3s_verify_synthetic_outputs.etcd_readyz | default({}))
+         if k3s_verify_synthetic else k3s_verify_etcd_command | default({}) }}
+    k3s_verify_service_output: >-
+      {{ k3s_verify_synthetic_outputs.service
+         | default(k3s_verify_synthetic_outputs.service_state | default({}))
+         if k3s_verify_synthetic else k3s_verify_service_command | default({}) }}
+  when: k3s_verify_node.vm_ref == k3s_verify_api_node.vm_ref
+  changed_when: false
+
+- name: Normalize per-node service output
+  ansible.builtin.set_fact:
+    k3s_verify_service_output: >-
+      {{ k3s_verify_synthetic_outputs.service
+         | default(k3s_verify_synthetic_outputs.service_state | default({}))
+         if k3s_verify_synthetic else k3s_verify_service_command | default({}) }}
+  when: k3s_verify_node.vm_ref != k3s_verify_api_node.vm_ref
+  changed_when: false
+
+- name: Record API reachability
+  ansible.builtin.set_fact:
+    k3s_verify_results: "{{ k3s_verify_results + [k3s_verify_api_result] }}"
+  vars:
+    k3s_verify_api_stdout: >-
+      {{ k3s_verify_api_output.stdout
+         | default(k3s_verify_api_output | string if k3s_verify_output_is_string else '')
+         | trim | lower }}
+    k3s_verify_api_ok: >-
+      {{ (k3s_verify_api_output.rc | default(1) | int == 0)
+         and k3s_verify_api_stdout == 'ok' }}
+    k3s_verify_output_is_string: "{{ k3s_verify_api_output is string }}"
+    k3s_verify_api_result:
+      severity: "{{ 'PASS' if k3s_verify_api_ok else 'FAIL' }}"
+      line: >-
+        {{ 'PASS' if k3s_verify_api_ok else 'FAIL' }} verify.api:
+        Kubernetes API {{ k3s_model.cluster.api_endpoint.address }} is
+        {{ 'reachable' if k3s_verify_api_ok else 'not ready' }}
+  when: k3s_verify_node.vm_ref == k3s_verify_api_node.vm_ref
+  changed_when: false
+
+- name: Record embedded-etcd health
+  ansible.builtin.set_fact:
+    k3s_verify_results: "{{ k3s_verify_results + [k3s_verify_etcd_result] }}"
+  vars:
+    k3s_verify_etcd_stdout: >-
+      {{ k3s_verify_etcd_output.stdout
+         | default(k3s_verify_etcd_output | string if k3s_verify_etcd_output_is_string else '') }}
+    k3s_verify_etcd_ok: >-
+      {{ (k3s_verify_etcd_output.rc | default(1) | int == 0)
+         and (k3s_verify_etcd_stdout | trim == '[+]etcd ok'
+              or k3s_verify_etcd_stdout | trim == 'etcd ok') }}
+    k3s_verify_etcd_output_is_string: "{{ k3s_verify_etcd_output is string }}"
+    k3s_verify_etcd_result:
+      severity: "{{ 'PASS' if k3s_verify_etcd_ok else 'FAIL' }}"
+      line: >-
+        {{ 'PASS' if k3s_verify_etcd_ok else 'FAIL' }} verify.etcd:
+        embedded-etcd is {{ 'healthy' if k3s_verify_etcd_ok else 'not healthy' }}
+  when: k3s_verify_node.vm_ref == k3s_verify_api_node.vm_ref
+  changed_when: false
+
+- name: Record core K3s service state
+  ansible.builtin.set_fact:
+    k3s_verify_results: "{{ k3s_verify_results + [k3s_verify_service_result] }}"
+  vars:
+    k3s_verify_service_stdout: >-
+      {{ k3s_verify_service_output.stdout
+         | default(k3s_verify_service_output if k3s_verify_service_output_is_string else '')
+         | trim | lower }}
+    k3s_verify_service_ok: >-
+      {{ (k3s_verify_service_output.rc | default(0 if k3s_verify_service_stdout == 'active' else 1) | int == 0)
+         and k3s_verify_service_stdout == 'active' }}
+    k3s_verify_service_output_is_string: "{{ k3s_verify_service_output is string }}"
+    k3s_verify_service_name: "{{ 'k3s' if k3s_verify_node.role == 'server' else 'k3s-agent' }}"
+    k3s_verify_service_result:
+      severity: "{{ 'PASS' if k3s_verify_service_ok else 'FAIL' }}"
+      line: >-
+        {{ 'PASS' if k3s_verify_service_ok else 'FAIL' }} verify.{{ k3s_verify_node.vm_ref }}.service:
+        {{ k3s_verify_service_name }} is {{ 'active' if k3s_verify_service_ok else 'not active' }}
+  changed_when: false
+
+- name: Decode the registered-node response
+  ansible.builtin.set_fact:
+    k3s_verify_nodes_payload: >-
+      {{ (k3s_verify_nodes_output.stdout
+          if k3s_verify_nodes_output is mapping and 'stdout' in k3s_verify_nodes_output
+          else k3s_verify_nodes_output)
+         if (k3s_verify_nodes_output is mapping and 'items' in k3s_verify_nodes_output)
+         else ((k3s_verify_nodes_output.stdout
+                if k3s_verify_nodes_output is mapping and 'stdout' in k3s_verify_nodes_output
+                else k3s_verify_nodes_output) | from_json) }}
+  when: k3s_verify_node.vm_ref == k3s_verify_api_node.vm_ref
+  changed_when: false
+
+- name: Normalize registered-node items
+  ansible.builtin.set_fact:
+    k3s_verify_node_items: >-
+      {{ k3s_verify_nodes_payload['items']
+         if k3s_verify_nodes_payload is mapping and 'items' in k3s_verify_nodes_payload
+         else k3s_verify_nodes_payload
+         if k3s_verify_nodes_payload is sequence and k3s_verify_nodes_payload is not string
+         else [] }}
+  when: k3s_verify_node.vm_ref == k3s_verify_api_node.vm_ref
+  changed_when: false
+
+- name: Verify each selected node is registered
+  ansible.builtin.include_tasks: verify-node.yml
+  loop: "{{ k3s_selected_nodes }}"
+  loop_control:
+    loop_var: k3s_expected_node
+    label: "{{ k3s_expected_node.vm_ref }}"
+  when: k3s_verify_node.vm_ref == k3s_verify_api_node.vm_ref

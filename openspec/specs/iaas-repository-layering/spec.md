@@ -1,7 +1,7 @@
 # iaas-repository-layering Specification
 
 ## Purpose
-Define the ownership boundaries and hard-cutover contract that separate Astra environment configuration, reusable infrastructure automation, and future in-cluster platform work.
+Define the ownership boundaries and hard-cutover contract that separate Astra environment configuration, reusable infrastructure automation, and the in-cluster platform ownership boundary.
 
 ## Requirements
 

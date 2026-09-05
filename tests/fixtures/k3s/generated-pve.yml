@@ -1,0 +1,77 @@
+---
+all:
+  children:
+    pve_vms:
+      hosts:
+        synthetic-server-01:
+          ansible_connection: ssh
+          ansible_host: 192.0.2.11
+          ansible_user: ops
+          pve_architecture: amd64
+          pve_nics:
+            - name: mgmt0
+              role: management
+              ip_address: 192.0.2.11
+              prefix_length: 24
+              network_cidr: 192.0.2.0/24
+              ansible_connection: true
+            - name: cluster0
+              role: cluster
+              ip_address: 198.51.100.11
+              prefix_length: 24
+              network_cidr: 198.51.100.0/24
+              ansible_connection: false
+        synthetic-server-02:
+          ansible_connection: ssh
+          ansible_host: 192.0.2.12
+          ansible_user: ops
+          pve_architecture: amd64
+          pve_nics:
+            - name: mgmt0
+              role: management
+              ip_address: 192.0.2.12
+              prefix_length: 24
+              network_cidr: 192.0.2.0/24
+              ansible_connection: true
+            - name: cluster0
+              role: cluster
+              ip_address: 198.51.100.12
+              prefix_length: 24
+              network_cidr: 198.51.100.0/24
+              ansible_connection: false
+        synthetic-server-03:
+          ansible_connection: ssh
+          ansible_host: 192.0.2.13
+          ansible_user: ops
+          pve_architecture: amd64
+          pve_nics:
+            - name: mgmt0
+              role: management
+              ip_address: 192.0.2.13
+              prefix_length: 24
+              network_cidr: 192.0.2.0/24
+              ansible_connection: true
+            - name: cluster0
+              role: cluster
+              ip_address: 198.51.100.13
+              prefix_length: 24
+              network_cidr: 198.51.100.0/24
+              ansible_connection: false
+        synthetic-agent-01:
+          ansible_connection: ssh
+          ansible_host: 192.0.2.21
+          ansible_user: ops
+          pve_architecture: amd64
+          pve_nics:
+            - name: mgmt0
+              role: management
+              ip_address: 192.0.2.21
+              prefix_length: 24
+              network_cidr: 192.0.2.0/24
+              ansible_connection: true
+            - name: cluster0
+              role: cluster
+              ip_address: 198.51.100.21
+              prefix_length: 24
+              network_cidr: 198.51.100.0/24
+              ansible_connection: false

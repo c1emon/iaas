@@ -1,0 +1,8 @@
+---
+# The role owns only packages that are required by a Debian K3s host.  APT
+# sources and their credentials remain the responsibility of the VM baseline.
+k3s_prerequisites_packages:
+  - ca-certificates
+  - conntrack
+  - iptables
+  - socat

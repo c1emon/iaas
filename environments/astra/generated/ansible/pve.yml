@@ -40,6 +40,7 @@ all:
             - web
           pve_pool: null
           pve_template: debian_13_genericcloud
+          pve_architecture: amd64
           pve_template_vmid: 9001
           pve_template_node: cohe
           pve_disk_storage_role: memory
@@ -86,6 +87,7 @@ all:
             - app
           pve_pool: null
           pve_template: debian_13_genericcloud
+          pve_architecture: amd64
           pve_template_vmid: 9001
           pve_template_node: cohe
           pve_disk_storage_role: memory
@@ -133,6 +135,7 @@ all:
             - igpu
           pve_pool: null
           pve_template: debian_13_genericcloud
+          pve_architecture: amd64
           pve_template_vmid: 9001
           pve_template_node: cohe
           pve_disk_storage_role: memory

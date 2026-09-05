@@ -1,0 +1,149 @@
+---
+- name: Read synthetic snapshot probes when supplied by offline tests
+  ansible.builtin.set_fact:
+    k3s_snapshot_synthetic_outputs: >-
+      {{ hostvars[k3s_snapshot_node.vm_ref].k3s_snapshot_command_outputs | default({}) }}
+    k3s_snapshot_synthetic: >-
+      {{ (hostvars[k3s_snapshot_node.vm_ref].k3s_snapshot_command_outputs | default({})) is mapping
+         and (hostvars[k3s_snapshot_node.vm_ref].k3s_snapshot_command_outputs | default({}) | length > 0) }}
+  changed_when: false
+
+- name: Read Kubernetes API readiness before snapshot creation
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - get
+      - --raw=/readyz
+  delegate_to: "{{ k3s_snapshot_node.vm_ref }}"
+  register: k3s_snapshot_api_command
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when: not k3s_snapshot_synthetic
+
+- name: Read embedded-etcd readiness before snapshot creation
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - kubectl
+      - get
+      - --raw=/readyz?verbose
+  delegate_to: "{{ k3s_snapshot_node.vm_ref }}"
+  register: k3s_snapshot_etcd_command
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when: not k3s_snapshot_synthetic
+
+- name: Read the K3s server service state before snapshot creation
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - k3s
+  delegate_to: "{{ k3s_snapshot_node.vm_ref }}"
+  register: k3s_snapshot_service_command
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when: not k3s_snapshot_synthetic
+
+- name: Normalize health probe outputs without retaining command text in the report
+  ansible.builtin.set_fact:
+    k3s_snapshot_api_output: >-
+      {{ k3s_snapshot_synthetic_outputs.api | default({})
+         if k3s_snapshot_synthetic else k3s_snapshot_api_command | default({}) }}
+    k3s_snapshot_etcd_output: >-
+      {{ k3s_snapshot_synthetic_outputs.etcd | default({})
+         if k3s_snapshot_synthetic else k3s_snapshot_etcd_command | default({}) }}
+    k3s_snapshot_service_output: >-
+      {{ k3s_snapshot_synthetic_outputs.service | default({})
+         if k3s_snapshot_synthetic else k3s_snapshot_service_command | default({}) }}
+  changed_when: false
+
+- name: Evaluate read-only server and embedded-etcd health
+  ansible.builtin.set_fact:
+    k3s_snapshot_api_healthy: >-
+      {{ (k3s_snapshot_api_output.rc | default(1) | int == 0)
+         and (k3s_snapshot_api_output.stdout | default('') | trim | lower == 'ok') }}
+    k3s_snapshot_etcd_healthy: >-
+      {{ (k3s_snapshot_etcd_output.rc | default(1) | int == 0)
+         and ('etcd ok' in (k3s_snapshot_etcd_output.stdout | default('') | trim | lower)) }}
+    k3s_snapshot_service_healthy: >-
+      {{ (k3s_snapshot_service_output.rc | default(1) | int == 0)
+         and (k3s_snapshot_service_output.stdout | default('') | trim | lower == 'active') }}
+  changed_when: false
+
+- name: Block snapshot creation unless the source server and embedded etcd are healthy
+  ansible.builtin.assert:
+    that:
+      - k3s_snapshot_api_healthy | bool
+      - k3s_snapshot_etcd_healthy | bool
+      - k3s_snapshot_service_healthy | bool
+    fail_msg: >-
+      snapshot source {{ k3s_snapshot_node.vm_ref }} failed the read-only
+      Kubernetes API, embedded-etcd, or k3s service health precheck
+  changed_when: false
+
+- name: Validate deterministic node-local snapshot identity
+  ansible.builtin.assert:
+    that:
+      - k3s_snapshot_name is string
+      - k3s_snapshot_name is match('^[A-Za-z0-9][A-Za-z0-9_.-]*$')
+      - k3s_snapshot_directory is string
+      - k3s_snapshot_directory is match('^/')
+      - "'..' not in k3s_snapshot_directory"
+    fail_msg: "snapshot name and directory must be deterministic, absolute, and node-local"
+  changed_when: false
+
+- name: Ensure the snapshot directory is root-only on the source server
+  ansible.builtin.file:
+    path: "{{ k3s_snapshot_directory }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  delegate_to: "{{ k3s_snapshot_node.vm_ref }}"
+  become: true
+  when: not k3s_snapshot_synthetic
+
+- name: Save the embedded-etcd snapshot with a deterministic name
+  ansible.builtin.command:
+    argv:
+      - k3s
+      - etcd-snapshot
+      - save
+      - --name
+      - "{{ k3s_snapshot_name }}"
+  args:
+    chdir: "{{ k3s_snapshot_directory }}"
+  delegate_to: "{{ k3s_snapshot_node.vm_ref }}"
+  become: true
+  register: k3s_snapshot_save_command
+  changed_when: true
+  failed_when: false
+  no_log: true
+  when: not k3s_snapshot_synthetic
+
+- name: Normalize the snapshot save outcome
+  ansible.builtin.set_fact:
+    k3s_snapshot_save_output: >-
+      {{ k3s_snapshot_synthetic_outputs.save | default({})
+         if k3s_snapshot_synthetic else k3s_snapshot_save_command | default({}) }}
+  changed_when: false
+
+- name: Require the embedded-etcd snapshot command to succeed
+  ansible.builtin.assert:
+    that:
+      - k3s_snapshot_save_output.rc | default(1) | int == 0
+    fail_msg: "embedded-etcd snapshot creation failed on the configured source server"
+  changed_when: false
+
+- name: Report non-sensitive snapshot metadata only
+  ansible.builtin.debug:
+    msg: >-
+      PASS snapshot.{{ k3s_snapshot_node.vm_ref }}: created {{ k3s_snapshot_name }}
+      in {{ k3s_snapshot_directory }}; storage is node-local and root-only;
+      restore readiness was not assessed
+  changed_when: false

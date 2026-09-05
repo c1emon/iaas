@@ -1,0 +1,22 @@
+---
+- name: Require a Debian host with the APT package manager
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.os_family | default('') == 'Debian'
+      - ansible_facts.distribution | default('') == 'Debian'
+      - ansible_facts.pkg_mgr | default('') == 'apt'
+    fail_msg: >-
+      k3s_prerequisites supports Debian hosts managed by APT only;
+      got {{ ansible_facts.distribution | default('unknown') }}
+      ({{ ansible_facts.os_family | default('unknown') }}) with
+      {{ ansible_facts.pkg_mgr | default('unknown') }}
+    quiet: true
+  changed_when: false
+
+- name: Install declared Debian K3s host prerequisites
+  ansible.builtin.apt:
+    name: "{{ k3s_prerequisites_packages }}"
+    state: present
+    update_cache: false
+    install_recommends: false
+  when: k3s_prerequisites_packages | length > 0

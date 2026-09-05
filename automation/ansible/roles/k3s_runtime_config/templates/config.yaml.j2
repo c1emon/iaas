@@ -1,0 +1,31 @@
+---
+node-ip: {{ k3s_runtime_node.node_ip | to_json }}
+{% if k3s_runtime_join_token | length > 0 %}
+token: {{ k3s_runtime_join_token | to_json }}
+{% endif %}
+{% if k3s_runtime_node.role == 'server' %}
+advertise-address: {{ k3s_runtime_node.node_ip | to_json }}
+{% endif %}
+{% if k3s_runtime_node.bootstrap | bool %}
+cluster-init: true
+{% else %}
+server: {{ ('https://' ~ k3s_runtime_model.cluster.api_endpoint.address ~ ':6443') | to_json }}
+{% endif %}
+cluster-cidr: {{ k3s_runtime_model.cluster.networking.pod_cidr | to_json }}
+service-cidr: {{ k3s_runtime_model.cluster.networking.service_cidr | to_json }}
+cluster-domain: {{ k3s_runtime_model.cluster.cluster_domain | to_json }}
+flannel-backend: none
+disable-network-policy: {{ k3s_runtime_model.cluster.components.disable_network_policy | bool | ternary('true', 'false') }}
+disable:
+{% for component in k3s_runtime_model.cluster.components.disable %}
+  - {{ component | to_json }}
+{% endfor %}
+{% if k3s_runtime_model.cluster.api_endpoint.tls_sans | length > 0 %}
+tls-san:
+{% for san in k3s_runtime_model.cluster.api_endpoint.tls_sans %}
+  - {{ san | to_json }}
+{% endfor %}
+{% endif %}
+{% if k3s_runtime_model.cluster.registry.fallback == 'deny' %}
+disable-default-registry-endpoint: true
+{% endif %}

@@ -304,6 +304,9 @@ def validate_cluster(cluster_doc: dict[str, Any]) -> dict[str, Any]:
         template_vmids.add(vmid_int)
         require(template.get("node") in nodes, f"{tctx}: node must reference a declared PVE node")
 
+        architecture = template.get("architecture")
+        require(architecture == "amd64", f"{tctx}.architecture: must be canonical amd64")
+
         for field in ("name", "storage_role", "source_storage_role", "cpu_type", "bios", "machine", "clone_mode", "scsi_controller", "primary_disk"):
             value = template.get(field)
             require(isinstance(value, str) and value, f"{tctx}: {field} must be a non-empty string")

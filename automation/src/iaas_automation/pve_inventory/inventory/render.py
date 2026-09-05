@@ -59,6 +59,7 @@ def build_ansible_inventory(model: dict[str, Any]) -> str:
             "pve_tags": vm["tags"],
             "pve_pool": vm["pool"],
             "pve_template": vm["template"]["name"],
+            "pve_architecture": vm["template"]["architecture"],
             "pve_template_vmid": vm["template"]["vmid"],
             "pve_template_node": vm["template"]["node"],
             "pve_disk_storage_role": vm["storage"]["disk_role"],

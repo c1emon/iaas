@@ -1,0 +1,14 @@
+[Unit]
+Description=K3s agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+ExecStart={{ k3s_agent_binary_path }} agent --config /etc/rancher/k3s/config.yaml
+Restart=always
+RestartSec=5
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
