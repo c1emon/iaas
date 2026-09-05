@@ -421,3 +421,18 @@ def test_makefile_exposes_only_explicit_offline_k3s_entrypoints() -> None:
     assert "K3S_INVENTORY" in makefile
     check_line = next(line for line in makefile.splitlines() if line.startswith("check:"))
     assert "k3s-" not in check_line
+
+
+def test_cli_scope_is_limited_to_explicit_composed_nodes() -> None:
+    assert k3s_main([
+        "--intent", str(FIXTURES / "intent.yml"),
+        "--inventory", str(FIXTURES / "generated-pve.yml"),
+        "--scope", "synthetic-server-01,synthetic-server-02",
+    ]) == 0
+
+    with pytest.raises(ValidationError, match="wildcards"):
+        k3s_main([
+            "--intent", str(FIXTURES / "intent.yml"),
+            "--inventory", str(FIXTURES / "generated-pve.yml"),
+            "--scope", "*",
+        ])

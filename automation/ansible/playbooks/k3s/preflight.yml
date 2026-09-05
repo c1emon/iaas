@@ -1,0 +1,113 @@
+---
+- name: K3s read-only host preflight
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    k3s_model_path: ""
+    k3s_preflight_scope: []
+    k3s_preflight_results: []
+  tasks:
+    - name: Require an explicit composed K3s model path
+      ansible.builtin.assert:
+        that:
+          - k3s_model_path | string | length > 0
+        fail_msg: "k3s_model_path is required and must point to a validated composed model"
+      changed_when: false
+
+    - name: Load the validated composed K3s model
+      ansible.builtin.include_vars:
+        file: "{{ k3s_model_path }}"
+        name: k3s_model
+
+    - name: Require the composed model schema
+      ansible.builtin.assert:
+        that:
+          - k3s_model.schema_version | default(0) | int == 1
+          - k3s_model.cluster is mapping
+          - k3s_model.nodes is sequence
+        fail_msg: "k3s_model_path must contain schema_version 1 composed K3s model"
+      changed_when: false
+
+    - name: Normalize the explicit preflight scope
+      ansible.builtin.set_fact:
+        k3s_scope: >-
+          {{ k3s_preflight_scope.split(',')
+             if k3s_preflight_scope is string
+             else k3s_preflight_scope | default([]) }}
+        k3s_declared_nodes: "{{ k3s_model.nodes }}"
+      changed_when: false
+
+    - name: Require a non-empty explicit scope
+      ansible.builtin.assert:
+        that:
+          - k3s_scope is sequence
+          - k3s_scope | length > 0
+        fail_msg: "k3s_preflight_scope must explicitly name at least one composed K3s node"
+      changed_when: false
+
+    - name: Select only composed nodes in the explicit scope
+      ansible.builtin.set_fact:
+        k3s_selected_nodes: >-
+          {{ k3s_declared_nodes
+             | selectattr('vm_ref', 'in', k3s_scope)
+             | list }}
+        k3s_scope_unknown: >-
+          {{ k3s_scope | difference(k3s_declared_nodes | map(attribute='vm_ref') | list) }}
+      changed_when: false
+
+    - name: Reject scope entries outside the composed model
+      ansible.builtin.assert:
+        that:
+          - k3s_scope_unknown | length == 0
+        fail_msg: >-
+          preflight scope contains nodes absent from the validated composed model:
+          {{ k3s_scope_unknown | join(', ') }}
+      changed_when: false
+
+    - name: Report an empty inventory selection without contacting a host
+      ansible.builtin.debug:
+        msg: >-
+          SKIP preflight: no scoped composed nodes are present in this inventory;
+          summary: 0 pass, 0 warn, 0 fail, 1 skip
+      when: (k3s_selected_nodes | selectattr('vm_ref', 'in', groups['all'] | default([])) | list | length) == 0
+      changed_when: false
+
+    - name: End play when no scoped host is in the inventory
+      ansible.builtin.meta: end_play
+      when: (k3s_selected_nodes | selectattr('vm_ref', 'in', groups['all'] | default([])) | list | length) == 0
+
+    - name: Run reusable read-only checks for each selected node
+      ansible.builtin.include_role:
+        name: k3s_preflight
+      vars:
+        k3s_preflight_node: "{{ k3s_node }}"
+      loop: "{{ k3s_selected_nodes }}"
+      loop_control:
+        loop_var: k3s_node
+        label: "{{ k3s_node.vm_ref }}"
+      when: k3s_node.vm_ref in (groups['all'] | default([]))
+
+    - name: Count preflight outcomes
+      ansible.builtin.set_fact:
+        k3s_pass_count: "{{ k3s_preflight_results | selectattr('severity', 'equalto', 'PASS') | list | length }}"
+        k3s_warn_count: "{{ k3s_preflight_results | selectattr('severity', 'equalto', 'WARN') | list | length }}"
+        k3s_fail_count: "{{ k3s_preflight_results | selectattr('severity', 'equalto', 'FAIL') | list | length }}"
+        k3s_skip_count: "{{ k3s_preflight_results | selectattr('severity', 'equalto', 'SKIP') | list | length }}"
+      changed_when: false
+
+    - name: Print the redacted preflight report
+      ansible.builtin.debug:
+        msg: |-
+          {% for result in k3s_preflight_results %}
+          {{ result.line }}
+          {% endfor %}
+          summary: >-
+            {{ k3s_pass_count }} pass, {{ k3s_warn_count }} warn,
+            {{ k3s_fail_count }} fail, {{ k3s_skip_count }} skip
+      changed_when: false
+
+    - name: Block the selected scope on required prerequisite failures
+      ansible.builtin.fail:
+        msg: "K3s read-only preflight found {{ k3s_fail_count }} blocking failure(s)"
+      when: k3s_fail_count | int > 0

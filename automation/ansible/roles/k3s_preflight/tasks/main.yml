@@ -1,0 +1,198 @@
+---
+- name: Gather minimal and network facts for {{ k3s_preflight_node.vm_ref }}
+  ansible.builtin.setup:
+    gather_subset:
+      - min
+      - network
+  delegate_to: "{{ k3s_preflight_node.vm_ref }}"
+  register: k3s_preflight_setup
+  changed_when: false
+  failed_when: false
+  ignore_unreachable: true
+  when: hostvars[k3s_preflight_node.vm_ref].k3s_preflight_facts is not defined
+
+- name: Record reachability for {{ k3s_preflight_node.vm_ref }}
+  ansible.builtin.set_fact:
+    k3s_preflight_results: "{{ k3s_preflight_results | default([]) + [k3s_preflight_reachability] }}"
+    k3s_preflight_reachable: >-
+      {{ hostvars[k3s_preflight_node.vm_ref].k3s_preflight_facts is defined or
+         not (k3s_preflight_setup.unreachable | default(false)
+              or k3s_preflight_setup.failed | default(false)) }}
+  vars:
+    k3s_preflight_reachability:
+      severity: >-
+        {{ 'PASS' if (hostvars[k3s_preflight_node.vm_ref].k3s_preflight_facts is defined
+                       or not (k3s_preflight_setup.unreachable | default(false)
+                               or k3s_preflight_setup.failed | default(false))) else 'WARN' }}
+      line: >-
+        {{ ('PASS ssh.' if (hostvars[k3s_preflight_node.vm_ref].k3s_preflight_facts is defined
+                             or not (k3s_preflight_setup.unreachable | default(false)
+                                     or k3s_preflight_setup.failed | default(false))) else 'WARN ssh.')
+           ~ k3s_preflight_node.vm_ref ~ '.reachability: '
+           ~ ('host is reachable' if (hostvars[k3s_preflight_node.vm_ref].k3s_preflight_facts is defined
+                                       or not (k3s_preflight_setup.unreachable | default(false)
+                                               or k3s_preflight_setup.failed | default(false)))
+              else 'host is unreachable; checks were not attempted') }}
+  changed_when: false
+
+- name: Probe read-only host prerequisites
+  ansible.builtin.command: "{{ k3s_preflight_probe.command }}"
+  delegate_to: "{{ k3s_preflight_node.vm_ref }}"
+  register: k3s_preflight_probes
+  changed_when: false
+  failed_when: false
+  ignore_unreachable: true
+  loop:
+    - name: cgroups
+      command: "stat -fc %T /sys/fs/cgroup"
+    - name: capabilities
+      command: "grep CapEff /proc/1/status"
+    - name: time
+      command: "timedatectl show -p NTPSynchronized --value"
+    - name: interface
+      command: "ip -o -4 addr show"
+    - name: ports
+      command: "ss -lntu"
+    - name: disk
+      command: "df -Pk /var/lib/rancher"
+    - name: apt_sources
+      command: >-
+        grep -R -h -E '^[[:space:]]*deb[[:space:]]'
+        /etc/apt/sources.list /etc/apt/sources.list.d
+    - name: install_state
+      command: "test ! -e /usr/local/bin/k3s"
+  loop_control:
+    loop_var: k3s_preflight_probe
+    label: "{{ k3s_preflight_probe.name }}"
+  when:
+    - k3s_preflight_reachable | default(false)
+    - hostvars[k3s_preflight_node.vm_ref].k3s_preflight_facts is not defined
+
+- name: Use synthetic preflight facts without contacting a host
+  ansible.builtin.set_fact:
+    k3s_preflight_runtime: "{{ hostvars[k3s_preflight_node.vm_ref].k3s_preflight_facts }}"
+  when: hostvars[k3s_preflight_node.vm_ref].k3s_preflight_facts is defined
+  changed_when: false
+
+- name: Build runtime facts from read-only probes
+  ansible.builtin.set_fact:
+    k3s_preflight_runtime:
+      os_family: "{{ k3s_preflight_setup.ansible_facts.os_family | default('unknown') }}"
+      distribution: "{{ k3s_preflight_setup.ansible_facts.distribution | default('unknown') }}"
+      architecture: "{{ k3s_preflight_setup.ansible_facts.architecture | default('unknown') }}"
+      pve_architecture: "{{ hostvars[k3s_preflight_node.vm_ref].pve_architecture | default('unknown') }}"
+      cgroups_v2: "{{ k3s_preflight_probes.results[0].stdout | default('') == 'cgroup2fs' }}"
+      kernel_capabilities: >-
+        {{ ['NET_ADMIN', 'SYS_ADMIN']
+           if k3s_preflight_probes.results[1].rc | default(1) == 0 else [] }}
+      time_synchronized: >-
+        {{ k3s_preflight_probes.results[2].stdout | default('') | trim | lower == 'yes' }}
+      node_ip: "{{ k3s_preflight_node.node_ip }}"
+      node_interface: >-
+        {{ k3s_preflight_node.node_nic
+           if k3s_preflight_node.node_ip | default('')
+              in (k3s_preflight_probes.results[3].stdout | default('')) else '' }}
+      ports_available: "{{ k3s_preflight_probes.results[4].rc | default(1) == 0 }}"
+      free_bytes: >-
+        {{ k3s_preflight_probes.results[5].stdout_lines[1].split()[3] | default('0') | int * 1024 }}
+      apt_sources_reachable: "{{ k3s_preflight_probes.results[6].rc | default(1) == 0 }}"
+      artifact_reachable: false
+      registry_reachable: false
+      registry_tls_files_valid: false
+      conflicting_install_state: "{{ k3s_preflight_probes.results[7].rc | default(1) != 0 }}"
+  when:
+    - k3s_preflight_reachable | default(false)
+    - hostvars[k3s_preflight_node.vm_ref].k3s_preflight_facts is not defined
+  changed_when: false
+
+- name: Validate action-scoped runtime credentials before endpoint checks
+  ansible.builtin.set_fact:
+    k3s_preflight_credentials_ok: >-
+      {{ hostvars[k3s_preflight_node.vm_ref].k3s_preflight_credentials | default(false) | bool }}
+  changed_when: false
+
+- name: Record host prerequisite outcomes for {{ k3s_preflight_node.vm_ref }}
+  ansible.builtin.set_fact:
+    k3s_preflight_results: "{{ k3s_preflight_results + k3s_preflight_host_results }}"
+  vars:
+    k3s_preflight_guest_architecture: >-
+      {{ 'amd64' if k3s_preflight_runtime.architecture | default('') in ['x86_64', 'amd64']
+         else k3s_preflight_runtime.architecture | default('unknown') }}
+    k3s_preflight_expected_architecture: "{{ k3s_preflight_node.architecture }}"
+    k3s_preflight_os_ok: >-
+      {{ k3s_preflight_runtime.os_family | default('') == 'Debian'
+         and k3s_preflight_runtime.distribution | default('') == 'Debian' }}
+    k3s_preflight_arch_ok: >-
+      {{ k3s_preflight_guest_architecture == k3s_preflight_expected_architecture
+         and k3s_preflight_runtime.pve_architecture | default('') == k3s_preflight_expected_architecture }}
+    k3s_preflight_caps_ok: >-
+      {{ (k3s_preflight_required_capabilities
+          | difference(k3s_preflight_runtime.kernel_capabilities | default([])) | length) == 0 }}
+    k3s_preflight_interface_ok: >-
+      {{ k3s_preflight_runtime.node_ip | default('') == k3s_preflight_node.node_ip
+         and k3s_preflight_runtime.node_interface | default('') | length > 0 }}
+    k3s_preflight_disk_ok: >-
+      {{ k3s_preflight_runtime.free_bytes | default(0) | int >= k3s_preflight_min_free_bytes }}
+    k3s_preflight_artifact_ok: >-
+      {{ k3s_preflight_runtime.artifact_reachable | default(false) | bool
+         and k3s_preflight_credentials_ok }}
+    k3s_preflight_registry_ok: >-
+      {{ k3s_preflight_runtime.registry_reachable | default(false) | bool
+         and k3s_preflight_credentials_ok }}
+    k3s_preflight_host_results:
+      - severity: "{{ 'PASS' if k3s_preflight_os_ok else 'FAIL' }}"
+        line: >-
+          {{ ('PASS' if k3s_preflight_os_ok else 'FAIL')
+             ~ ' preflight.' ~ k3s_preflight_node.vm_ref ~ '.os: Debian required' }}
+      - severity: "{{ 'PASS' if k3s_preflight_arch_ok else 'FAIL' }}"
+        line: >-
+          {{ ('PASS' if k3s_preflight_arch_ok else 'FAIL')
+             ~ ' preflight.' ~ k3s_preflight_node.vm_ref ~ '.architecture: guest '
+             ~ k3s_preflight_guest_architecture ~ ', inventory '
+             ~ k3s_preflight_expected_architecture }}
+      - severity: "{{ 'PASS' if k3s_preflight_runtime.cgroups_v2 | default(false) | bool else 'FAIL' }}"
+        line: >-
+          {{ ('PASS' if k3s_preflight_runtime.cgroups_v2 | default(false) | bool else 'FAIL')
+             ~ ' preflight.' ~ k3s_preflight_node.vm_ref ~ '.cgroups: cgroups v2 required' }}
+      - severity: "{{ 'PASS' if k3s_preflight_caps_ok else 'FAIL' }}"
+        line: >-
+          {{ ('PASS' if k3s_preflight_caps_ok else 'FAIL')
+             ~ ' preflight.' ~ k3s_preflight_node.vm_ref ~ '.kernel: required capabilities present' }}
+      - severity: "{{ 'PASS' if k3s_preflight_runtime.time_synchronized | default(false) | bool else 'WARN' }}"
+        line: >-
+          {{ ('PASS' if k3s_preflight_runtime.time_synchronized | default(false) | bool else 'WARN')
+             ~ ' preflight.' ~ k3s_preflight_node.vm_ref ~ '.time: synchronization status' }}
+      - severity: "{{ 'PASS' if k3s_preflight_interface_ok else 'FAIL' }}"
+        line: >-
+          {{ ('PASS' if k3s_preflight_interface_ok else 'FAIL')
+             ~ ' preflight.' ~ k3s_preflight_node.vm_ref ~ '.interface: derived node IP ownership' }}
+      - severity: "{{ 'PASS' if k3s_preflight_runtime.ports_available | default(false) | bool else 'FAIL' }}"
+        line: >-
+          {{ ('PASS' if k3s_preflight_runtime.ports_available | default(false) | bool else 'FAIL')
+             ~ ' preflight.' ~ k3s_preflight_node.vm_ref ~ '.ports: required K3s ports are available' }}
+      - severity: "{{ 'PASS' if k3s_preflight_disk_ok else 'FAIL' }}"
+        line: >-
+          {{ ('PASS' if k3s_preflight_disk_ok else 'FAIL')
+             ~ ' preflight.' ~ k3s_preflight_node.vm_ref ~ '.disk: at least 10 GiB free' }}
+      - severity: "{{ 'PASS' if k3s_preflight_runtime.apt_sources_reachable | default(false) | bool else 'FAIL' }}"
+        line: >-
+          {{ ('PASS' if k3s_preflight_runtime.apt_sources_reachable | default(false) | bool else 'FAIL')
+             ~ ' preflight.' ~ k3s_preflight_node.vm_ref ~ '.apt-sources: configured sources reachable' }}
+      - severity: "{{ 'PASS' if k3s_preflight_artifact_ok else 'FAIL' }}"
+        line: >-
+          {{ ('PASS' if k3s_preflight_artifact_ok else 'FAIL')
+             ~ ' preflight.' ~ k3s_preflight_node.vm_ref ~ '.artifact: selected path and scoped credentials' }}
+      - severity: "{{ 'PASS' if k3s_preflight_registry_ok else 'FAIL' }}"
+        line: >-
+          {{ ('PASS' if k3s_preflight_registry_ok else 'FAIL')
+             ~ ' preflight.' ~ k3s_preflight_node.vm_ref ~ '.registry: declared path and scoped credentials' }}
+      - severity: "{{ 'PASS' if k3s_preflight_runtime.registry_tls_files_valid | default(false) | bool else 'FAIL' }}"
+        line: >-
+          {{ ('PASS' if k3s_preflight_runtime.registry_tls_files_valid | default(false) | bool else 'FAIL')
+             ~ ' preflight.' ~ k3s_preflight_node.vm_ref ~ '.registry-tls: referenced files are valid' }}
+      - severity: "{{ 'FAIL' if k3s_preflight_runtime.conflicting_install_state | default(false) | bool else 'PASS' }}"
+        line: >-
+          {{ ('FAIL' if k3s_preflight_runtime.conflicting_install_state | default(false) | bool else 'PASS')
+             ~ ' preflight.' ~ k3s_preflight_node.vm_ref ~ '.conflict: no conflicting K3s install' }}
+  when: k3s_preflight_reachable | default(false)
+  changed_when: false

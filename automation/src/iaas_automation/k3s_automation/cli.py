@@ -10,6 +10,7 @@ from iaas_automation.common.cli import run_validation_cli
 from iaas_automation.common.io import load_yaml, write_text
 
 from .config import build_composed_model, render_review
+from .operations import validate_exact_scope
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -17,6 +18,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--intent", type=Path, required=True, help="Path to K3s intent YAML")
     parser.add_argument("--inventory", type=Path, required=True, help="Path to generated PVE Ansible inventory")
+    parser.add_argument(
+        "--scope",
+        help="Explicit comma-separated declared node references; required by online command wrappers",
+    )
     parser.add_argument("--render", type=Path, help="Write the deterministic review model to this path")
     return parser.parse_args(argv)
 
@@ -25,6 +30,8 @@ def main(argv: list[str] | None = None) -> int:
     """Validate the composed model and optionally render its review form."""
     args = parse_args(sys.argv[1:] if argv is None else argv)
     model = build_composed_model(load_yaml(args.intent), load_yaml(args.inventory))
+    if args.scope is not None:
+        validate_exact_scope(model, args.scope)
     if args.render is not None:
         write_text(args.render, render_review(model))
         print(f"K3s review rendered: {args.render}")

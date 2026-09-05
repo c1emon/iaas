@@ -1,0 +1,9 @@
+---
+k3s_preflight_min_free_bytes: 10737418240
+k3s_preflight_required_ports:
+  - 6443
+  - 6444
+  - 10250
+k3s_preflight_required_capabilities:
+  - NET_ADMIN
+  - SYS_ADMIN

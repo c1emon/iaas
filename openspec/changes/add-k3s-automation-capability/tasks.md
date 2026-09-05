@@ -9,7 +9,7 @@
 ## 2. Read-only preflight
 
 - [ ] 2.1 Add reusable read-only preflight tasks for Debian support; deterministic `x86_64` -> `amd64` guest normalization and agreement with generated `pve_architecture`; cgroups; kernel capabilities; time; runtime interface ownership of the derived node IP; ports; disk; configured APT-source reachability; same-path selected-architecture artifact reachability; authenticated registry reachability and TLS-file validation; and conflicting install state. Verify unsupported/mismatched VM facts and missing action-scoped credentials are rejected, and tests reject `apt update`, configuration writes, global proxy changes, and other mutation-capable modules or commands in the preflight path.
-- [ ] 2.2 Add an explicitly scoped K3s preflight playbook that consumes only the validated composed model and selected inventory hosts; verify syntax, lint, no-host, unreachable-host, warning, and blocking-failure behavior.
+- [x] 2.2 Add an explicitly scoped K3s preflight playbook that consumes only the validated composed model and selected inventory hosts; verify syntax, lint, no-host, unreachable-host, warning, and blocking-failure behavior.
 
 ## 3. Controlled deployment
 
