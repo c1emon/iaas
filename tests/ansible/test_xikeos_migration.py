@@ -10,6 +10,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 ANSIBLE_DIR = ROOT / "automation" / "ansible"
 ENV_ANSIBLE_DIR = ROOT / "environments" / "astra" / "ansible"
+OPERATIONS_DIR = ROOT / "docs" / "operations"
 
 
 def test_dependency_metadata_includes_native_collection() -> None:
@@ -66,11 +67,11 @@ def test_switch_config_main_only_imports_new_task_phases() -> None:
     assert "safety report export" in main
 
 
-def test_switch_config_remains_safety_orchestration() -> None:
-    readme = (ANSIBLE_DIR / "roles/switch_config/README.md").read_text()
-    assert "safety orchestration" in readme
-    assert "platform/resource implementation" not in readme
-    assert "switch_readonly_facts" not in readme
+def test_operator_manual_describes_switch_config_safety_boundary() -> None:
+    manual = (OPERATIONS_DIR / "01-switch.md").read_text()
+    assert "switch_config_resources" in manual
+    assert "switch_config_apply" in manual
+    assert "switch_readonly_facts" not in manual
 
 
 def test_switch_config_diff_and_apply_use_deterministic_module_order() -> None:
@@ -89,10 +90,10 @@ def test_switch_config_diff_and_apply_use_deterministic_module_order() -> None:
         assert positions == sorted(positions), filename
 
 
-def test_switch_config_config_vars_example_uses_resource_schema() -> None:
-    readme = (ANSIBLE_DIR / "roles/switch_config/README.md").read_text()
-    example = readme.split("## Resource input contract", 1)[1].split("Supported resource groups", 1)[0]
-    assert "switch_config_resources:" in readme
+def test_operator_manual_switch_example_uses_resource_schema() -> None:
+    manual = (OPERATIONS_DIR / "01-switch.md").read_text()
+    example = manual.split("### `switch_config_resources` 结构", 1)[1].split("仓库拒绝", 1)[0]
+    assert "switch_config_resources:" in manual
     assert "state: merged" in example
     assert "config:" in example
     assert "switch_config_intent" not in example

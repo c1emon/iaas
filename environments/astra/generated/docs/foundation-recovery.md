@@ -36,13 +36,13 @@ Offline checks (`make foundation-check`) validate schema, references, restore or
 
 | Service | Host | Runtime | Tier | Required before K3s | Restore order | External dependency | Dependencies | Health check | Backup / restore | Break-glass | Notes |
 |---|---|---|---|---|---:|---|---|---|---|---|---|
-| opnsense | opnsense | appliance | critical | yes | 1 | no | - | http https://10.1.0.254 [200, 302, 401] | opnsense-config; runbook: docs/opnsense-management.md | local-console; access: UI + physical console; secret_ref: op://foundation/opnsense/local-admin | - |
-| truenas | truenas | appliance | critical | yes | 2 | no | opnsense | api https://10.1.0.210/api/v2.0.0/system/info [200] | truenas-config; runbook: docs/k3s-foundation-platform-design.md | local-console; access: UI + physical console; secret_ref: op://foundation/truenas/local-admin | - |
-| internal-dns | n100 | compose | critical | yes | 3 | no | opnsense | dns clemon.cis (A) via 10.50.0.15 -> 10.50.0.15 | smartdns-config; runbook: docs/k3s-foundation-platform-design.md | local-admin; access: SSH + console; secret_ref: op://foundation/smartdns/admin | - |
-| sing-box | rk3588 | systemd | critical | yes | 4 | no | opnsense, internal-dns | tcp 10.40.0.253:1080 | sing-box-config; runbook: docs/k3s-foundation-platform-design.md | local-admin; access: SSH + console; secret_ref: op://foundation/sing-box/admin | - |
-| harbor | n100 | compose | critical | yes | 5 | no | internal-dns, truenas | https https://10.50.0.15 [200, 302, 401] | harbor-data; runbook: docs/k3s-foundation-platform-design.md | local-admin; access: UI + SSH; secret_ref: op://foundation/harbor/admin | - |
-| external-databases | external-databases | external | critical | yes | 6 | yes | opnsense, internal-dns | tcp external-db.example.invalid:5432 | external-database; runbook: docs/k3s-foundation-platform-design.md | provider-console; access: ticketed support / local admin; secret_ref: ref:provider-managed | - |
-| authentik | n100 | compose | important | no | - | no | internal-dns | https https://10.50.0.15 [200, 302, 401] | authentik-config; runbook: docs/k3s-foundation-platform-design.md | local-admin; access: UI + console; secret_ref: op://foundation/authentik/admin | - |
+| opnsense | opnsense | appliance | critical | yes | 1 | no | - | http https://10.1.0.254 [200, 302, 401] | opnsense-config; runbook: docs/operations/02-opnsense.md | local-console; access: UI + physical console; secret_ref: op://foundation/opnsense/local-admin | - |
+| truenas | truenas | appliance | critical | yes | 2 | no | opnsense | api https://10.1.0.210/api/v2.0.0/system/info [200] | truenas-config; runbook: docs/operations/06-acceptance-and-recovery.md | local-console; access: UI + physical console; secret_ref: op://foundation/truenas/local-admin | - |
+| internal-dns | n100 | compose | critical | yes | 3 | no | opnsense | dns clemon.cis (A) via 10.50.0.15 -> 10.50.0.15 | smartdns-config; runbook: docs/operations/06-acceptance-and-recovery.md | local-admin; access: SSH + console; secret_ref: op://foundation/smartdns/admin | - |
+| sing-box | rk3588 | systemd | critical | yes | 4 | no | opnsense, internal-dns | tcp 10.40.0.253:1080 | sing-box-config; runbook: docs/operations/06-acceptance-and-recovery.md | local-admin; access: SSH + console; secret_ref: op://foundation/sing-box/admin | - |
+| harbor | n100 | compose | critical | yes | 5 | no | internal-dns, truenas | https https://10.50.0.15 [200, 302, 401] | harbor-data; runbook: docs/operations/06-acceptance-and-recovery.md | local-admin; access: UI + SSH; secret_ref: op://foundation/harbor/admin | - |
+| external-databases | external-databases | external | critical | yes | 6 | yes | opnsense, internal-dns | tcp external-db.example.invalid:5432 | external-database; runbook: docs/operations/06-acceptance-and-recovery.md | provider-console; access: ticketed support / local admin; secret_ref: ref:provider-managed | - |
+| authentik | n100 | compose | important | no | - | no | internal-dns | https https://10.50.0.15 [200, 302, 401] | authentik-config; runbook: docs/operations/06-acceptance-and-recovery.md | local-admin; access: UI + console; secret_ref: op://foundation/authentik/admin | - |
 
 ## Dependencies
 
@@ -72,13 +72,13 @@ Offline checks (`make foundation-check`) validate schema, references, restore or
 
 | Service | Profile | Runbook | Location | Tested |
 |---|---|---|---|---|
-| opnsense | opnsense-config | docs/opnsense-management.md | - | - |
-| truenas | truenas-config | docs/k3s-foundation-platform-design.md | - | - |
-| internal-dns | smartdns-config | docs/k3s-foundation-platform-design.md | - | - |
-| sing-box | sing-box-config | docs/k3s-foundation-platform-design.md | - | - |
-| harbor | harbor-data | docs/k3s-foundation-platform-design.md | - | - |
-| external-databases | external-database | docs/k3s-foundation-platform-design.md | - | - |
-| authentik | authentik-config | docs/k3s-foundation-platform-design.md | - | - |
+| opnsense | opnsense-config | docs/operations/02-opnsense.md | - | - |
+| truenas | truenas-config | docs/operations/06-acceptance-and-recovery.md | - | - |
+| internal-dns | smartdns-config | docs/operations/06-acceptance-and-recovery.md | - | - |
+| sing-box | sing-box-config | docs/operations/06-acceptance-and-recovery.md | - | - |
+| harbor | harbor-data | docs/operations/06-acceptance-and-recovery.md | - | - |
+| external-databases | external-database | docs/operations/06-acceptance-and-recovery.md | - | - |
+| authentik | authentik-config | docs/operations/06-acceptance-and-recovery.md | - | - |
 
 ## Break-glass metadata
 

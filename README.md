@@ -1,19 +1,25 @@
-# Astra Infrastructure Operator Manual
+# Astra Infrastructure Automation
 
-This repository separates one concrete environment from reusable automation.
-No real secrets, local state, or cache contents are committed.
+本仓库包含 Astra 环境声明与可复用基础设施自动化。完整的人类操作流程、参数解释、
+准入、变更和验收要求仅以
+[《Astra 基础设施操作手册》](docs/operations/README.md) 为准；不要从模块目录
+README、设计文档或历史 OpenSpec 记录拼接第二套操作步骤。
+
+不提交真实秘密、本地 state、cache、原始 export 或受保护 runtime 文件内容。
+
+## 安全起点
 
 ```bash
 uv sync --locked --dev
 make generate
 make check
+make secret-scan
 ```
 
-`make check` is offline-only. It validates generated outputs, tests, YAML,
-Python types, Ansible, OpenTofu shape, and OPNsense desired state. It neither
-contacts nor changes infrastructure.
+这些是离线安全门禁，不联系或改变 PVE、OPNsense、交换机、VM、Packer 或 K3s。
+真实环境操作必须从手册的对应章节开始。
 
-## Repository layers
+## 仓库层次
 
 - `environments/astra/` — Astra-owned inventory, Ansible data, runtime
   templates, OpenTofu root, and committed generated outputs.
@@ -23,7 +29,7 @@ contacts nor changes infrastructure.
   cluster platform capability is implemented here.
 - `tests/` — repository tests.
 
-## Astra sources and generated outputs
+## Astra 源与生成物
 
 | Source | Purpose |
 | --- | --- |
@@ -36,36 +42,9 @@ contacts nor changes infrastructure.
 Generated, reviewable non-secret artifacts are under
 `environments/astra/generated/{opentofu,ansible,packer,docs}/`.
 
-## Safety classes
+## 文档
 
-| Class | Examples |
-| --- | --- |
-| Offline-safe | `make generate`, `make check`, `make secret-scan`, `make pve-ansible-syntax` |
-| Online read-only | `make pve-health`, `make pve-preflight`, `make pve-verify-guests`, `make foundation-health` |
-| Mutation-capable | `make pve-plan`, `make pve-apply`, `make pve-destroy`, `make pve-packer-build`, Ansible management playbooks |
-
-## Runtime entrypoints
-
-Runtime templates are environment-owned:
-
-- `environments/astra/runtime/.env.pve-opentofu.tpl`
-- `environments/astra/runtime/.env.opnsense.tpl`
-- `environments/astra/runtime/.env.switch.tpl`
-
-For example:
-
-```bash
-op run --env-file environments/astra/runtime/.env.pve-opentofu.tpl -- make pve-health
-```
-
-Use the root Makefile as the supported operator facade. It passes the Astra
-source and generated paths explicitly to `iaas_automation`; old `scripts.*`
-imports and nested Makefiles are not supported.
-
-## Documentation
-
-- [Documentation index](docs/README.md)
-- [PVE state, cache, and secret handling](docs/pve-state-cache-secrets.md)
-- [Astra OpenTofu root](environments/astra/opentofu/pve/README.md)
-- [Reusable Ansible automation](automation/ansible/README.md)
-- [Future platform boundary](platform/README.md)
+- [唯一操作手册](docs/operations/README.md)
+- [文档索引与架构/历史背景](docs/README.md)
+- [可复用自动化实现边界](automation/README.md)
+- [未来 in-cluster platform 边界](platform/README.md)

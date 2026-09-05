@@ -50,7 +50,7 @@ foundation_services:
       expected_status: [200, 302, 401]
     backup_restore:
       profile: opnsense-config
-      restore_runbook: docs/opnsense-management.md
+      restore_runbook: docs/operations/02-opnsense.md
     break_glass:
       method: local-console
       access_path: UI + physical console
@@ -71,7 +71,7 @@ foundation_services:
       expected_status: [200]
     backup_restore:
       profile: truenas-config
-      restore_runbook: docs/k3s-foundation-platform-design.md
+      restore_runbook: docs/operations/06-acceptance-and-recovery.md
     break_glass:
       method: local-console
       access_path: UI + physical console
@@ -92,7 +92,7 @@ foundation_services:
       expected_answer: 10.50.0.15
     backup_restore:
       profile: smartdns-config
-      restore_runbook: docs/k3s-foundation-platform-design.md
+      restore_runbook: docs/operations/06-acceptance-and-recovery.md
     break_glass:
       method: local-admin
       access_path: SSH + console
@@ -110,7 +110,7 @@ foundation_services:
       target: 10.40.0.253:1080
     backup_restore:
       profile: sing-box-config
-      restore_runbook: docs/k3s-foundation-platform-design.md
+      restore_runbook: docs/operations/06-acceptance-and-recovery.md
     break_glass:
       method: local-admin
       access_path: SSH + console
@@ -129,7 +129,7 @@ foundation_services:
       expected_status: [200, 302, 401]
     backup_restore:
       profile: harbor-data
-      restore_runbook: docs/k3s-foundation-platform-design.md
+      restore_runbook: docs/operations/06-acceptance-and-recovery.md
     break_glass:
       method: local-admin
       access_path: UI + SSH
@@ -148,7 +148,7 @@ foundation_services:
       target: external-db.example.invalid:5432
     backup_restore:
       profile: external-database
-      restore_runbook: docs/k3s-foundation-platform-design.md
+      restore_runbook: docs/operations/06-acceptance-and-recovery.md
     break_glass:
       method: provider-console
       access_path: ticketed support / local admin
@@ -166,7 +166,7 @@ foundation_services:
       expected_status: [200, 302, 401]
     backup_restore:
       profile: authentik-config
-      restore_runbook: docs/k3s-foundation-platform-design.md
+      restore_runbook: docs/operations/06-acceptance-and-recovery.md
     break_glass:
       method: local-admin
       access_path: UI + console

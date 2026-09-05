@@ -39,7 +39,7 @@ def test_valid_foundation_inventory_renders_expected_document() -> None:
     assert "1. opnsense" in markdown
     assert "6. external-databases" in markdown
     assert "| n100 | bare-metal | 10.1.0.15 | 10.50.0.15 | yes |" in markdown
-    assert "| authentik | n100 | compose | important | no | - | no | internal-dns | https https://10.50.0.15 [200, 302, 401] | authentik-config; runbook: docs/k3s-foundation-platform-design.md" in markdown
+    assert "| authentik | n100 | compose | important | no | - | no | internal-dns | https https://10.50.0.15 [200, 302, 401] | authentik-config; runbook: docs/operations/06-acceptance-and-recovery.md" in markdown
     assert "accepted single point of failure" in markdown
     assert "Only VM-based K3s nodes may access the storage VLAN" in markdown
 

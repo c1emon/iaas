@@ -1,5 +1,8 @@
 # K3s application platform and foundation services design
 
+这是架构设计而非操作手册。当前可执行操作、参数、证据边界与未实现项以
+[《Astra 基础设施操作手册》](operations/README.md) 为准。
+
 This document records the current design direction for the future application
 platform and the external foundation services that support it. It is an
 architecture design note, not an implementation plan.

@@ -191,7 +191,7 @@ This preserves the spec requirement that generated OpenTofu input is reviewable 
 
 The operator-facing runbook for local state ownership, backup/restore, ignored
 cache paths, generated-output sensitivity, and 1Password runtime secret
-injection is `docs/pve-state-cache-secrets.md`.
+injection is described in `docs/operations/00-preparation-and-conventions.md`.
 
 ### 1Password field lookup rules
 

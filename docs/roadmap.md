@@ -69,7 +69,7 @@ archived OpenSpec changes.
 |---|---|
 | PVE automation foundation, inventory validation, validation entrypoints, and reliability milestone. | `openspec/changes/archive/2026-06-22-add-pve-automation-foundation/`, `openspec/changes/archive/2026-06-22-split-pve-inventory-validation/`, `openspec/changes/archive/2026-06-23-add-iaas-validation-entrypoints/`, `openspec/changes/archive/2026-06-23-complete-p0-iaas-reliability/` |
 | PVE online safety rails and runtime verification. | `openspec/changes/archive/2026-06-24-add-pve-online-preflight/`, `openspec/changes/archive/2026-06-26-add-pve-guest-verification/` |
-| PVE rolling maintenance procedure. | [`docs/runbooks/pve-rolling-maintenance.md`](runbooks/pve-rolling-maintenance.md), `openspec/changes/archive/2026-08-25-add-pve-rolling-maintenance-runbook/` |
+| PVE rolling maintenance procedure. | [`docs/operations/03-pve.md`](operations/03-pve.md), `openspec/changes/archive/2026-08-25-add-pve-rolling-maintenance-runbook/` |
 | PVE protected/unprotected VM resource parity guard. | `openspec/changes/archive/2026-08-25-guard-pve-cloudinit-vm-resource-parity/`, `tests/python/test_pve_cloudinit_vm_resource_parity.py` |
 | OPNsense desired-state validation admission gate. | `openspec/changes/archive/2026-08-25-validate-opnsense-mutation-inputs/`, `make opnsense-validate` |
 | PVE implementation/package maintenance and adapter consolidation. | `openspec/changes/archive/2026-06-28-consolidate-pve-api-runtime-adapters/`, `openspec/changes/archive/2026-06-28-reorganize-pve-health-check-packages/`, `openspec/changes/archive/2026-06-28-reorganize-pve-inventory-packages/`, `openspec/changes/archive/2026-06-28-reorganize-pve-cloud-init-packages/`, `openspec/changes/archive/2026-06-28-extract-python-common-primitives/` |

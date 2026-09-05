@@ -1,4 +1,8 @@
-# Astra Homelab 架构清单
+# Astra Homelab 架构参考
+
+本页保存环境拓扑与历史事实参考，不是操作步骤来源。交换机、OPNsense、PVE、VM
+与 K3s 的当前操作、参数和验收以
+[《Astra 基础设施操作手册》](operations/README.md) 为准。
 
 > 本文基于已恢复的历史架构记录和当前 OPNsense 只读导出结果重建。实际配置以当前设备导出为准；旧规划中与当前事实不一致的部分已在“待确认”处标注。
 
