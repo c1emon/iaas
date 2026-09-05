@@ -1,0 +1,157 @@
+---
+- name: Ensure role-owned APT keyring directory exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: vm_baseline_egress_model.keyrings | selectattr('kind', 'equalto', 'role_managed') | list | length > 0
+
+- name: Install verified role-managed APT keyrings atomically
+  ansible.builtin.copy:
+    src: "{{ vm_baseline_egress_keyring.artifact }}"
+    dest: "{{ vm_baseline_egress_keyring.managed_path }}"
+    checksum: "{{ vm_baseline_egress_keyring.sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ vm_baseline_egress_model.keyrings | selectattr('kind', 'equalto', 'role_managed') | list }}"
+  loop_control:
+    loop_var: vm_baseline_egress_keyring
+    label: "{{ vm_baseline_egress_keyring.id }}"
+
+- name: Install verified custom CA files
+  ansible.builtin.copy:
+    src: "{{ vm_baseline_egress_ca.artifact }}"
+    dest: "{{ vm_baseline_egress_ca.path }}"
+    checksum: "{{ vm_baseline_egress_ca.sha256 }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: vm_baseline_egress_ca_copies
+  loop: "{{ vm_baseline_egress_model.custom_cas }}"
+  loop_control:
+    loop_var: vm_baseline_egress_ca
+    label: "{{ vm_baseline_egress_ca.id }}"
+
+- name: Refresh system trust after a managed custom CA changes
+  ansible.builtin.command:
+    argv: [update-ca-certificates]
+  when: vm_baseline_egress_ca_copies.results | default([]) | selectattr('changed') | list | length > 0
+  changed_when: true
+
+- name: Render role-owned deb822 APT sources
+  ansible.builtin.template:
+    src: egress-source.sources.j2
+    dest: "{{ vm_baseline_egress_source.path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: vm_baseline_egress_source_renders
+  loop: "{{ vm_baseline_egress_model.sources }}"
+  loop_control:
+    loop_var: vm_baseline_egress_source
+    label: "{{ vm_baseline_egress_source.id }}"
+
+- name: Render scoped role-owned APT proxy policy
+  ansible.builtin.template:
+    src: egress-proxy.conf.j2
+    dest: "{{ vm_baseline_egress_model.proxy_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: vm_baseline_egress_proxy_render
+  when: vm_baseline_egress_model.proxy.mode == 'proxy'
+  no_log: true
+
+- name: Remove role-owned APT proxy policy in direct mode
+  ansible.builtin.file:
+    path: "{{ vm_baseline_egress_model.proxy_path }}"
+    state: absent
+  register: vm_baseline_egress_proxy_remove
+  when: vm_baseline_egress_model.proxy.mode == 'direct'
+
+- name: Render protected role-owned APT authentication policy
+  ansible.builtin.template:
+    src: egress-auth.conf.j2
+    dest: "{{ vm_baseline_egress_model.auth_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  register: vm_baseline_egress_auth_render
+  when: vm_baseline_egress_model.proxy.secret_ref is defined
+  no_log: true
+
+- name: Remove role-owned APT authentication policy when no credential is declared
+  ansible.builtin.file:
+    path: "{{ vm_baseline_egress_model.auth_path }}"
+    state: absent
+  register: vm_baseline_egress_auth_remove
+  when: vm_baseline_egress_model.proxy.secret_ref is not defined
+
+- name: Record whether baseline egress changed APT metadata inputs
+  ansible.builtin.set_fact:
+    vm_baseline_egress_apt_metadata_changed: >-
+      {{ (vm_baseline_egress_source_renders.results | default([]) | selectattr('changed') | list | length > 0)
+         or (vm_baseline_egress_proxy_render.changed | default(false))
+         or (vm_baseline_egress_proxy_remove.changed | default(false))
+         or (vm_baseline_egress_auth_render.changed | default(false))
+         or (vm_baseline_egress_auth_remove.changed | default(false)) }}
+  changed_when: false
+
+- name: Render optional non-secret global shell proxy policy
+  ansible.builtin.template:
+    src: egress-shell-proxy.sh.j2
+    dest: "{{ vm_baseline_egress_model.shell_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: vm_baseline_egress_model.shell_proxy.enabled
+
+- name: Remove disabled role-owned global shell proxy policy
+  ansible.builtin.file:
+    path: "{{ vm_baseline_egress_model.shell_path }}"
+    state: absent
+  when: not vm_baseline_egress_model.shell_proxy.enabled
+
+- name: Ensure role-owned Git configuration directory exists
+  ansible.builtin.file:
+    path: /etc/gitconfig.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: vm_baseline_egress_model.git_proxy.enabled
+
+- name: Render optional non-secret global Git proxy policy
+  ansible.builtin.template:
+    src: egress-git-proxy.conf.j2
+    dest: "{{ vm_baseline_egress_model.git_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: vm_baseline_egress_git_proxy_render
+  when: vm_baseline_egress_model.git_proxy.enabled
+
+- name: Include the role-owned Git proxy policy without installing Git
+  ansible.builtin.command:
+    argv: [git, config, --system, --replace-all, include.path, "{{ vm_baseline_egress_model.git_path }}"]
+  when: vm_baseline_egress_model.git_proxy.enabled and vm_baseline_egress_git_proxy_render.changed
+  changed_when: true
+
+- name: Remove disabled role-owned global Git proxy policy
+  ansible.builtin.file:
+    path: "{{ vm_baseline_egress_model.git_path }}"
+    state: absent
+  register: vm_baseline_egress_git_proxy_remove
+  when: not vm_baseline_egress_model.git_proxy.enabled
+
+- name: Remove disabled role-owned Git proxy include
+  ansible.builtin.command:
+    argv: [git, config, --system, --unset-all, include.path, "{{ vm_baseline_egress_model.git_path }}"]
+  when:
+    - not vm_baseline_egress_model.git_proxy.enabled
+    - vm_baseline_egress_git_proxy_remove.changed
+  changed_when: true
+  failed_when: false

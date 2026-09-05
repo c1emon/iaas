@@ -1,0 +1,30 @@
+---
+vm_baseline_egress_policy:
+  state: present
+  keyrings:
+    - id: synthetic-repo
+      kind: role_managed
+      artifact: /synthetic/controller/repo.gpg
+      sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  custom_cas:
+    - id: synthetic-ca
+      artifact: /synthetic/controller/ca.crt
+      sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  sources:
+    - id: synthetic-repo
+      uri: https://packages.synthetic.invalid
+      suites: [stable]
+      components: [main]
+      keyring: synthetic-repo
+  proxy:
+    mode: proxy
+    endpoint: http://proxy.synthetic.invalid:8080
+    secret_ref: op://synthetic/baseline-egress/apt-auth
+  extra_bypass: [.svc.synthetic.invalid]
+  exclusive_sources: false
+  shell_proxy:
+    enabled: true
+    endpoint: http://proxy.synthetic.invalid:8080
+  git_proxy:
+    enabled: true
+    endpoint: http://proxy.synthetic.invalid:8080

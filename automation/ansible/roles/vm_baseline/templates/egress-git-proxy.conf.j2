@@ -1,0 +1,5 @@
+[http]
+	proxy = {{ vm_baseline_egress_model.git_proxy.endpoint }}
+	noProxy = {{ vm_baseline_egress_model.tool_bypass | join(',') }}
+[https]
+	proxy = {{ vm_baseline_egress_model.git_proxy.endpoint }}

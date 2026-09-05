@@ -9,6 +9,6 @@
   ansible.builtin.apt:
     name: "{{ vm_baseline_packages_to_install }}"
     state: present
-    update_cache: "{{ vm_baseline_update_cache }}"
+    update_cache: "{{ vm_baseline_update_cache or (vm_baseline_egress_apt_metadata_changed | default(false)) }}"
     cache_valid_time: "{{ vm_baseline_cache_valid_time }}"
   when: vm_baseline_packages_to_install | length > 0

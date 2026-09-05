@@ -1,0 +1,12 @@
+---
+vm_baseline_egress_policy:
+  state: absent
+  keyrings:
+    - id: synthetic-repo
+      kind: role_managed
+  custom_cas:
+    - id: synthetic-ca
+  sources:
+    - id: synthetic-repo
+  proxy:
+    mode: direct
