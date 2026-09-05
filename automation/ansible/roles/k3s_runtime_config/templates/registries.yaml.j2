@@ -1,0 +1,34 @@
+---
+mirrors:
+{% for mirror in k3s_runtime_model.cluster.registry.mirrors %}
+  {{ mirror.registry | to_json }}:
+    endpoint:
+      - {{ mirror.endpoint | to_json }}
+{% if mirror.rewrites | length > 0 %}
+    rewrite:
+{% for pattern, replacement in mirror.rewrites.items() %}
+      {{ pattern | to_json }}: {{ replacement | to_json }}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% if k3s_runtime_model.cluster.registry.mirrors | length > 0 %}
+configs:
+{% for mirror in k3s_runtime_model.cluster.registry.mirrors %}
+  {{ mirror.registry | to_json }}:
+{% if mirror.auth_ref is defined and mirror.auth_ref %}
+    auth:
+      username: {{ k3s_runtime_registry_credentials[mirror.auth_ref].username | to_json }}
+      password: {{ k3s_runtime_registry_credentials[mirror.auth_ref].password | to_json }}
+{% endif %}
+{% if (mirror.ca_ref is defined and mirror.ca_ref) or (mirror.client_cert_ref is defined and mirror.client_cert_ref) %}
+    tls:
+{% if mirror.ca_ref is defined and mirror.ca_ref %}
+      ca_file: {{ k3s_runtime_tls_files[mirror.ca_ref] | to_json }}
+{% endif %}
+{% if mirror.client_cert_ref is defined and mirror.client_cert_ref %}
+      cert_file: {{ k3s_runtime_tls_files[mirror.client_cert_ref] | to_json }}
+      key_file: {{ k3s_runtime_tls_files[mirror.client_key_ref] | to_json }}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% endif %}

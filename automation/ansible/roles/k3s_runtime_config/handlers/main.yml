@@ -1,0 +1,9 @@
+---
+- name: Restart K3s runtime service
+  ansible.builtin.systemd:
+    name: "{{ k3s_runtime_service_name }}"
+    state: restarted
+    daemon_reload: true
+  when: k3s_runtime_restart_services | bool
+  no_log: true
+  diff: false

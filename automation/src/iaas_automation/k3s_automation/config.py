@@ -232,7 +232,7 @@ def _compose_node(
     return composed, _host_networks(host, f"inventory host {vm_ref}")
 
 
-def _validate_artifacts(value: Any, architectures: set[str]) -> dict[str, Any]:
+def _validate_artifacts(value: Any, architectures: set[str], version: str) -> dict[str, Any]:
     artifacts = as_mapping(value, "cluster.artifacts")
     require(set(artifacts) == architectures, f"cluster.artifacts: must contain exactly {', '.join(sorted(architectures))}")
     normalized: dict[str, Any] = {}
@@ -242,8 +242,13 @@ def _validate_artifacts(value: Any, architectures: set[str]) -> dict[str, Any]:
         require_unknown_keys(artifact, {"url", "sha256", "proxy_url", "credential_ref"}, context)
         proxy_url = artifact.get("proxy_url")
         credential_ref = artifact.get("credential_ref")
+        url = _url(artifact.get("url"), f"{context}.url", https_only=True)
+        require(
+            f"/{version}/" in urlsplit(url).path,
+            f"{context}.url: must contain the exact cluster.version as a path segment",
+        )
         normalized[architecture] = {
-            "url": _url(artifact.get("url"), f"{context}.url", https_only=True),
+            "url": url,
             "sha256": _sha256(artifact.get("sha256"), f"{context}.sha256"),
             "proxy_url": _url(proxy_url, f"{context}.proxy_url", https_only=False) if proxy_url is not None else None,
             "credential_ref": _secret_ref(credential_ref, f"{context}.credential_ref") if credential_ref is not None else None,
@@ -519,9 +524,9 @@ def build_composed_model(intent_doc: dict[str, Any], inventory_doc: dict[str, An
         endpoint = {"mode": mode, "address": address, "tls_sans": [address]}
 
     architectures = {node["architecture"] for node in nodes}
-    artifacts = _validate_artifacts(cluster.get("artifacts"), architectures)
     components = _validate_components(cluster.get("components"))
     registry, registry_hosts = _validate_registry(cluster.get("registry"), version)
+    artifacts = _validate_artifacts(cluster.get("artifacts"), architectures, version)
     service_proxy, extra_no_proxy = _validate_service_proxy(cluster.get("service_proxy"))
     no_proxy = {
         "localhost",

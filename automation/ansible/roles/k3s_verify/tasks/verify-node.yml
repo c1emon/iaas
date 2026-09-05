@@ -1,0 +1,110 @@
+---
+- name: Reset the observed node selection
+  ansible.builtin.set_fact:
+    k3s_verify_observed_node: {}
+  changed_when: false
+
+- name: Select the declared node from the API response
+  ansible.builtin.set_fact:
+    k3s_verify_observed_node: "{{ k3s_api_node }}"
+  vars:
+    k3s_api_node_name: "{{ k3s_api_node.metadata.name | default(k3s_api_node.name | default('')) }}"
+  loop: "{{ k3s_verify_node_items }}"
+  loop_control:
+    loop_var: k3s_api_node
+  when: k3s_api_node_name == k3s_expected_node.vm_ref
+  changed_when: false
+
+- name: Normalize observed role, version, and conditions
+  ansible.builtin.set_fact:
+    k3s_verify_observed_labels: "{{ k3s_verify_observed_node.metadata.labels | default({}) }}"
+    k3s_verify_observed_role: >-
+      {{ k3s_verify_observed_node.role
+         | default('server' if (
+             'node-role.kubernetes.io/control-plane' in (k3s_verify_observed_node.metadata.labels | default({}))
+             or 'node-role.kubernetes.io/master' in (k3s_verify_observed_node.metadata.labels | default({}))
+           ) else 'agent') }}
+    k3s_verify_observed_version: >-
+      {{ k3s_verify_observed_node.version
+         | default(k3s_verify_observed_node.status.nodeInfo.kubeletVersion | default('')) }}
+    k3s_verify_observed_conditions: >-
+      {{ k3s_verify_observed_node.conditions
+         | default(k3s_verify_observed_node.status.conditions | default([])) }}
+  changed_when: false
+
+- name: Select the observed Ready condition
+  ansible.builtin.set_fact:
+    k3s_verify_ready_condition: "{{ k3s_condition }}"
+  loop: "{{ k3s_verify_observed_conditions }}"
+  loop_control:
+    loop_var: k3s_condition
+  when: k3s_condition.type | default('') == 'Ready'
+  changed_when: false
+
+- name: Record node registration
+  ansible.builtin.set_fact:
+    k3s_verify_results: "{{ k3s_verify_results + [k3s_verify_registration_result] }}"
+  vars:
+    k3s_verify_registered: "{{ k3s_verify_observed_node | length > 0 }}"
+    k3s_verify_registration_result:
+      severity: "{{ 'PASS' if k3s_verify_registered else 'FAIL' }}"
+      line: >-
+        {{ 'PASS' if k3s_verify_registered else 'FAIL' }} verify.{{ k3s_expected_node.vm_ref }}.registration:
+        declared node {{ 'is registered' if k3s_verify_registered else 'is not registered' }}
+  changed_when: false
+
+- name: Record node role
+  ansible.builtin.set_fact:
+    k3s_verify_results: "{{ k3s_verify_results + [k3s_verify_role_result] }}"
+  vars:
+    k3s_verify_role_ok: >-
+      {{ k3s_verify_observed_node | length > 0
+         and k3s_verify_observed_role == k3s_expected_node.role }}
+    k3s_verify_role_result:
+      severity: "{{ 'PASS' if k3s_verify_role_ok else 'FAIL' }}"
+      line: >-
+        {{ 'PASS' if k3s_verify_role_ok else 'FAIL' }} verify.{{ k3s_expected_node.vm_ref }}.role:
+        expected {{ k3s_expected_node.role }}, observed {{ k3s_verify_observed_role }}
+  changed_when: false
+
+- name: Record node version
+  ansible.builtin.set_fact:
+    k3s_verify_results: "{{ k3s_verify_results + [k3s_verify_version_result] }}"
+  vars:
+    k3s_verify_version_ok: >-
+      {{ k3s_verify_observed_node | length > 0
+         and k3s_verify_observed_version == k3s_model.cluster.version }}
+    k3s_verify_version_result:
+      severity: "{{ 'PASS' if k3s_verify_version_ok else 'FAIL' }}"
+      line: >-
+        {{ 'PASS' if k3s_verify_version_ok else 'FAIL' }} verify.{{ k3s_expected_node.vm_ref }}.version:
+        expected {{ k3s_model.cluster.version }}, observed {{ k3s_verify_observed_version | default('unknown') }}
+  changed_when: false
+
+- name: Record node readiness, allowing only the expected external-CNI bootstrap state
+  ansible.builtin.set_fact:
+    k3s_verify_results: "{{ k3s_verify_results + [k3s_verify_readiness_result] }}"
+  vars:
+    k3s_verify_ready_status: "{{ k3s_verify_ready_condition.status | default('') }}"
+    k3s_verify_ready_reason: "{{ k3s_verify_ready_condition.reason | default('') | lower }}"
+    k3s_verify_ready_message: "{{ k3s_verify_ready_condition.message | default('') | lower }}"
+    k3s_verify_blocking_conditions: >-
+      {{ k3s_verify_observed_conditions
+         | selectattr('status', 'equalto', 'True')
+         | rejectattr('type', 'equalto', 'Ready')
+         | map(attribute='type') | list }}
+    k3s_verify_cni_bootstrap: >-
+      {{ k3s_verify_ready_status != 'True'
+         and k3s_verify_ready_reason == 'networkpluginnotready'
+         and (k3s_verify_ready_message is regex('(^|[^a-z])cni plugin not initialized([^a-z]|$)'))
+         and k3s_verify_blocking_conditions | length == 0 }}
+    k3s_verify_ready_ok: "{{ k3s_verify_ready_status == 'True' }}"
+    k3s_verify_readiness_result:
+      severity: "{{ 'PASS' if k3s_verify_ready_ok else ('WARN' if k3s_verify_cni_bootstrap else 'FAIL') }}"
+      line: >-
+        {{ 'PASS' if k3s_verify_ready_ok else ('WARN' if k3s_verify_cni_bootstrap else 'FAIL') }}
+        verify.{{ k3s_expected_node.vm_ref }}.readiness:
+        {{ 'node is Ready' if k3s_verify_ready_ok else
+           ('expected CNI-not-initialized bootstrap state; complete readiness is deferred'
+            if k3s_verify_cni_bootstrap else 'node readiness is not acceptable') }}
+  changed_when: false

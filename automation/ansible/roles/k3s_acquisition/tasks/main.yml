@@ -1,0 +1,41 @@
+---
+- name: Require one composed node and cluster artifact map
+  ansible.builtin.assert:
+    that:
+      - k3s_acquisition_model_node is mapping
+      - k3s_acquisition_model_node.architecture | default('') | length > 0
+      - k3s_acquisition_cluster is mapping
+      - k3s_acquisition_cluster.artifacts is mapping
+      - k3s_acquisition_cluster.version | default('') | length > 0
+    fail_msg: "K3s acquisition requires validated composed node and cluster facts"
+  changed_when: false
+
+- name: Select the architecture-bound pinned artifact
+  ansible.builtin.set_fact:
+    k3s_acquisition_artifact: >-
+      {{ k3s_acquisition_cluster.artifacts[k3s_acquisition_model_node.architecture]
+         | default({}) }}
+  changed_when: false
+
+- name: Require a pinned URL and SHA-256 for the derived architecture
+  ansible.builtin.assert:
+    that:
+      - k3s_acquisition_artifact.url | default('') is match('^https://')
+      - k3s_acquisition_artifact.sha256 | default('') is match('^[a-f0-9]{64}$')
+    fail_msg: >-
+      K3s acquisition artifact for the derived node architecture must have an HTTPS URL
+      and exact SHA-256 checksum
+  changed_when: false
+
+- name: Acquire the exact pinned K3s executable
+  ansible.builtin.get_url:
+    url: "{{ k3s_acquisition_artifact.url }}"
+    dest: "{{ k3s_acquisition_binary_path }}"
+    checksum: "sha256:{{ k3s_acquisition_artifact.sha256 }}"
+    owner: root
+    group: root
+    mode: "0755"
+  environment:
+    https_proxy: "{{ k3s_acquisition_runtime_proxy }}"
+    HTTPS_PROXY: "{{ k3s_acquisition_runtime_proxy }}"
+  no_log: true

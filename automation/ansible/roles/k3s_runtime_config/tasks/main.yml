@@ -1,0 +1,101 @@
+---
+- name: Validate the composed K3s runtime model
+  ansible.builtin.assert:
+    that:
+      - k3s_runtime_model is mapping
+      - k3s_runtime_model.schema_version | default(0) | int == 1
+      - k3s_runtime_model.cluster is mapping
+      - k3s_runtime_node is mapping
+      - k3s_runtime_node.vm_ref is defined
+      - k3s_runtime_node.role in ['server', 'agent']
+      - k3s_runtime_state in ['present', 'absent']
+    fail_msg: k3s_runtime_config requires a validated composed model and node
+  changed_when: false
+  no_log: true
+
+- name: Validate runtime-injected registry and proxy material
+  ansible.builtin.assert:
+    that:
+      - k3s_runtime_registry_credentials is mapping
+      - k3s_runtime_proxy_credentials is mapping
+      - k3s_runtime_tls_files is mapping
+      - >-
+        (k3s_runtime_model.cluster.registry.mirrors
+         | map(attribute='auth_ref') | select | list
+         | difference(k3s_runtime_registry_credentials.keys() | list) | length) == 0
+      - >-
+        (k3s_runtime_model.cluster.registry.mirrors
+         | map(attribute='ca_ref') | select | list
+         | union(k3s_runtime_model.cluster.registry.mirrors
+                | map(attribute='client_cert_ref') | select | list)
+         | union(k3s_runtime_model.cluster.registry.mirrors
+                | map(attribute='client_key_ref') | select | list)
+         | difference(k3s_runtime_tls_files.keys() | list) | length) == 0
+      - >-
+        ([(k3s_runtime_model.cluster.service_proxy.credential_ref | default(''))]
+         | difference([''])
+         | difference(k3s_runtime_proxy_credentials.keys() | list) | length) == 0
+    fail_msg: runtime registry, proxy, or TLS references are not fully injected
+  when: k3s_runtime_state == 'present'
+  changed_when: false
+  no_log: true
+
+- name: Ensure K3s runtime configuration directory exists
+  ansible.builtin.file:
+    path: "{{ k3s_runtime_config_dir }}"
+    state: directory
+    owner: "{{ k3s_runtime_owner }}"
+    group: "{{ k3s_runtime_group }}"
+    mode: '0750'
+  when: k3s_runtime_state == 'present'
+  no_log: true
+  diff: false
+
+- name: Render role-owned K3s configuration
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ k3s_runtime_config_path }}"
+    owner: "{{ k3s_runtime_owner }}"
+    group: "{{ k3s_runtime_group }}"
+    mode: '0600'
+  when: k3s_runtime_state == 'present'
+  notify: Restart K3s runtime service
+  no_log: true
+  diff: false
+
+- name: Render role-owned containerd registry configuration
+  ansible.builtin.template:
+    src: registries.yaml.j2
+    dest: "{{ k3s_runtime_registries_path }}"
+    owner: "{{ k3s_runtime_owner }}"
+    group: "{{ k3s_runtime_group }}"
+    mode: '0600'
+  when: k3s_runtime_state == 'present'
+  notify: Restart K3s runtime service
+  no_log: true
+  diff: false
+
+- name: Render role-owned K3s systemd proxy environment
+  ansible.builtin.template:
+    src: systemd-env.j2
+    dest: "{{ k3s_runtime_service_env_path }}"
+    owner: "{{ k3s_runtime_owner }}"
+    group: "{{ k3s_runtime_group }}"
+    mode: '0600'
+  when: k3s_runtime_state == 'present'
+  notify: Restart K3s runtime service
+  no_log: true
+  diff: false
+
+- name: Retire role-owned K3s runtime files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ k3s_runtime_config_path }}"
+    - "{{ k3s_runtime_registries_path }}"
+    - "{{ k3s_runtime_service_env_path }}"
+  when: k3s_runtime_state == 'absent'
+  notify: Restart K3s runtime service
+  no_log: true
+  diff: false

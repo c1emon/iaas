@@ -254,6 +254,16 @@ def test_artifact_url_rejects_invalid_or_secret_bearing_forms(url: str) -> None:
         build_composed_model(intent, inventory)
 
 
+def test_artifact_url_must_use_the_exact_declared_k3s_version_path() -> None:
+    intent, inventory = valid_documents()
+    intent["cluster"]["artifacts"]["amd64"]["url"] = (
+        "https://artifacts.synthetic.invalid/k3s/v1.34.9+k3s1/amd64/k3s"
+    )
+
+    with pytest.raises(ValidationError, match="exact cluster.version"):
+        build_composed_model(intent, inventory)
+
+
 def test_registry_name_and_rewrite_regex_are_validated() -> None:
     intent, inventory = valid_documents()
     intent["cluster"]["registry"]["mirrors"][0]["registry"] = "https://docker.io"

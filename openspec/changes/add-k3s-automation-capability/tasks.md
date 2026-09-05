@@ -13,7 +13,7 @@
 
 ## 3. Controlled deployment
 
-- [ ] 3.1 Add a K3s prerequisite role separate from `vm_baseline`; verify idempotent tasks cover only declared Debian K3s host prerequisites.
+- [x] 3.1 Add a K3s prerequisite role separate from `vm_baseline`; verify idempotent tasks cover only declared Debian K3s host prerequisites.
 - [ ] 3.2 Add pinned K3s artifact acquisition using the same resolved endpoint and action-scoped proxy/authentication path as preflight, with integrity verification and no unpinned remote installer execution; verify wrong versions, missing checksums/secrets, path mismatch, and checksum mismatch fail before installation.
 - [ ] 3.3 Add server and agent configuration roles using the node-network-role-derived IP and server advertise address, automatically derived fixed-endpoint TLS SANs, separate external-CNI and packaged-component policy, restrictive secret-file permissions, and redacted task output; verify rendered-config and secret-leak tests pass.
 - [ ] 3.4 Render K3s/containerd `registries.yaml`, fallback-deny K3s setting, verified TLS files, and server/agent systemd proxy environment before first service start; derive bounded loopback/node/cluster-domain/API/registry `NO_PROXY`, inject authentication at runtime, and verify mirror failure cannot reach upstream when denied, unchanged policy causes no restart, and changed or retired policy uses health-gated serial restart while removing only role-owned files.
@@ -23,7 +23,7 @@
 
 ## 4. Verification and day-two operations
 
-- [ ] 4.1 Add read-only bootstrap verification for API reachability, declared node registration, role, version, embedded-etcd health, and core service state; verify only expected CNI-not-initialized status is tolerated and all other readiness failures remain blocking.
+- [x] 4.1 Add read-only bootstrap verification for API reachability, declared node registration, role, version, embedded-etcd health, and core service state; verify only expected CNI-not-initialized status is tolerated and all other readiness failures remain blocking.
 - [ ] 4.2 Add an explicit embedded-etcd snapshot workflow targeting the single configured source server; verify server/etcd health, token-free output, deterministic naming, root-only node-local storage, no automatic deletion, and no controller/repository copy or restore-readiness claim.
 - [ ] 4.3 Add a resumable serial whole-cluster controlled-upgrade workflow that rejects partial/implicit scopes, downgrade, skipped-minor, and unsupported mixed-version transitions; reruns same-model/scope preflight; creates a same-invocation snapshot; health-verifies and skips nodes already at the exact target; upgrades remaining servers then agents one at a time; and verifies API/etcd or node/service state after each node; verify one representative interruption/retry path and stop-on-failure behavior.
 - [ ] 4.4 Keep restore, snapshot retention/deletion, uninstall, datastore replacement, and destructive node removal absent; verify the first-version command surface exposes no executable path and documentation points to separate recovery design.

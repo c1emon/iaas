@@ -1,0 +1,3 @@
+---
+k3s_acquisition_binary_path: /usr/local/bin/k3s
+k3s_acquisition_runtime_proxy: ""

@@ -1,0 +1,17 @@
+# Managed by k3s_runtime_config. Do not edit on the node.
+{% set proxy = k3s_runtime_model.cluster.service_proxy %}
+{% if proxy.state == 'present' %}
+{% if proxy.credential_ref is defined and proxy.credential_ref %}
+{% set credentials = k3s_runtime_proxy_credentials[proxy.credential_ref] %}
+HTTP_PROXY={{ ('http://' ~ credentials.username ~ ':' ~ credentials.password ~ '@' ~ (proxy.url | regex_replace('^[^:]+://', ''))) | to_json }}
+HTTPS_PROXY={{ ('http://' ~ credentials.username ~ ':' ~ credentials.password ~ '@' ~ (proxy.url | regex_replace('^[^:]+://', ''))) | to_json }}
+{% else %}
+HTTP_PROXY={{ proxy.url | to_json }}
+HTTPS_PROXY={{ proxy.url | to_json }}
+{% endif %}
+NO_PROXY={{ (proxy.no_proxy | join(',')) | to_json }}
+{% else %}
+HTTP_PROXY=""
+HTTPS_PROXY=""
+NO_PROXY={{ (proxy.no_proxy | join(',')) | to_json }}
+{% endif %}
