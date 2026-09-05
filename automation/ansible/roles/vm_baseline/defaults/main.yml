@@ -4,6 +4,8 @@ vm_baseline_time_sync_packages: []
 
 vm_baseline_update_cache: false
 vm_baseline_cache_valid_time: 3600
+vm_baseline_egress_policy: {}
+vm_baseline_egress_runtime_secret_file: ""
 
 vm_baseline_services: []
 

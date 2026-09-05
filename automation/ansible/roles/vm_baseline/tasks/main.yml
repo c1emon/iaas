@@ -1,4 +1,8 @@
 ---
+- name: Validate and converge optional baseline egress policy
+  ansible.builtin.import_tasks: egress.yml
+  when: vm_baseline_egress_policy | length > 0
+
 - name: Install baseline packages
   ansible.builtin.import_tasks: packages.yml
 

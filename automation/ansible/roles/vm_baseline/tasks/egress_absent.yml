@@ -1,0 +1,70 @@
+---
+- name: Remove declared role-owned APT source definitions
+  ansible.builtin.file:
+    path: "{{ vm_baseline_egress_source.path }}"
+    state: absent
+  register: vm_baseline_egress_removed_sources
+  loop: "{{ vm_baseline_egress_model.sources }}"
+  loop_control:
+    loop_var: vm_baseline_egress_source
+    label: "{{ vm_baseline_egress_source.id }}"
+
+- name: Remove declared role-owned APT keyrings
+  ansible.builtin.file:
+    path: "{{ vm_baseline_egress_keyring.managed_path }}"
+    state: absent
+  loop: "{{ vm_baseline_egress_model.keyrings | selectattr('kind', 'equalto', 'role_managed') | list }}"
+  loop_control:
+    loop_var: vm_baseline_egress_keyring
+    label: "{{ vm_baseline_egress_keyring.id }}"
+
+- name: Remove declared role-owned custom CA files
+  ansible.builtin.file:
+    path: "{{ vm_baseline_egress_ca.path }}"
+    state: absent
+  register: vm_baseline_egress_removed_cas
+  loop: "{{ vm_baseline_egress_model.custom_cas }}"
+  loop_control:
+    loop_var: vm_baseline_egress_ca
+    label: "{{ vm_baseline_egress_ca.id }}"
+
+- name: Refresh system trust after a managed custom CA is removed
+  ansible.builtin.command:
+    argv: [update-ca-certificates]
+  when: vm_baseline_egress_removed_cas.results | default([]) | selectattr('changed') | list | length > 0
+  changed_when: true
+
+- name: Remove role-owned APT proxy and authentication policy
+  ansible.builtin.file:
+    path: "{{ vm_baseline_egress_retired_path }}"
+    state: absent
+  register: vm_baseline_egress_removed_apt_policy
+  loop:
+    - "{{ vm_baseline_egress_model.proxy_path }}"
+    - "{{ vm_baseline_egress_model.auth_path }}"
+  loop_control:
+    loop_var: vm_baseline_egress_retired_path
+
+- name: Remove role-owned shell and Git proxy policy
+  ansible.builtin.file:
+    path: "{{ vm_baseline_egress_retired_path }}"
+    state: absent
+  register: vm_baseline_egress_removed_tool_policy
+  loop:
+    - "{{ vm_baseline_egress_model.shell_path }}"
+    - "{{ vm_baseline_egress_model.git_path }}"
+  loop_control:
+    loop_var: vm_baseline_egress_retired_path
+
+- name: Remove the role-owned Git proxy include when Git is available
+  ansible.builtin.command:
+    argv: [git, config, --system, --unset-all, include.path, "{{ vm_baseline_egress_model.git_path }}"]
+  changed_when: true
+  failed_when: false
+
+- name: Record whether retired baseline egress policy requires APT metadata refresh
+  ansible.builtin.set_fact:
+    vm_baseline_egress_apt_metadata_changed: >-
+      {{ (vm_baseline_egress_removed_sources.results | default([]) | selectattr('changed') | list | length > 0)
+         or (vm_baseline_egress_removed_apt_policy.results | default([]) | selectattr('changed') | list | length > 0) }}
+  changed_when: false

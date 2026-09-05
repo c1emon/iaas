@@ -10,6 +10,8 @@ ANSIBLE_PLAYBOOK ?= $(AUTOMATION)/ansible/playbooks/pve/verify-guests.yml
 ANSIBLE_BOOTSTRAP_PLAYBOOK ?= $(AUTOMATION)/ansible/playbooks/pve/bootstrap-guests.yml
 ANSIBLE_LIMIT ?= pve_vms
 ANSIBLE_ARGS ?=
+VM_BASELINE_EGRESS_POLICY ?=
+VM_BASELINE_EGRESS_RUNTIME_SECRETS ?=
 UV ?= uv
 TOFU ?= tofu
 GITLEAKS ?= gitleaks
@@ -148,10 +150,12 @@ pve-verify-guests:
 	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(ANSIBLE_INVENTORY)" "$(ANSIBLE_PLAYBOOK)"
 
 pve-bootstrap-guests:
-	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(ANSIBLE_INVENTORY)" -l "$(ANSIBLE_LIMIT)" $(ANSIBLE_ARGS) "$(ANSIBLE_BOOTSTRAP_PLAYBOOK)"
+	@if [ -n "$(VM_BASELINE_EGRESS_POLICY)" ]; then test -f "$(VM_BASELINE_EGRESS_POLICY)" || { printf 'error: VM_BASELINE_EGRESS_POLICY must name a readable policy file\n' >&2; exit 1; }; fi
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(ANSIBLE_INVENTORY)" -l "$(ANSIBLE_LIMIT)" $(ANSIBLE_ARGS) -e "vm_baseline_egress_policy_file=$(VM_BASELINE_EGRESS_POLICY)" -e "vm_baseline_egress_runtime_secret_file=$(VM_BASELINE_EGRESS_RUNTIME_SECRETS)" "$(ANSIBLE_BOOTSTRAP_PLAYBOOK)"
 
 pve-bootstrap-guests-syntax:
-	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook --syntax-check -i "$(ANSIBLE_INVENTORY)" -l "$(ANSIBLE_LIMIT)" $(ANSIBLE_ARGS) "$(ANSIBLE_BOOTSTRAP_PLAYBOOK)"
+	@if [ -n "$(VM_BASELINE_EGRESS_POLICY)" ]; then test -f "$(VM_BASELINE_EGRESS_POLICY)" || { printf 'error: VM_BASELINE_EGRESS_POLICY must name a readable policy file\n' >&2; exit 1; }; fi
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook --syntax-check -i "$(ANSIBLE_INVENTORY)" -l "$(ANSIBLE_LIMIT)" $(ANSIBLE_ARGS) -e "vm_baseline_egress_policy_file=$(VM_BASELINE_EGRESS_POLICY)" -e "vm_baseline_egress_runtime_secret_file=$(VM_BASELINE_EGRESS_RUNTIME_SECRETS)" "$(ANSIBLE_BOOTSTRAP_PLAYBOOK)"
 
 pve-ansible-syntax:
 	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook --syntax-check -i "$(ANSIBLE_INVENTORY)" "$(ANSIBLE_PLAYBOOK)"

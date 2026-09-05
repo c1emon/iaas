@@ -1,0 +1,5 @@
+# Managed by vm_baseline. This endpoint intentionally has no credentials.
+export http_proxy={{ vm_baseline_egress_model.shell_proxy.endpoint | quote }}
+export https_proxy={{ vm_baseline_egress_model.shell_proxy.endpoint | quote }}
+export no_proxy={{ vm_baseline_egress_model.tool_bypass | join(',') | quote }}
+export NO_PROXY={{ vm_baseline_egress_model.tool_bypass | join(',') | quote }}

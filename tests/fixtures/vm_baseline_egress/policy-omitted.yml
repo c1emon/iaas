@@ -1,0 +1,3 @@
+---
+# Deliberately empty: no selected policy leaves the existing guest baseline untouched.
+{}

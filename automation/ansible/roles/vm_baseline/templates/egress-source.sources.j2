@@ -1,0 +1,5 @@
+Types: deb
+URIs: {{ vm_baseline_egress_source.uri }}
+Suites: {{ vm_baseline_egress_source.suites | join(' ') }}
+Components: {{ vm_baseline_egress_source.components | join(' ') }}
+Signed-By: {{ vm_baseline_egress_source.keyring.managed_path if vm_baseline_egress_source.keyring.kind == 'role_managed' else vm_baseline_egress_source.keyring.path }}

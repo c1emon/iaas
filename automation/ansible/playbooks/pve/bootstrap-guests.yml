@@ -3,7 +3,57 @@
   hosts: pve_vms
   become: true
   become_method: ansible.builtin.sudo
-  gather_facts: true
+  gather_facts: false
+
+  vars:
+    vm_baseline_egress_policy_file: ""
+    vm_baseline_egress_runtime_secret_file: ""
+
+  pre_tasks:
+    - name: Require a readable explicit baseline egress policy file before guest contact
+      ansible.builtin.stat:
+        path: "{{ vm_baseline_egress_policy_file }}"
+      delegate_to: localhost
+      become: false
+      register: vm_baseline_egress_policy_file_stat
+      when: vm_baseline_egress_policy_file | string | length > 0
+      changed_when: false
+
+    - name: Reject a missing selected baseline egress policy before guest contact
+      ansible.builtin.assert:
+        that:
+          - vm_baseline_egress_policy_file_stat.stat.exists
+          - vm_baseline_egress_policy_file_stat.stat.isreg
+          - vm_baseline_egress_policy_file_stat.stat.readable
+        fail_msg: "selected vm_baseline egress policy file is missing or unreadable"
+      when: vm_baseline_egress_policy_file | string | length > 0
+      changed_when: false
+
+    - name: Load the selected baseline egress policy before guest contact
+      ansible.builtin.include_vars:
+        file: "{{ vm_baseline_egress_policy_file }}"
+        name: vm_baseline_egress_policy_document
+      when: vm_baseline_egress_policy_file | string | length > 0
+      no_log: true
+
+    - name: Require the selected file to declare only the baseline egress policy root
+      ansible.builtin.assert:
+        that:
+          - vm_baseline_egress_policy_document is mapping
+          - vm_baseline_egress_policy_document.keys() | list == ['vm_baseline_egress_policy']
+          - vm_baseline_egress_policy_document.vm_baseline_egress_policy is mapping
+        fail_msg: "selected baseline egress policy file must contain only vm_baseline_egress_policy"
+      when: vm_baseline_egress_policy_file | string | length > 0
+      changed_when: false
+
+    - name: Apply the selected baseline egress policy to this generated inventory host
+      ansible.builtin.set_fact:
+        vm_baseline_egress_policy: "{{ vm_baseline_egress_policy_document.vm_baseline_egress_policy }}"
+      when: vm_baseline_egress_policy_file | string | length > 0
+      changed_when: false
+
+    - name: Gather guest facts after controller-side baseline egress policy admission
+      ansible.builtin.setup:
 
   roles:
     - role: vm_baseline
@@ -17,3 +67,4 @@
           {{ vm_baseline_connection_nic.get('gateway', '') }}
         vm_baseline_network_dns: >-
           {{ vm_baseline_connection_nic.get('dns', []) }}
+        vm_baseline_egress_runtime_secret_file: "{{ vm_baseline_egress_runtime_secret_file }}"

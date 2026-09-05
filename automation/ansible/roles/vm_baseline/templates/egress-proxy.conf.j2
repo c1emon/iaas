@@ -1,0 +1,6 @@
+Acquire::http::Proxy "{{ vm_baseline_egress_model.proxy.endpoint }}";
+Acquire::https::Proxy "{{ vm_baseline_egress_model.proxy.endpoint }}";
+{% for host in vm_baseline_egress_model.apt_direct_hosts %}
+Acquire::http::Proxy::{{ host }} "DIRECT";
+Acquire::https::Proxy::{{ host }} "DIRECT";
+{% endfor %}

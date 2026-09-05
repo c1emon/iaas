@@ -1,0 +1,161 @@
+---
+- name: Normalize declared baseline egress policy from generated NIC facts
+  ansible.builtin.set_fact:
+    vm_baseline_egress_model: >-
+      {{ vm_baseline_egress_policy | vm_baseline_egress_normalize(pve_nics | default([])) }}
+  changed_when: false
+
+- name: Verify controller-side role-managed egress artifacts
+  ansible.builtin.stat:
+    path: "{{ vm_baseline_egress_artifact.artifact }}"
+    checksum_algorithm: sha256
+  delegate_to: localhost
+  become: false
+  register: vm_baseline_egress_controller_artifacts
+  loop: >-
+    {{ vm_baseline_egress_model.keyrings | selectattr('kind', 'equalto', 'role_managed') | list
+       + vm_baseline_egress_model.custom_cas }}
+  loop_control:
+    loop_var: vm_baseline_egress_artifact
+    label: "{{ vm_baseline_egress_artifact.id }}"
+  when: vm_baseline_egress_model.state == 'present'
+  changed_when: false
+
+- name: Require controller-side egress artifacts to match declared digests
+  ansible.builtin.assert:
+    that:
+      - vm_baseline_egress_controller_artifact.stat.exists
+      - vm_baseline_egress_controller_artifact.stat.isreg
+      - vm_baseline_egress_controller_artifact.stat.checksum == vm_baseline_egress_controller_artifact.item.sha256
+    fail_msg: "baseline egress artifact is missing or does not match its declared SHA-256"
+  loop: "{{ vm_baseline_egress_controller_artifacts.results | default([]) }}"
+  loop_control:
+    loop_var: vm_baseline_egress_controller_artifact
+    label: "{{ vm_baseline_egress_controller_artifact.item.id }}"
+  when: vm_baseline_egress_model.state == 'present'
+  changed_when: false
+
+- name: Require protected runtime secret channel for authenticated APT access
+  ansible.builtin.assert:
+    that:
+      - vm_baseline_egress_runtime_secret_file | string | length > 0
+      - >-
+        lookup('vm_baseline_protected_secret', vm_baseline_egress_model.proxy.secret_ref,
+               secret_file=vm_baseline_egress_runtime_secret_file) | string | length > 0
+    fail_msg: "authenticated baseline APT access requires a resolvable protected runtime secret"
+  when:
+    - vm_baseline_egress_model.state == 'present'
+    - vm_baseline_egress_model.proxy.secret_ref is defined
+  changed_when: false
+  no_log: true
+
+- name: Check system trust refresh tool before baseline egress mutation
+  ansible.builtin.stat:
+    path: /usr/sbin/update-ca-certificates
+  register: vm_baseline_egress_trust_tool
+  changed_when: false
+  when:
+    - vm_baseline_egress_model.state == 'present'
+    - vm_baseline_egress_model.custom_cas | length > 0
+
+- name: Require executable system trust refresh tool before baseline egress mutation
+  ansible.builtin.assert:
+    that:
+      - vm_baseline_egress_trust_tool.stat.exists
+      - vm_baseline_egress_trust_tool.stat.executable
+    fail_msg: "update-ca-certificates must exist before custom CA mutation"
+  changed_when: false
+  when:
+    - vm_baseline_egress_model.state == 'present'
+    - vm_baseline_egress_model.custom_cas | length > 0
+
+- name: Read package-managed keyring metadata before baseline egress mutation
+  ansible.builtin.stat:
+    path: "{{ vm_baseline_egress_keyring.path }}"
+  register: vm_baseline_egress_package_keyrings
+  loop: "{{ vm_baseline_egress_model.keyrings | selectattr('kind', 'equalto', 'package_managed') | list }}"
+  loop_control:
+    loop_var: vm_baseline_egress_keyring
+    label: "{{ vm_baseline_egress_keyring.id }}"
+  changed_when: false
+  when: vm_baseline_egress_model.state == 'present'
+
+- name: Require package-managed keyrings before baseline egress mutation
+  ansible.builtin.assert:
+    that:
+      - vm_baseline_egress_package_keyring.stat.exists
+      - vm_baseline_egress_package_keyring.stat.readable
+    fail_msg: "declared package-managed APT keyring is missing or unreadable"
+  loop: "{{ vm_baseline_egress_package_keyrings.results | default([]) }}"
+  loop_control:
+    loop_var: vm_baseline_egress_package_keyring
+    label: "{{ vm_baseline_egress_package_keyring.item.id }}"
+  changed_when: false
+  when: vm_baseline_egress_model.state == 'present'
+
+- name: Read package-managed keyring fingerprints before baseline egress mutation
+  ansible.builtin.command:
+    argv: [gpg, --show-keys, --with-colons, "{{ vm_baseline_egress_keyring.path }}"]
+  register: vm_baseline_egress_keyring_fingerprints
+  loop: "{{ vm_baseline_egress_model.keyrings | selectattr('kind', 'equalto', 'package_managed') | list }}"
+  loop_control:
+    loop_var: vm_baseline_egress_keyring
+    label: "{{ vm_baseline_egress_keyring.id }}"
+  changed_when: false
+  when: vm_baseline_egress_model.state == 'present'
+
+- name: Require declared package-managed keyring fingerprints
+  ansible.builtin.assert:
+    that:
+      - vm_baseline_egress_keyring_fingerprint.rc == 0
+      - >-
+        vm_baseline_egress_keyring_fingerprint.item.fingerprint in
+        (vm_baseline_egress_keyring_fingerprint.stdout
+         | regex_findall('^fpr:+([^:]+):', multiline=True)
+         | map('upper') | list)
+    fail_msg: "declared package-managed APT keyring fingerprint does not match"
+  loop: "{{ vm_baseline_egress_keyring_fingerprints.results | default([]) }}"
+  loop_control:
+    loop_var: vm_baseline_egress_keyring_fingerprint
+    label: "{{ vm_baseline_egress_keyring_fingerprint.item.id }}"
+  changed_when: false
+  when: vm_baseline_egress_model.state == 'present'
+
+- name: Find unmanaged APT source definitions before exclusive policy mutation
+  ansible.builtin.find:
+    paths: /etc/apt/sources.list.d
+    patterns: "*.list,*.sources"
+    use_regex: false
+    file_type: file
+    excludes: "vm-baseline-*.sources"
+  register: vm_baseline_egress_unmanaged_sources
+  changed_when: false
+  when:
+    - vm_baseline_egress_model.state == 'present'
+    - vm_baseline_egress_model.exclusive_sources
+
+- name: Reject unmanaged APT source definitions in exclusive mode
+  ansible.builtin.assert:
+    that:
+      - vm_baseline_egress_unmanaged_sources.matched | default(0) | int == 0
+    fail_msg: "exclusive baseline APT source policy found unmanaged source definitions"
+  changed_when: false
+  when:
+    - vm_baseline_egress_model.state == 'present'
+    - vm_baseline_egress_model.exclusive_sources
+
+- name: Require Git before optional baseline Git proxy mutation
+  ansible.builtin.command:
+    argv: [git, --version]
+  changed_when: false
+  when:
+    - vm_baseline_egress_model.state == 'present'
+    - vm_baseline_egress_model.git_proxy.enabled
+
+- name: Converge declared baseline egress policy
+  ansible.builtin.import_tasks: egress_present.yml
+  when: vm_baseline_egress_model.state == 'present'
+
+- name: Retire declared baseline egress policy
+  ansible.builtin.import_tasks: egress_absent.yml
+  when: vm_baseline_egress_model.state == 'absent'
