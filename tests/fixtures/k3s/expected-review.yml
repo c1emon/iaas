@@ -1,0 +1,102 @@
+---
+cluster:
+  api_endpoint:
+    address: 198.51.100.11
+    mode: bootstrap
+    tls_sans: []
+  artifacts:
+    amd64:
+      credential_ref: op://synthetic/artifact-proxy/credentials
+      proxy_url: http://artifact-proxy.synthetic.invalid:3128
+      sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      url: https://artifacts.synthetic.invalid/k3s/v1.35.1+k3s1/amd64/k3s
+  cluster_domain: cluster.local
+  components:
+    disable:
+    - servicelb
+    - traefik
+    disable_network_policy: true
+    external_cni: true
+  datastore: embedded-etcd
+  name: synthetic-k3s
+  networking:
+    pod_cidr: 10.42.0.0/16
+    service_cidr: 10.43.0.0/16
+  node_network_role: cluster
+  registry:
+    fallback: deny
+    mirrors:
+    - auth_ref: op://synthetic/registry/credentials
+      ca_ref: op://synthetic/registry/ca-pem
+      ca_sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+      client_cert_ref: op://synthetic/registry/client-cert-pem
+      client_cert_sha256: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+      client_key_ref: op://synthetic/registry/client-key-pem
+      endpoint: https://registry.synthetic.invalid
+      registry: docker.io
+      rewrites:
+        ^rancher/(.*): mirror/rancher/$1
+  server_token_ref: op://synthetic/k3s/server-token
+  service_proxy:
+    credential_ref: op://synthetic/service-proxy/credentials
+    no_proxy:
+    - 10.42.0.0/16
+    - 10.43.0.0/16
+    - 127.0.0.1
+    - 198.51.100.0/24
+    - 198.51.100.11
+    - 198.51.100.12
+    - 198.51.100.13
+    - 198.51.100.21
+    - ::1
+    - cluster.local
+    - localhost
+    - registry.synthetic.invalid
+    state: present
+    url: http://service-proxy.synthetic.invalid:3128
+  snapshot:
+    directory: /var/lib/rancher/k3s/server/db/snapshots
+    source_vm_ref: synthetic-server-01
+  version: v1.35.1+k3s1
+nodes:
+- ansible_host: 192.0.2.11
+  ansible_user: ops
+  architecture: amd64
+  bootstrap: true
+  node_ip: 198.51.100.11
+  node_network: 198.51.100.0/24
+  node_nic: cluster0
+  prefix_length: 24
+  role: server
+  vm_ref: synthetic-server-01
+- ansible_host: 192.0.2.12
+  ansible_user: ops
+  architecture: amd64
+  bootstrap: false
+  node_ip: 198.51.100.12
+  node_network: 198.51.100.0/24
+  node_nic: cluster0
+  prefix_length: 24
+  role: server
+  vm_ref: synthetic-server-02
+- ansible_host: 192.0.2.13
+  ansible_user: ops
+  architecture: amd64
+  bootstrap: false
+  node_ip: 198.51.100.13
+  node_network: 198.51.100.0/24
+  node_nic: cluster0
+  prefix_length: 24
+  role: server
+  vm_ref: synthetic-server-03
+- ansible_host: 192.0.2.21
+  ansible_user: ops
+  architecture: amd64
+  bootstrap: false
+  node_ip: 198.51.100.21
+  node_network: 198.51.100.0/24
+  node_nic: cluster0
+  prefix_length: 24
+  role: agent
+  vm_ref: synthetic-agent-01
+schema_version: 1

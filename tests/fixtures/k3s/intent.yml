@@ -1,0 +1,57 @@
+---
+schema_version: 1
+cluster:
+  name: synthetic-k3s
+  version: v1.35.1+k3s1
+  datastore: embedded-etcd
+  node_network_role: cluster
+  cluster_domain: cluster.local
+  server_token_ref: op://synthetic/k3s/server-token
+  api_endpoint:
+    mode: bootstrap
+  networking:
+    pod_cidr: 10.42.0.0/16
+    service_cidr: 10.43.0.0/16
+  artifacts:
+    amd64:
+      url: https://artifacts.synthetic.invalid/k3s/v1.35.1+k3s1/amd64/k3s
+      sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      proxy_url: http://artifact-proxy.synthetic.invalid:3128
+      credential_ref: op://synthetic/artifact-proxy/credentials
+  components:
+    external_cni: true
+    disable_network_policy: true
+    disable: [servicelb, traefik]
+  registry:
+    fallback: deny
+    mirrors:
+      - registry: docker.io
+        endpoint: https://registry.synthetic.invalid
+        ca_ref: op://synthetic/registry/ca-pem
+        ca_sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+        auth_ref: op://synthetic/registry/credentials
+        client_cert_ref: op://synthetic/registry/client-cert-pem
+        client_cert_sha256: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+        client_key_ref: op://synthetic/registry/client-key-pem
+        rewrites:
+          ^rancher/(.*): mirror/rancher/$1
+  service_proxy:
+    state: present
+    url: http://service-proxy.synthetic.invalid:3128
+    credential_ref: op://synthetic/service-proxy/credentials
+    extra_no_proxy: [registry.synthetic.invalid]
+  snapshot:
+    source_vm_ref: synthetic-server-01
+nodes:
+  - vm_ref: synthetic-server-01
+    role: server
+    bootstrap: true
+  - vm_ref: synthetic-server-02
+    role: server
+    bootstrap: false
+  - vm_ref: synthetic-server-03
+    role: server
+    bootstrap: false
+  - vm_ref: synthetic-agent-01
+    role: agent
+    bootstrap: false

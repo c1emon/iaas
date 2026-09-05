@@ -125,6 +125,7 @@ templates:
   debian_13_genericcloud:
     vmid: 9001
     name: debian-13-tmpl-20260616
+    architecture: amd64
     node: cohe
     storage_role: memory
     source_storage_role: images

@@ -23,8 +23,11 @@ SERVICES_DOCS ?= $(GENERATED_DIR)/docs/services.md
 FOUNDATION_DOCS ?= $(GENERATED_DIR)/docs/foundation-recovery.md
 PVE_USER_DATA_DIR ?= $(ROOT)/.cache/pve-cloud-init/user-data
 BACKUP_DIR ?= $(ROOT)/.cache/tofu-state-backups
+K3S_INTENT ?=
+K3S_INVENTORY ?=
+K3S_REVIEW ?= $(ROOT)/.cache/k3s/review.yml
 
-.PHONY: generate check-generated test lint-yaml typecheck ansible-lint tofu-fmt tofu-validate opnsense-validate check secret-scan ansible-syntax pve-generate pve-check services-generate services-check foundation-generate foundation-check foundation-health pve-validate pve-fmt pve-preflight pve-health pve-packer-build pve-plan pve-apply pve-destroy pve-verify-guests pve-bootstrap-guests pve-bootstrap-guests-syntax pve-ansible-syntax pve-backup-state render-cloud-init upload-cloud-init verify-cloud-init
+.PHONY: generate check-generated test lint-yaml typecheck ansible-lint tofu-fmt tofu-validate opnsense-validate check secret-scan ansible-syntax pve-generate pve-check services-generate services-check foundation-generate foundation-check foundation-health pve-validate pve-fmt pve-preflight pve-health pve-packer-build pve-plan pve-apply pve-destroy pve-verify-guests pve-bootstrap-guests pve-bootstrap-guests-syntax pve-ansible-syntax pve-backup-state render-cloud-init upload-cloud-init verify-cloud-init require-k3s-inputs k3s-check k3s-render
 
 generate: pve-generate services-generate foundation-generate
 
@@ -142,3 +145,13 @@ pve-bootstrap-guests-syntax:
 
 pve-ansible-syntax:
 	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook --syntax-check -i "$(ANSIBLE_INVENTORY)" "$(ANSIBLE_PLAYBOOK)"
+
+require-k3s-inputs:
+	@test -n "$(K3S_INTENT)" || { printf 'error: K3S_INTENT is required\n' >&2; exit 1; }
+	@test -n "$(K3S_INVENTORY)" || { printf 'error: K3S_INVENTORY is required\n' >&2; exit 1; }
+
+k3s-check: require-k3s-inputs
+	$(PYTHON) -m iaas_automation.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)"
+
+k3s-render: require-k3s-inputs
+	$(PYTHON) -m iaas_automation.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --render "$(K3S_REVIEW)"
