@@ -77,6 +77,57 @@ print private keys, and it does not mutate PVE lifecycle state. The first
 version also keeps guest network configuration read-only; it only reports the
 declared IP, gateway, and DNS facts from the Ansible-connection NIC.
 
+### Optional guest package-access policy
+
+The bootstrap playbook may receive an explicitly selected environment policy
+file for the optional `vm_baseline` egress capability. Keep this file separate
+from `environments/astra/generated/` and from the PVE VM inventory: generated
+`pve_nics` facts remain authoritative for VM addresses and subnets, while the
+policy declares package sources, trust material, proxy mode, and explicit
+non-secret bypass destinations. Do not put passwords, tokens, private keys, or
+certificate bodies in the policy.
+
+The policy is applied only to the guest and is ordered before baseline package
+installation. It may manage role-owned deb822 sources, verified signing
+keyrings, custom CAs, APT proxy/auth files, and optional global shell/Git proxy
+settings. It never changes PVE, guest interfaces/routes/DNS/firewall,
+K3s/containerd registry policy, or workloads. The Packer APT mirror documented
+in `../packer/proxmox/debian-13/README.md` remains build-time template input and
+does not become this mutable guest policy.
+
+Policy-enabled runs require the selected policy file and keep the existing
+scope contract: the default limit is `pve_vms`, and `ANSIBLE_LIMIT` may narrow
+the run to one or more named generated hosts. A missing selected file must fail
+before contacting a guest. Pass the reviewed policy-vars file explicitly as an
+entrypoint input through `VM_BASELINE_EGRESS_POLICY`:
+
+```bash
+make pve-bootstrap-guests \
+  ANSIBLE_LIMIT=dev-web-01 \
+  VM_BASELINE_EGRESS_POLICY=/path/to/reviewed-policy-vars.yml \
+  VM_BASELINE_EGRESS_RUNTIME_SECRETS=/path/to/protected-runtime.json
+```
+
+Use the protected runtime-secret input required by the selected policy through
+the documented runtime channel. Keep the file permission-restricted and
+outside the repository; never pass resolved credentials as CLI values. Run the
+syntax check with the same policy selection before an apply:
+
+```bash
+make pve-bootstrap-guests-syntax \
+  VM_BASELINE_EGRESS_POLICY=/path/to/reviewed-policy-vars.yml
+```
+
+Lifecycle handling is explicit: no selected policy preserves existing state;
+`present` converges it; `absent` removes only deterministic role-owned paths
+declared for retirement. Unmanaged files and unknown APT sources are left
+alone, and exclusive-source conflicts fail before mutation. Global shell/Git
+proxy settings are off unless independently enabled with non-secret endpoints;
+Git is not installed solely for proxy setup. For rollback, keep the previous
+reviewed policy and re-run this same command with that file and its protected
+runtime inputs. Do not roll back by deleting generated files or by omitting the
+policy.
+
 The shared `vm_baseline` role is intended for ordinary VMs first and can be
 reused by future K3s nodes or other Debian guests that follow the same
 generated inventory contract.

@@ -67,6 +67,7 @@ def test_synthetic_present_and_absent_policy_fixtures_are_normalized_determinist
     ("mutator", "message"),
     [
         (lambda policy: policy.update(unexpected="value"), "unknown keys"),
+        (lambda policy: policy.update(pve_nics=NICS), "unknown keys"),
         (lambda policy: policy.update(state="remove"), "state must be"),
         (lambda policy: policy["proxy"].update(endpoint="http://user:password@proxy.synthetic.invalid"), "must not contain credentials"),
         (lambda policy: policy["sources"][0].update(path="/etc/apt/sources.list.d/other.sources"), "unknown keys"),
@@ -140,3 +141,6 @@ def test_bootstrap_syntax_and_disabled_tool_proxy_paths_are_valid() -> None:
     )
     assert normalized["shell_proxy"] == {"enabled": False}
     assert normalized["git_proxy"] == {"enabled": False}
+    makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+    assert "VM_BASELINE_EGRESS_POLICY" in makefile
+    assert "ANSIBLE_LIMIT" in makefile

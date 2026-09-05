@@ -54,9 +54,7 @@
     path: /usr/sbin/update-ca-certificates
   register: vm_baseline_egress_trust_tool
   changed_when: false
-  when:
-    - vm_baseline_egress_model.state == 'present'
-    - vm_baseline_egress_model.custom_cas | length > 0
+  when: vm_baseline_egress_model.custom_cas | length > 0
 
 - name: Require executable system trust refresh tool before baseline egress mutation
   ansible.builtin.assert:
@@ -65,9 +63,7 @@
       - vm_baseline_egress_trust_tool.stat.executable
     fail_msg: "update-ca-certificates must exist before custom CA mutation"
   changed_when: false
-  when:
-    - vm_baseline_egress_model.state == 'present'
-    - vm_baseline_egress_model.custom_cas | length > 0
+  when: vm_baseline_egress_model.custom_cas | length > 0
 
 - name: Read package-managed keyring metadata before baseline egress mutation
   ansible.builtin.stat:

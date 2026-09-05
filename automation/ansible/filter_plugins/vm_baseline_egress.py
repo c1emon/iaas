@@ -14,6 +14,7 @@ from ansible.errors import AnsibleFilterError
 _IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 _HOST = re.compile(r"^\.?[A-Za-z0-9][A-Za-z0-9.-]*$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_FINGERPRINT = re.compile(r"^[0-9A-F]{40}(?:[0-9A-F]{24})?$")
 _POLICY_KEYS = {
     "state",
     "sources",
@@ -118,7 +119,10 @@ def _normalize_keyring(raw: Any, index: int, state: str) -> dict[str, Any]:
         path = _string(value.get("path"), f"keyrings[{index}].path")
         if not path.startswith(("/etc/apt/keyrings/", "/usr/share/keyrings/")):
             _fail(f"keyrings[{index}].path must be an allowed APT keyring path")
-        result.update(path=path, fingerprint=_string(value.get("fingerprint"), f"keyrings[{index}].fingerprint").replace(" ", "").upper())
+        fingerprint = _string(value.get("fingerprint"), f"keyrings[{index}].fingerprint").replace(" ", "").upper()
+        if not _FINGERPRINT.fullmatch(fingerprint):
+            _fail(f"keyrings[{index}].fingerprint must be an exact OpenPGP fingerprint")
+        result.update(path=path, fingerprint=fingerprint)
     else:
         _fail(f"keyrings[{index}].kind must be role_managed or package_managed")
     return result
