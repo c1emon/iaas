@@ -7,3 +7,8 @@ k3s_preflight_required_ports:
 k3s_preflight_required_capabilities:
   - NET_ADMIN
   - SYS_ADMIN
+k3s_preflight_runtime_secret_file: >-
+  {{ k3s_runtime_secret_file
+     | default(k3s_deploy_runtime_secret_file
+              | default(k3s_upgrade_runtime_secret_file | default(''), true), true) }}
+k3s_preflight_endpoint_timeout: 10  # noqa var-naming[no-role-prefix]

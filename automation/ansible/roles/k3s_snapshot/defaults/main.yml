@@ -1,0 +1,8 @@
+---
+k3s_snapshot_results: []
+k3s_snapshot_directory: "{{ k3s_snapshot_model.cluster.snapshot.directory }}"
+k3s_snapshot_name: >-
+  {{ 'k3s-'
+     ~ (k3s_snapshot_model.cluster.name | default('cluster')
+        | regex_replace('[^A-Za-z0-9_.-]', '-'))
+     ~ '-etcd' }}

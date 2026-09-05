@@ -132,6 +132,16 @@ def test_warning_is_reported_but_is_non_blocking(tmp_path: Path) -> None:
     assert "WARN preflight.synthetic-server-01.time" in result.stdout
 
 
+def test_missing_action_scoped_credentials_fail_before_endpoint_checks(tmp_path: Path) -> None:
+    inventory = tmp_path / "inventory.yml"
+    host = _host()
+    host["k3s_preflight_credentials"] = False
+    _write_inventory(inventory, {"synthetic-server-01": host})
+    result = _run(["-i", str(inventory), str(PLAYBOOK), *_extra()])
+    assert result.returncode != 0
+    assert "action-scoped" in result.stdout + result.stderr
+
+
 def test_blocking_failure_stops_preflight(tmp_path: Path) -> None:
     inventory = tmp_path / "inventory.yml"
     _write_inventory(inventory, {"synthetic-server-01": _host(os_family="RedHat")})
@@ -146,6 +156,19 @@ def test_preflight_path_contains_no_mutation_modules_or_commands() -> None:
     assert "ansible.builtin.apt" not in source
     assert not re.search(r"ansible\.builtin\.(copy|template|file|lineinfile|blockinfile|replace|package|service|systemd)", source)
     assert not re.search(r"\b(command|shell):\s*(apt|apt-get|systemctl|service|rm|mv|cp|tee|sed\s+-i|curl\s+.*-o|wget\s+.*-O)\b", source)
+
+
+def test_preflight_path_probes_declared_endpoints_and_tls_read_only() -> None:
+    source = ROLE_TASKS.read_text(encoding="utf-8")
+    assert "ansible.builtin.uri" in source
+    assert "k3s_preflight_artifact.url" in source
+    assert "k3s_preflight_artifact.proxy_url" in source
+    assert "k3s_preflight_registry_mirrors" in source
+    assert "ansible.builtin.stat" in source
+    assert "k3s_preflight_runtime_secret_file" in source
+    assert "k3s_protected_secret" in source
+    assert "URIs:" in source
+    assert "apt update" not in source
 
 
 def test_model_consumption_and_explicit_scope_are_visible() -> None:

@@ -13,29 +13,45 @@
   changed_when: false
   no_log: true
 
-- name: Validate runtime-injected registry and proxy material
+- name: Require the protected runtime secret channel
   ansible.builtin.assert:
     that:
-      - k3s_runtime_registry_credentials is mapping
-      - k3s_runtime_proxy_credentials is mapping
-      - k3s_runtime_tls_files is mapping
-      - >-
-        (k3s_runtime_model.cluster.registry.mirrors
-         | map(attribute='auth_ref') | select | list
-         | difference(k3s_runtime_registry_credentials.keys() | list) | length) == 0
-      - >-
-        (k3s_runtime_model.cluster.registry.mirrors
-         | map(attribute='ca_ref') | select | list
-         | union(k3s_runtime_model.cluster.registry.mirrors
-                | map(attribute='client_cert_ref') | select | list)
-         | union(k3s_runtime_model.cluster.registry.mirrors
-                | map(attribute='client_key_ref') | select | list)
-         | difference(k3s_runtime_tls_files.keys() | list) | length) == 0
-      - >-
-        ([(k3s_runtime_model.cluster.service_proxy.credential_ref | default(''))]
-         | difference([''])
-         | difference(k3s_runtime_proxy_credentials.keys() | list) | length) == 0
-    fail_msg: runtime registry, proxy, or TLS references are not fully injected
+      - k3s_runtime_secret_file | string | length > 0
+    fail_msg: k3s_runtime_config requires an explicit protected runtime secret file
+  when: k3s_runtime_state == 'present'
+  changed_when: false
+  no_log: true
+
+- name: Inspect declared TLS files without changing them
+  ansible.builtin.stat:
+    path: "{{ lookup('k3s_protected_secret', item, secret_file=k3s_runtime_secret_file) }}"
+    get_checksum: false
+    follow: false
+  loop: >-
+    {{ ((k3s_runtime_model.cluster.registry.mirrors
+         | map(attribute='ca_ref') | select | list)
+        + (k3s_runtime_model.cluster.registry.mirrors
+           | map(attribute='client_cert_ref') | select | list)
+        + (k3s_runtime_model.cluster.registry.mirrors
+           | map(attribute='client_key_ref') | select | list))
+       | unique | list }}
+  loop_control:
+    label: "{{ item }}"
+  register: k3s_runtime_config_tls_status
+  when: k3s_runtime_state == 'present'
+  changed_when: false
+  no_log: true
+
+- name: Require existing restrictive TLS files
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists | default(false)
+      - item.stat.isreg | default(false)
+      - item.stat.mode | default('') == k3s_runtime_tls_file_mode
+    fail_msg: declared K3s TLS files must already exist as regular files with restrictive permissions
+  loop: "{{ k3s_runtime_config_tls_status.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
   when: k3s_runtime_state == 'present'
   changed_when: false
   no_log: true

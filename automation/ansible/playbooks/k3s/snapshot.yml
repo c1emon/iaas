@@ -1,0 +1,77 @@
+---
+- name: Create an embedded-etcd snapshot on the configured source server
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    k3s_model_path: ""
+    k3s_snapshot_scope: []
+
+  tasks:
+    - name: Require an explicit composed K3s model path
+      ansible.builtin.assert:
+        that:
+          - k3s_model_path | string | length > 0
+        fail_msg: "k3s_model_path is required and must point to a validated composed model"
+      changed_when: false
+
+    - name: Load the validated composed K3s model
+      ansible.builtin.include_vars:
+        file: "{{ k3s_model_path }}"
+        name: k3s_model
+
+    - name: Require the embedded-etcd snapshot model
+      ansible.builtin.assert:
+        that:
+          - k3s_model.schema_version | default(0) | int == 1
+          - k3s_model.cluster is mapping
+          - k3s_model.cluster.datastore | default('') == 'embedded-etcd'
+          - k3s_model.cluster.snapshot is mapping
+          - k3s_model.cluster.snapshot.source_vm_ref | default('') | string | length > 0
+          - k3s_model.cluster.snapshot.directory | default('') is string
+          - k3s_model.cluster.snapshot.directory | default('') is match('^/')
+          - "'..' not in (k3s_model.cluster.snapshot.directory | default(''))"
+          - k3s_model.nodes is sequence
+        fail_msg: >-
+          k3s_model_path must contain schema_version 1 embedded-etcd metadata,
+          a node-local absolute snapshot directory, and a source_vm_ref
+      changed_when: false
+
+    - name: Normalize the explicit snapshot scope
+      ansible.builtin.set_fact:
+        k3s_snapshot_scope_normalized: >-
+          {{ (k3s_snapshot_scope.split(',') | map('trim') | reject('equalto', '') | list)
+             if k3s_snapshot_scope is string
+             else k3s_snapshot_scope | default([], true) }}
+        k3s_snapshot_source_vm_ref: "{{ k3s_model.cluster.snapshot.source_vm_ref }}"
+      changed_when: false
+
+    - name: Select the configured snapshot source node
+      ansible.builtin.set_fact:
+        k3s_snapshot_source_node: >-
+          {{ (k3s_model.nodes
+              | selectattr('vm_ref', 'equalto', k3s_snapshot_source_vm_ref)
+              | list | first) | default({}, true) }}
+      changed_when: false
+
+    - name: Require exactly the configured source server in the explicit scope
+      ansible.builtin.assert:
+        that:
+          - k3s_snapshot_scope_normalized is sequence
+          - k3s_snapshot_scope_normalized | length == 1
+          - k3s_snapshot_scope_normalized[0] == k3s_snapshot_source_vm_ref
+          - k3s_snapshot_source_node | length > 0
+          - k3s_snapshot_source_node.role | default('') == 'server'
+          - k3s_snapshot_source_vm_ref in (groups['all'] | default([]))
+        fail_msg: >-
+          k3s_snapshot_scope must contain exactly the configured declared
+          embedded-etcd source server, which must be present in the inventory
+      changed_when: false
+
+    - name: Run the node-local snapshot role on the configured source server
+      ansible.builtin.include_role:
+        name: k3s_snapshot
+      vars:
+        k3s_snapshot_model: "{{ k3s_model }}"
+        k3s_snapshot_node: "{{ k3s_snapshot_source_node }}"
+        k3s_snapshot_directory: "{{ k3s_model.cluster.snapshot.directory }}"

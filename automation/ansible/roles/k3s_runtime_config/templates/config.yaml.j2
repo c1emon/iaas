@@ -1,5 +1,8 @@
 ---
 node-ip: {{ k3s_runtime_node.node_ip | to_json }}
+{% if k3s_runtime_join_token | length > 0 %}
+token: {{ k3s_runtime_join_token | to_json }}
+{% endif %}
 {% if k3s_runtime_node.role == 'server' %}
 advertise-address: {{ k3s_runtime_node.node_ip | to_json }}
 {% endif %}

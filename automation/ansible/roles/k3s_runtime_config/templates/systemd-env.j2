@@ -2,7 +2,7 @@
 {% set proxy = k3s_runtime_model.cluster.service_proxy %}
 {% if proxy.state == 'present' %}
 {% if proxy.credential_ref is defined and proxy.credential_ref %}
-{% set credentials = k3s_runtime_proxy_credentials[proxy.credential_ref] %}
+{% set credentials = lookup('k3s_protected_secret', proxy.credential_ref, secret_file=k3s_runtime_secret_file) | from_json %}
 HTTP_PROXY={{ ('http://' ~ credentials.username ~ ':' ~ credentials.password ~ '@' ~ (proxy.url | regex_replace('^[^:]+://', ''))) | to_json }}
 HTTPS_PROXY={{ ('http://' ~ credentials.username ~ ':' ~ credentials.password ~ '@' ~ (proxy.url | regex_replace('^[^:]+://', ''))) | to_json }}
 {% else %}

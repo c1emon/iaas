@@ -1,0 +1,31 @@
+---
+- name: Require a composed agent node and registration endpoint
+  ansible.builtin.assert:
+    that:
+      - k3s_agent_node is mapping
+      - k3s_agent_node.role | default('') == 'agent'
+      - k3s_agent_node.node_ip | default('') | length > 0
+      - k3s_agent_model is mapping
+      - k3s_agent_model.cluster.api_endpoint.address | default('') | length > 0
+    fail_msg: "k3s_agent requires one validated agent model node and endpoint"
+  changed_when: false
+  no_log: true
+
+- name: Render the role-owned K3s agent unit
+  ansible.builtin.template:
+    src: k3s-agent.service.j2
+    dest: "{{ k3s_agent_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: k3s_agent_unit
+  diff: false
+
+- name: Enable and start the K3s agent after configuration is present
+  ansible.builtin.systemd:
+    name: k3s-agent
+    enabled: true
+    state: "{{ 'restarted' if k3s_agent_unit.changed else 'started' }}"
+    daemon_reload: "{{ k3s_agent_unit.changed }}"
+  no_log: true
+  diff: false

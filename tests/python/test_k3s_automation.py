@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import os
 import subprocess
 import sys
@@ -422,13 +423,21 @@ def test_cli_validation_failure_is_concise() -> None:
     assert "Traceback" not in result.stderr
 
 
-def test_makefile_exposes_only_explicit_offline_k3s_entrypoints() -> None:
+def test_makefile_separates_offline_and_online_k3s_entrypoints() -> None:
     makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
 
     assert "k3s-check:" in makefile
     assert "k3s-render:" in makefile
     assert "K3S_INTENT" in makefile
     assert "K3S_INVENTORY" in makefile
+    assert "k3s-preflight: require-k3s-online-inputs" in makefile
+    assert "k3s-verify: require-k3s-scoped-inputs" in makefile
+    assert "k3s-deploy: require-k3s-online-inputs" in makefile
+    assert "k3s-snapshot: require-k3s-scoped-inputs" in makefile
+    assert "k3s-upgrade: require-k3s-upgrade-inputs" in makefile
+    assert "K3S_SCOPE" in makefile
+    assert "K3S_RUNTIME_SECRETS" in makefile
+    assert "--whole-cluster-scope" in makefile
     check_line = next(line for line in makefile.splitlines() if line.startswith("check:"))
     assert "k3s-" not in check_line
 
@@ -445,4 +454,71 @@ def test_cli_scope_is_limited_to_explicit_composed_nodes() -> None:
             "--intent", str(FIXTURES / "intent.yml"),
             "--inventory", str(FIXTURES / "generated-pve.yml"),
             "--scope", "*",
+        ])
+
+
+def test_cli_requires_a_complete_deployment_scope_and_protected_secret_file(tmp_path: Path) -> None:
+    protected_secrets = tmp_path / "runtime.json"
+    protected_secrets.write_text(json.dumps({"op://synthetic/k3s/server-token": "value"}), encoding="utf-8")
+    protected_secrets.chmod(0o600)
+    command = [
+        "--intent", str(FIXTURES / "intent.yml"),
+        "--inventory", str(FIXTURES / "generated-pve.yml"),
+        "--scope", "synthetic-server-01,synthetic-server-02,synthetic-server-03,synthetic-agent-01",
+        "--whole-cluster-scope",
+        "--runtime-secrets", str(protected_secrets),
+    ]
+
+    assert k3s_main(command) == 0
+
+    with pytest.raises(ValidationError, match="whole cluster"):
+        k3s_main([
+            "--intent", str(FIXTURES / "intent.yml"),
+            "--inventory", str(FIXTURES / "generated-pve.yml"),
+            "--scope", "synthetic-server-01",
+            "--whole-cluster-scope",
+        ])
+
+
+def test_cli_renders_a_non_secret_whole_cluster_upgrade_plan(tmp_path: Path) -> None:
+    observed = tmp_path / "observed.json"
+    plan = tmp_path / "upgrade-plan.json"
+    observed.write_text(
+        json.dumps(
+            {
+                "synthetic-server-01": "v1.34.0+k3s1",
+                "synthetic-server-02": "v1.34.0+k3s1",
+                "synthetic-server-03": "v1.34.0+k3s1",
+                "synthetic-agent-01": "v1.34.0+k3s1",
+            }
+        ),
+        encoding="utf-8",
+    )
+    scope = "synthetic-server-01,synthetic-server-02,synthetic-server-03,synthetic-agent-01"
+
+    assert k3s_main([
+        "--intent", str(FIXTURES / "intent.yml"),
+        "--inventory", str(FIXTURES / "generated-pve.yml"),
+        "--scope", scope,
+        "--upgrade-target", "v1.35.1+k3s1",
+        "--observed-versions", str(observed),
+        "--render-upgrade-plan", str(plan),
+    ]) == 0
+    rendered = json.loads(plan.read_text(encoding="utf-8"))
+    assert rendered["target_version"] == "v1.35.1+k3s1"
+    assert rendered["skipped"] == []
+    assert rendered["to_upgrade"][:3] == [
+        "synthetic-server-01",
+        "synthetic-server-02",
+        "synthetic-server-03",
+    ]
+
+    with pytest.raises(ValidationError, match="whole cluster"):
+        k3s_main([
+            "--intent", str(FIXTURES / "intent.yml"),
+            "--inventory", str(FIXTURES / "generated-pve.yml"),
+            "--scope", "synthetic-server-01",
+            "--upgrade-target", "v1.35.1+k3s1",
+            "--observed-versions", str(observed),
+            "--render-upgrade-plan", str(plan),
         ])

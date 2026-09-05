@@ -1,0 +1,17 @@
+---
+# The upgrade plan is produced by the offline K3s operation validator.  This
+# role only executes one already-selected node from that plan.
+k3s_upgrade_model: {}  # noqa var-naming[no-role-prefix]
+k3s_upgrade_node: {}  # noqa var-naming[no-role-prefix]
+k3s_upgrade_target_version: ""  # noqa var-naming[no-role-prefix]
+k3s_upgrade_observed_version: ""  # noqa var-naming[no-role-prefix]
+k3s_upgrade_skip: false  # noqa var-naming[no-role-prefix]
+k3s_upgrade_synthetic: false  # noqa var-naming[no-role-prefix]
+k3s_upgrade_synthetic_result: {}  # noqa var-naming[no-role-prefix]
+k3s_upgrade_binary_path: /usr/local/bin/k3s  # noqa var-naming[no-role-prefix]
+k3s_upgrade_runtime_proxy: ""  # noqa var-naming[no-role-prefix]
+k3s_upgrade_runtime_secret_file: ""  # noqa var-naming[no-role-prefix]
+k3s_upgrade_api_host: ""  # noqa var-naming[no-role-prefix]
+k3s_upgrade_service_name: >-
+  {{ 'k3s' if (k3s_upgrade_node.role | default('server')) == 'server'
+     else 'k3s-agent' }}

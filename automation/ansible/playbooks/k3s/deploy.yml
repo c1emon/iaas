@@ -1,0 +1,267 @@
+---
+- name: Re-run read-only preflight for this exact deployment invocation
+  import_playbook: preflight.yml
+  vars:
+    k3s_model_path: "{{ k3s_deploy_model_path | default('') }}"
+    k3s_preflight_scope: "{{ k3s_deploy_scope | default([]) }}"
+    k3s_runtime_secret_file: "{{ k3s_deploy_runtime_secret_file | default('') }}"
+
+- name: Resolve one explicit whole-cluster K3s deployment scope
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    k3s_deploy_model_path: ""
+    k3s_deploy_scope: []
+    k3s_deploy_runtime_secret_file: ""
+
+  tasks:
+    - name: Require a composed model, whole scope, and protected runtime secret path
+      ansible.builtin.assert:
+        that:
+          - k3s_deploy_model_path | string | length > 0
+          - k3s_deploy_scope is sequence
+          - k3s_deploy_scope | length > 0
+          - k3s_deploy_runtime_secret_file | string | length > 0
+        fail_msg: "deployment requires validated whole scope and an explicit protected runtime secret path"
+      changed_when: false
+      no_log: true
+
+    - name: Load the validated composed K3s model
+      ansible.builtin.include_vars:
+        file: "{{ k3s_deploy_model_path }}"
+        name: k3s_deploy_model
+      no_log: true
+
+    - name: Require the exact full model node set
+      ansible.builtin.assert:
+        that:
+          - k3s_deploy_model.schema_version | default(0) | int == 1
+          - k3s_deploy_scope | sort == (k3s_deploy_model.nodes | map(attribute='vm_ref') | list | sort)
+        fail_msg: "deployment scope must explicitly contain every composed K3s node"
+      changed_when: false
+
+    - name: Identify the single declared bootstrap server
+      ansible.builtin.set_fact:
+        k3s_deploy_bootstrap_vm_ref: >-
+          {{ (k3s_deploy_model.nodes
+              | selectattr('bootstrap', 'equalto', true)
+              | map(attribute='vm_ref') | list | first) | default('') }}
+      changed_when: false
+
+    - name: Require the embedded-etcd bootstrap topology
+      ansible.builtin.assert:
+        that:
+          - k3s_deploy_model.cluster.datastore | default('') == 'embedded-etcd'
+          - k3s_deploy_bootstrap_vm_ref | length > 0
+          - >-
+            (k3s_deploy_model.nodes | selectattr('bootstrap', 'equalto', true)
+             | list | length) == 1
+        fail_msg: "deployment requires exactly one declared embedded-etcd bootstrap server"
+      changed_when: false
+
+    - name: Materialize ordered deployment groups from the validated model
+      ansible.builtin.add_host:
+        name: "{{ k3s_deploy_node.vm_ref }}"
+        groups: >-
+          {{ 'k3s_bootstrap_server' if k3s_deploy_node.bootstrap else
+             'k3s_additional_servers' if k3s_deploy_node.role == 'server' else
+             'k3s_agents' }}
+        k3s_deploy_node: "{{ k3s_deploy_node }}"
+        k3s_deploy_model: "{{ k3s_deploy_model }}"
+      loop: "{{ k3s_deploy_model.nodes }}"
+      loop_control:
+        loop_var: k3s_deploy_node
+        label: "{{ k3s_deploy_node.vm_ref }}"
+      changed_when: false
+      no_log: true
+
+- name: Bootstrap the explicit embedded-etcd server
+  hosts: k3s_bootstrap_server
+  gather_facts: true
+  become: true
+  serial: 1
+  any_errors_fatal: true
+
+  roles:
+    - k3s_prerequisites
+
+  tasks:
+    - name: Acquire bootstrap-server K3s executable
+      ansible.builtin.include_role:
+        name: k3s_acquisition
+      vars:
+        k3s_acquisition_model_node: "{{ k3s_deploy_node }}"
+        k3s_acquisition_cluster: "{{ k3s_deploy_model.cluster }}"
+        k3s_acquisition_runtime_proxy: >-
+          {{ k3s_deploy_model.cluster.artifacts[k3s_deploy_node.architecture].proxy_url | default('') }}
+      no_log: true
+
+    - name: Render bootstrap-server runtime configuration
+      ansible.builtin.include_role:
+        name: k3s_runtime_config
+      vars: # noqa var-naming[no-role-prefix] -- role's established runtime input contract
+        k3s_runtime_model: "{{ k3s_deploy_model }}"
+        k3s_runtime_node: "{{ k3s_deploy_node }}"
+        k3s_runtime_join_token: >-
+          {{ lookup('k3s_protected_secret', k3s_deploy_model.cluster.server_token_ref,
+                    secret_file=k3s_deploy_runtime_secret_file) }}
+        k3s_runtime_secret_file: "{{ k3s_deploy_runtime_secret_file }}"
+      no_log: true
+
+    - name: Start the bootstrap K3s server
+      ansible.builtin.include_role:
+        name: k3s_server
+      vars:
+        k3s_server_model: "{{ k3s_deploy_model }}"
+        k3s_server_node: "{{ k3s_deploy_node }}"
+      no_log: true
+
+    - name: Require bootstrap API readiness before reading the active secure token
+      ansible.builtin.command:
+        argv:
+          - k3s
+          - kubectl
+          - get
+          - --raw=/readyz
+      register: k3s_deploy_bootstrap_ready
+      changed_when: false
+      failed_when: false
+      no_log: true
+
+    - name: Stop deployment when bootstrap API readiness fails
+      ansible.builtin.assert:
+        that:
+          - k3s_deploy_bootstrap_ready.rc == 0
+          - k3s_deploy_bootstrap_ready.stdout | trim | lower == 'ok'
+        fail_msg: "bootstrap server API did not become ready; dependent joins were not attempted"
+      changed_when: false
+      no_log: true
+
+    - name: Read the active bootstrap secure token through an ephemeral redacted channel
+      ansible.builtin.slurp:
+        src: /var/lib/rancher/k3s/server/token
+      register: k3s_deploy_active_token_read
+      no_log: true
+
+- name: Validate the bootstrap-issued secure token before any join
+  hosts: localhost
+  gather_facts: false
+  vars:
+    k3s_deploy_model_path: ""
+    k3s_deploy_runtime_secret_file: ""
+  tasks:
+    - name: Load the validated deployment model without rendering secrets
+      ansible.builtin.include_vars:
+        file: "{{ k3s_deploy_model_path }}"
+        name: k3s_deploy_model
+      no_log: true
+
+    - name: Compare active secure-token credential and optional CA hash
+      ansible.builtin.assert:
+        that:
+          - >-
+            (hostvars[k3s_deploy_bootstrap_vm_ref].k3s_deploy_active_token_read.content
+             | b64decode | trim) is match('^K10[0-9a-f]+::.+$')
+          - >-
+            ((lookup('k3s_protected_secret', k3s_deploy_model.cluster.server_token_ref,
+                      secret_file=k3s_deploy_runtime_secret_file) is match('^K10[0-9a-f]+::.+$')
+              and ((hostvars[k3s_deploy_bootstrap_vm_ref].k3s_deploy_active_token_read.content
+                    | b64decode | trim).split('::')[-1]
+                   == lookup('k3s_protected_secret', k3s_deploy_model.cluster.server_token_ref,
+                             secret_file=k3s_deploy_runtime_secret_file).split('::')[-1])
+              and ((hostvars[k3s_deploy_bootstrap_vm_ref].k3s_deploy_active_token_read.content
+                    | b64decode | trim).split('::')[0]
+                   == lookup('k3s_protected_secret', k3s_deploy_model.cluster.server_token_ref,
+                             secret_file=k3s_deploy_runtime_secret_file).split('::')[0]))
+             or (not (lookup('k3s_protected_secret', k3s_deploy_model.cluster.server_token_ref,
+                             secret_file=k3s_deploy_runtime_secret_file) is match('^K10[0-9a-f]+::.+$'))
+                 and ((hostvars[k3s_deploy_bootstrap_vm_ref].k3s_deploy_active_token_read.content
+                       | b64decode | trim).split('::')[-1]
+                      == lookup('k3s_protected_secret', k3s_deploy_model.cluster.server_token_ref,
+                                secret_file=k3s_deploy_runtime_secret_file)))
+        fail_msg: "bootstrap secure token does not match the protected external token reference"
+      changed_when: false
+      no_log: true
+
+- name: Join additional embedded-etcd servers through the active secure token
+  hosts: k3s_additional_servers
+  gather_facts: true
+  become: true
+  serial: 1
+  any_errors_fatal: true
+
+  roles:
+    - k3s_prerequisites
+
+  tasks:
+    - name: Acquire additional-server K3s executable
+      ansible.builtin.include_role:
+        name: k3s_acquisition
+      vars:
+        k3s_acquisition_model_node: "{{ k3s_deploy_node }}"
+        k3s_acquisition_cluster: "{{ k3s_deploy_model.cluster }}"
+        k3s_acquisition_runtime_proxy: >-
+          {{ k3s_deploy_model.cluster.artifacts[k3s_deploy_node.architecture].proxy_url | default('') }}
+      no_log: true
+
+    - name: Render additional-server runtime configuration with active secure token
+      ansible.builtin.include_role:
+        name: k3s_runtime_config
+      vars: # noqa var-naming[no-role-prefix] -- role's established runtime input contract
+        k3s_runtime_model: "{{ k3s_deploy_model }}"
+        k3s_runtime_node: "{{ k3s_deploy_node }}"
+        k3s_runtime_join_token: >-
+          {{ hostvars[hostvars['localhost'].k3s_deploy_bootstrap_vm_ref]
+             .k3s_deploy_active_token_read.content | b64decode | trim }}
+        k3s_runtime_secret_file: "{{ hostvars['localhost'].k3s_deploy_runtime_secret_file }}"
+      no_log: true
+
+    - name: Start one additional K3s server
+      ansible.builtin.include_role:
+        name: k3s_server
+      vars:
+        k3s_server_model: "{{ k3s_deploy_model }}"
+        k3s_server_node: "{{ k3s_deploy_node }}"
+      no_log: true
+
+- name: Join agents through the active secure token
+  hosts: k3s_agents
+  gather_facts: true
+  become: true
+  serial: 1
+  any_errors_fatal: true
+
+  roles:
+    - k3s_prerequisites
+
+  tasks:
+    - name: Acquire agent K3s executable
+      ansible.builtin.include_role:
+        name: k3s_acquisition
+      vars:
+        k3s_acquisition_model_node: "{{ k3s_deploy_node }}"
+        k3s_acquisition_cluster: "{{ k3s_deploy_model.cluster }}"
+        k3s_acquisition_runtime_proxy: >-
+          {{ k3s_deploy_model.cluster.artifacts[k3s_deploy_node.architecture].proxy_url | default('') }}
+      no_log: true
+
+    - name: Render agent runtime configuration with active secure token
+      ansible.builtin.include_role:
+        name: k3s_runtime_config
+      vars: # noqa var-naming[no-role-prefix] -- role's established runtime input contract
+        k3s_runtime_model: "{{ k3s_deploy_model }}"
+        k3s_runtime_node: "{{ k3s_deploy_node }}"
+        k3s_runtime_join_token: >-
+          {{ hostvars[hostvars['localhost'].k3s_deploy_bootstrap_vm_ref]
+             .k3s_deploy_active_token_read.content | b64decode | trim }}
+        k3s_runtime_secret_file: "{{ hostvars['localhost'].k3s_deploy_runtime_secret_file }}"
+      no_log: true
+
+    - name: Start one K3s agent
+      ansible.builtin.include_role:
+        name: k3s_agent
+      vars:
+        k3s_agent_model: "{{ k3s_deploy_model }}"
+        k3s_agent_node: "{{ k3s_deploy_node }}"
+      no_log: true

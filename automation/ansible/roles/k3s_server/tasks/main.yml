@@ -1,0 +1,31 @@
+---
+- name: Require a composed server node and verified K3s binary
+  ansible.builtin.assert:
+    that:
+      - k3s_server_node is mapping
+      - k3s_server_node.role | default('') == 'server'
+      - k3s_server_node.node_ip | default('') | length > 0
+      - k3s_server_model is mapping
+      - k3s_server_model.cluster.datastore | default('') == 'embedded-etcd'
+    fail_msg: "k3s_server requires one validated embedded-etcd server model node"
+  changed_when: false
+  no_log: true
+
+- name: Render the role-owned K3s server unit
+  ansible.builtin.template:
+    src: k3s.service.j2
+    dest: "{{ k3s_server_unit_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: k3s_server_unit
+  diff: false
+
+- name: Enable and start the K3s server after configuration is present
+  ansible.builtin.systemd:
+    name: k3s
+    enabled: true
+    state: "{{ 'restarted' if k3s_server_unit.changed else 'started' }}"
+    daemon_reload: "{{ k3s_server_unit.changed }}"
+  no_log: true
+  diff: false

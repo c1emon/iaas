@@ -29,8 +29,15 @@ K3S_REVIEW ?= $(ROOT)/.cache/k3s/review.yml
 K3S_SCOPE ?=
 K3S_RUNTIME_SECRETS ?=
 K3S_PREFLIGHT_PLAYBOOK ?= $(AUTOMATION)/ansible/playbooks/k3s/preflight.yml
+K3S_VERIFY_PLAYBOOK ?= $(AUTOMATION)/ansible/playbooks/k3s/verify.yml
+K3S_DEPLOY_PLAYBOOK ?= $(AUTOMATION)/ansible/playbooks/k3s/deploy.yml
+K3S_SNAPSHOT_PLAYBOOK ?= $(AUTOMATION)/ansible/playbooks/k3s/snapshot.yml
+K3S_UPGRADE_PLAYBOOK ?= $(AUTOMATION)/ansible/playbooks/k3s/upgrade.yml
+K3S_UPGRADE_TARGET ?=
+K3S_OBSERVED_VERSIONS ?=
+K3S_UPGRADE_PLAN ?= $(ROOT)/.cache/k3s/upgrade-plan.json
 
-.PHONY: generate check-generated test lint-yaml typecheck ansible-lint tofu-fmt tofu-validate opnsense-validate check secret-scan ansible-syntax pve-generate pve-check services-generate services-check foundation-generate foundation-check foundation-health pve-validate pve-fmt pve-preflight pve-health pve-packer-build pve-plan pve-apply pve-destroy pve-verify-guests pve-bootstrap-guests pve-bootstrap-guests-syntax pve-ansible-syntax pve-backup-state render-cloud-init upload-cloud-init verify-cloud-init require-k3s-inputs require-k3s-online-inputs k3s-check k3s-render k3s-ansible-syntax k3s-ansible-lint k3s-preflight
+.PHONY: generate check-generated test lint-yaml typecheck ansible-lint tofu-fmt tofu-validate opnsense-validate check secret-scan ansible-syntax pve-generate pve-check services-generate services-check foundation-generate foundation-check foundation-health pve-validate pve-fmt pve-preflight pve-health pve-packer-build pve-plan pve-apply pve-destroy pve-verify-guests pve-bootstrap-guests pve-bootstrap-guests-syntax pve-ansible-syntax pve-backup-state render-cloud-init upload-cloud-init verify-cloud-init require-k3s-inputs require-k3s-scoped-inputs require-k3s-online-inputs require-k3s-upgrade-inputs k3s-check k3s-render k3s-ansible-syntax k3s-ansible-lint k3s-preflight k3s-verify k3s-deploy k3s-snapshot k3s-upgrade
 
 generate: pve-generate services-generate foundation-generate
 
@@ -153,10 +160,17 @@ require-k3s-inputs:
 	@test -n "$(K3S_INTENT)" || { printf 'error: K3S_INTENT is required\n' >&2; exit 1; }
 	@test -n "$(K3S_INVENTORY)" || { printf 'error: K3S_INVENTORY is required\n' >&2; exit 1; }
 
-require-k3s-online-inputs: require-k3s-inputs
+require-k3s-scoped-inputs: require-k3s-inputs
 	@test -n "$(K3S_SCOPE)" || { printf 'error: K3S_SCOPE is required for online K3s commands\n' >&2; exit 1; }
+
+require-k3s-online-inputs: require-k3s-scoped-inputs
 	@test -n "$(K3S_RUNTIME_SECRETS)" || { printf 'error: K3S_RUNTIME_SECRETS is required for online K3s commands\n' >&2; exit 1; }
 	@test -f "$(K3S_RUNTIME_SECRETS)" || { printf 'error: K3S_RUNTIME_SECRETS must name a protected runtime secret file\n' >&2; exit 1; }
+
+require-k3s-upgrade-inputs: require-k3s-online-inputs
+	@test -n "$(K3S_UPGRADE_TARGET)" || { printf 'error: K3S_UPGRADE_TARGET is required for k3s-upgrade\n' >&2; exit 1; }
+	@test -n "$(K3S_OBSERVED_VERSIONS)" || { printf 'error: K3S_OBSERVED_VERSIONS is required for k3s-upgrade\n' >&2; exit 1; }
+	@test -f "$(K3S_OBSERVED_VERSIONS)" || { printf 'error: K3S_OBSERVED_VERSIONS must name a JSON observation file\n' >&2; exit 1; }
 
 k3s-check: require-k3s-inputs
 	$(PYTHON) -m iaas_automation.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)"
@@ -168,8 +182,24 @@ k3s-ansible-syntax: require-k3s-inputs
 	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook --syntax-check -i "$(K3S_INVENTORY)" "$(K3S_PREFLIGHT_PLAYBOOK)"
 
 k3s-ansible-lint:
-	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-lint "$(AUTOMATION)/ansible/playbooks/k3s" "$(AUTOMATION)/ansible/roles/k3s_preflight"
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-lint "$(AUTOMATION)/ansible/playbooks/k3s" "$(AUTOMATION)/ansible/roles/k3s_acquisition" "$(AUTOMATION)/ansible/roles/k3s_agent" "$(AUTOMATION)/ansible/roles/k3s_preflight" "$(AUTOMATION)/ansible/roles/k3s_prerequisites" "$(AUTOMATION)/ansible/roles/k3s_runtime_config" "$(AUTOMATION)/ansible/roles/k3s_server" "$(AUTOMATION)/ansible/roles/k3s_snapshot" "$(AUTOMATION)/ansible/roles/k3s_upgrade" "$(AUTOMATION)/ansible/roles/k3s_verify"
 
 k3s-preflight: require-k3s-online-inputs k3s-render
-	$(PYTHON) -m iaas_automation.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --scope "$(K3S_SCOPE)"
+	$(PYTHON) -m iaas_automation.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --scope "$(K3S_SCOPE)" --runtime-secrets "$(K3S_RUNTIME_SECRETS)"
 	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(K3S_INVENTORY)" -l "$(K3S_SCOPE)" -e "k3s_model_path=$(K3S_REVIEW)" -e "k3s_preflight_scope=$(K3S_SCOPE)" -e "k3s_runtime_secret_file=$(K3S_RUNTIME_SECRETS)" "$(K3S_PREFLIGHT_PLAYBOOK)"
+
+k3s-verify: require-k3s-scoped-inputs k3s-render
+	$(PYTHON) -m iaas_automation.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --scope "$(K3S_SCOPE)"
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(K3S_INVENTORY)" -l "$(K3S_SCOPE)" -e "k3s_model_path=$(K3S_REVIEW)" -e "k3s_verify_scope=$(K3S_SCOPE)" "$(K3S_VERIFY_PLAYBOOK)"
+
+k3s-deploy: require-k3s-online-inputs k3s-render
+	$(PYTHON) -m iaas_automation.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --scope "$(K3S_SCOPE)" --whole-cluster-scope --runtime-secrets "$(K3S_RUNTIME_SECRETS)"
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(K3S_INVENTORY)" -l "$(K3S_SCOPE)" -e "k3s_deploy_model_path=$(K3S_REVIEW)" -e "k3s_deploy_scope=$(K3S_SCOPE)" -e "k3s_deploy_runtime_secret_file=$(K3S_RUNTIME_SECRETS)" "$(K3S_DEPLOY_PLAYBOOK)"
+
+k3s-snapshot: require-k3s-scoped-inputs k3s-render
+	$(PYTHON) -m iaas_automation.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --scope "$(K3S_SCOPE)"
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(K3S_INVENTORY)" -l "$(K3S_SCOPE)" -e "k3s_model_path=$(K3S_REVIEW)" -e "k3s_snapshot_scope=$(K3S_SCOPE)" "$(K3S_SNAPSHOT_PLAYBOOK)"
+
+k3s-upgrade: require-k3s-upgrade-inputs k3s-render
+	$(PYTHON) -m iaas_automation.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --scope "$(K3S_SCOPE)" --upgrade-target "$(K3S_UPGRADE_TARGET)" --observed-versions "$(K3S_OBSERVED_VERSIONS)" --render-upgrade-plan "$(K3S_UPGRADE_PLAN)" --runtime-secrets "$(K3S_RUNTIME_SECRETS)"
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(K3S_INVENTORY)" -l "$(K3S_SCOPE)" -e "k3s_upgrade_model_path=$(K3S_REVIEW)" -e "k3s_upgrade_scope=$(K3S_SCOPE)" -e "k3s_upgrade_target_version=$(K3S_UPGRADE_TARGET)" -e "k3s_upgrade_observed_versions_path=$(K3S_OBSERVED_VERSIONS)" -e "k3s_upgrade_plan_path=$(K3S_UPGRADE_PLAN)" -e "k3s_upgrade_runtime_secret_file=$(K3S_RUNTIME_SECRETS)" "$(K3S_UPGRADE_PLAYBOOK)"

@@ -10,24 +10,35 @@
     fail_msg: "K3s acquisition requires validated composed node and cluster facts"
   changed_when: false
 
-- name: Select the architecture-bound pinned artifact
+- name: Select the architecture-bound pinned artifact from the composed model
   ansible.builtin.set_fact:
     k3s_acquisition_artifact: >-
       {{ k3s_acquisition_cluster.artifacts[k3s_acquisition_model_node.architecture]
          | default({}) }}
   changed_when: false
+  no_log: true
 
-- name: Require a pinned URL and SHA-256 for the derived architecture
+- name: Require the selected artifact to be exact and complete
   ansible.builtin.assert:
     that:
-      - k3s_acquisition_artifact.url | default('') is match('^https://')
-      - k3s_acquisition_artifact.sha256 | default('') is match('^[a-f0-9]{64}$')
+      - k3s_acquisition_artifact is mapping
+      - k3s_acquisition_artifact.url | default('', true) is match('^https://')
+      - k3s_acquisition_artifact.sha256 | default('', true) is match('^[a-f0-9]{64}$')
+      - k3s_acquisition_artifact.url is not search('[?#]')
+      - >-
+        (k3s_acquisition_artifact.url
+         | regex_search('^https://[^?#]*/' ~ (k3s_acquisition_cluster.version | regex_escape) ~ '(/|$)')
+         | default('', true) | length) > 0
+      - >-
+        (k3s_acquisition_artifact.credential_ref | default('', true) | length == 0)
+        or (k3s_acquisition_runtime_secret_file | default('', true) | string | length > 0)
     fail_msg: >-
-      K3s acquisition artifact for the derived node architecture must have an HTTPS URL
-      and exact SHA-256 checksum
+      K3s acquisition requires the exact composed version path, HTTPS URL, SHA-256,
+      and an explicit protected runtime secret path when authentication is declared
   changed_when: false
+  no_log: true
 
-- name: Acquire the exact pinned K3s executable
+- name: Acquire the exact pinned K3s executable through the resolved artifact path
   ansible.builtin.get_url:
     url: "{{ k3s_acquisition_artifact.url }}"
     dest: "{{ k3s_acquisition_binary_path }}"
@@ -36,6 +47,22 @@
     group: root
     mode: "0755"
   environment:
-    https_proxy: "{{ k3s_acquisition_runtime_proxy }}"
-    HTTPS_PROXY: "{{ k3s_acquisition_runtime_proxy }}"
+    https_proxy: >-
+      {% if k3s_acquisition_artifact.credential_ref | default('', true) | length > 0 %}
+      {% set credentials = lookup('k3s_protected_secret', k3s_acquisition_artifact.credential_ref,
+                                  secret_file=k3s_acquisition_runtime_secret_file) | from_json %}
+      {{ k3s_acquisition_artifact.proxy_url
+         | regex_replace('://', '://' ~ credentials.username ~ ':' ~ credentials.password ~ '@') }}
+      {% else %}
+      {{ k3s_acquisition_artifact.proxy_url | default('', true) }}
+      {% endif %}
+    HTTPS_PROXY: >-
+      {% if k3s_acquisition_artifact.credential_ref | default('', true) | length > 0 %}
+      {% set credentials = lookup('k3s_protected_secret', k3s_acquisition_artifact.credential_ref,
+                                  secret_file=k3s_acquisition_runtime_secret_file) | from_json %}
+      {{ k3s_acquisition_artifact.proxy_url
+         | regex_replace('://', '://' ~ credentials.username ~ ':' ~ credentials.password ~ '@') }}
+      {% else %}
+      {{ k3s_acquisition_artifact.proxy_url | default('', true) }}
+      {% endif %}
   no_log: true

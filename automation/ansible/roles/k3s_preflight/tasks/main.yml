@@ -57,13 +57,34 @@
       command: "df -Pk /var/lib/rancher"
     - name: apt_sources
       command: >-
-        grep -R -h -E '^[[:space:]]*deb[[:space:]]'
+        grep -R -h -E '(^[[:space:]]*deb([[:space:]]|\[)|^[[:space:]]*URIs:[[:space:]]+).*https?://'
         /etc/apt/sources.list /etc/apt/sources.list.d
     - name: install_state
       command: "test ! -e /usr/local/bin/k3s"
   loop_control:
     loop_var: k3s_preflight_probe
     label: "{{ k3s_preflight_probe.name }}"
+  when:
+    - k3s_preflight_reachable | default(false)
+    - hostvars[k3s_preflight_node.vm_ref].k3s_preflight_facts is not defined
+
+- name: Probe each required K3s port for a listener without changing socket state
+  ansible.builtin.command:
+    argv:
+      - ss
+      - -H
+      - -lntu
+      - sport
+      - "="
+      - ":{{ item }}"
+  delegate_to: "{{ k3s_preflight_node.vm_ref }}"
+  loop: "{{ k3s_preflight_required_ports }}"
+  loop_control:
+    label: "port {{ item }}"
+  register: k3s_preflight_port_checks
+  changed_when: false
+  failed_when: false
+  ignore_unreachable: true
   when:
     - k3s_preflight_reachable | default(false)
     - hostvars[k3s_preflight_node.vm_ref].k3s_preflight_facts is not defined
@@ -92,7 +113,14 @@
         {{ k3s_preflight_node.node_nic
            if k3s_preflight_node.node_ip | default('')
               in (k3s_preflight_probes.results[3].stdout | default('')) else '' }}
-      ports_available: "{{ k3s_preflight_probes.results[4].rc | default(1) == 0 }}"
+      ports_available: >-
+        {% set ns = namespace(ok=(k3s_preflight_probes.results[4].rc | default(1) | int == 0)) %}
+        {% for result in k3s_preflight_port_checks.results | default([]) %}
+        {% if result.rc | default(1) | int != 0 or result.stdout | default('') | trim | length > 0 %}
+        {% set ns.ok = false %}
+        {% endif %}
+        {% endfor %}
+        {{ ns.ok }}
       free_bytes: >-
         {{ k3s_preflight_probes.results[5].stdout_lines[1].split()[3] | default('0') | int * 1024 }}
       apt_sources_reachable: "{{ k3s_preflight_probes.results[6].rc | default(1) == 0 }}"
@@ -107,9 +135,262 @@
 
 - name: Validate action-scoped runtime credentials before endpoint checks
   ansible.builtin.set_fact:
-    k3s_preflight_credentials_ok: >-
-      {{ hostvars[k3s_preflight_node.vm_ref].k3s_preflight_credentials | default(false) | bool }}
+    k3s_preflight_synthetic_credentials_ok: >-
+      {{ hostvars[k3s_preflight_node.vm_ref].k3s_preflight_credentials | bool
+         if (hostvars[k3s_preflight_node.vm_ref].k3s_preflight_credentials is defined
+             and hostvars[k3s_preflight_node.vm_ref].k3s_preflight_credentials is boolean)
+         else false }}
   changed_when: false
+
+- name: Resolve endpoint checks from the composed model without exposing secrets
+  ansible.builtin.set_fact:
+    k3s_preflight_cluster: "{{ hostvars['localhost'].k3s_model.cluster | default({}) }}"
+    k3s_preflight_artifact: >-
+      {{ (hostvars['localhost'].k3s_model.cluster.artifacts[k3s_preflight_node.architecture]
+          | default({}))
+         if hostvars['localhost'].k3s_model is defined else {} }}
+    k3s_preflight_registry_mirrors: >-
+      {{ hostvars['localhost'].k3s_model.cluster.registry.mirrors | default([])
+         if hostvars['localhost'].k3s_model is defined else [] }}
+    k3s_preflight_service_proxy: >-
+      {{ hostvars['localhost'].k3s_model.cluster.service_proxy | default({})
+         if hostvars['localhost'].k3s_model is defined else {} }}
+    k3s_preflight_tls_refs: >-
+      {{ (hostvars['localhost'].k3s_model.cluster.registry.mirrors
+          | map(attribute='ca_ref') | select | list
+          | union(hostvars['localhost'].k3s_model.cluster.registry.mirrors
+                 | map(attribute='client_cert_ref') | select | list)
+          | union(hostvars['localhost'].k3s_model.cluster.registry.mirrors
+                 | map(attribute='client_key_ref') | select | list))
+         if hostvars['localhost'].k3s_model is defined else [] }}
+  changed_when: false
+  no_log: true
+
+- name: Resolve credential and TLS reference sets without retaining secret values
+  ansible.builtin.set_fact:
+    k3s_preflight_required_credential_refs: >-
+      {{ ([k3s_preflight_artifact.credential_ref]
+          if k3s_preflight_artifact.credential_ref | default('') | length > 0 else [])
+         | union(k3s_preflight_registry_mirrors
+                | map(attribute='auth_ref') | select | list)
+         | union(([k3s_preflight_service_proxy.credential_ref]
+                 if k3s_preflight_service_proxy.credential_ref | default('') | length > 0
+                 else [])) }}
+  changed_when: false
+  no_log: true
+
+- name: Confirm action-scoped endpoint credentials are complete
+  ansible.builtin.set_fact:
+    k3s_preflight_credentials_ok: >-
+      {{ k3s_preflight_synthetic_credentials_ok | default(false) | bool
+         if hostvars[k3s_preflight_node.vm_ref].k3s_preflight_facts is defined
+         else ((k3s_preflight_required_credential_refs | length == 0)
+               or (k3s_preflight_runtime_secret_file | default('', true) | string | length > 0)) }}
+  changed_when: false
+  no_log: true
+
+- name: Require every declared endpoint credential to be action-scoped
+  ansible.builtin.assert:
+    that:
+      - >-
+        k3s_preflight_credentials_ok | bool
+    fail_msg: "declared artifact, registry, or proxy access requires its action-scoped runtime credential"
+  when: k3s_preflight_reachable | default(false)
+  changed_when: false
+  no_log: true
+
+- name: Read configured APT source URLs without updating or rewriting APT
+  ansible.builtin.uri:
+    url: "{{ item }}"
+    method: HEAD
+    return_content: false
+    follow_redirects: safe
+    status_code: [200, 204, 301, 302, 403]
+    timeout: "{{ k3s_preflight_endpoint_timeout }}"
+  delegate_to: "{{ k3s_preflight_node.vm_ref }}"
+  loop: "{{ k3s_preflight_probes.results[6].stdout | default('') | regex_findall('https?://[^[:space:]]+') }}"
+  loop_control:
+    label: apt-source
+  register: k3s_preflight_apt_source_checks
+  changed_when: false
+  failed_when: false
+  ignore_unreachable: true
+  when:
+    - k3s_preflight_reachable | default(false)
+    - hostvars[k3s_preflight_node.vm_ref].k3s_preflight_facts is not defined
+  no_log: true
+
+- name: Probe the selected architecture artifact through its acquisition path
+  ansible.builtin.uri:
+    url: "{{ k3s_preflight_artifact.url }}"
+    method: HEAD
+    return_content: false
+    follow_redirects: safe
+    status_code: [200, 204, 301, 302]
+    timeout: "{{ k3s_preflight_endpoint_timeout }}"
+  environment:
+    https_proxy: >-
+      {% if k3s_preflight_artifact.credential_ref | default('', true) | length > 0 %}
+      {% set credentials = lookup('k3s_protected_secret', k3s_preflight_artifact.credential_ref,
+                                  secret_file=k3s_preflight_runtime_secret_file) | from_json %}
+      {{ k3s_preflight_artifact.proxy_url
+         | regex_replace('://', '://' ~ credentials.username ~ ':' ~ credentials.password ~ '@') }}
+      {% else %}
+      {{ k3s_preflight_artifact.proxy_url | default('', true) }}
+      {% endif %}
+    HTTPS_PROXY: >-
+      {% if k3s_preflight_artifact.credential_ref | default('', true) | length > 0 %}
+      {% set credentials = lookup('k3s_protected_secret', k3s_preflight_artifact.credential_ref,
+                                  secret_file=k3s_preflight_runtime_secret_file) | from_json %}
+      {{ k3s_preflight_artifact.proxy_url
+         | regex_replace('://', '://' ~ credentials.username ~ ':' ~ credentials.password ~ '@') }}
+      {% else %}
+      {{ k3s_preflight_artifact.proxy_url | default('', true) }}
+      {% endif %}
+  delegate_to: "{{ k3s_preflight_node.vm_ref }}"
+  register: k3s_preflight_artifact_check
+  changed_when: false
+  failed_when: false
+  ignore_unreachable: true
+  when:
+    - k3s_preflight_reachable | default(false)
+    - hostvars[k3s_preflight_node.vm_ref].k3s_preflight_facts is not defined
+    - k3s_preflight_artifact.url | default('') | length > 0
+    - k3s_preflight_credentials_ok | bool
+  no_log: true
+
+- name: Validate registry TLS paths with read-only stat operations
+  ansible.builtin.stat:
+    path: "{{ lookup('k3s_protected_secret', item, secret_file=k3s_preflight_runtime_secret_file) }}"
+    follow: false
+    get_checksum: false
+  delegate_to: "{{ k3s_preflight_node.vm_ref }}"
+  loop: "{{ k3s_preflight_tls_refs }}"
+  loop_control:
+    label: registry-tls-file
+  register: k3s_preflight_tls_checks
+  changed_when: false
+  failed_when: false
+  ignore_unreachable: true
+  when:
+    - k3s_preflight_reachable | default(false)
+    - hostvars[k3s_preflight_node.vm_ref].k3s_preflight_facts is not defined
+    - k3s_preflight_tls_refs | length > 0
+    - k3s_preflight_credentials_ok | bool
+  no_log: true
+
+- name: Reject absent, non-regular, or overly permissive registry TLS files
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists | default(false) | bool
+      - item.stat.isreg | default(false) | bool
+      - item.stat.mode | default('') is match('^0(600|640|644)$')
+    fail_msg: "a referenced registry TLS file must exist, be regular, and use restrictive permissions"
+  loop: "{{ k3s_preflight_tls_checks.results | default([]) }}"
+  loop_control:
+    label: registry-tls-file
+  when:
+    - k3s_preflight_reachable | default(false)
+    - hostvars[k3s_preflight_node.vm_ref].k3s_preflight_facts is not defined
+    - k3s_preflight_tls_refs | length > 0
+    - k3s_preflight_credentials_ok | bool
+  changed_when: false
+  no_log: true
+
+- name: Probe each declared registry endpoint with runtime authentication and TLS
+  ansible.builtin.uri:
+    url: "{{ item.endpoint.rstrip('/') }}/v2/"
+    method: GET
+    return_content: false
+    status_code: [200, 204]
+    validate_certs: true
+    timeout: "{{ k3s_preflight_endpoint_timeout }}"
+    ca_path: >-
+      {{ lookup('k3s_protected_secret', item.ca_ref, secret_file=k3s_preflight_runtime_secret_file)
+         if item.ca_ref | default('', true) | length > 0 else omit }}
+    client_cert: >-
+      {{ lookup('k3s_protected_secret', item.client_cert_ref, secret_file=k3s_preflight_runtime_secret_file)
+         if item.client_cert_ref | default('', true) | length > 0 else omit }}
+    client_key: >-
+      {{ lookup('k3s_protected_secret', item.client_key_ref, secret_file=k3s_preflight_runtime_secret_file)
+         if item.client_key_ref | default('', true) | length > 0 else omit }}
+    url_username: >-
+      {{ (lookup('k3s_protected_secret', item.auth_ref,
+                 secret_file=k3s_preflight_runtime_secret_file) | from_json).username
+         if item.auth_ref | default('', true) | length > 0 else omit }}
+    url_password: >-
+      {{ (lookup('k3s_protected_secret', item.auth_ref,
+                 secret_file=k3s_preflight_runtime_secret_file) | from_json).password
+         if item.auth_ref | default('', true) | length > 0 else omit }}
+    force_basic_auth: "{{ item.auth_ref | default('') | length > 0 }}"
+  environment:
+    https_proxy: >-
+      {% if k3s_preflight_service_proxy.credential_ref | default('', true) | length > 0 %}
+      {% set credentials = lookup('k3s_protected_secret', k3s_preflight_service_proxy.credential_ref,
+                                  secret_file=k3s_preflight_runtime_secret_file) | from_json %}
+      {{ k3s_preflight_service_proxy.url
+         | regex_replace('://', '://' ~ credentials.username ~ ':' ~ credentials.password ~ '@') }}
+      {% else %}
+      {{ k3s_preflight_service_proxy.url | default('', true) }}
+      {% endif %}
+    HTTPS_PROXY: >-
+      {% if k3s_preflight_service_proxy.credential_ref | default('', true) | length > 0 %}
+      {% set credentials = lookup('k3s_protected_secret', k3s_preflight_service_proxy.credential_ref,
+                                  secret_file=k3s_preflight_runtime_secret_file) | from_json %}
+      {{ k3s_preflight_service_proxy.url
+         | regex_replace('://', '://' ~ credentials.username ~ ':' ~ credentials.password ~ '@') }}
+      {% else %}
+      {{ k3s_preflight_service_proxy.url | default('', true) }}
+      {% endif %}
+  delegate_to: "{{ k3s_preflight_node.vm_ref }}"
+  loop: "{{ k3s_preflight_registry_mirrors }}"
+  loop_control:
+    label: registry-endpoint
+  register: k3s_preflight_registry_checks
+  changed_when: false
+  failed_when: false
+  ignore_unreachable: true
+  when:
+    - k3s_preflight_reachable | default(false)
+    - hostvars[k3s_preflight_node.vm_ref].k3s_preflight_facts is not defined
+    - k3s_preflight_registry_mirrors | length > 0
+    - k3s_preflight_credentials_ok | bool
+  no_log: true
+
+- name: Merge read-only endpoint evidence into the runtime result
+  ansible.builtin.set_fact:
+    k3s_preflight_runtime: >-
+      {{ k3s_preflight_runtime | combine({
+          'apt_sources_reachable': (
+            (k3s_preflight_probes.results[6].rc | default(1) | int == 0)
+            and ((k3s_preflight_probes.results[6].stdout | default('')
+                  | regex_findall('https?://[^[:space:]]+') | length) > 0)
+            and ((k3s_preflight_apt_source_checks.results | default([])
+                  | selectattr('status', 'in', [200, 204, 301, 302, 403]) | list | length)
+                 == (k3s_preflight_probes.results[6].stdout | default('')
+                     | regex_findall('https?://[^[:space:]]+') | length))
+          ),
+          'artifact_reachable': (
+            k3s_preflight_artifact_check.status | default(0) | int in [200, 204, 301, 302]
+          ),
+          'registry_reachable': (
+            (k3s_preflight_registry_mirrors | length == 0)
+            or ((k3s_preflight_registry_checks.results | default([])
+                 | selectattr('status', 'in', [200, 204]) | list | length)
+                == (k3s_preflight_registry_mirrors | length))
+          ),
+          'registry_tls_files_valid': (
+            (k3s_preflight_tls_refs | length == 0)
+            or ((k3s_preflight_tls_checks.results | default([])
+                 | selectattr('stat.exists', 'defined') | list | length)
+                == (k3s_preflight_tls_refs | length))
+          )
+        }) }}
+  when:
+    - k3s_preflight_reachable | default(false)
+    - hostvars[k3s_preflight_node.vm_ref].k3s_preflight_facts is not defined
+  changed_when: false
+  no_log: true
 
 - name: Record host prerequisite outcomes for {{ k3s_preflight_node.vm_ref }}
   ansible.builtin.set_fact:
