@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import os
 import getpass
+import grp
 import json
+import os
 import subprocess
 from pathlib import Path
 import yaml
@@ -76,7 +77,7 @@ def _playbook(
                     "k3s_runtime_secret_file": str(secret_file),
                     "k3s_runtime_join_token": join_token,
                     "k3s_runtime_owner": getpass.getuser(),
-                    "k3s_runtime_group": "staff",
+                    "k3s_runtime_group": grp.getgrgid(os.getgid()).gr_name,
                     "k3s_runtime_config_dir": str(output_dir),
                     "k3s_runtime_config_path": str(output_dir / "config.yaml"),
                     "k3s_runtime_registries_path": str(output_dir / "registries.yaml"),
