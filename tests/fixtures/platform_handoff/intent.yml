@@ -1,0 +1,8 @@
+---
+schema_version: 1
+platform:
+  repository:
+    url: https://git.synthetic.invalid/platform/desired-state.git
+    revision: refs/tags/v2026.09.0
+    path: clusters/synthetic-k3s
+  bootstrap_credential_ref: op://synthetic/platform/bootstrap-grant

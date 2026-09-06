@@ -1,12 +1,14 @@
 # iaas-repository-layering Specification
 
 ## Purpose
-Define the ownership boundaries and hard-cutover contract that separate Astra environment configuration, reusable infrastructure automation, and the in-cluster platform ownership boundary.
+Define the ownership boundaries and hard-cutover contract that separate Astra environment configuration, reusable infrastructure automation, and the external platform-repository handoff boundary.
 
 ## Requirements
 
 ### Requirement: Repository layers express ownership
-The repository SHALL separate Astra-specific configuration, reusable automation, and future platform work into explicit top-level layers.
+The repository SHALL separate Astra-specific configuration, reusable
+automation, and the external platform-repository handoff boundary into explicit
+top-level layers.
 
 #### Scenario: Operator locates Astra environment data
 - **WHEN** an operator reviews Astra inventory, Ansible data, runtime templates, generated deployment inputs, or the Astra OpenTofu root
@@ -74,9 +76,15 @@ Repository reorganization SHALL preserve the existing distinction among offline-
 - **AND** online and mutation-capable operations SHALL remain outside the aggregate offline gate
 
 ### Requirement: Platform remains an unimplemented boundary
-The repository SHALL reserve `platform/` for future reusable in-cluster automation without claiming cluster capability in this change.
+
+The repository SHALL keep shared in-cluster platform desired state outside this
+IaaS repository and SHALL use `platform/` only to document the external
+platform repository handoff boundary.
 
 #### Scenario: Operator inspects the platform boundary
-- **WHEN** the repository layering change is complete
-- **THEN** `platform/README.md` SHALL describe the future boundary as planned and unimplemented
-- **AND** no K3s, Cilium, Flux, CSI, Gateway, or application deployment implementation or completion claim SHALL be introduced
+
+- **WHEN** the platform handoff capability is implemented
+- **THEN** `platform/README.md` SHALL describe the external platform repository as the owner of Flux and shared in-cluster services
+- **AND** ordinary application release content SHALL remain owned by application repositories
+- **AND** `platform/` SHALL NOT contain Flux, Cilium, CSI, Gateway, certificate, observability, application manifests, Helm releases, reconciliation roots, or production runtime configuration
+- **AND** reusable VM and K3s lifecycle automation SHALL remain under `automation/`

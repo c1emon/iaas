@@ -1,0 +1,16 @@
+---
+cluster:
+  api_endpoint: https://198.51.100.11:6443
+  name: synthetic-k3s
+  scope:
+    class: whole-cluster
+  server_ca_sha256: sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+  version: v1.35.1+k3s1
+platform:
+  bootstrap_credential_ref: op://synthetic/platform/bootstrap-grant
+  reconciliation: not-qualified
+  repository:
+    path: clusters/synthetic-k3s
+    revision: refs/tags/v2026.09.0
+    url: https://git.synthetic.invalid/platform/desired-state.git
+schema_version: 1

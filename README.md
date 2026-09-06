@@ -25,9 +25,19 @@ make secret-scan
   templates, OpenTofu root, and committed generated outputs.
 - `automation/` — reusable Python (`src/iaas_automation`), Ansible, OpenTofu
   modules, Packer, and PVE-node mechanisms.
-- `platform/` — reserved for future in-cluster platform automation; no K3s or
-  cluster platform capability is implemented here.
+- `platform/` — documentation-only boundary for handoff to the external
+  platform repository; it is not an in-repository platform implementation root
+  or compatibility alias.
 - `tests/` — repository tests.
+
+Ownership is intentionally split across three repositories:
+
+- IaaS owns PVE/VM lifecycle, K3s node lifecycle and verification, and the
+  non-secret handoff bundle.
+- The external platform repository owns Flux and shared in-cluster desired
+  state such as Cilium, CSI, Gateway, certificates, and observability.
+- Application repositories own ordinary application releases, values, and
+  application routing resources.
 
 ## Astra 源与生成物
 
@@ -47,4 +57,4 @@ Generated, reviewable non-secret artifacts are under
 - [唯一操作手册](docs/operations/README.md)
 - [文档索引与架构/历史背景](docs/README.md)
 - [可复用自动化实现边界](automation/README.md)
-- [未来 in-cluster platform 边界](platform/README.md)
+- [外部 platform repository handoff 边界](platform/README.md)

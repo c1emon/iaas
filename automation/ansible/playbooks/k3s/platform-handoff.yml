@@ -1,0 +1,135 @@
+---
+- name: Render a verified non-secret platform handoff bundle
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    platform_handoff_model_path: ""
+    platform_handoff_k3s_intent: ""
+    platform_handoff_intent: ""
+    platform_handoff_scope: ""
+    platform_handoff_output: ""
+    platform_handoff_ca_path: /var/lib/rancher/k3s/server/tls/server-ca.crt
+
+  tasks:
+    - name: Require explicit handoff inputs
+      ansible.builtin.assert:
+        that:
+          - platform_handoff_model_path | string | length > 0
+          - platform_handoff_k3s_intent | string | length > 0
+          - platform_handoff_intent | string | length > 0
+          - platform_handoff_scope | string | length > 0
+          - platform_handoff_output | string | length > 0
+        fail_msg: platform handoff render requires explicit model, intent, scope, and output inputs
+      changed_when: false
+
+    - name: Load the verified composed K3s model
+      ansible.builtin.include_vars:
+        file: "{{ platform_handoff_model_path }}"
+        name: platform_handoff_model
+
+    - name: Select the single declared initial K3s server
+      ansible.builtin.set_fact:
+        platform_handoff_initial_servers: >-
+          {{ platform_handoff_model.nodes | selectattr('role', 'equalto', 'server')
+             | selectattr('bootstrap', 'equalto', true) | list }}
+      changed_when: false
+
+    - name: Require exactly one declared initial server
+      ansible.builtin.assert:
+        that:
+          - platform_handoff_initial_servers | length == 1
+        fail_msg: platform handoff requires exactly one declared initial K3s server
+      changed_when: false
+
+    - name: Read the authoritative K3s server CA through authenticated guest access
+      ansible.builtin.slurp:
+        src: "{{ platform_handoff_ca_path }}"
+      delegate_to: "{{ platform_handoff_initial_servers[0].vm_ref }}"
+      become: true
+      register: platform_handoff_server_ca
+      changed_when: false
+      no_log: true
+
+    - name: Require exactly one X.509 CA certificate
+      ansible.builtin.assert:
+        that:
+          - >-
+            (platform_handoff_server_ca.content | b64decode
+             | regex_findall('-----BEGIN CERTIFICATE-----') | length) == 1
+        fail_msg: authoritative K3s server CA must contain exactly one X.509 certificate
+      changed_when: false
+      no_log: true
+
+    - name: Validate the authoritative server CA certificate
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - x509
+          - -in
+          - "{{ platform_handoff_ca_path }}"
+          - -noout
+          - -text
+      delegate_to: "{{ platform_handoff_initial_servers[0].vm_ref }}"
+      become: true
+      changed_when: false
+
+    - name: Derive the authoritative server CA DER SHA-256 fingerprint
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - x509
+          - -in
+          - "{{ platform_handoff_ca_path }}"
+          - -noout
+          - -fingerprint
+          - -sha256
+      delegate_to: "{{ platform_handoff_initial_servers[0].vm_ref }}"
+      become: true
+      register: platform_handoff_ca_fingerprint_command
+      changed_when: false
+
+    - name: Normalize the authoritative CA fingerprint
+      ansible.builtin.set_fact:
+        platform_handoff_ca_fingerprint: >-
+          sha256:{{ platform_handoff_ca_fingerprint_command.stdout
+                     | regex_replace('^.*=', '') | regex_replace(':', '') | lower | trim }}
+      changed_when: false
+
+    - name: Verify the declared API endpoint against the authoritative server CA
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - s_client
+          - -connect
+          - "{{ platform_handoff_model.cluster.api_endpoint.address }}:6443"
+          - -CAfile
+          - "{{ platform_handoff_ca_path }}"
+          - -verify_return_error
+          - -verify_hostname
+          - "{{ platform_handoff_model.cluster.api_endpoint.address }}"
+      delegate_to: "{{ platform_handoff_initial_servers[0].vm_ref }}"
+      become: true
+      changed_when: false
+
+    - name: Render the protected handoff bundle after read-only verification
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - -m
+          - iaas_automation.platform_handoff
+          - --intent
+          - "{{ platform_handoff_k3s_intent }}"
+          - --inventory
+          - "{{ inventory_file }}"
+          - --handoff-intent
+          - "{{ platform_handoff_intent }}"
+          - --scope
+          - "{{ platform_handoff_scope }}"
+          - --render
+          - "{{ platform_handoff_output }}"
+          - --ca-fingerprint
+          - "{{ platform_handoff_ca_fingerprint }}"
+      environment:
+        PYTHONPATH: "{{ playbook_dir }}/../../../src"
+      changed_when: true
