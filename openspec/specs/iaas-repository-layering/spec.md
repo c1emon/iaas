@@ -6,7 +6,9 @@ Define the ownership boundaries and hard-cutover contract that separate Astra en
 ## Requirements
 
 ### Requirement: Repository layers express ownership
-The repository SHALL separate Astra-specific configuration, reusable automation, and the external platform-repository handoff boundary into explicit top-level layers.
+The repository SHALL separate Astra-specific configuration, reusable
+automation, and the external platform-repository handoff boundary into explicit
+top-level layers.
 
 #### Scenario: Operator locates Astra environment data
 - **WHEN** an operator reviews Astra inventory, Ansible data, runtime templates, generated deployment inputs, or the Astra OpenTofu root
@@ -80,6 +82,7 @@ IaaS repository and SHALL use `platform/` only to document the external
 platform repository handoff boundary.
 
 #### Scenario: Operator inspects the platform boundary
+
 - **WHEN** the platform handoff capability is implemented
 - **THEN** `platform/README.md` SHALL describe the external platform repository as the owner of Flux and shared in-cluster services
 - **AND** ordinary application release content SHALL remain owned by application repositories
