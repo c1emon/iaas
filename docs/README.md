@@ -26,6 +26,7 @@
 
 - [环境架构参考](architecture.md)
 - [K3s 平台设计](k3s-foundation-platform-design.md)
+- [Forgejo 驱动的 IaaS 与基础平台交付设计及任务清单](decisions/forgejo-iaas-platform-delivery.md)
 - [Roadmap and backlog](roadmap.md)
 - [PVE automation preflight decision](decisions/pve-automation-preflight.md)
 - [IaaS automation roadmap research](decisions/iaas-automation-roadmap-research.md)
