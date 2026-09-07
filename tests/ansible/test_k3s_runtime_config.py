@@ -91,6 +91,28 @@ def _playbook(
     )
 
 
+def test_shared_endpoint_renders_one_auth_key(tmp_path: Path) -> None:
+    playbook = tmp_path / "runtime.yml"
+    output_dir = tmp_path / "rendered"
+    _playbook(playbook, output_dir, tmp_path / "runtime-secrets.json")
+    plays = yaml.safe_load(playbook.read_text())
+    mirror = plays[0]['vars']['k3s_runtime_model']['cluster']['registry']['mirrors'][0]
+    mirror['endpoint'] = 'https://harbor.synthetic.invalid:883'
+    mirror['rewrites'] = {'(^.+$)': 'dio/$1'}
+    plays[0]['vars']['k3s_runtime_model']['cluster']['registry']['mirrors'] = [
+        dict(mirror, registry=name) for name in ['docker.io', 'quay.io', 'ghcr.io']
+    ]
+    playbook.write_text(yaml.safe_dump(plays))
+    result = _run(['-i', 'localhost,', str(playbook)])
+    assert result.returncode == 0, result.stdout + result.stderr
+    raw = (output_dir / 'registries.yaml').read_text()
+    rendered = yaml.safe_load(raw)
+    assert list(rendered['configs']) == ['harbor.synthetic.invalid:883']
+    assert raw.count('"harbor.synthetic.invalid:883":') == 1
+    assert rendered['configs']['harbor.synthetic.invalid:883']['auth']['username'] == 'synthetic-user'
+    assert len(rendered['mirrors']) == 3
+
+
 def test_role_has_valid_ansible_syntax(tmp_path: Path) -> None:
     playbook = tmp_path / "runtime.yml"
     _playbook(playbook, tmp_path / "rendered", tmp_path / "runtime-secrets.json")

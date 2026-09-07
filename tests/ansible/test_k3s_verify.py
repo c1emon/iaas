@@ -104,6 +104,44 @@ def _extra(scope: list[str] | None = None) -> list[str]:
     ]
 
 
+def test_realistic_cni_and_multiline_etcd(tmp_path: Path) -> None:
+    outputs = _probe_outputs(
+        ready=False, reason='KubeletNotReady',
+        message='container runtime network not ready: NetworkReady=false reason:NetworkPluginNotReady message:cni plugin not initialized',
+    )
+    outputs['etcd']['stdout'] = '[+]ping ok\n[+]etcd ok\n[+]informer-sync ok\nreadyz check passed\n'
+    result = _run(['-i', str(_inventory(tmp_path, outputs=outputs)), str(PLAYBOOK), *_extra()])
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert 'WARN verify.synthetic-server-01.readiness' in result.stdout
+    assert 'PASS verify.etcd' in result.stdout
+
+
+def test_missing_etcd_check_blocks(tmp_path: Path) -> None:
+    outputs = _probe_outputs()
+    outputs['etcd']['stdout'] = '[+]ping ok\nreadyz check passed\n'
+    result = _run(['-i', str(_inventory(tmp_path, outputs=outputs)), str(PLAYBOOK), *_extra()])
+    assert result.returncode != 0
+    assert 'FAIL verify.etcd' in result.stdout
+
+
+def test_missing_condition_does_not_reuse_previous_node(tmp_path: Path) -> None:
+    outputs = _probe_outputs()
+    nodes = json.loads(outputs['nodes']['stdout'])
+    nodes['items'][1]['status']['conditions'] = []
+    outputs['nodes']['stdout'] = json.dumps(nodes)
+    result = _run(['-i', str(_inventory(tmp_path, outputs=outputs)), str(PLAYBOOK), *_extra()])
+    assert result.returncode != 0
+    assert 'FAIL verify.synthetic-server-02.readiness' in result.stdout
+
+
+def test_mixed_cni_failure_is_not_tolerated(tmp_path: Path) -> None:
+    outputs = _probe_outputs(ready=False, reason='KubeletNotReady',
+                             message='cni plugin not initialized, container runtime is down')
+    result = _run(['-i', str(_inventory(tmp_path, outputs=outputs)), str(PLAYBOOK), *_extra()])
+    assert result.returncode != 0
+    assert 'FAIL verify.synthetic-server-01.readiness' in result.stdout
+
+
 def test_playbook_syntax_check_passes() -> None:
     result = _run(["-i", "localhost,", str(PLAYBOOK), "--syntax-check"])
     assert result.returncode == 0, result.stdout + result.stderr

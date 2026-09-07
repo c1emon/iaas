@@ -16,6 +16,12 @@
     k3s_deploy_runtime_secret_file: ""
 
   tasks:
+    - name: Normalize the explicit deployment scope
+      ansible.builtin.set_fact:
+        k3s_deploy_selected_scope: >-
+          {{ k3s_deploy_scope.split(',') if k3s_deploy_scope is string else k3s_deploy_scope }}
+      changed_when: false
+
     - name: Require a composed model, whole scope, and protected runtime secret path
       ansible.builtin.assert:
         that:
@@ -37,7 +43,7 @@
       ansible.builtin.assert:
         that:
           - k3s_deploy_model.schema_version | default(0) | int == 1
-          - k3s_deploy_scope | sort == (k3s_deploy_model.nodes | map(attribute='vm_ref') | list | sort)
+          - k3s_deploy_selected_scope | sort == (k3s_deploy_model.nodes | map(attribute='vm_ref') | list | sort)
         fail_msg: "deployment scope must explicitly contain every composed K3s node"
       changed_when: false
 

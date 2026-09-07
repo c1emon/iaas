@@ -129,7 +129,7 @@
          | default(k3s_verify_etcd_output | string if k3s_verify_etcd_output_is_string else '') }}
     k3s_verify_etcd_ok: >-
       {{ (k3s_verify_etcd_output.rc | default(1) | int == 0)
-         and (k3s_verify_etcd_stdout | trim == '[+]etcd ok'
+         and ('[+]etcd ok' in (k3s_verify_etcd_stdout.splitlines() | map('trim') | list)
               or k3s_verify_etcd_stdout | trim == 'etcd ok') }}
     k3s_verify_etcd_output_is_string: "{{ k3s_verify_etcd_output is string }}"
     k3s_verify_etcd_result:

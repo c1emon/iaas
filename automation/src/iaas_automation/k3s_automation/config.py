@@ -296,6 +296,7 @@ def _validate_registry(value: Any, version: str) -> tuple[dict[str, Any], list[s
     normalized: list[dict[str, Any]] = []
     endpoint_hosts: list[str] = []
     seen: set[str] = set()
+    endpoint_policies: dict[str, dict[str, Any]] = {}
     for index, raw_mirror in enumerate(raw_mirrors):
         context = f"cluster.registry.mirrors[{index}]"
         mirror = as_mapping(raw_mirror, context)
@@ -343,7 +344,8 @@ def _validate_registry(value: Any, version: str) -> tuple[dict[str, Any], list[s
         )
         for pattern, replacement in rewrites.items():
             require(
-                REGISTRY_REWRITE_PATTERN_RE.fullmatch(pattern) is not None,
+                REGISTRY_REWRITE_PATTERN_RE.fullmatch(pattern) is not None
+                or pattern in {"(^.+$)", "^(.+)$"},
                 f"{context}.rewrites: patterns must use the anchored literal RE2-compatible prefix subset",
             )
             require(
@@ -351,7 +353,8 @@ def _validate_registry(value: Any, version: str) -> tuple[dict[str, Any], list[s
                 f"{context}.rewrites: replacement must use bounded repository path segments and optional $1",
             )
             require(
-                "$1" not in replacement or pattern.endswith("(.*)") or pattern.endswith("(.*)$"),
+                "$1" not in replacement or pattern.endswith("(.*)") or pattern.endswith("(.*)$")
+                or pattern in {"(^.+$)", "^(.+)$"},
                 f"{context}.rewrites: replacement $1 requires the supported capture suffix",
             )
         normalized.append({
@@ -377,6 +380,15 @@ def _validate_registry(value: Any, version: str) -> tuple[dict[str, Any], list[s
             ),
             "rewrites": dict(sorted(rewrites.items())),
         })
+        authority = urlsplit(endpoint).netloc.lower()
+        policy = {key: normalized[-1][key] for key in (
+            "auth_ref", "ca_ref", "ca_sha256", "client_cert_ref", "client_cert_sha256", "client_key_ref"
+        )}
+        require(
+            authority not in endpoint_policies or endpoint_policies[authority] == policy,
+            f"{context}: conflicting authentication or TLS policy for shared endpoint {authority}",
+        )
+        endpoint_policies[authority] = policy
     return {"fallback": fallback, "mirrors": normalized}, endpoint_hosts
 
 

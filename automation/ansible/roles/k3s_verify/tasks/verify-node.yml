@@ -2,6 +2,7 @@
 - name: Reset the observed node selection
   ansible.builtin.set_fact:
     k3s_verify_observed_node: {}
+    k3s_verify_ready_condition: {}
   changed_when: false
 
 - name: Select the declared node from the API response
@@ -88,15 +89,19 @@
     k3s_verify_ready_status: "{{ k3s_verify_ready_condition.status | default('') }}"
     k3s_verify_ready_reason: "{{ k3s_verify_ready_condition.reason | default('') | lower }}"
     k3s_verify_ready_message: "{{ k3s_verify_ready_condition.message | default('') | lower }}"
+    k3s_verify_cni_message_pattern: >-
+      {{ '^(?:container runtime network not ready: networkready=false '
+         ~ 'reason:networkpluginnotready message:|network plugin returns error: )?'
+         ~ 'cni plugin not initialized$' }}
     k3s_verify_blocking_conditions: >-
       {{ k3s_verify_observed_conditions
          | selectattr('status', 'equalto', 'True')
          | rejectattr('type', 'equalto', 'Ready')
          | map(attribute='type') | list }}
     k3s_verify_cni_bootstrap: >-
-      {{ k3s_verify_ready_status != 'True'
-         and k3s_verify_ready_reason == 'networkpluginnotready'
-         and (k3s_verify_ready_message is regex('(^|[^a-z])cni plugin not initialized([^a-z]|$)'))
+      {{ k3s_verify_ready_status == 'False'
+         and k3s_verify_ready_reason in ['kubeletnotready', 'networkpluginnotready']
+         and (k3s_verify_ready_message is match(k3s_verify_cni_message_pattern))
          and k3s_verify_blocking_conditions | length == 0 }}
     k3s_verify_ready_ok: "{{ k3s_verify_ready_status == 'True' }}"
     k3s_verify_readiness_result:

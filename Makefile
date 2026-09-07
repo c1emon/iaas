@@ -29,6 +29,7 @@ K3S_INTENT ?=
 K3S_INVENTORY ?=
 K3S_REVIEW ?= $(ROOT)/.cache/k3s/review.yml
 K3S_SCOPE ?=
+K3S_ANSIBLE_LIMIT = localhost,$(K3S_SCOPE)
 K3S_RUNTIME_SECRETS ?=
 K3S_PREFLIGHT_PLAYBOOK ?= $(AUTOMATION)/ansible/playbooks/k3s/preflight.yml
 K3S_VERIFY_PLAYBOOK ?= $(AUTOMATION)/ansible/playbooks/k3s/verify.yml
@@ -200,26 +201,26 @@ k3s-ansible-lint:
 
 k3s-preflight: require-k3s-online-inputs k3s-render
 	$(PYTHON) -m iaas_automation.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --scope "$(K3S_SCOPE)" --runtime-secrets "$(K3S_RUNTIME_SECRETS)"
-	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(K3S_INVENTORY)" -l "$(K3S_SCOPE)" -e "k3s_model_path=$(K3S_REVIEW)" -e "k3s_preflight_scope=$(K3S_SCOPE)" -e "k3s_runtime_secret_file=$(K3S_RUNTIME_SECRETS)" "$(K3S_PREFLIGHT_PLAYBOOK)"
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(K3S_INVENTORY)" -l "$(K3S_ANSIBLE_LIMIT)" -e "k3s_model_path=$(K3S_REVIEW)" -e "k3s_preflight_scope=$(K3S_SCOPE)" -e "k3s_runtime_secret_file=$(K3S_RUNTIME_SECRETS)" "$(K3S_PREFLIGHT_PLAYBOOK)"
 
 k3s-verify: require-k3s-scoped-inputs k3s-render
 	$(PYTHON) -m iaas_automation.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --scope "$(K3S_SCOPE)"
-	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(K3S_INVENTORY)" -l "$(K3S_SCOPE)" -e "k3s_model_path=$(K3S_REVIEW)" -e "k3s_verify_scope=$(K3S_SCOPE)" "$(K3S_VERIFY_PLAYBOOK)"
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(K3S_INVENTORY)" -l "$(K3S_ANSIBLE_LIMIT)" -e "k3s_model_path=$(K3S_REVIEW)" -e "k3s_verify_scope=$(K3S_SCOPE)" "$(K3S_VERIFY_PLAYBOOK)"
 
 k3s-deploy: require-k3s-online-inputs k3s-render
 	$(PYTHON) -m iaas_automation.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --scope "$(K3S_SCOPE)" --whole-cluster-scope --runtime-secrets "$(K3S_RUNTIME_SECRETS)"
-	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(K3S_INVENTORY)" -l "$(K3S_SCOPE)" -e "k3s_deploy_model_path=$(K3S_REVIEW)" -e "k3s_deploy_scope=$(K3S_SCOPE)" -e "k3s_deploy_runtime_secret_file=$(K3S_RUNTIME_SECRETS)" "$(K3S_DEPLOY_PLAYBOOK)"
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(K3S_INVENTORY)" -l "$(K3S_ANSIBLE_LIMIT)" -e "k3s_deploy_model_path=$(K3S_REVIEW)" -e "k3s_deploy_scope=$(K3S_SCOPE)" -e "k3s_deploy_runtime_secret_file=$(K3S_RUNTIME_SECRETS)" "$(K3S_DEPLOY_PLAYBOOK)"
 
 k3s-snapshot: require-k3s-scoped-inputs k3s-render
 	$(PYTHON) -m iaas_automation.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --scope "$(K3S_SCOPE)"
-	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(K3S_INVENTORY)" -l "$(K3S_SCOPE)" -e "k3s_model_path=$(K3S_REVIEW)" -e "k3s_snapshot_scope=$(K3S_SCOPE)" "$(K3S_SNAPSHOT_PLAYBOOK)"
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(K3S_INVENTORY)" -l "$(K3S_ANSIBLE_LIMIT)" -e "k3s_model_path=$(K3S_REVIEW)" -e "k3s_snapshot_scope=$(K3S_SCOPE)" "$(K3S_SNAPSHOT_PLAYBOOK)"
 
 k3s-upgrade: require-k3s-upgrade-inputs k3s-render
 	$(PYTHON) -m iaas_automation.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --scope "$(K3S_SCOPE)" --upgrade-target "$(K3S_UPGRADE_TARGET)" --observed-versions "$(K3S_OBSERVED_VERSIONS)" --render-upgrade-plan "$(K3S_UPGRADE_PLAN)" --runtime-secrets "$(K3S_RUNTIME_SECRETS)"
-	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(K3S_INVENTORY)" -l "$(K3S_SCOPE)" -e "k3s_upgrade_model_path=$(K3S_REVIEW)" -e "k3s_upgrade_scope=$(K3S_SCOPE)" -e "k3s_upgrade_target_version=$(K3S_UPGRADE_TARGET)" -e "k3s_upgrade_observed_versions_path=$(K3S_OBSERVED_VERSIONS)" -e "k3s_upgrade_plan_path=$(K3S_UPGRADE_PLAN)" -e "k3s_upgrade_runtime_secret_file=$(K3S_RUNTIME_SECRETS)" "$(K3S_UPGRADE_PLAYBOOK)"
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(K3S_INVENTORY)" -l "$(K3S_ANSIBLE_LIMIT)" -e "k3s_upgrade_model_path=$(K3S_REVIEW)" -e "k3s_upgrade_scope=$(K3S_SCOPE)" -e "k3s_upgrade_target_version=$(K3S_UPGRADE_TARGET)" -e "k3s_upgrade_observed_versions_path=$(K3S_OBSERVED_VERSIONS)" -e "k3s_upgrade_plan_path=$(K3S_UPGRADE_PLAN)" -e "k3s_upgrade_runtime_secret_file=$(K3S_RUNTIME_SECRETS)" "$(K3S_UPGRADE_PLAYBOOK)"
 
 platform-handoff-check: require-platform-handoff-inputs
 	$(PYTHON) -m iaas_automation.platform_handoff --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --handoff-intent "$(PLATFORM_HANDOFF_INTENT)" --scope "$(K3S_SCOPE)"
 
 platform-handoff-render: require-platform-handoff-render-inputs k3s-verify
-	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(K3S_INVENTORY)" -l "$(K3S_SCOPE)" -e "platform_handoff_model_path=$(K3S_REVIEW)" -e "platform_handoff_k3s_intent=$(K3S_INTENT)" -e "platform_handoff_intent=$(PLATFORM_HANDOFF_INTENT)" -e "platform_handoff_scope=$(K3S_SCOPE)" -e "platform_handoff_output=$(PLATFORM_HANDOFF_OUTPUT)" "$(PLATFORM_HANDOFF_PLAYBOOK)"
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(K3S_INVENTORY)" -l "$(K3S_ANSIBLE_LIMIT)" -e "platform_handoff_model_path=$(K3S_REVIEW)" -e "platform_handoff_k3s_intent=$(K3S_INTENT)" -e "platform_handoff_intent=$(PLATFORM_HANDOFF_INTENT)" -e "platform_handoff_scope=$(K3S_SCOPE)" -e "platform_handoff_output=$(PLATFORM_HANDOFF_OUTPUT)" "$(PLATFORM_HANDOFF_PLAYBOOK)"

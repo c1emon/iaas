@@ -13,7 +13,7 @@ PLAYBOOK = ROOT / "automation" / "ansible" / "playbooks" / "k3s" / "deploy.yml"
 def test_deployment_is_explicit_whole_cluster_and_ordered() -> None:
     source = PLAYBOOK.read_text(encoding="utf-8")
 
-    assert "k3s_deploy_scope | sort" in source
+    assert "k3s_deploy_selected_scope | sort" in source
     assert "k3s_bootstrap_server" in source
     assert "k3s_additional_servers" in source
     assert "k3s_agents" in source
