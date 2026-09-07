@@ -1,0 +1,42 @@
+---
+schema_version: 1
+vms:
+  - &server
+    name: k3s-e2e-server-01
+    vmid: 502
+    lifecycle_class: ephemeral_lab
+    node: cohe
+    resources: {cores: 2, memory_mib: 2048, root_disk_gib: 20}
+    nics:
+      - &nic
+        name: mgmt0
+        role: management
+        network: dev
+        macaddr: 52:54:00:00:01:f6
+        static_ip: 10.10.0.30/24
+        gateway: 10.10.0.254
+        default_route: true
+        ansible_connection: true
+        dns: [10.10.0.254]
+    ansible_groups: [k3s_e2e]
+    tags: [k3s-e2e]
+    pool: null
+    boot: {started: true, on_boot: false}
+    ha: {enabled: false, group: null, state: null}
+    passthrough: null
+  - <<: *server
+    name: k3s-e2e-agent-01
+    vmid: 503
+    resources: {cores: 2, memory_mib: 1024, root_disk_gib: 20}
+    nics:
+      - <<: *nic
+        macaddr: 52:54:00:00:01:f7
+        static_ip: 10.10.0.31/24
+  - <<: *server
+    name: k3s-e2e-agent-02
+    vmid: 504
+    resources: {cores: 2, memory_mib: 1024, root_disk_gib: 20}
+    nics:
+      - <<: *nic
+        macaddr: 52:54:00:00:01:f8
+        static_ip: 10.10.0.32/24

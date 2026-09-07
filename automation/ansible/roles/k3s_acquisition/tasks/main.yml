@@ -29,6 +29,9 @@
         (k3s_acquisition_artifact.url
          | regex_search('^https://[^?#]*/' ~ (k3s_acquisition_cluster.version | regex_escape) ~ '(/|$)')
          | default('', true) | length) > 0
+        or k3s_acquisition_artifact.url ==
+           ('https://rancher-mirror.rancher.cn/k3s/'
+            ~ (k3s_acquisition_cluster.version | replace('+', '-')) ~ '/k3s')
       - >-
         (k3s_acquisition_artifact.credential_ref | default('', true) | length == 0)
         or (k3s_acquisition_runtime_secret_file | default('', true) | string | length > 0)
@@ -48,21 +51,21 @@
     mode: "0755"
   environment:
     https_proxy: >-
-      {% if k3s_acquisition_artifact.credential_ref | default('', true) | length > 0 %}
+      {%- if k3s_acquisition_artifact.credential_ref | default('', true) | length > 0 -%}
       {% set credentials = lookup('k3s_protected_secret', k3s_acquisition_artifact.credential_ref,
-                                  secret_file=k3s_acquisition_runtime_secret_file) | from_json %}
+                                  secret_file=k3s_acquisition_runtime_secret_file) | from_json -%}
       {{ k3s_acquisition_artifact.proxy_url
          | regex_replace('://', '://' ~ credentials.username ~ ':' ~ credentials.password ~ '@') }}
-      {% else %}
+      {%- else -%}
       {{ k3s_acquisition_artifact.proxy_url | default('', true) }}
-      {% endif %}
+      {%- endif -%}
     HTTPS_PROXY: >-
-      {% if k3s_acquisition_artifact.credential_ref | default('', true) | length > 0 %}
+      {%- if k3s_acquisition_artifact.credential_ref | default('', true) | length > 0 -%}
       {% set credentials = lookup('k3s_protected_secret', k3s_acquisition_artifact.credential_ref,
-                                  secret_file=k3s_acquisition_runtime_secret_file) | from_json %}
+                                  secret_file=k3s_acquisition_runtime_secret_file) | from_json -%}
       {{ k3s_acquisition_artifact.proxy_url
          | regex_replace('://', '://' ~ credentials.username ~ ':' ~ credentials.password ~ '@') }}
-      {% else %}
+      {%- else -%}
       {{ k3s_acquisition_artifact.proxy_url | default('', true) }}
-      {% endif %}
+      {%- endif -%}
   no_log: true

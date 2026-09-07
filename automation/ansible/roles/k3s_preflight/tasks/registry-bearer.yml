@@ -1,0 +1,101 @@
+---
+- name: Parse the registry Bearer challenge
+  ansible.builtin.set_fact:
+    k3s_preflight_registry_realm: >-
+      {{ (k3s_registry_challenge.www_authenticate | default('')
+          | regex_findall('realm="([^"]+)"') | first) | default('') }}
+    k3s_preflight_registry_service: >-
+      {{ (k3s_registry_challenge.www_authenticate | default('')
+          | regex_findall('service="([^"]+)"') | first) | default('') }}
+  changed_when: false
+  no_log: true
+
+- name: Require an HTTPS same-authority token service before sending credentials
+  ansible.builtin.assert:
+    that:
+      - k3s_registry_challenge.www_authenticate | default('') is match('(?i)^Bearer ')
+      - k3s_preflight_registry_realm | urlsplit('scheme') == 'https'
+      - >-
+        k3s_preflight_registry_realm | urlsplit('netloc') | lower
+        == k3s_registry_challenge.item.endpoint | urlsplit('netloc') | lower
+      - not (k3s_preflight_registry_realm | urlsplit('query'))
+      - not (k3s_preflight_registry_realm | urlsplit('fragment'))
+      - k3s_registry_challenge.item.auth_ref | default('', true) | length > 0
+    fail_msg: Registry authentication requires a same-authority HTTPS Bearer realm and credentials
+  changed_when: false
+  no_log: true
+
+- name: Exchange registry credentials for a scoped Bearer token
+  ansible.builtin.uri:
+    url: "{{ k3s_preflight_registry_realm }}?service={{ k3s_preflight_registry_service | urlencode }}"
+    method: GET
+    force_basic_auth: true
+    url_username: >-
+      {{ (lookup('k3s_protected_secret', k3s_registry_challenge.item.auth_ref,
+                 secret_file=k3s_preflight_runtime_secret_file) | from_json).username }}
+    url_password: >-
+      {{ (lookup('k3s_protected_secret', k3s_registry_challenge.item.auth_ref,
+                 secret_file=k3s_preflight_runtime_secret_file) | from_json).password }}
+    ca_path: >-
+      {{ lookup('k3s_protected_secret', k3s_registry_challenge.item.ca_ref,
+                secret_file=k3s_preflight_runtime_secret_file)
+         if k3s_registry_challenge.item.ca_ref | default('', true) | length > 0 else omit }}
+    client_cert: >-
+      {{ lookup('k3s_protected_secret', k3s_registry_challenge.item.client_cert_ref,
+                secret_file=k3s_preflight_runtime_secret_file)
+         if k3s_registry_challenge.item.client_cert_ref | default('', true) | length > 0 else omit }}
+    client_key: >-
+      {{ lookup('k3s_protected_secret', k3s_registry_challenge.item.client_key_ref,
+                secret_file=k3s_preflight_runtime_secret_file)
+         if k3s_registry_challenge.item.client_key_ref | default('', true) | length > 0 else omit }}
+    use_proxy: false
+    follow_redirects: none
+    status_code: 200
+    timeout: "{{ k3s_preflight_endpoint_timeout }}"
+  delegate_to: "{{ k3s_preflight_node.vm_ref }}"
+  register: k3s_preflight_registry_token_response
+  changed_when: false
+  no_log: true
+
+- name: Require a nonempty token response
+  ansible.builtin.assert:
+    that:
+      - >-
+        k3s_preflight_registry_token_response.json.token
+        | default(k3s_preflight_registry_token_response.json.access_token | default(''), true) | length > 0
+  changed_when: false
+  no_log: true
+
+- name: Verify the registry endpoint with the issued Bearer token
+  ansible.builtin.uri:
+    url: "{{ k3s_registry_challenge.item.endpoint.rstrip('/') }}/v2/"
+    headers:
+      Authorization: >-
+        Bearer {{ k3s_preflight_registry_token_response.json.token
+                  | default(k3s_preflight_registry_token_response.json.access_token | default(''), true) }}
+    ca_path: >-
+      {{ lookup('k3s_protected_secret', k3s_registry_challenge.item.ca_ref,
+                secret_file=k3s_preflight_runtime_secret_file)
+         if k3s_registry_challenge.item.ca_ref | default('', true) | length > 0 else omit }}
+    client_cert: >-
+      {{ lookup('k3s_protected_secret', k3s_registry_challenge.item.client_cert_ref,
+                secret_file=k3s_preflight_runtime_secret_file)
+         if k3s_registry_challenge.item.client_cert_ref | default('', true) | length > 0 else omit }}
+    client_key: >-
+      {{ lookup('k3s_protected_secret', k3s_registry_challenge.item.client_key_ref,
+                secret_file=k3s_preflight_runtime_secret_file)
+         if k3s_registry_challenge.item.client_key_ref | default('', true) | length > 0 else omit }}
+    use_proxy: false
+    follow_redirects: none
+    status_code: [200, 204]
+    timeout: "{{ k3s_preflight_endpoint_timeout }}"
+  delegate_to: "{{ k3s_preflight_node.vm_ref }}"
+  changed_when: false
+  no_log: true
+
+- name: Record successful authenticated registry access without retaining the token
+  ansible.builtin.set_fact:
+    k3s_preflight_bearer_successes: "{{ k3s_preflight_bearer_successes + [true] }}"
+    k3s_preflight_registry_token_response: {}
+  changed_when: false
+  no_log: true

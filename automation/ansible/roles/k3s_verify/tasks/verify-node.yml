@@ -91,12 +91,13 @@
     k3s_verify_ready_message: "{{ k3s_verify_ready_condition.message | default('') | lower }}"
     k3s_verify_cni_message_pattern: >-
       {{ '^(?:container runtime network not ready: networkready=false '
-         ~ 'reason:networkpluginnotready message:|network plugin returns error: )?'
+         ~ 'reason:networkpluginnotready message:)?(?:network plugin returns error: )?'
          ~ 'cni plugin not initialized$' }}
     k3s_verify_blocking_conditions: >-
       {{ k3s_verify_observed_conditions
          | selectattr('status', 'equalto', 'True')
          | rejectattr('type', 'equalto', 'Ready')
+         | rejectattr('type', 'equalto', 'EtcdIsVoter')
          | map(attribute='type') | list }}
     k3s_verify_cni_bootstrap: >-
       {{ k3s_verify_ready_status == 'False'

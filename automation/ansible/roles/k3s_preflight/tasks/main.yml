@@ -54,11 +54,17 @@
     - name: ports
       command: "ss -lntu"
     - name: disk
-      command: "df -Pk /var/lib/rancher"
+      command: >-
+        python3 -c 'import os,shutil; p="/var/lib/rancher";
+        p=next(x for x in [p,"/var/lib","/var","/"] if os.path.isdir(x));
+        print(shutil.disk_usage(p).free)'
     - name: apt_sources
       command: >-
-        grep -R -h -E '(^[[:space:]]*deb([[:space:]]|\[)|^[[:space:]]*URIs:[[:space:]]+).*https?://'
-        /etc/apt/sources.list /etc/apt/sources.list.d
+        python3 -c 'from pathlib import Path; import re;
+        paths=[Path("/etc/apt/sources.list"),*Path("/etc/apt/sources.list.d").glob("*.list"),
+        *Path("/etc/apt/sources.list.d").glob("*.sources")];
+        print("\n".join(line for p in paths if p.is_file() for line in p.read_text().splitlines()
+        if re.match(r"^\s*(deb\s|URIs:)",line)))'
     - name: install_state
       command: "test ! -e /usr/local/bin/k3s"
   loop_control:
@@ -98,9 +104,9 @@
 - name: Build runtime facts from read-only probes
   ansible.builtin.set_fact:
     k3s_preflight_runtime:
-      os_family: "{{ k3s_preflight_setup.ansible_facts.os_family | default('unknown') }}"
-      distribution: "{{ k3s_preflight_setup.ansible_facts.distribution | default('unknown') }}"
-      architecture: "{{ k3s_preflight_setup.ansible_facts.architecture | default('unknown') }}"
+      os_family: "{{ k3s_preflight_setup.ansible_facts.ansible_os_family | default('unknown') }}"
+      distribution: "{{ k3s_preflight_setup.ansible_facts.ansible_distribution | default('unknown') }}"
+      architecture: "{{ k3s_preflight_setup.ansible_facts.ansible_architecture | default('unknown') }}"
       pve_architecture: "{{ hostvars[k3s_preflight_node.vm_ref].pve_architecture | default('unknown') }}"
       cgroups_v2: "{{ k3s_preflight_probes.results[0].stdout | default('') == 'cgroup2fs' }}"
       kernel_capabilities: >-
@@ -114,15 +120,16 @@
            if k3s_preflight_node.node_ip | default('')
               in (k3s_preflight_probes.results[3].stdout | default('')) else '' }}
       ports_available: >-
-        {% set ns = namespace(ok=(k3s_preflight_probes.results[4].rc | default(1) | int == 0)) %}
-        {% for result in k3s_preflight_port_checks.results | default([]) %}
-        {% if result.rc | default(1) | int != 0 or result.stdout | default('') | trim | length > 0 %}
-        {% set ns.ok = false %}
-        {% endif %}
-        {% endfor %}
-        {{ ns.ok }}
+        {%- set ns = namespace(ok=(k3s_preflight_probes.results[4].rc | default(1) | int == 0)) -%}
+        {%- for result in k3s_preflight_port_checks.results | default([]) -%}
+        {%- if result.rc | default(1) | int != 0 or result.stdout | default('') | trim | length > 0 -%}
+        {%- set ns.ok = false -%}
+        {%- endif -%}
+        {%- endfor -%}
+        {{- ns.ok -}}
       free_bytes: >-
-        {{ k3s_preflight_probes.results[5].stdout_lines[1].split()[3] | default('0') | int * 1024 }}
+        {{ k3s_preflight_probes.results[5].stdout | default('0') | int
+           if k3s_preflight_probes.results[5].rc | default(1) == 0 else 0 }}
       apt_sources_reachable: "{{ k3s_preflight_probes.results[6].rc | default(1) == 0 }}"
       artifact_reachable: false
       registry_reachable: false
@@ -170,11 +177,11 @@
   ansible.builtin.set_fact:
     k3s_preflight_required_credential_refs: >-
       {{ ([k3s_preflight_artifact.credential_ref]
-          if k3s_preflight_artifact.credential_ref | default('') | length > 0 else [])
+          if k3s_preflight_artifact.credential_ref | default('', true) | length > 0 else [])
          | union(k3s_preflight_registry_mirrors
                 | map(attribute='auth_ref') | select | list)
          | union(([k3s_preflight_service_proxy.credential_ref]
-                 if k3s_preflight_service_proxy.credential_ref | default('') | length > 0
+                 if k3s_preflight_service_proxy.credential_ref | default('', true) | length > 0
                  else [])) }}
   changed_when: false
   no_log: true
@@ -208,7 +215,7 @@
     status_code: [200, 204, 301, 302, 403]
     timeout: "{{ k3s_preflight_endpoint_timeout }}"
   delegate_to: "{{ k3s_preflight_node.vm_ref }}"
-  loop: "{{ k3s_preflight_probes.results[6].stdout | default('') | regex_findall('https?://[^[:space:]]+') }}"
+  loop: "{{ k3s_preflight_probes.results[6].stdout | default('') | regex_findall('https?://[^\\s]+') }}"
   loop_control:
     label: apt-source
   register: k3s_preflight_apt_source_checks
@@ -230,23 +237,23 @@
     timeout: "{{ k3s_preflight_endpoint_timeout }}"
   environment:
     https_proxy: >-
-      {% if k3s_preflight_artifact.credential_ref | default('', true) | length > 0 %}
+      {%- if k3s_preflight_artifact.credential_ref | default('', true) | length > 0 -%}
       {% set credentials = lookup('k3s_protected_secret', k3s_preflight_artifact.credential_ref,
-                                  secret_file=k3s_preflight_runtime_secret_file) | from_json %}
+                                  secret_file=k3s_preflight_runtime_secret_file) | from_json -%}
       {{ k3s_preflight_artifact.proxy_url
          | regex_replace('://', '://' ~ credentials.username ~ ':' ~ credentials.password ~ '@') }}
-      {% else %}
+      {%- else -%}
       {{ k3s_preflight_artifact.proxy_url | default('', true) }}
-      {% endif %}
+      {%- endif -%}
     HTTPS_PROXY: >-
-      {% if k3s_preflight_artifact.credential_ref | default('', true) | length > 0 %}
+      {%- if k3s_preflight_artifact.credential_ref | default('', true) | length > 0 -%}
       {% set credentials = lookup('k3s_protected_secret', k3s_preflight_artifact.credential_ref,
-                                  secret_file=k3s_preflight_runtime_secret_file) | from_json %}
+                                  secret_file=k3s_preflight_runtime_secret_file) | from_json -%}
       {{ k3s_preflight_artifact.proxy_url
          | regex_replace('://', '://' ~ credentials.username ~ ':' ~ credentials.password ~ '@') }}
-      {% else %}
+      {%- else -%}
       {{ k3s_preflight_artifact.proxy_url | default('', true) }}
-      {% endif %}
+      {%- endif -%}
   delegate_to: "{{ k3s_preflight_node.vm_ref }}"
   register: k3s_preflight_artifact_check
   changed_when: false
@@ -302,7 +309,7 @@
     url: "{{ item.endpoint.rstrip('/') }}/v2/"
     method: GET
     return_content: false
-    status_code: [200, 204]
+    status_code: [200, 204, 401]
     validate_certs: true
     timeout: "{{ k3s_preflight_endpoint_timeout }}"
     ca_path: >-
@@ -322,7 +329,9 @@
       {{ (lookup('k3s_protected_secret', item.auth_ref,
                  secret_file=k3s_preflight_runtime_secret_file) | from_json).password
          if item.auth_ref | default('', true) | length > 0 else omit }}
-    force_basic_auth: "{{ item.auth_ref | default('') | length > 0 }}"
+    force_basic_auth: "{{ item.auth_ref | default('', true) | length > 0 }}"
+    use_proxy: false
+    follow_redirects: none
   environment:
     https_proxy: >-
       {% if k3s_preflight_service_proxy.credential_ref | default('', true) | length > 0 %}
@@ -357,6 +366,22 @@
     - k3s_preflight_credentials_ok | bool
   no_log: true
 
+- name: Reset authenticated registry probe results for this node
+  ansible.builtin.set_fact:
+    k3s_preflight_bearer_successes: []
+  changed_when: false
+
+- name: Complete registry Bearer authentication when challenged
+  ansible.builtin.include_tasks: registry-bearer.yml
+  loop: "{{ k3s_preflight_registry_checks.results | default([]) }}"
+  loop_control:
+    loop_var: k3s_registry_challenge
+    label: registry-authentication
+  when:
+    - hostvars[k3s_preflight_node.vm_ref].k3s_preflight_facts is not defined
+    - k3s_registry_challenge.status | default(0) | int == 401
+  no_log: true
+
 - name: Merge read-only endpoint evidence into the runtime result
   ansible.builtin.set_fact:
     k3s_preflight_runtime: >-
@@ -364,11 +389,11 @@
           'apt_sources_reachable': (
             (k3s_preflight_probes.results[6].rc | default(1) | int == 0)
             and ((k3s_preflight_probes.results[6].stdout | default('')
-                  | regex_findall('https?://[^[:space:]]+') | length) > 0)
+                  | regex_findall('https?://[^\\s]+') | length) > 0)
             and ((k3s_preflight_apt_source_checks.results | default([])
                   | selectattr('status', 'in', [200, 204, 301, 302, 403]) | list | length)
                  == (k3s_preflight_probes.results[6].stdout | default('')
-                     | regex_findall('https?://[^[:space:]]+') | length))
+                     | regex_findall('https?://[^\\s]+') | length))
           ),
           'artifact_reachable': (
             k3s_preflight_artifact_check.status | default(0) | int in [200, 204, 301, 302]
@@ -377,6 +402,7 @@
             (k3s_preflight_registry_mirrors | length == 0)
             or ((k3s_preflight_registry_checks.results | default([])
                  | selectattr('status', 'in', [200, 204]) | list | length)
+                + (k3s_preflight_bearer_successes | length)
                 == (k3s_preflight_registry_mirrors | length))
           ),
           'registry_tls_files_valid': (

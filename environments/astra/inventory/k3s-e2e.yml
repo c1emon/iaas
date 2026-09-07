@@ -1,0 +1,51 @@
+---
+schema_version: 1
+cluster:
+  name: astra-k3s-e2e
+  version: v1.35.1+k3s1
+  datastore: embedded-etcd
+  node_network_role: management
+  cluster_domain: cluster.local
+  server_token_ref: op://Astra/k3s-e2e/server-token
+  api_endpoint: {mode: bootstrap}
+  networking: {pod_cidr: 10.42.0.0/16, service_cidr: 10.43.0.0/16}
+  artifacts:
+    amd64:
+      url: https://rancher-mirror.rancher.cn/k3s/v1.35.1-k3s1/k3s
+      sha256: e406ca6e47673d747ab4665c90a9285615fe082e2593343725ed043ae163abbf
+  components:
+    external_cni: true
+    disable_network_policy: true
+    disable: [servicelb, traefik]
+  registry:
+    fallback: deny
+    mirrors:
+      - &mirror
+        registry: docker.io
+        endpoint: https://harbor.ops.clemon.icu:883
+        auth_ref: op://Astra/harbor-puller/Section_qtausuqhqapaeeanhbrwyzgiga/credentials
+        rewrites: {"(^.+$)": "dio/$1"}
+      - <<: *mirror
+        registry: quay.io
+        rewrites: {"(^.+$)": "quay/$1"}
+      - <<: *mirror
+        registry: ghcr.io
+        rewrites: {"(^.+$)": "ghcr/$1"}
+      - <<: *mirror
+        registry: gcr.io
+        rewrites: {"(^.+$)": "gcr/$1"}
+      - <<: *mirror
+        registry: nvcr.io
+        rewrites: {"(^.+$)": "nvcr/$1"}
+      - <<: *mirror
+        registry: registry.k8s.io
+        rewrites: {"(^.+$)": "k8s/$1"}
+      - <<: *mirror
+        registry: k8s.gcr.io
+        rewrites: {"(^.+$)": "k8s/$1"}
+  service_proxy: {state: absent, extra_no_proxy: []}
+  snapshot: {source_vm_ref: k3s-e2e-server-01}
+nodes:
+  - {vm_ref: k3s-e2e-server-01, role: server, bootstrap: true}
+  - {vm_ref: k3s-e2e-agent-01, role: agent, bootstrap: false}
+  - {vm_ref: k3s-e2e-agent-02, role: agent, bootstrap: false}

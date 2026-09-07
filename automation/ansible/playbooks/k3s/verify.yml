@@ -93,6 +93,8 @@
     - name: Run reusable read-only checks for each selected node
       ansible.builtin.include_role:
         name: k3s_verify
+        apply:
+          become: "{{ hostvars[k3s_node.vm_ref].k3s_verify_command_outputs is not defined }}"
       vars:
         k3s_verify_node: "{{ k3s_node }}"
       loop: "{{ k3s_selected_nodes }}"

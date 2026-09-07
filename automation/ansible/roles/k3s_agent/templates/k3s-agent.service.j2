@@ -5,6 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=exec
+EnvironmentFile=/etc/systemd/system/k3s-agent.service.env
+Delegate=yes
+KillMode=process
 ExecStart={{ k3s_agent_binary_path }} agent --config /etc/rancher/k3s/config.yaml
 Restart=always
 RestartSec=5

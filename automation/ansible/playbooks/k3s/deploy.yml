@@ -131,6 +131,9 @@
           - get
           - --raw=/readyz
       register: k3s_deploy_bootstrap_ready
+      until: k3s_deploy_bootstrap_ready.rc == 0 and k3s_deploy_bootstrap_ready.stdout | trim == 'ok'
+      retries: 30
+      delay: 2
       changed_when: false
       failed_when: false
       no_log: true
@@ -164,28 +167,19 @@
       no_log: true
 
     - name: Compare active secure-token credential and optional CA hash
+      vars:
+        k3s_deploy_expected_token: >-
+          {{ lookup('k3s_protected_secret', k3s_deploy_model.cluster.server_token_ref,
+                    secret_file=k3s_deploy_runtime_secret_file) }}
+        k3s_deploy_issued_token: >-
+          {{ hostvars[k3s_deploy_bootstrap_vm_ref].k3s_deploy_active_token_read.content | b64decode | trim }}
       ansible.builtin.assert:
         that:
+          - k3s_deploy_issued_token is match('^K10[0-9a-f]{64}::server:.+$')
           - >-
-            (hostvars[k3s_deploy_bootstrap_vm_ref].k3s_deploy_active_token_read.content
-             | b64decode | trim) is match('^K10[0-9a-f]+::.+$')
-          - >-
-            ((lookup('k3s_protected_secret', k3s_deploy_model.cluster.server_token_ref,
-                      secret_file=k3s_deploy_runtime_secret_file) is match('^K10[0-9a-f]+::.+$')
-              and ((hostvars[k3s_deploy_bootstrap_vm_ref].k3s_deploy_active_token_read.content
-                    | b64decode | trim).split('::')[-1]
-                   == lookup('k3s_protected_secret', k3s_deploy_model.cluster.server_token_ref,
-                             secret_file=k3s_deploy_runtime_secret_file).split('::')[-1])
-              and ((hostvars[k3s_deploy_bootstrap_vm_ref].k3s_deploy_active_token_read.content
-                    | b64decode | trim).split('::')[0]
-                   == lookup('k3s_protected_secret', k3s_deploy_model.cluster.server_token_ref,
-                             secret_file=k3s_deploy_runtime_secret_file).split('::')[0]))
-             or (not (lookup('k3s_protected_secret', k3s_deploy_model.cluster.server_token_ref,
-                             secret_file=k3s_deploy_runtime_secret_file) is match('^K10[0-9a-f]+::.+$'))
-                 and ((hostvars[k3s_deploy_bootstrap_vm_ref].k3s_deploy_active_token_read.content
-                       | b64decode | trim).split('::')[-1]
-                      == lookup('k3s_protected_secret', k3s_deploy_model.cluster.server_token_ref,
-                                secret_file=k3s_deploy_runtime_secret_file)))
+            (k3s_deploy_issued_token == k3s_deploy_expected_token)
+            if k3s_deploy_expected_token is match('^K10[0-9a-f]+::')
+            else (k3s_deploy_issued_token.split('::', 1)[1] == 'server:' ~ k3s_deploy_expected_token)
         fail_msg: "bootstrap secure token does not match the protected external token reference"
       changed_when: false
       no_log: true
@@ -270,4 +264,22 @@
       vars:
         k3s_agent_model: "{{ k3s_deploy_model }}"
         k3s_agent_node: "{{ k3s_deploy_node }}"
+      no_log: true
+
+    - name: Wait for the agent to register with the bootstrap API
+      ansible.builtin.command:
+        argv:
+          - /usr/local/bin/k3s
+          - kubectl
+          - get
+          - node
+          - "{{ k3s_deploy_node.vm_ref }}"
+          - -o
+          - name
+      delegate_to: "{{ hostvars['localhost'].k3s_deploy_bootstrap_vm_ref }}"
+      register: k3s_deploy_agent_registration
+      until: k3s_deploy_agent_registration.rc == 0
+      retries: 60
+      delay: 2
+      changed_when: false
       no_log: true

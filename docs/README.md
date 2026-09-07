@@ -12,6 +12,7 @@
 - [PVE](operations/03-pve.md)
 - [VM Bootstrap](operations/04-vm-bootstrap.md)
 - [K3s](operations/05-k3s.md)
+- [VM → K3s E2E 测试记录](operations/k3s-bootstrap-e2e-plan.md)
 - [全链路验收与恢复](operations/06-acceptance-and-recovery.md)
 
 ## 生成参考

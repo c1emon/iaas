@@ -5,6 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=notify
+EnvironmentFile=/etc/systemd/system/k3s.service.env
+Delegate=yes
+KillMode=process
 ExecStart={{ k3s_server_binary_path }} server --config /etc/rancher/k3s/config.yaml
 Restart=always
 RestartSec=5

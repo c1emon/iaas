@@ -244,8 +244,10 @@ def _validate_artifacts(value: Any, architectures: set[str], version: str) -> di
         credential_ref = artifact.get("credential_ref")
         url = _url(artifact.get("url"), f"{context}.url", https_only=True)
         require(
-            f"/{version}/" in urlsplit(url).path,
-            f"{context}.url: must contain the exact cluster.version as a path segment",
+            f"/{version}/" in urlsplit(url).path
+            or url == f"https://rancher-mirror.rancher.cn/k3s/{version.replace('+', '-')}/k3s",
+            f"{context}.url: must contain the exact cluster.version as a path segment "
+            "or use its exact Rancher China mirror mapping",
         )
         normalized[architecture] = {
             "url": url,
