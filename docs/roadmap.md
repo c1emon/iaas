@@ -75,7 +75,6 @@ archived OpenSpec changes.
 | PVE implementation/package maintenance and adapter consolidation. | `openspec/changes/archive/2026-06-28-consolidate-pve-api-runtime-adapters/`, `openspec/changes/archive/2026-06-28-reorganize-pve-health-check-packages/`, `openspec/changes/archive/2026-06-28-reorganize-pve-inventory-packages/`, `openspec/changes/archive/2026-06-28-reorganize-pve-cloud-init-packages/`, `openspec/changes/archive/2026-06-28-extract-python-common-primitives/` |
 | Operator documentation reorganization. | `openspec/changes/archive/2026-06-30-reorganize-operator-documentation/`, [root operator manual](../README.md) |
 | Roadmap consolidation. | `openspec/changes/archive/2026-06-30-consolidate-documentation-roadmaps/`, [current roadmap](roadmap.md) |
-| Review remediation phases 1, 2, 3a, and 4a. | [historical remediation roadmap](review-remediation-roadmap.md) |
 | OPNsense alias/VIP configuration and export support. | Archived OpenSpec history under `openspec/changes/archive/`. |
 | Switch/SKS8300 automation migration and read-only export workflow. | Archived OpenSpec history under `openspec/changes/archive/`. |
 
@@ -88,7 +87,6 @@ this roadmap consolidation.
 |---|---|
 | OpenSpec archive cleanup | Several complete active changes should be verified and archived to reduce planning drift. |
 | Documentation cleanup | Keep `docs/README.md`, this roadmap, and historical labels aligned; avoid treating old proposal queues as current status. |
-| Architecture TODO consolidation | `docs/architecture.md` still tracks service placement, DNS/domain, monitoring, backup, and switch/management-port TODOs. Summarize or split them into focused docs when they become implementation work. |
 | Service metadata and exposure details | Continue improving service metadata and generated docs before coupling DNS, reverse proxy, or firewall mutation. |
 
 ## Deferred / scale-triggered ideas
@@ -106,24 +104,10 @@ this roadmap consolidation.
 | PVE API/runtime adapter consolidation beyond current state | New maintenance pain appears after the archived adapter consolidation and package reorganizations. |
 | Deeper switch, DNS, firewall, or OPNsense mutation | Read-only export/diff and generated plan documentation exist first. |
 
-## Superseded notes
+## Historical references
 
-- The proposal queue in
-  [IaaS automation roadmap research](decisions/iaas-automation-roadmap-research.md)
-  lists several items as next priorities that later moved to archived or active
-  OpenSpec changes. Use OpenSpec state and this page for current status.
-- The completed phases in
-  [review remediation roadmap](review-remediation-roadmap.md) are retained for
-  audit context; their unchecked later phases are backlog candidates, not a live
-  sprint plan.
-
-## Historical roadmap references
-
-- [Review remediation roadmap](review-remediation-roadmap.md) — historical
-  remediation plan with remaining backlog candidates.
-- [IaaS automation roadmap research](decisions/iaas-automation-roadmap-research.md)
-  — historical research snapshot and decision context.
-- [Architecture notes](architecture.md) — current architecture inventory with
-  documentation TODOs that may feed future backlog items.
-- `openspec/changes/archive/` — archived implementation history and detailed
-  task records.
+Environment-specific research, topology TODOs and live remediation records belong to
+caller-owned repositories. Their migration does not alter past implementation evidence.
+`openspec/changes/archive/` retains historical requirements and task records; environment
+names there do not define current runtime defaults. Current architecture is documented in
+[the runtime architecture](architecture.md).

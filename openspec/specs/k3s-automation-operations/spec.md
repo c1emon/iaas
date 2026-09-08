@@ -28,7 +28,7 @@ containing only nodes declared by the composed cluster model.
 #### Scenario: No environment is selected
 - **WHEN** an operator does not provide the required K3s intent or inventory
 - **THEN** the system SHALL fail before contacting any host
-- **AND** it SHALL NOT silently select the Astra environment or an ad-hoc host list
+- **AND** it SHALL NOT silently select the selected environment or an ad-hoc host list
 
 ### Requirement: Offline K3s contract validation
 The system SHALL validate composed K3s deployment intent without infrastructure
@@ -224,7 +224,7 @@ The system SHALL allow the K3s automation capability to be implemented and
 validated without creating a real environment deployment.
 
 #### Scenario: Capability implementation is accepted
-- **WHEN** the change is validated without a declared Astra K3s cluster
+- **WHEN** the change is validated without a declared environment K3s cluster
 - **THEN** acceptance SHALL use synthetic VM inventory and K3s overlay fixtures, unit tests, Ansible syntax and lint checks, configuration rendering checks, and explicit safety-boundary tests
 - **AND** it SHALL NOT require PVE apply, guest mutation, K3s installation, or live cluster access
 

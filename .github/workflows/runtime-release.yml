@@ -1,0 +1,114 @@
+name: runtime-release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runtime-release-${{ github.repository }}-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      RUNTIME_BUILD_CACHE_DIR: /tmp/iaas-build-cache
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          version: "0.12.9"
+          python-version: "3.12"
+      - uses: opentofu/setup-opentofu@9d84900f3238fab8cd84ce47d658d25dd008be2f # v1
+        with:
+          tofu_version: "1.12.6"
+      - name: Validate event and exact source
+        run: uv run python automation/runtime/release.py prepare
+      - run: uv sync --locked --dev
+      - run: uv run ansible-galaxy collection install --no-deps -r automation/runtime/collections.yml -p automation/ansible/collections
+      - name: Install checkout secret scanner
+        run: |
+          curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.27.2/gitleaks_8.27.2_linux_x64.tar.gz -o /tmp/gitleaks.tar.gz
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+      - run: make check ENVIRONMENT_DIR="$PWD/tests/fixtures/environment" OUTPUT_DIR="$RUNNER_TEMP/iaas-output" GENERATED_DIR="$PWD/tests/fixtures/environment/generated" PVE_DIR="$PWD/tests/fixtures/environment/opentofu"
+      - run: make secret-scan
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: /tmp/iaas-build-cache
+          key: iaas-runtime-amd64-${{ hashFiles('pyproject.toml', 'uv.lock', 'automation/runtime/Dockerfile', 'automation/runtime/collections.yml', 'automation/runtime/prune.py') }}
+          restore-keys: iaas-runtime-amd64-
+      - run: docker buildx create --use
+      - name: Build versioned image
+        run: |
+          export OCI_SOURCE="$(jq -r .source release.json)"
+          export OCI_REVISION="$(jq -r .revision release.json)"
+          export OCI_VERSION="$(jq -r .tag release.json)"
+          make runtime-build RUNTIME_IMAGE=iaas-runtime:release-tested
+      - run: make runtime-tofu-check RUNTIME_IMAGE=iaas-runtime:release-tested
+      - run: uv run python automation/runtime/inspect_image.py --image iaas-runtime:release-tested
+      - name: Save the tested image without rebuilding
+        run: |
+          docker image inspect iaas-runtime:release-tested --format '{{.Id}}' > image-id.txt
+          docker save -o runtime-image.tar iaas-runtime:release-tested
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: tested-runtime
+          path: |
+            runtime-image.tar
+            image-id.txt
+            release.json
+          retention-days: 3
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.publish.outputs.digest }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          version: "0.12.9"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: tested-runtime
+      - name: Load and check tested image identity
+        run: |
+          docker load -i runtime-image.tar
+          test "$(docker image inspect iaas-runtime:release-tested --format '{{.Id}}')" = "$(cat image-id.txt)"
+      - name: Publish without overwriting an existing version
+        id: publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: uv run --no-project python automation/runtime/release.py publish
+
+  anonymous-consumption:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clean anonymous digest pull and invocation
+        env:
+          IMAGE_DIGEST: ${{ needs.publish.outputs.digest }}
+        run: |
+          export DOCKER_CONFIG="$(mktemp -d)"
+          trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+          if docker pull "$IMAGE_DIGEST" && docker run --rm --network none "$IMAGE_DIGEST"; then
+            echo "Anonymous consumption succeeded: \`$IMAGE_DIGEST\`" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Publication succeeded, but public consumption failed. Check package visibility; do not report distribution success.' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi

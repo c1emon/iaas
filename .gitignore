@@ -30,7 +30,7 @@ terraform.rc
 *.tfvars.json
 *.auto.tfvars
 *.auto.tfvars.json
-!environments/astra/generated/opentofu/pve.tfvars.json
+!tests/fixtures/environment/generated/opentofu/pve.tfvars.json
 *.tfoverride
 *.tfplan
 crash.log
@@ -60,7 +60,7 @@ build/
 tmp/
 exports/
 # Local Packer cache for future orchestration; the current remote wrapper
-# caches under /var/cache/astra/packer on the PVE node.
+# caches under /var/cache/iaas/packer on the PVE node.
 .cache/packer/
 .cache/pve-cloud-init/
 .ansible/

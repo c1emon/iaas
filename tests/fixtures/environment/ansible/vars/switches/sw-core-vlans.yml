@@ -1,0 +1,5 @@
+---
+# Synthetic regression data; not a deployment environment.
+switch_config_resources:
+  vlans: []
+  l2_interfaces: []

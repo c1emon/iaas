@@ -10,8 +10,8 @@ DHCP、物理接口、普通路由、系统升级或稳定 DNAT/端口转发。
 的接口标识符、目标网段/端口、回退方案和变更记录。API 配置只管理其声明的
 对象；它不会推断“某个 K3s 服务需要开放什么端口”。
 
-`environments/astra/inventory/foundation.yml` 中 OPNsense 是 K3s 前置的关键
-基础服务，但该文件只是恢复元数据。健康探针通过 `make foundation-health` 是
+`$ENVIRONMENT_DIR/inventory/foundation.yml` 可将 OPNsense 声明为 K3s 前置的
+基础服务；该文件只是恢复元数据。健康探针通过 `make foundation-health` 是
 在线只读证据，不替代本章的 API 或防火墙规则审查。
 
 当前可管理范围是 API 连通、只读查询/导出/快照、手写别名、IP Alias VIP、PBR
@@ -24,17 +24,17 @@ firewall/management rules、默认防火墙策略、NAT/DNAT 和关键公网入�
 
 | 文件 | 作用 | 约束 |
 | --- | --- | --- |
-| `environments/astra/ansible/inventory.yml` | `opnsense` 组、主机别名、API host/FQDN。 | 环境源文件。 |
-| `environments/astra/ansible/group_vars/opnsense.yml` | `opnsense_api_url`、`opnsense_ssl_verify`、API key/secret 入口。 | Key/secret 仅用环境变量。 |
-| `environments/astra/ansible/vars/opnsense/*.yml` | 声明式期望状态。 | 不从 export 复制回写。 |
-| `exports/opnsense/` | API 导出/快照。 | 本地观察产物，不是 apply 输入。 |
+| `$ENVIRONMENT_DIR/ansible/inventory.yml` | `opnsense` 组、主机别名、API host/FQDN。 | 环境源文件。 |
+| `$ENVIRONMENT_DIR/ansible/group_vars/opnsense.yml` | `opnsense_api_url`、`opnsense_ssl_verify`、API key/secret 入口。 | Key/secret 仅用环境变量。 |
+| `$ENVIRONMENT_DIR/ansible/vars/opnsense/*.yml` | 声明式期望状态。 | 不从 export 复制回写。 |
+| `$OUTPUT_DIR/runtime/exports/opnsense/` | API 导出/快照。 | 本地观察产物，不是 apply 输入。 |
 
 | 变量 | 含义 | 约束 |
 | --- | --- | --- |
 | `opnsense_api_host` | API 主机或地址。 | 必须与实际管理端点匹配。 |
 | `opnsense_api_url` | 由 host 派生的 HTTPS URL。 | 用于操作者理解；模块默认使用 host。 |
-| `opnsense_ssl_verify` | API TLS 校验开关。 | 当前环境为 `false`；这不是推荐的长期安全状态，启用 CA 后应审查改为 `true`。 |
-| `OPNSENSE_API_KEY` / `OPNSENSE_API_SECRET` | API 身份。 | 只能由 `.env.opnsense.tpl` 注入。 |
+| `opnsense_ssl_verify` | API TLS 校验开关。 | 由调用方声明；正常使用应启用 TLS 校验并提供可信 CA。 |
+| `OPNSENSE_API_KEY` / `OPNSENSE_API_SECRET` | API 身份。 | 调用方通过 `.env.opnsense.tpl` + `op run` 或传统 Secret 注入相同变量。 |
 
 ## 2.3 声明式资源参数
 
@@ -106,21 +106,24 @@ firewall/management rules、默认防火墙策略、NAT/DNAT 和关键公网入�
 make opnsense-validate
 ```
 
-然后在 `automation/ansible/` 目录以 runtime 模板运行在线只读 API smoke、导出
-或快照。导出写入本地 `exports/opnsense/`，不改设备配置；快照/导出内容可能含
+以下为调用方 `op run` 注入示例；传统 Secret 已注入同名变量时直接执行 `uv run`。
+调用方 group vars 负责将环境变量映射为 Ansible API 连接变量。
+然后在 `automation/ansible/` 目录运行在线只读 API smoke、导出
+或快照。导出写入本地 `$OUTPUT_DIR/runtime/exports/opnsense/`，不改设备配置；快照/导出内容可能含
 敏感信息，应按本手册的本地观察产物规则处理。
 
 ```bash
+export OPNSENSE_HOST="your-firewall-inventory-host"
 cd automation/ansible
 
-op run --env-file ../../environments/astra/runtime/.env.opnsense.tpl -- \
-  uv run ansible-playbook playbooks/opnsense/readonly.yml
+op run --env-file "$OPNSENSE_ENV_TEMPLATE" -- \
+  uv run ansible-playbook playbooks/opnsense/readonly.yml -i "$ENVIRONMENT_DIR/ansible/inventory.yml" --limit "$OPNSENSE_HOST"
 
-op run --env-file ../../environments/astra/runtime/.env.opnsense.tpl -- \
-  uv run ansible-playbook playbooks/opnsense/export.yml
+op run --env-file "$OPNSENSE_ENV_TEMPLATE" -- \
+  uv run ansible-playbook playbooks/opnsense/export.yml -i "$ENVIRONMENT_DIR/ansible/inventory.yml" --limit "$OPNSENSE_HOST"
 
-op run --env-file ../../environments/astra/runtime/.env.opnsense.tpl -- \
-  uv run ansible-playbook playbooks/opnsense/snapshot.yml
+op run --env-file "$OPNSENSE_ENV_TEMPLATE" -- \
+  uv run ansible-playbook playbooks/opnsense/snapshot.yml -i "$ENVIRONMENT_DIR/ansible/inventory.yml" --limit "$OPNSENSE_HOST"
 ```
 
 导出可包含 firewall aliases、Unbound host overrides/forwarding、DHCPv4/v6
@@ -134,20 +137,20 @@ credential preflight、再仅处理声明项、最后 reload 对应目标。各�
 
 ```bash
 # aliases.yml
-op run --env-file ../../environments/astra/runtime/.env.opnsense.tpl -- \
-  uv run ansible-playbook playbooks/opnsense/manage-aliases.yml
+op run --env-file "$OPNSENSE_ENV_TEMPLATE" -- \
+  uv run ansible-playbook playbooks/opnsense/manage-aliases.yml -i "$ENVIRONMENT_DIR/ansible/inventory.yml" --limit "$OPNSENSE_HOST"
 
 # filter-rules.yml
-op run --env-file ../../environments/astra/runtime/.env.opnsense.tpl -- \
-  uv run ansible-playbook playbooks/opnsense/manage-filter-rules.yml
+op run --env-file "$OPNSENSE_ENV_TEMPLATE" -- \
+  uv run ansible-playbook playbooks/opnsense/manage-filter-rules.yml -i "$ENVIRONMENT_DIR/ansible/inventory.yml" --limit "$OPNSENSE_HOST"
 
 # gateways.yml
-op run --env-file ../../environments/astra/runtime/.env.opnsense.tpl -- \
-  uv run ansible-playbook playbooks/opnsense/manage-gateways.yml
+op run --env-file "$OPNSENSE_ENV_TEMPLATE" -- \
+  uv run ansible-playbook playbooks/opnsense/manage-gateways.yml -i "$ENVIRONMENT_DIR/ansible/inventory.yml" --limit "$OPNSENSE_HOST"
 
 # vips.yml
-op run --env-file ../../environments/astra/runtime/.env.opnsense.tpl -- \
-  uv run ansible-playbook playbooks/opnsense/manage-vips.yml
+op run --env-file "$OPNSENSE_ENV_TEMPLATE" -- \
+  uv run ansible-playbook playbooks/opnsense/manage-vips.yml -i "$ENVIRONMENT_DIR/ansible/inventory.yml" --limit "$OPNSENSE_HOST"
 ```
 
 一次只变更一种资源类别，并在每次变更后使用 readonly/export 复核。尤其不得

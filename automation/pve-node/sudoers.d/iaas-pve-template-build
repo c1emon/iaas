@@ -1,0 +1,4 @@
+# Allow the pve-ops account to invoke only the template wrapper without a password.
+# Validate with visudo -cf before installing into sudoers.d.
+# This wrapper-only rule supersedes the temporary multi-binary preflight sudo allowlist.
+pve-ops ALL=(root) NOPASSWD: /usr/local/sbin/iaas-pve-template-build

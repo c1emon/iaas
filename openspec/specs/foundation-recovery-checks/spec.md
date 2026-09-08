@@ -54,15 +54,15 @@ The system SHALL validate foundation recovery metadata before generated recovery
 - **AND** generated documentation SHALL surface the accepted risk for operator review
 
 ### Requirement: Generated foundation recovery documentation
-The system SHALL generate committed, non-sensitive foundation recovery documentation from Astra's foundation recovery inventory.
+The system SHALL generate committed, non-sensitive foundation recovery documentation from the selected environment's foundation recovery inventory.
 
 #### Scenario: Operator regenerates foundation recovery documentation
 - **WHEN** an operator runs the foundation recovery documentation generation command
-- **THEN** the system SHALL generate `environments/astra/generated/docs/foundation-recovery.md`
+- **THEN** the system SHALL generate `docs/foundation-recovery.md` beneath the explicitly selected generated-output directory
 - **AND** the generated document SHALL include the minimum startup set, recovery order, foundation hosts, foundation services, dependencies, health checks, backup/restore metadata, break-glass metadata, storage-network facts, and warnings
 
 #### Scenario: Generated foundation recovery documentation is stale
-- **WHEN** Astra's foundation inventory changes without regenerating committed recovery documentation
+- **WHEN** the selected foundation inventory changes without regenerating committed recovery documentation
 - **THEN** the generated-output check SHALL fail
 - **AND** it SHALL report the stale environment-specific artifact
 
@@ -70,6 +70,10 @@ The system SHALL generate committed, non-sensitive foundation recovery documenta
 - **WHEN** foundation recovery documentation is generated or checked
 - **THEN** the generated output SHALL NOT contain passwords, private keys, API token secrets, password hashes, or other decrypted credential material
 - **AND** external secret references MAY be rendered if they are reference identifiers rather than secret values
+
+#### Scenario: Generated document describes its input
+- **WHEN** foundation documentation identifies its source
+- **THEN** it SHALL describe the selected logical input without a hard-coded Astra path or host-specific absolute path
 
 ### Requirement: Offline foundation checks
 The system SHALL provide offline foundation validation and generated-output checks that do not require internal infrastructure access.

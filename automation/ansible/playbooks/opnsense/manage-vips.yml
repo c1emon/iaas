@@ -12,7 +12,8 @@
       ssl_verify: "{{ opnsense_ssl_verify }}"
 
   vars:
-    opnsense_vip_source: "{{ ansible_project_dir }}/../../environments/astra/ansible/vars/opnsense/vips.yml"
+    opnsense_vip_source: >-
+      {{ lookup('ansible.builtin.env', 'ENVIRONMENT_DIR', default=undef()) }}/ansible/vars/opnsense/vips.yml
 
   tasks:
     - name: Validate desired OPNsense IP Alias VIPs locally
@@ -20,8 +21,9 @@
         argv:
           - uv
           - run
+          - --no-sync
           - --directory
-          - "{{ ansible_project_dir }}/../.."
+          - "{{ playbook_dir }}/../../../.."
           - python
           - -m
           - iaas_automation.opnsense_validation
@@ -30,9 +32,9 @@
           - --file
           - "{{ opnsense_vip_source }}"
       args:
-        chdir: "{{ ansible_project_dir }}/../.."
+        chdir: "{{ playbook_dir }}/../../../.."
       environment:
-        PYTHONPATH: "{{ ansible_project_dir }}/../../automation/src"
+        PYTHONPATH: "{{ playbook_dir }}/../../../src"
       changed_when: false
       check_mode: false
 

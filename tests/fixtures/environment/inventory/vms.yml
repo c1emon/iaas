@@ -1,0 +1,99 @@
+---
+# Synthetic regression data; not a deployment environment.
+schema_version: 1
+vms:
+  - name: dev-web-01
+    vmid: 500
+    lifecycle_class: ephemeral_lab
+    node: node-a
+    nics:
+      - name: mgmt0
+        role: management
+        network: dev
+        macaddr: 52:54:00:00:01:f4
+        static_ip: 198.51.100.20/24
+        gateway: 198.51.100.254
+        default_route: true
+        ansible_connection: true
+        dns:
+          - 198.51.100.254
+    ansible_groups:
+      - dev
+      - web
+    tags:
+      - dev
+      - web
+    pool: null
+    boot:
+      started: false
+      on_boot: false
+    ha:
+      enabled: false
+      group: null
+      state: null
+    passthrough: null
+  - name: prod-app-01
+    vmid: 1000
+    lifecycle_class: long_lived
+    node: node-a
+    nics:
+      - name: mgmt0
+        role: management
+        network: prod
+        macaddr: 52:54:00:00:03:e8
+        static_ip: 203.0.113.20/24
+        gateway: 203.0.113.254
+        default_route: true
+        ansible_connection: true
+        dns:
+          - 203.0.113.254
+    ansible_groups:
+      - prod
+      - app
+    tags:
+      - prod
+      - app
+    pool: null
+    boot:
+      started: false
+      on_boot: false
+    ha:
+      enabled: false
+      group: null
+      state: null
+    passthrough: null
+  - name: media-lab-01
+    vmid: 501
+    lifecycle_class: ephemeral_lab
+    node: node-a
+    nics:
+      - name: mgmt0
+        role: management
+        network: dev
+        macaddr: 52:54:00:00:01:f5
+        static_ip: 198.51.100.21/24
+        gateway: 198.51.100.254
+        default_route: true
+        ansible_connection: true
+        dns:
+          - 198.51.100.254
+    ansible_groups:
+      - lab
+      - media
+    tags:
+      - lab
+      - media
+      - igpu
+    pool: null
+    boot:
+      started: false
+      on_boot: false
+    ha:
+      enabled: false
+      group: null
+      state: null
+    passthrough:
+      - mapping: test-gpu
+        pcie: true
+        rombar: true
+        xvga: false

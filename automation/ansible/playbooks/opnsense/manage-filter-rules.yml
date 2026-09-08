@@ -13,7 +13,7 @@
 
   vars:
     opnsense_filter_rule_source: >-
-      {{ ansible_project_dir }}/../../environments/astra/ansible/vars/opnsense/filter-rules.yml
+      {{ lookup('ansible.builtin.env', 'ENVIRONMENT_DIR', default=undef()) }}/ansible/vars/opnsense/filter-rules.yml
     opnsense_filter_rule_identity_part_pattern: ^[a-z0-9][a-z0-9-]*$
     opnsense_filter_rule_required_fields:
       - scope
@@ -36,8 +36,9 @@
         argv:
           - uv
           - run
+          - --no-sync
           - --directory
-          - "{{ ansible_project_dir }}/../.."
+          - "{{ playbook_dir }}/../../../.."
           - python
           - -m
           - iaas_automation.opnsense_validation
@@ -46,9 +47,9 @@
           - --file
           - "{{ opnsense_filter_rule_source }}"
       args:
-        chdir: "{{ ansible_project_dir }}/../.."
+        chdir: "{{ playbook_dir }}/../../../.."
       environment:
-        PYTHONPATH: "{{ ansible_project_dir }}/../../automation/src"
+        PYTHONPATH: "{{ playbook_dir }}/../../../src"
       changed_when: false
       check_mode: false
 
@@ -67,7 +68,7 @@
           - opnsense_filter_rules is not string
         fail_msg: >-
           opnsense_filter_rules must be defined as a YAML sequence in
-          environments/astra/ansible/vars/opnsense/filter-rules.yml.
+          the selected environment ansible/vars/opnsense/filter-rules.yml.
 
     - name: Assert desired filter rules define required fields
       ansible.builtin.assert:

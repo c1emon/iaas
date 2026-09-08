@@ -22,8 +22,8 @@ from iaas_automation.pve_inventory.preflight import run_preflight
 
 
 ROOT = Path(__file__).resolve().parents[2]
-CLUSTER_PATH = ROOT / "environments" / "astra" / "inventory" / "pve-cluster.yml"
-VMS_PATH = ROOT / "environments" / "astra" / "inventory" / "vms.yml"
+CLUSTER_PATH = ROOT / "tests" / "fixtures" / "environment" / "inventory" / "pve-cluster.yml"
+VMS_PATH = ROOT / "tests" / "fixtures" / "environment" / "inventory" / "vms.yml"
 MAKEFILE_PATH = ROOT / "Makefile"
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "offline-validation.yml"
 
@@ -57,27 +57,27 @@ def _cluster_model() -> dict[str, Any]:
 def test_expected_resources_derive_from_validated_model() -> None:
     expected = derive_expected_resources(_cluster_model())
 
-    assert expected.required_nodes == {"cohe"}
-    assert expected.optional_nodes == {"node3"}
-    assert expected.bridges_by_node["cohe"] == {"br_dev", "br_prod"}
-    assert {item["datastore"] for item in expected.storage_by_node["cohe"]} == {"images", "memory"}
+    assert expected.required_nodes == {"node-a"}
+    assert expected.optional_nodes == {"node-b"}
+    assert expected.bridges_by_node["node-a"] == {"br_dev", "br_prod"}
+    assert {item["datastore"] for item in expected.storage_by_node["node-a"]} == {"images", "memory"}
     assert {item["vmid"] for item in expected.templates} == {9001}
     assert {item["vmid"] for item in expected.vmid_expectations} == {500, 1000, 501}
-    assert expected.mappings_by_node["cohe"] == {"iGpu0"}
-    assert expected.optional_mapping_nodes["iGpu0"] == {"node3"}
+    assert expected.mappings_by_node["node-a"] == {"test-gpu"}
+    assert expected.optional_mapping_nodes["test-gpu"] == {"node-b"}
 
 
 def test_expected_resources_collects_passthrough_mappings_from_every_vm() -> None:
     cluster = validate_cluster(load_yaml(CLUSTER_PATH))
     vms_doc = deepcopy(load_yaml(VMS_PATH))
     vms_doc["vms"][0]["passthrough"] = [
-        {"mapping": "iGpu0", "pcie": True, "rombar": True, "xvga": False}
+        {"mapping": "test-gpu", "pcie": True, "rombar": True, "xvga": False}
     ]
     vms_doc["vms"][-1]["passthrough"] = []
 
     model = build_model(cluster, validate_vms(vms_doc, cluster))
 
-    assert derive_expected_resources(model).mappings_by_node["cohe"] == {"iGpu0"}
+    assert derive_expected_resources(model).mappings_by_node["node-a"] == {"test-gpu"}
 
 
 def test_result_aggregation_and_exit_semantics() -> None:
@@ -99,29 +99,29 @@ def test_fake_api_checks_cover_nodes_storage_templates_vmids_and_pci(monkeypatch
     cluster = model["cluster"]
     vms = {vm["name"]: vm for vm in model["vms"]}
     routes = {
-        "https://pve.example.invalid/api2/json/nodes": [{"node": "cohe"}],
-        "https://pve.example.invalid/api2/json/nodes/cohe/network": [
+        "https://pve.example.invalid/api2/json/nodes": [{"node": "node-a"}],
+        "https://pve.example.invalid/api2/json/nodes/node-a/network": [
             {"iface": "br_dev", "type": "bridge"},
             {"iface": "br_prod", "type": "bridge"},
         ],
-        "https://pve.example.invalid/api2/json/nodes/cohe/storage": [
+        "https://pve.example.invalid/api2/json/nodes/node-a/storage": [
             {"storage": "images", "content": "iso,import,snippets"},
             {"storage": "memory", "content": "images"},
         ],
         "https://pve.example.invalid/api2/json/cluster/resources?type=vm": [
-            {"vmid": 9001, "node": "cohe", "name": "debian-13-tmpl-20260616", "template": True},
-            {"vmid": 500, "node": "cohe", "name": "dev-web-01", "template": False},
-            {"vmid": 1000, "node": "cohe", "name": "prod-app-01", "template": False},
+            {"vmid": 9001, "node": "node-a", "name": "debian-13-tmpl-20260616", "template": True},
+            {"vmid": 500, "node": "node-a", "name": "dev-web-01", "template": False},
+            {"vmid": 1000, "node": "node-a", "name": "prod-app-01", "template": False},
         ],
-        "https://pve.example.invalid/api2/json/nodes/cohe/qemu/500/config": {
+        "https://pve.example.invalid/api2/json/nodes/node-a/qemu/500/config": {
             "tags": ",".join(["managed-by-opentofu", vms["dev-web-01"]["lifecycle_class"], vms["dev-web-01"]["nics"][0]["network"]["name"], *vms["dev-web-01"]["tags"]]),
-            "description": "Managed by OpenTofu for astra-pve",
+            "description": "Managed by OpenTofu for fixture-pve",
         },
-        "https://pve.example.invalid/api2/json/nodes/cohe/qemu/1000/config": {
+        "https://pve.example.invalid/api2/json/nodes/node-a/qemu/1000/config": {
             "tags": ",".join(["managed-by-opentofu", vms["prod-app-01"]["lifecycle_class"], vms["prod-app-01"]["nics"][0]["network"]["name"], *vms["prod-app-01"]["tags"]]),
-            "description": "Managed by OpenTofu for astra-pve",
+            "description": "Managed by OpenTofu for fixture-pve",
         },
-        "https://pve.example.invalid/api2/json/cluster/mapping/pci": [{"name": "iGpu0", "nodes": [{"node": "cohe"}]}],
+        "https://pve.example.invalid/api2/json/cluster/mapping/pci": [{"name": "test-gpu", "nodes": [{"node": "node-a"}]}],
     }
     api = ProxmoxAPI(
         endpoint="https://pve.example.invalid",
@@ -137,7 +137,7 @@ def test_fake_api_checks_cover_nodes_storage_templates_vmids_and_pci(monkeypatch
     report = render_report(results)
     assert "FAIL" not in report
     assert "SKIP ssh.context" in report
-    assert "node3" in report
+    assert "node-b" in report
 
 
 def test_api_auth_failure_is_reported_without_secret_leakage() -> None:
@@ -171,26 +171,26 @@ def test_api_auth_failure_is_reported_without_secret_leakage() -> None:
     ("ssh_host", "ssh_user", "returncode", "severity"),
     [
         (None, None, 0, "SKIP"),
-        ("cohe", "pve-ops", 0, "PASS"),
-        ("cohe", "pve-ops", 127, "FAIL"),
+        ("node-a", "pve-ops", 0, "PASS"),
+        ("node-a", "pve-ops", 127, "FAIL"),
     ],
 )
 def test_ssh_adjuncts_are_optional_and_read_only(ssh_host: str | None, ssh_user: str | None, returncode: int, severity: str) -> None:
     routes = {
-        "https://pve.example.invalid/api2/json/nodes": [{"node": "cohe"}],
-        "https://pve.example.invalid/api2/json/nodes/cohe/network": [
+        "https://pve.example.invalid/api2/json/nodes": [{"node": "node-a"}],
+        "https://pve.example.invalid/api2/json/nodes/node-a/network": [
             {"iface": "br_dev", "type": "bridge"},
             {"iface": "br_prod", "type": "bridge"},
         ],
-        "https://pve.example.invalid/api2/json/nodes/cohe/storage": [
+        "https://pve.example.invalid/api2/json/nodes/node-a/storage": [
             {"storage": "images", "content": "iso,import,snippets"},
             {"storage": "memory", "content": "images"},
         ],
         "https://pve.example.invalid/api2/json/cluster/resources?type=vm": [
-            {"vmid": 9001, "node": "cohe", "name": "debian-13-tmpl-20260616", "template": True},
+            {"vmid": 9001, "node": "node-a", "name": "debian-13-tmpl-20260616", "template": True},
         ],
         "https://pve.example.invalid/api2/json/cluster/mapping/pci": [],
-        "https://pve.example.invalid/api2/json/cluster/mapping/pci/iGpu0": {"name": "iGpu0", "nodes": [{"node": "cohe"}]},
+        "https://pve.example.invalid/api2/json/cluster/mapping/pci/test-gpu": {"name": "test-gpu", "nodes": [{"node": "node-a"}]},
     }
     api = ProxmoxAPI(
         endpoint="https://pve.example.invalid",

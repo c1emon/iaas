@@ -1,0 +1,3 @@
+---
+# Synthetic regression data; not a deployment environment.
+opnsense_dnat_rules: []

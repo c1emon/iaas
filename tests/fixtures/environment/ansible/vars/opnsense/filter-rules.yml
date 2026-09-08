@@ -1,0 +1,160 @@
+---
+# Synthetic regression data; not a deployment environment.
+opnsense_filter_rules:
+  - scope: floating
+    slug: allow-local-dns
+    state: present
+    enabled: true
+    sequence: 10
+    interface: []
+    direction: in
+    action: pass
+    quick: true
+    ip_protocol: inet46
+    protocol: UDP
+    source_net: any
+    destination_net: (self)
+    destination_port: '53'
+    log: false
+  - scope: floating
+    slug: route-fakeip-to-hole
+    state: present
+    enabled: true
+    sequence: 100
+    interface: []
+    direction: in
+    action: pass
+    quick: true
+    ip_protocol: inet46
+    protocol: any
+    source_net: any
+    destination_net:
+      - HOLE_FAKEIP_NETS
+    gateway: HOLE
+    log: false
+  - scope: lan
+    slug: default-allow-lan-to-any
+    state: present
+    enabled: true
+    sequence: 900
+    interface:
+      - lan
+    direction: in
+    action: pass
+    quick: true
+    ip_protocol: inet46
+    protocol: any
+    source_net: lan
+    destination_net: any
+    log: false
+  - scope: hole
+    slug: block-internal-nets
+    state: present
+    enabled: true
+    sequence: 930
+    interface:
+      - opt8
+    direction: in
+    action: reject
+    quick: true
+    ip_protocol: inet46
+    protocol: any
+    source_net: any
+    destination_net:
+      - lan
+      - opt1
+      - opt2
+      - opt3
+      - opt4
+      - opt6
+      - opt7
+    log: false
+  - scope: hole
+    slug: allow-any
+    state: present
+    enabled: true
+    sequence: 931
+    interface:
+      - opt8
+    direction: in
+    action: pass
+    quick: true
+    ip_protocol: inet46
+    protocol: any
+    source_net: any
+    destination_net: any
+    log: false
+  - scope: dev
+    slug: block-internal-nets
+    state: present
+    enabled: true
+    sequence: 940
+    interface:
+      - opt2
+    direction: in
+    action: reject
+    quick: true
+    ip_protocol: inet46
+    protocol: any
+    source_net: any
+    destination_net:
+      - lan
+      - opt1
+      - opt3
+      - opt4
+      - opt6
+      - opt7
+      - opt8
+    log: false
+  - scope: dev
+    slug: allow-any
+    state: present
+    enabled: true
+    sequence: 941
+    interface:
+      - opt2
+    direction: in
+    action: pass
+    quick: true
+    ip_protocol: inet46
+    protocol: any
+    source_net: any
+    destination_net: any
+    log: false
+  - scope: app
+    slug: block-internal-nets
+    state: present
+    enabled: true
+    sequence: 950
+    interface:
+      - opt4
+    direction: in
+    action: reject
+    quick: true
+    ip_protocol: inet46
+    protocol: any
+    source_net: any
+    destination_net:
+      - lan
+      - opt1
+      - opt2
+      - opt3
+      - opt6
+      - opt7
+      - opt8
+    log: false
+  - scope: app
+    slug: allow-any
+    state: present
+    enabled: true
+    sequence: 951
+    interface:
+      - opt4
+    direction: in
+    action: pass
+    quick: true
+    ip_protocol: inet46
+    protocol: any
+    source_net: any
+    destination_net: any
+    log: false

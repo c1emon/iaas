@@ -1,0 +1,25 @@
+---
+# Synthetic regression data; not a deployment environment.
+opnsense_gateways:
+  - name: HOLE
+    interface: opt8
+    ip_protocol: inet
+    gateway: 198.19.0.253
+    default_gw: false
+    far_gw: false
+    monitor_disable: false
+    monitor_noroute: false
+    monitor: 198.19.0.253
+    force_down: false
+    latency_low: 200
+    latency_high: 500
+    loss_low: 10
+    loss_high: 20
+    interval: 1
+    time_period: 60
+    loss_interval: 4
+    data_length: 1
+    priority: 255
+    weight: 1
+    description: Proxy gateway for FakeIP policy-based routing
+    state: present

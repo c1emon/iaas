@@ -1,0 +1,27 @@
+---
+# Synthetic regression data; not a deployment environment.
+opnsense_vips:
+  - description: Hole VIP for MGMT
+    interface: opt1
+    address: 192.0.2.253/32
+    bind: false
+    expand: true
+    state: present
+  - description: Hole VIP for DEV
+    interface: opt2
+    address: 198.51.100.253/32
+    bind: false
+    expand: true
+    state: present
+  - description: Hole VIP for APP
+    interface: opt4
+    address: 203.0.113.253/32
+    bind: false
+    expand: true
+    state: present
+  - description: Hole VIP for LAN
+    interface: lan
+    address: 198.19.1.253/32
+    bind: false
+    expand: true
+    state: present

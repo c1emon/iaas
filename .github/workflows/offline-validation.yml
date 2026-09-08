@@ -37,6 +37,30 @@ jobs:
 
       - run: uv run ansible-galaxy collection install -r automation/ansible/requirements.yml -p automation/ansible/collections
 
-      - run: make check
+      - run: make check ENVIRONMENT_DIR="$PWD/tests/fixtures/environment" OUTPUT_DIR="$RUNNER_TEMP/iaas-output" GENERATED_DIR="$PWD/tests/fixtures/environment/generated" PVE_DIR="$PWD/tests/fixtures/environment/opentofu"
 
       - run: make secret-scan
+
+  runtime:
+    runs-on: ubuntu-latest
+    env:
+      RUNTIME_BUILD_CACHE_DIR: /tmp/iaas-build-cache
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          version: "0.12.9"
+          python-version: "3.12"
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: /tmp/iaas-build-cache
+          key: iaas-runtime-amd64-${{ hashFiles('pyproject.toml', 'uv.lock', 'automation/runtime/Dockerfile', 'automation/runtime/collections.yml', 'automation/runtime/prune.py') }}
+          restore-keys: iaas-runtime-amd64-
+      - run: docker buildx create --use
+      - name: Exercise build context after Python execution
+        run: uv run --no-project python -m compileall -q automation/src
+      - run: make runtime-build
+      - run: make runtime-tofu-check
+      - run: uv run python automation/runtime/inspect_image.py

@@ -12,7 +12,7 @@
       ssl_verify: "{{ opnsense_ssl_verify }}"
 
   vars:
-    opnsense_export_dir: "{{ playbook_dir }}/../../../../exports/opnsense"
+    opnsense_export_dir: "{{ lookup('ansible.builtin.env', 'OUTPUT_DIR', default=undef()) }}/runtime/exports/opnsense"
     opnsense_config_candidate_exports:
       - name: firewall-aliases
         target: alias

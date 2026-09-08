@@ -1,0 +1,17 @@
+IaaS runtime third-party software
+
+Unmodified upstream binaries and Python/Ansible packages are distributed under
+their respective licenses. This image does not grant additional rights over
+those components. License texts are retained in /usr/share/licenses, Python
+distribution metadata and Ansible Collection license files.
+
+Python 3.12.12: PSF license, https://www.python.org/downloads/release/python-31212/
+Debian bookworm packages: individual copyright notices in licenses/debian.
+uv 0.12.9: MIT or Apache-2.0, https://github.com/astral-sh/uv/tree/0.12.9
+OpenTofu 1.12.6: MPL-2.0, source at https://github.com/opentofu/opentofu/tree/v1.12.6
+Packer 1.16.0: BUSL-1.1, source at https://github.com/hashicorp/packer/tree/v1.16.0
+Packer use remains subject to its upstream additional use grant; distribution
+does not remove its restrictions on competitive hosted or embedded offerings.
+
+Python package versions are recorded in /opt/iaas/uv.lock. Collection versions,
+licenses and source repositories are recorded in each Collection MANIFEST.json.

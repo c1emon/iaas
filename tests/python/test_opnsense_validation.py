@@ -16,7 +16,7 @@ from iaas_automation.opnsense_validation import RESOURCE_FILES, validate_all, va
 
 
 ROOT = Path(__file__).resolve().parents[2]
-VARS_DIR = ROOT / "environments" / "astra" / "ansible" / "vars" / "opnsense"
+VARS_DIR = ROOT / "tests" / "fixtures" / "environment" / "ansible" / "vars" / "opnsense"
 
 
 def _document(resource: str) -> dict[str, Any]:
@@ -33,7 +33,7 @@ def test_committed_supported_desired_state_passes_without_rewrite() -> None:
         ("aliases", lambda document: document["opnsense_aliases"][0].update({"unexpected": True}), "unknown keys"),
         ("aliases", lambda document: document["opnsense_aliases"][0].update({"enabled": "true"}), "enabled: must be a boolean"),
         ("aliases", lambda document: document["opnsense_aliases"][0].update({"name": "bad alias"}), "name: has invalid syntax"),
-        ("vips", lambda document: document["opnsense_vips"][0].update({"address": "10.1.0.253"}), "address: must be an IP address with prefix"),
+        ("vips", lambda document: document["opnsense_vips"][0].update({"address": "192.0.2.253"}), "address: must be an IP address with prefix"),
         ("vips", lambda document: document["opnsense_vips"][0].update({"interface": "LAN"}), "interface: has invalid syntax"),
         ("vips", lambda document: document["opnsense_vips"].append(deepcopy(document["opnsense_vips"][0])), "duplicate managed identity"),
         ("gateways", lambda document: document["opnsense_gateways"][0].update({"default_gw": True}), "default_gw: must be false"),
@@ -98,8 +98,9 @@ def test_supported_mutation_playbooks_validate_before_credentials_and_mutation(
     assert validator < source.index("tasks/api-credential-preflight.yml")
     assert validator < source.index(mutation)
     assert validator < source.index("oxlorg.opnsense.reload:")
-    assert "../../environments/astra/ansible/vars/opnsense" in source
-    assert 'PYTHONPATH: "{{ ansible_project_dir }}/../../automation/src"' in source
+    assert "'ENVIRONMENT_DIR', default=undef()" in source
+    assert "environments/astra" not in source
+    assert 'PYTHONPATH: "{{ playbook_dir }}/../../../src"' in source
     assert '"{{ ansible_project_dir }}/../../.."' not in source
     assert "changed_when: false" in source[: source.index("ansible.builtin.include_vars:")]
     assert "check_mode: false" in source[: source.index("ansible.builtin.include_vars:")]
@@ -114,9 +115,9 @@ def test_dnat_placeholder_resolves_relocated_source_and_fails_closed(tmp_path: P
             "run",
             "ansible-playbook",
             "-i",
-            str(ROOT / "environments/astra/ansible/inventory.yml"),
+            str(ROOT / "tests/fixtures/environment/ansible/inventory.yml"),
             "--limit",
-            "soter",
+            "firewall-a",
             str(playbook_path),
         ],
         cwd=ROOT,
@@ -125,10 +126,11 @@ def test_dnat_placeholder_resolves_relocated_source_and_fails_closed(tmp_path: P
         env=os.environ
         | {
             "ANSIBLE_CONFIG": str(ROOT / "automation/ansible/ansible.cfg"),
+            "ENVIRONMENT_DIR": str(ROOT / "tests/fixtures/environment"),
             "ANSIBLE_LOCAL_TEMP": str(tmp_path / "ansible-local"),
         },
     )
     assert result.returncode != 0
     output = result.stdout + result.stderr
     assert "Stop because OPNsense DNAT management is not implemented" in output
-    assert "environments/astra/ansible/vars/opnsense/dnat.yml" in output
+    assert "the selected environment ansible/vars/opnsense/dnat.yml" in output

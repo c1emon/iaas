@@ -28,7 +28,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     upload.add_argument("--storage-id", required=True, help="PVE snippets storage id")
     upload.add_argument("--pve-host", required=True, help="Target PVE node hostname or alias")
     upload.add_argument("--ssh-user", required=True, help="SSH user for snippet upload")
-    upload.add_argument("--ssh-timeout", type=float, default=None, help="SSH timeout in seconds (default: 30 or ASTRA_PVE_SSH_TIMEOUT_SECONDS)")
+    upload.add_argument("--ssh-timeout", type=float, default=None, help="SSH timeout in seconds (default: 30 or IAAS_PVE_SSH_TIMEOUT_SECONDS)")
 
     verify = subparsers.add_parser("verify", help="Verify cloud-init snippets from the existing manifest")
     verify.add_argument("--tfvars", type=Path, required=True, help="Path to generated OpenTofu variables")
@@ -36,7 +36,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     verify.add_argument("--storage-id", required=True, help="PVE snippets storage id")
     verify.add_argument("--pve-host", required=True, help="Target PVE node hostname or alias")
     verify.add_argument("--ssh-user", required=True, help="SSH user for snippet verification")
-    verify.add_argument("--ssh-timeout", type=float, default=None, help="SSH timeout in seconds (default: 30 or ASTRA_PVE_SSH_TIMEOUT_SECONDS)")
+    verify.add_argument("--ssh-timeout", type=float, default=None, help="SSH timeout in seconds (default: 30 or IAAS_PVE_SSH_TIMEOUT_SECONDS)")
 
     return parser.parse_args(argv)
 

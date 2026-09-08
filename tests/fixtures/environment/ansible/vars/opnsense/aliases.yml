@@ -1,0 +1,36 @@
+---
+# Synthetic regression data; not a deployment environment.
+opnsense_aliases:
+  - name: HOLE_GATEWAY
+    type: host
+    content:
+      - 198.19.0.253
+    description: Hole's gateway address
+    enabled: true
+    state: present
+  - name: HOLE_VIPS
+    type: host
+    content:
+      - 192.0.2.253
+      - 198.51.100.253
+      - 203.0.113.253
+      - 198.19.1.253
+    description: Hole's VIP addresses
+    enabled: true
+    state: present
+  - name: HOLE_PORTS
+    type: port
+    content:
+      - 53
+      - 7890
+    description: Hole's dns and http/socks proxy port
+    enabled: true
+    state: present
+  - name: HOLE_FAKEIP_NETS
+    type: network
+    content:
+      - 198.18.0.0/15
+      - fc00::/18
+    description: Hole's fake IP networks
+    enabled: true
+    state: present

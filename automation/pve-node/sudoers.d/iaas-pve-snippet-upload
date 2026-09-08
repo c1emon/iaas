@@ -1,0 +1,3 @@
+# Allow the pve-ops account to upload only validated OpenTofu cloud-init snippets.
+# Validate with visudo -cf before installing into sudoers.d.
+pve-ops ALL=(root) NOPASSWD: /usr/local/sbin/iaas-pve-snippet-upload

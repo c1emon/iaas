@@ -579,6 +579,11 @@ dev = [
     { name = "pytest" },
     { name = "yamllint" },
 ]
+runtime = [
+    { name = "ansible-core" },
+    { name = "httpx" },
+    { name = "paramiko" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -597,6 +602,11 @@ dev = [
     { name = "pyright", specifier = ">=1.1.411" },
     { name = "pytest", specifier = ">=8.3.0" },
     { name = "yamllint", specifier = ">=1.38.0" },
+]
+runtime = [
+    { name = "ansible-core", specifier = "==2.21.3" },
+    { name = "httpx", specifier = "==0.28.1" },
+    { name = "paramiko", specifier = "==5.0.0" },
 ]
 
 [[package]]

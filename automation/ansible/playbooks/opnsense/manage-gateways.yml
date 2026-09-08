@@ -12,7 +12,8 @@
       ssl_verify: "{{ opnsense_ssl_verify }}"
 
   vars:
-    opnsense_gateway_source: "{{ ansible_project_dir }}/../../environments/astra/ansible/vars/opnsense/gateways.yml"
+    opnsense_gateway_source: >-
+      {{ lookup('ansible.builtin.env', 'ENVIRONMENT_DIR', default=undef()) }}/ansible/vars/opnsense/gateways.yml
     opnsense_gateway_required_fields:
       - name
       - interface
@@ -43,8 +44,9 @@
         argv:
           - uv
           - run
+          - --no-sync
           - --directory
-          - "{{ ansible_project_dir }}/../.."
+          - "{{ playbook_dir }}/../../../.."
           - python
           - -m
           - iaas_automation.opnsense_validation
@@ -53,9 +55,9 @@
           - --file
           - "{{ opnsense_gateway_source }}"
       args:
-        chdir: "{{ ansible_project_dir }}/../.."
+        chdir: "{{ playbook_dir }}/../../../.."
       environment:
-        PYTHONPATH: "{{ ansible_project_dir }}/../../automation/src"
+        PYTHONPATH: "{{ playbook_dir }}/../../../src"
       changed_when: false
       check_mode: false
 
@@ -74,7 +76,7 @@
           - opnsense_gateways is not string
         fail_msg: >-
           opnsense_gateways must be defined as a YAML sequence in
-          environments/astra/ansible/vars/opnsense/gateways.yml.
+          the selected environment ansible/vars/opnsense/gateways.yml.
 
     - name: Assert desired gateways define required PBR fields
       ansible.builtin.assert:

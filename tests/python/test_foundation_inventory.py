@@ -22,8 +22,8 @@ from iaas_automation.pve_inventory.checks.results import render_report
 
 
 ROOT = Path(__file__).resolve().parents[2]
-INVENTORY_PATH = ROOT / "environments" / "astra" / "inventory" / "foundation.yml"
-GENERATED_DOCS_PATH = ROOT / "environments" / "astra" / "generated" / "docs" / "foundation-recovery.md"
+INVENTORY_PATH = ROOT / "tests" / "fixtures" / "environment" / "inventory" / "foundation.yml"
+GENERATED_DOCS_PATH = ROOT / "tests" / "fixtures" / "environment" / "generated" / "docs" / "foundation-recovery.md"
 
 
 def _validated_model(doc: dict[str, object] | None = None) -> dict[str, object]:
@@ -38,8 +38,8 @@ def test_valid_foundation_inventory_renders_expected_document() -> None:
     assert markdown == GENERATED_DOCS_PATH.read_text(encoding="utf-8")
     assert "1. opnsense" in markdown
     assert "6. external-databases" in markdown
-    assert "| n100 | bare-metal | 10.1.0.15 | 10.50.0.15 | yes |" in markdown
-    assert "| authentik | n100 | compose | important | no | - | no | internal-dns | https https://10.50.0.15 [200, 302, 401] | authentik-config; runbook: docs/operations/06-acceptance-and-recovery.md" in markdown
+    assert "| foundation-a | bare-metal | 192.0.2.15 | 203.0.113.15 | yes |" in markdown
+    assert "| authentik | foundation-a | compose | important | no | - | no | internal-dns | https https://203.0.113.15 [200, 302, 401] | authentik-config; runbook: docs/operations/06-acceptance-and-recovery.md" in markdown
     assert "accepted single point of failure" in markdown
     assert "Only VM-based K3s nodes may access the storage VLAN" in markdown
 
@@ -61,7 +61,7 @@ def test_markdown_renderer_escapes_table_sensitive_content_and_remains_non_sensi
 @pytest.mark.parametrize(
     ("path", "value", "message"),
     [
-        (("foundation_hosts", 0, "name"), "n100", "duplicate host name n100"),
+        (("foundation_hosts", 0, "name"), "foundation-a", "duplicate host name foundation-a"),
         (("foundation_services", 1, "host"), "missing-host", "unknown host ref missing-host"),
         (("foundation_services", 4, "dependencies"), ["missing-service"], "unknown dependency ref missing-service"),
         (("foundation_services", 2, "restore_order"), None, "restore_order: must be a positive integer"),

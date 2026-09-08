@@ -9,7 +9,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 ANSIBLE_DIR = ROOT / "automation" / "ansible"
-ENV_ANSIBLE_DIR = ROOT / "environments" / "astra" / "ansible"
+ENV_ANSIBLE_DIR = ROOT / "tests" / "fixtures" / "environment" / "ansible"
 OPERATIONS_DIR = ROOT / "docs" / "operations"
 
 

@@ -8,7 +8,7 @@ Debian 来宾内的基线策略与可选软件包出站策略；不修改 PVE VM
 
 | 输入 | 来源 | 用途 |
 | --- | --- | --- |
-| guest SSH/网络事实 | `environments/astra/generated/ansible/pve.yml` | `ops` 用户、sudo、`pve_nics`、目标 host。 |
+| guest SSH/网络事实 | `$GENERATED_DIR/ansible/pve.yml` | `ops` 用户、sudo、`pve_nics`、目标 host。 |
 | 共同基线 | `automation/ansible/roles/vm_baseline/` | 包、服务、hostname、reboot 标记、网络事实核验。 |
 | 可选 egress policy | 仓库外或已审查的环境 vars 文件 | APT source、keyring、CA、APT/Shell/Git proxy。 |
 | egress runtime JSON | 仓库外受保护文件 | 仅在 policy 引用外部秘密时提供。 |
@@ -108,6 +108,9 @@ inventory 的 `pve_nics`（包括连接 NIC 的地址/子网）和 `extra_bypass
 shell profile、全局 Git 配置、inventory、生成物、facts、diff 或普通控制端临时文件。
 
 ## 4.4 执行顺序
+
+以下命令继承准备章节中的 `ENVIRONMENT_DIR`、`OUTPUT_DIR` 和 `GENERATED_DIR`。
+新终端须先按该章节重新设置目录，不会自动选择任何环境。
 
 先运行语法检查。若未选 egress policy，可省略两个 egress 变量：
 

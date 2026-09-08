@@ -31,8 +31,8 @@ from iaas_automation.common.errors import ValidationError
 
 
 ROOT = Path(__file__).resolve().parents[2]
-CLUSTER_PATH = ROOT / "environments" / "astra" / "inventory" / "pve-cluster.yml"
-VMS_PATH = ROOT / "environments" / "astra" / "inventory" / "vms.yml"
+CLUSTER_PATH = ROOT / "tests" / "fixtures" / "environment" / "inventory" / "pve-cluster.yml"
+VMS_PATH = ROOT / "tests" / "fixtures" / "environment" / "inventory" / "vms.yml"
 
 
 def cluster_state() -> dict[str, Any]:
@@ -93,7 +93,7 @@ def explicit_multi_nic_doc() -> dict[str, Any]:
             "role": "management",
             "network": "dev",
             "macaddr": "52:54:00:10:00:01",
-            "static_ip": "10.10.0.21/24",
+            "static_ip": "198.51.100.21/24",
             "ansible_connection": True,
         },
         {
@@ -101,10 +101,10 @@ def explicit_multi_nic_doc() -> dict[str, Any]:
             "role": "cluster",
             "network": "prod",
             "mac_address": "52:54:00:10:00:02",
-            "static_ip": "10.50.0.22/24",
-            "gateway": "10.50.0.254",
+            "static_ip": "203.0.113.22/24",
+            "gateway": "203.0.113.254",
             "default_route": True,
-            "dns": ["10.50.0.254"],
+            "dns": ["203.0.113.254"],
         },
     ]
     for field in ("network", "static_ip", "gateway", "dns"):
@@ -119,8 +119,8 @@ def template_env_text() -> str:
 
 def test_generated_docs_render_passthrough_details() -> None:
     docs = render_outputs(vms_model())["docs"]
-    assert "hostpci0:iGpu0 (pcie=true, rombar=true, xvga=false)" in docs
-    assert "| media-lab-01 | 501 | ephemeral_lab | cohe | mgmt0 (management) | dev / br_dev | 52:54:00:00:01:f5 | 10.10.0.21/24 | 10.10.0.254 | yes | yes | 10.10.0.254 |" in docs
+    assert "hostpci0:test-gpu (pcie=true, rombar=true, xvga=false)" in docs
+    assert "| media-lab-01 | 501 | ephemeral_lab | node-a | mgmt0 (management) | dev / br_dev | 52:54:00:00:01:f5 | 198.51.100.21/24 | 198.51.100.254 | yes | yes | 198.51.100.254 |" in docs
 
 
 def test_generated_ansible_inventory_has_no_removed_nic_aliases() -> None:
@@ -134,12 +134,12 @@ def test_generated_ansible_inventory_has_no_removed_nic_aliases() -> None:
 
 
 def test_passthrough_vms_get_cloud_init_user_data(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("PVE_VM_CLEMON_PASSWORD", "clemon-password")
-    monkeypatch.setenv("PVE_VM_CLEMON_PUBLIC_KEY", "ssh-ed25519 AAAAclemon clemon@example")
+    monkeypatch.setenv("PVE_VM_ADMIN_PASSWORD", "admin-password")
+    monkeypatch.setenv("PVE_VM_ADMIN_PUBLIC_KEY", "ssh-ed25519 AAAAadmin admin@example")
     monkeypatch.setenv("PVE_VM_OPS_PASSWORD", "ops-password")
     monkeypatch.setenv("PVE_VM_OPS_PUBLIC_KEY", "ssh-ed25519 AAAAops ops@example")
 
-    snippets = render_snippets(ROOT / "environments" / "astra" / "generated" / "opentofu" / "pve.tfvars.json", "images")
+    snippets = render_snippets(ROOT / "tests" / "fixtures" / "environment" / "generated" / "opentofu" / "pve.tfvars.json", "images")
 
     snippet_names = {snippet.name for snippet in snippets}
     assert snippet_names == {"dev-web-01", "prod-app-01", "media-lab-01"}
@@ -150,15 +150,15 @@ def test_passthrough_vms_get_cloud_init_user_data(monkeypatch: pytest.MonkeyPatc
     assert "hostname: media-lab-01" in media_snippet.content
     assert "disable_root: true" in media_snippet.content
     assert "ssh_pwauth: false" in media_snippet.content
-    assert "name: clemon" in media_snippet.content
+    assert "name: admin" in media_snippet.content
     assert "sudo:\n  - ALL=(ALL) ALL" in media_snippet.content
     assert "name: ops" in media_snippet.content
     assert "sudo:\n  - ALL=(ALL) NOPASSWD:ALL" in media_snippet.content
 
 
 def test_explicit_multi_nic_vms_render_network_config_and_user_data(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("PVE_VM_CLEMON_PASSWORD", "clemon-password")
-    monkeypatch.setenv("PVE_VM_CLEMON_PUBLIC_KEY", "ssh-ed25519 AAAAclemon clemon@example")
+    monkeypatch.setenv("PVE_VM_ADMIN_PASSWORD", "admin-password")
+    monkeypatch.setenv("PVE_VM_ADMIN_PUBLIC_KEY", "ssh-ed25519 AAAAadmin admin@example")
     monkeypatch.setenv("PVE_VM_OPS_PASSWORD", "ops-password")
     monkeypatch.setenv("PVE_VM_OPS_PUBLIC_KEY", "ssh-ed25519 AAAAops ops@example")
 
@@ -179,13 +179,13 @@ def test_explicit_multi_nic_vms_render_network_config_and_user_data(monkeypatch:
     assert set(network_doc["network"]["ethernets"]) == {"mgmt0", "cluster0"}
     assert network_doc["network"]["ethernets"]["mgmt0"]["match"]["macaddress"] == "52:54:00:10:00:01"
     assert network_doc["network"]["ethernets"]["mgmt0"]["set-name"] == "mgmt0"
-    assert network_doc["network"]["ethernets"]["mgmt0"]["addresses"] == ["10.10.0.21/24"]
+    assert network_doc["network"]["ethernets"]["mgmt0"]["addresses"] == ["198.51.100.21/24"]
     assert "routes" not in network_doc["network"]["ethernets"]["mgmt0"]
     assert "nameservers" not in network_doc["network"]["ethernets"]["mgmt0"]
     assert network_doc["network"]["ethernets"]["cluster0"]["match"]["macaddress"] == "52:54:00:10:00:02"
-    assert network_doc["network"]["ethernets"]["cluster0"]["addresses"] == ["10.50.0.22/24"]
-    assert network_doc["network"]["ethernets"]["cluster0"]["routes"] == [{"to": "default", "via": "10.50.0.254"}]
-    assert network_doc["network"]["ethernets"]["cluster0"]["nameservers"]["addresses"] == ["10.50.0.254"]
+    assert network_doc["network"]["ethernets"]["cluster0"]["addresses"] == ["203.0.113.22/24"]
+    assert network_doc["network"]["ethernets"]["cluster0"]["routes"] == [{"to": "default", "via": "203.0.113.254"}]
+    assert network_doc["network"]["ethernets"]["cluster0"]["nameservers"]["addresses"] == ["203.0.113.254"]
 
     manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
     assert {entry["kind"] for entry in manifest["snippets"]} == {"user-data", "network-config"}
@@ -203,8 +203,8 @@ def test_validation_normalizes_explicit_nics_and_connection_metadata() -> None:
     assert media_vm["nics"][0]["ansible_connection"] is True
     assert media_vm["nics"][0]["default_route"] is False
     assert media_vm["nics"][1]["default_route"] is True
-    assert media_vm["nics"][1]["gateway"] == "10.50.0.254"
-    assert media_vm["nics"][1]["dns"] == ["10.50.0.254"]
+    assert media_vm["nics"][1]["gateway"] == "203.0.113.254"
+    assert media_vm["nics"][1]["dns"] == ["203.0.113.254"]
 
 
 def test_validation_rejects_explicit_nics_mixed_with_legacy_fields() -> None:
@@ -238,8 +238,8 @@ def test_validation_allows_explicit_nics_without_default_route() -> None:
 
 
 def test_validation_allows_explicit_zero_nic_vm_and_skips_inventory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("PVE_VM_CLEMON_PASSWORD", "clemon-password")
-    monkeypatch.setenv("PVE_VM_CLEMON_PUBLIC_KEY", "ssh-ed25519 AAAAclemon clemon@example")
+    monkeypatch.setenv("PVE_VM_ADMIN_PASSWORD", "admin-password")
+    monkeypatch.setenv("PVE_VM_ADMIN_PUBLIC_KEY", "ssh-ed25519 AAAAadmin admin@example")
     monkeypatch.setenv("PVE_VM_OPS_PASSWORD", "ops-password")
     monkeypatch.setenv("PVE_VM_OPS_PUBLIC_KEY", "ssh-ed25519 AAAAops ops@example")
 
@@ -286,7 +286,7 @@ def test_validation_allows_explicit_nics_without_management_role() -> None:
 
 def test_validation_rejects_duplicate_default_routes() -> None:
     doc = explicit_multi_nic_doc()
-    doc["vms"][2]["nics"][0]["gateway"] = "10.10.0.254"
+    doc["vms"][2]["nics"][0]["gateway"] = "198.51.100.254"
     doc["vms"][2]["nics"][0]["default_route"] = True
 
     with pytest.raises(ValidationError, match="at most one default route"):
@@ -339,15 +339,15 @@ def test_validation_rejects_explicit_nic_mac_and_gateway_errors() -> None:
         validate_vms(doc, cluster_state())
 
     doc = explicit_multi_nic_doc()
-    doc["vms"][2]["nics"][1]["gateway"] = "10.50.0.254"
+    doc["vms"][2]["nics"][1]["gateway"] = "203.0.113.254"
     doc["vms"][2]["nics"].append(
         {
             "name": "storage0",
             "role": "storage",
             "network": "prod",
             "macaddr": "52:54:00:10:00:03",
-            "static_ip": "10.50.0.23/24",
-            "gateway": "10.50.0.254",
+            "static_ip": "203.0.113.23/24",
+            "gateway": "203.0.113.254",
         }
     )
 
@@ -379,12 +379,12 @@ def test_validation_rejects_explicit_nic_invalid_cidr() -> None:
 
 
 def test_cloud_init_render_writes_manifest_and_exact_bytes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("PVE_VM_CLEMON_PASSWORD", "clemon-password")
-    monkeypatch.setenv("PVE_VM_CLEMON_PUBLIC_KEY", "ssh-ed25519 AAAAclemon clemon@example")
+    monkeypatch.setenv("PVE_VM_ADMIN_PASSWORD", "admin-password")
+    monkeypatch.setenv("PVE_VM_ADMIN_PUBLIC_KEY", "ssh-ed25519 AAAAadmin admin@example")
     monkeypatch.setenv("PVE_VM_OPS_PASSWORD", "ops-password")
     monkeypatch.setenv("PVE_VM_OPS_PUBLIC_KEY", "ssh-ed25519 AAAAops ops@example")
 
-    tfvars_path = ROOT / "environments" / "astra" / "generated" / "opentofu" / "pve.tfvars.json"
+    tfvars_path = ROOT / "tests" / "fixtures" / "environment" / "generated" / "opentofu" / "pve.tfvars.json"
     snippets = render_snippets(tfvars_path, "images")
     write_rendered_artifacts(snippets, tfvars_path, "images", tmp_path)
 
@@ -408,12 +408,12 @@ def test_cloud_init_render_writes_manifest_and_exact_bytes(monkeypatch: pytest.M
 
 
 def test_cloud_init_upload_and_verify_use_existing_manifest_without_rerender(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("PVE_VM_CLEMON_PASSWORD", "clemon-password")
-    monkeypatch.setenv("PVE_VM_CLEMON_PUBLIC_KEY", "ssh-ed25519 AAAAclemon clemon@example")
+    monkeypatch.setenv("PVE_VM_ADMIN_PASSWORD", "admin-password")
+    monkeypatch.setenv("PVE_VM_ADMIN_PUBLIC_KEY", "ssh-ed25519 AAAAadmin admin@example")
     monkeypatch.setenv("PVE_VM_OPS_PASSWORD", "ops-password")
     monkeypatch.setenv("PVE_VM_OPS_PUBLIC_KEY", "ssh-ed25519 AAAAops ops@example")
 
-    tfvars_path = ROOT / "environments" / "astra" / "generated" / "opentofu" / "pve.tfvars.json"
+    tfvars_path = ROOT / "tests" / "fixtures" / "environment" / "generated" / "opentofu" / "pve.tfvars.json"
     snippets = render_snippets(tfvars_path, "images")
     write_rendered_artifacts(snippets, tfvars_path, "images", tmp_path)
 
@@ -432,12 +432,12 @@ def test_cloud_init_upload_and_verify_use_existing_manifest_without_rerender(mon
 
 
 def test_cloud_init_load_rendered_artifacts_rejects_checksum_mismatch(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("PVE_VM_CLEMON_PASSWORD", "clemon-password")
-    monkeypatch.setenv("PVE_VM_CLEMON_PUBLIC_KEY", "ssh-ed25519 AAAAclemon clemon@example")
+    monkeypatch.setenv("PVE_VM_ADMIN_PASSWORD", "admin-password")
+    monkeypatch.setenv("PVE_VM_ADMIN_PUBLIC_KEY", "ssh-ed25519 AAAAadmin admin@example")
     monkeypatch.setenv("PVE_VM_OPS_PASSWORD", "ops-password")
     monkeypatch.setenv("PVE_VM_OPS_PUBLIC_KEY", "ssh-ed25519 AAAAops ops@example")
 
-    tfvars_path = ROOT / "environments" / "astra" / "generated" / "opentofu" / "pve.tfvars.json"
+    tfvars_path = ROOT / "tests" / "fixtures" / "environment" / "generated" / "opentofu" / "pve.tfvars.json"
     snippets = render_snippets(tfvars_path, "images")
     write_rendered_artifacts(snippets, tfvars_path, "images", tmp_path)
 
@@ -523,11 +523,11 @@ def test_cloud_init_ssh_builds_single_quoted_remote_command(monkeypatch: pytest.
     cloud_init_ssh.run_ssh_snippet_command(
         snippet,
         args,
-        ["sudo", "-n", "/usr/local/sbin/astra-pve-snippet-upload", "--storage", "images", "--filename", snippet.file_name],
+        ["sudo", "-n", "/usr/local/sbin/iaas-pve-snippet-upload", "--storage", "images", "--filename", snippet.file_name],
         input_text=snippet.content,
     )
 
-    assert calls == [["ssh", "ops@pve-01", "sudo -n /usr/local/sbin/astra-pve-snippet-upload --storage images --filename opentofu-vm-501-user-data.yml"]]
+    assert calls == [["ssh", "ops@pve-01", "sudo -n /usr/local/sbin/iaas-pve-snippet-upload --storage images --filename opentofu-vm-501-user-data.yml"]]
 
 
 @pytest.mark.parametrize("action", [cloud_init_ssh.upload_snippets, cloud_init_ssh.verify_snippets])
@@ -609,12 +609,12 @@ def test_cloud_init_verify_rejects_non_hex_sha256_before_ssh(monkeypatch: pytest
 
 
 def test_cloud_init_load_rendered_artifacts_rejects_unsafe_manifest_values(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("PVE_VM_CLEMON_PASSWORD", "clemon-password")
-    monkeypatch.setenv("PVE_VM_CLEMON_PUBLIC_KEY", "ssh-ed25519 AAAAclemon clemon@example")
+    monkeypatch.setenv("PVE_VM_ADMIN_PASSWORD", "admin-password")
+    monkeypatch.setenv("PVE_VM_ADMIN_PUBLIC_KEY", "ssh-ed25519 AAAAadmin admin@example")
     monkeypatch.setenv("PVE_VM_OPS_PASSWORD", "ops-password")
     monkeypatch.setenv("PVE_VM_OPS_PUBLIC_KEY", "ssh-ed25519 AAAAops ops@example")
 
-    tfvars_path = ROOT / "environments" / "astra" / "generated" / "opentofu" / "pve.tfvars.json"
+    tfvars_path = ROOT / "tests" / "fixtures" / "environment" / "generated" / "opentofu" / "pve.tfvars.json"
     snippets = render_snippets(tfvars_path, "images")
     write_rendered_artifacts(snippets, tfvars_path, "images", tmp_path)
 
@@ -667,9 +667,9 @@ def test_validation_treats_omitted_null_and_empty_passthrough_as_no_devices() ->
 
 def test_validation_honors_device_override_and_skips_reserved_devices() -> None:
     doc = copy.deepcopy(load_yaml(VMS_PATH))
-    doc["vms"][0]["node"] = "node3"
+    doc["vms"][0]["node"] = "node-b"
     doc["vms"][0]["passthrough"] = [
-        {"mapping": "iGpu0", "pcie": True, "rombar": True, "xvga": False},
+        {"mapping": "test-gpu", "pcie": True, "rombar": True, "xvga": False},
         {"mapping": "iGpu1", "device_override": "hostpci1", "pcie": True, "rombar": True, "xvga": False},
     ]
     cluster = cluster_state()
@@ -677,7 +677,7 @@ def test_validation_honors_device_override_and_skips_reserved_devices() -> None:
         "type": "igpu",
         "ha_allowed": False,
         "defaults": {"pcie": True, "rombar": True, "xvga": False},
-        "nodes": {"node3": {"path": "0000:00:02.1", "iommu_group": 99}},
+        "nodes": {"node-b": {"path": "0000:00:02.1", "iommu_group": 99}},
     }
     normalized = validate_vms(doc, cluster)
     dev_vm = next(vm for vm in normalized if vm["name"] == "dev-web-01")
@@ -701,8 +701,8 @@ def test_validation_rejects_other_passthrough_unknown_fields() -> None:
 def test_validation_rejects_duplicate_device_overrides() -> None:
     doc = copy.deepcopy(load_yaml(VMS_PATH))
     doc["vms"][2]["passthrough"] = [
-        {"mapping": "iGpu0", "device_override": "hostpci1", "pcie": True, "rombar": True, "xvga": False},
-        {"mapping": "iGpu0", "device_override": "hostpci1", "pcie": True, "rombar": True, "xvga": False},
+        {"mapping": "test-gpu", "device_override": "hostpci1", "pcie": True, "rombar": True, "xvga": False},
+        {"mapping": "test-gpu", "device_override": "hostpci1", "pcie": True, "rombar": True, "xvga": False},
     ]
     with pytest.raises(ValidationError, match="duplicate device_override hostpci1"):
         validate_vms(doc, cluster_state())
@@ -724,24 +724,24 @@ def test_validation_rejects_missing_passthrough_flags_with_clear_error() -> None
 
 def test_validation_rejects_passthrough_device_exhaustion() -> None:
     doc = copy.deepcopy(load_yaml(VMS_PATH))
-    doc["vms"][0]["node"] = "node3"
+    doc["vms"][0]["node"] = "node-b"
     doc["vms"][0]["passthrough"] = [
-        {"mapping": f"iGpu{i}", "device_override": f"hostpci{i}", "pcie": True, "rombar": True, "xvga": False}
+        {"mapping": "test-gpu" if i == 0 else f"iGpu{i}", "device_override": f"hostpci{i}", "pcie": True, "rombar": True, "xvga": False}
         for i in range(16)
-    ] + [{"mapping": "iGpu0", "pcie": True, "rombar": True, "xvga": False}]
+    ] + [{"mapping": "test-gpu", "pcie": True, "rombar": True, "xvga": False}]
     cluster = cluster_state()
     cluster["pci_mappings"]["iGpu1"] = {
         "type": "igpu",
         "ha_allowed": False,
         "defaults": {"pcie": True, "rombar": True, "xvga": False},
-        "nodes": {"node3": {"path": "0000:00:02.1", "iommu_group": 99}},
+        "nodes": {"node-b": {"path": "0000:00:02.1", "iommu_group": 99}},
     }
     for i in range(2, 16):
         cluster["pci_mappings"][f"iGpu{i}"] = {
             "type": "igpu",
             "ha_allowed": False,
             "defaults": {"pcie": True, "rombar": True, "xvga": False},
-            "nodes": {"node3": {"path": "0000:00:02.1", "iommu_group": 99 + i}},
+            "nodes": {"node-b": {"path": "0000:00:02.1", "iommu_group": 99 + i}},
         }
     with pytest.raises(ValidationError, match="passthrough devices exhausted hostpci0-hostpci15"):
         validate_vms(doc, cluster)
@@ -749,19 +749,19 @@ def test_validation_rejects_passthrough_device_exhaustion() -> None:
 
 def test_validation_rejects_duplicate_mapping_on_same_node_across_vms() -> None:
     doc = copy.deepcopy(load_yaml(VMS_PATH))
-    doc["vms"][1]["passthrough"] = [{"mapping": "iGpu0", "pcie": True, "rombar": True, "xvga": False}]
-    with pytest.raises(ValidationError, match="mapping iGpu0 on node cohe is already used by VM prod-app-01"):
+    doc["vms"][1]["passthrough"] = [{"mapping": "test-gpu", "pcie": True, "rombar": True, "xvga": False}]
+    with pytest.raises(ValidationError, match="mapping test-gpu on node node-a is already used by VM prod-app-01"):
         validate_vms(doc, cluster_state())
 
 
 def test_validation_allows_same_mapping_on_different_nodes() -> None:
     doc = copy.deepcopy(load_yaml(VMS_PATH))
-    doc["vms"][1]["node"] = "node3"
-    doc["vms"][1]["passthrough"] = [{"mapping": "iGpu0", "pcie": True, "rombar": True, "xvga": False}]
+    doc["vms"][1]["node"] = "node-b"
+    doc["vms"][1]["passthrough"] = [{"mapping": "test-gpu", "pcie": True, "rombar": True, "xvga": False}]
     normalized = validate_vms(doc, cluster_state())
     prod_vm = next(vm for vm in normalized if vm["name"] == "prod-app-01")
     media_vm = next(vm for vm in normalized if vm["name"] == "media-lab-01")
-    assert prod_vm["node"] == "node3"
+    assert prod_vm["node"] == "node-b"
     assert prod_vm["passthrough"][0]["device"] == "hostpci0"
     assert media_vm["passthrough"][0]["device"] == "hostpci0"
 
@@ -829,11 +829,11 @@ def test_validation_rejects_invalid_and_duplicate_string_lists(field: str, value
     ("static_ip", "message"),
     [
         ("not-a-cidr", r"vms\.vms\[0\]\.nics\[0\]\.static_ip: must be a valid CIDR-style IP interface"),
-        ("10.10.0.20/25", r"vms\.vms\[0\]\.nics\[0\]\.static_ip: must use prefix /24"),
-        ("2001:db8::20/24", r"vms\.vms\[0\]\.nics\[0\]\.static_ip: address family must match dev \(10.10.0.0/24\)"),
-        ("10.20.0.20/24", r"vms\.vms\[0\]\.nics\[0\]\.static_ip: must be inside dev \(10.10.0.0/24\)"),
-        ("10.10.0.0/24", r"vms\.vms\[0\]\.nics\[0\]\.static_ip: must not be the network address 10.10.0.0"),
-        ("10.10.0.255/24", r"vms\.vms\[0\]\.nics\[0\]\.static_ip: must not be the broadcast address 10.10.0.255"),
+        ("198.51.100.20/25", r"vms\.vms\[0\]\.nics\[0\]\.static_ip: must use prefix /24"),
+        ("2001:db8::20/24", r"vms\.vms\[0\]\.nics\[0\]\.static_ip: address family must match dev \(198.51.100.0/24\)"),
+        ("10.20.0.20/24", r"vms\.vms\[0\]\.nics\[0\]\.static_ip: must be inside dev \(198.51.100.0/24\)"),
+        ("198.51.100.0/24", r"vms\.vms\[0\]\.nics\[0\]\.static_ip: must not be the network address 198.51.100.0"),
+        ("198.51.100.255/24", r"vms\.vms\[0\]\.nics\[0\]\.static_ip: must not be the broadcast address 198.51.100.255"),
     ],
 )
 def test_validation_rejects_static_ip_shape_prefix_and_network_bounds(static_ip: str, message: str) -> None:
@@ -849,7 +849,7 @@ def test_validation_rejects_duplicate_static_ip() -> None:
     doc["vms"][1]["nics"][0]["network"] = "dev"
     doc["vms"][1]["nics"][0]["static_ip"] = doc["vms"][0]["nics"][0]["static_ip"]
 
-    with pytest.raises(ValidationError, match=r"vms\.vms\[1\]\.nics\[0\]\.static_ip: duplicate IP 10.10.0.20"):
+    with pytest.raises(ValidationError, match=r"vms\.vms\[1\]\.nics\[0\]\.static_ip: duplicate IP 198.51.100.20"):
         validate_vms(doc, cluster_state())
 
 
@@ -892,8 +892,8 @@ def test_template_build_env_excludes_forbidden_repository_details() -> None:
     forbidden = (
         "PVE_HOST",
         "PVE_USER",
-        "/usr/local/sbin/astra-pve-template-build",
-        "/var/cache/astra/packer",
+        "/usr/local/sbin/iaas-pve-template-build",
+        "/var/cache/iaas/packer",
         "^[A-Za-z0-9][A-Za-z0-9._-]+$",
     )
     for item in forbidden:
@@ -946,7 +946,7 @@ def test_template_build_script_shell_quotes_remote_args(tmp_path: Path) -> None:
         "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
         "SSH_CAPTURE": str(capture_path),
         "PVE_HOST": "pve-01.example.invalid",
-        "TEMPLATE_BUILD_ENV": str(ROOT / "environments" / "astra" / "generated" / "packer" / "debian-13.env"),
+        "TEMPLATE_BUILD_ENV": str(ROOT / "tests" / "fixtures" / "environment" / "generated" / "packer" / "debian-13.env"),
         "PVE_USER": "pve-ops",
         "TEMPLATE_VMID": "9001",
         "TEMPLATE_NAME": "debian-13-tmpl-20260621",
@@ -971,7 +971,7 @@ def test_template_build_script_shell_quotes_remote_args(tmp_path: Path) -> None:
 
     host, remote_command = capture_path.read_text(encoding="utf-8").splitlines()
     assert host == "pve-ops@pve-01.example.invalid"
-    assert remote_command.startswith("'sudo' '-n' '/usr/local/sbin/astra-pve-template-build'")
+    assert remote_command.startswith("'sudo' '-n' '/usr/local/sbin/iaas-pve-template-build'")
     assert "--image-url" in remote_command
     assert "'https://images.example.invalid/debian'\\''$(touch /tmp/pwned);`id`.qcow2'" in remote_command
     assert "--ciuser" in remote_command
@@ -988,7 +988,7 @@ def test_template_build_script_rejects_shell_unsafe_template_name(tmp_path: Path
     env = os.environ | {
         "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
         "PVE_HOST": "pve-01.example.invalid",
-        "TEMPLATE_BUILD_ENV": str(ROOT / "environments" / "astra" / "generated" / "packer" / "debian-13.env"),
+        "TEMPLATE_BUILD_ENV": str(ROOT / "tests" / "fixtures" / "environment" / "generated" / "packer" / "debian-13.env"),
         "TEMPLATE_VMID": "9001",
         "TEMPLATE_NAME": "bad template name",
         "IMAGE_URL_PREFIX": "https://images.example.invalid/",
