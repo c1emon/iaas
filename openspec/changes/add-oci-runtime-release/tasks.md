@@ -1,6 +1,6 @@
 ## 1. Generic environment and runtime paths
 
-- [ ] 1.1 Confirm the implementation branch under repository rules and refresh GitNexus impact for actual edit targets; record callers/risk and confirm the worktree has no unrelated changes before implementation.
+- [x] 1.1 Confirm the implementation branch under repository rules and refresh GitNexus impact for actual edit targets; record callers/risk and confirm the worktree has no unrelated changes before implementation.
 - [ ] 1.2 Replace `ASTRA` and fixed environment defaults with explicit `ENVIRONMENT_DIR`/`OUTPUT_DIR`, preserving operation names and schemas; verify missing inputs and legacy selectors fail, while environment-independent commands still work.
 - [ ] 1.3 Route generated/runtime paths and Ansible inventory, vars, roles, Collections and plugins through the selected directories, retaining environment-supplied secret references without a fixed vault; verify a read-only non-Astra environment works from an arbitrary working directory with no implicit Astra reads/writes or offline secret resolution.
 - [ ] 1.4 Generalize generated source descriptions, PVE helper paths, execution variable prefixes and their callers/bootstrap/sudoers assets; verify naming regressions and existing helper argument/identity/locking tests, and document the separate host cutover prerequisite without touching hosts.

@@ -1,6 +1,6 @@
 # Foundation Recovery Reference
 
-Declared foundation recovery metadata only. This document is generated offline from environments/astra/inventory/foundation.yml.
+Declared foundation recovery metadata only. This document is generated offline from the selected environment inventory/foundation.yml.
 
 Offline checks (`make foundation-check`) validate schema, references, restore order, storage facts, and generated-doc freshness without contacting internal infrastructure. `make foundation-health` is a separate explicit online read-only probe mode.
 

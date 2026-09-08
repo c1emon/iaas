@@ -16,6 +16,8 @@ die() {
   exit 1
 }
 
+[[ ! ${ASTRA_PVE_SNIPPET_UPLOAD_PVESM+x} ]] || die 'ASTRA_PVE_SNIPPET_UPLOAD_PVESM is no longer supported; use IAAS_PVE_SNIPPET_UPLOAD_PVESM'
+
 storage_id=''
 filename=''
 verify='false'
@@ -64,13 +66,13 @@ elif [[ -n ${expected_sha256} ]]; then
   die '--sha256 is only valid with --verify'
 fi
 
-if [[ ! -x ${ASTRA_PVE_SNIPPET_UPLOAD_PVESM:-${PVESM}} ]]; then
+if [[ ! -x ${IAAS_PVE_SNIPPET_UPLOAD_PVESM:-${PVESM}} ]]; then
   die 'pvesm is required'
 fi
 
 resolve_target_path() {
   local resolved=''
-  if resolved="$(${ASTRA_PVE_SNIPPET_UPLOAD_PVESM:-${PVESM}} path "${storage_id}:snippets/${filename}" 2>/dev/null)" && [[ -n ${resolved} ]]; then
+  if resolved="$(${IAAS_PVE_SNIPPET_UPLOAD_PVESM:-${PVESM}} path "${storage_id}:snippets/${filename}" 2>/dev/null)" && [[ -n ${resolved} ]]; then
     printf '%s\n' "${resolved}"
   else
     printf '/mnt/pve/%s/snippets/%s\n' "${storage_id}" "${filename}"
@@ -131,7 +133,7 @@ fi
 
 tmp_file=''
 trap '[[ -z ${tmp_file} ]] || "${RM}" -f "${tmp_file}"' EXIT
-tmp_file="$(${MKTEMP} /tmp/astra-pve-snippet-upload.XXXXXX)"
+tmp_file="$(${MKTEMP} /tmp/iaas-pve-snippet-upload.XXXXXX)"
 
 cat >"${tmp_file}"
 

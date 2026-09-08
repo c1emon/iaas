@@ -523,11 +523,11 @@ def test_cloud_init_ssh_builds_single_quoted_remote_command(monkeypatch: pytest.
     cloud_init_ssh.run_ssh_snippet_command(
         snippet,
         args,
-        ["sudo", "-n", "/usr/local/sbin/astra-pve-snippet-upload", "--storage", "images", "--filename", snippet.file_name],
+        ["sudo", "-n", "/usr/local/sbin/iaas-pve-snippet-upload", "--storage", "images", "--filename", snippet.file_name],
         input_text=snippet.content,
     )
 
-    assert calls == [["ssh", "ops@pve-01", "sudo -n /usr/local/sbin/astra-pve-snippet-upload --storage images --filename opentofu-vm-501-user-data.yml"]]
+    assert calls == [["ssh", "ops@pve-01", "sudo -n /usr/local/sbin/iaas-pve-snippet-upload --storage images --filename opentofu-vm-501-user-data.yml"]]
 
 
 @pytest.mark.parametrize("action", [cloud_init_ssh.upload_snippets, cloud_init_ssh.verify_snippets])
@@ -892,8 +892,8 @@ def test_template_build_env_excludes_forbidden_repository_details() -> None:
     forbidden = (
         "PVE_HOST",
         "PVE_USER",
-        "/usr/local/sbin/astra-pve-template-build",
-        "/var/cache/astra/packer",
+        "/usr/local/sbin/iaas-pve-template-build",
+        "/var/cache/iaas/packer",
         "^[A-Za-z0-9][A-Za-z0-9._-]+$",
     )
     for item in forbidden:
@@ -971,7 +971,7 @@ def test_template_build_script_shell_quotes_remote_args(tmp_path: Path) -> None:
 
     host, remote_command = capture_path.read_text(encoding="utf-8").splitlines()
     assert host == "pve-ops@pve-01.example.invalid"
-    assert remote_command.startswith("'sudo' '-n' '/usr/local/sbin/astra-pve-template-build'")
+    assert remote_command.startswith("'sudo' '-n' '/usr/local/sbin/iaas-pve-template-build'")
     assert "--image-url" in remote_command
     assert "'https://images.example.invalid/debian'\\''$(touch /tmp/pwned);`id`.qcow2'" in remote_command
     assert "--ciuser" in remote_command

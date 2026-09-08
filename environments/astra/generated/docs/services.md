@@ -1,6 +1,6 @@
 # Service Metadata Inventory
 
-Declared service metadata only: this document is generated offline from environments/astra/inventory/services.yml and cross-checked against environments/astra/inventory/vms.yml owner_vm names.
+Declared service metadata only: this document is generated offline from the selected environment inventory/services.yml and cross-checked against the selected environment inventory/vms.yml owner_vm names.
 
 It is not live verification and it does not create, update, or verify DNS, firewall, reverse proxy, PVE, guest, or network state.
 

@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-WRAPPER = ROOT / "automation" / "pve-node" / "bin" / "astra-pve-snippet-upload"
+WRAPPER = ROOT / "automation" / "pve-node" / "bin" / "iaas-pve-snippet-upload"
 
 
 def make_fake_pvesm(tmp_path: Path, target_path: Path) -> Path:
@@ -41,7 +41,7 @@ def test_verify_with_matching_checksum_succeeds(tmp_path: Path) -> None:
 
     fake_pvesm = make_fake_pvesm(tmp_path, target_path)
     env = os.environ | {
-        "ASTRA_PVE_SNIPPET_UPLOAD_PVESM": str(fake_pvesm),
+        "IAAS_PVE_SNIPPET_UPLOAD_PVESM": str(fake_pvesm),
         "FAKE_PVESM_TARGET": str(target_path),
     }
 
@@ -70,7 +70,7 @@ def test_verify_with_network_config_checksum_succeeds(tmp_path: Path) -> None:
 
     fake_pvesm = make_fake_pvesm(tmp_path, target_path)
     env = os.environ | {
-        "ASTRA_PVE_SNIPPET_UPLOAD_PVESM": str(fake_pvesm),
+        "IAAS_PVE_SNIPPET_UPLOAD_PVESM": str(fake_pvesm),
         "FAKE_PVESM_TARGET": str(target_path),
     }
 
@@ -98,7 +98,7 @@ def test_verify_with_mismatched_checksum_fails_without_mutation(tmp_path: Path) 
 
     fake_pvesm = make_fake_pvesm(tmp_path, target_path)
     env = os.environ | {
-        "ASTRA_PVE_SNIPPET_UPLOAD_PVESM": str(fake_pvesm),
+        "IAAS_PVE_SNIPPET_UPLOAD_PVESM": str(fake_pvesm),
         "FAKE_PVESM_TARGET": str(target_path),
     }
 
@@ -124,7 +124,7 @@ def test_verify_missing_file_fails(tmp_path: Path) -> None:
 
     fake_pvesm = make_fake_pvesm(tmp_path, target_path)
     env = os.environ | {
-        "ASTRA_PVE_SNIPPET_UPLOAD_PVESM": str(fake_pvesm),
+        "IAAS_PVE_SNIPPET_UPLOAD_PVESM": str(fake_pvesm),
         "FAKE_PVESM_TARGET": str(target_path),
     }
 

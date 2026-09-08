@@ -98,8 +98,9 @@ def test_supported_mutation_playbooks_validate_before_credentials_and_mutation(
     assert validator < source.index("tasks/api-credential-preflight.yml")
     assert validator < source.index(mutation)
     assert validator < source.index("oxlorg.opnsense.reload:")
-    assert "../../environments/astra/ansible/vars/opnsense" in source
-    assert 'PYTHONPATH: "{{ ansible_project_dir }}/../../automation/src"' in source
+    assert "'ENVIRONMENT_DIR', default=undef()" in source
+    assert "environments/astra" not in source
+    assert 'PYTHONPATH: "{{ playbook_dir }}/../../../src"' in source
     assert '"{{ ansible_project_dir }}/../../.."' not in source
     assert "changed_when: false" in source[: source.index("ansible.builtin.include_vars:")]
     assert "check_mode: false" in source[: source.index("ansible.builtin.include_vars:")]
@@ -125,10 +126,11 @@ def test_dnat_placeholder_resolves_relocated_source_and_fails_closed(tmp_path: P
         env=os.environ
         | {
             "ANSIBLE_CONFIG": str(ROOT / "automation/ansible/ansible.cfg"),
+            "ENVIRONMENT_DIR": str(ROOT / "environments/astra"),
             "ANSIBLE_LOCAL_TEMP": str(tmp_path / "ansible-local"),
         },
     )
     assert result.returncode != 0
     output = result.stdout + result.stderr
     assert "Stop because OPNsense DNAT management is not implemented" in output
-    assert "environments/astra/ansible/vars/opnsense/dnat.yml" in output
+    assert "the selected environment ansible/vars/opnsense/dnat.yml" in output

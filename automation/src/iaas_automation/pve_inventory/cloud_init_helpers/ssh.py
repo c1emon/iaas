@@ -22,17 +22,19 @@ def _validate_ssh_inputs(snippet: CloudInitSnippet, storage_id: str, verify: boo
 
 
 def resolve_ssh_timeout(arg_timeout: float | None) -> float:
+    require("ASTRA_PVE_SSH_TIMEOUT_SECONDS" not in os.environ,
+            "ASTRA_PVE_SSH_TIMEOUT_SECONDS is no longer supported; use IAAS_PVE_SSH_TIMEOUT_SECONDS")
     if arg_timeout is not None:
         require(arg_timeout > 0, "--ssh-timeout must be greater than zero")
         return arg_timeout
-    env_timeout = os.environ.get("ASTRA_PVE_SSH_TIMEOUT_SECONDS", "").strip()
+    env_timeout = os.environ.get("IAAS_PVE_SSH_TIMEOUT_SECONDS", "").strip()
     if not env_timeout:
         return DEFAULT_SSH_TIMEOUT_SECONDS
     try:
         timeout = float(env_timeout)
     except ValueError as exc:
-        raise ValidationError("ASTRA_PVE_SSH_TIMEOUT_SECONDS must be a number") from exc
-    require(timeout > 0, "ASTRA_PVE_SSH_TIMEOUT_SECONDS must be greater than zero")
+        raise ValidationError("IAAS_PVE_SSH_TIMEOUT_SECONDS must be a number") from exc
+    require(timeout > 0, "IAAS_PVE_SSH_TIMEOUT_SECONDS must be greater than zero")
     return timeout
 
 
@@ -70,7 +72,7 @@ def upload_snippets(snippets: list[CloudInitSnippet], args: Namespace) -> None:
             [
                 "sudo",
                 "-n",
-                "/usr/local/sbin/astra-pve-snippet-upload",
+                "/usr/local/sbin/iaas-pve-snippet-upload",
                 "--storage",
                 args.storage_id,
                 "--filename",
@@ -90,7 +92,7 @@ def verify_snippets(snippets: list[CloudInitSnippet], args: Namespace) -> None:
             [
                 "sudo",
                 "-n",
-                "/usr/local/sbin/astra-pve-snippet-upload",
+                "/usr/local/sbin/iaas-pve-snippet-upload",
                 "--storage",
                 args.storage_id,
                 "--filename",

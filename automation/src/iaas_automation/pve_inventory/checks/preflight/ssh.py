@@ -24,8 +24,8 @@ def run_ssh_checks(runtime: RuntimeConfig, results: list[CheckResult], runner: C
         return
 
     checks = [
-        ("ssh.wrapper.snippet-upload", "/usr/local/sbin/astra-pve-snippet-upload --help"),
-        ("ssh.wrapper.template-build", "/usr/local/sbin/astra-pve-template-build --help"),
+        ("ssh.wrapper.snippet-upload", "/usr/local/sbin/iaas-pve-snippet-upload --help"),
+        ("ssh.wrapper.template-build", "/usr/local/sbin/iaas-pve-template-build --help"),
     ]
     for check_id, remote in checks:
         command = ["ssh", "-o", "BatchMode=yes", f"{runtime.ssh_user}@{runtime.ssh_host}", f"sudo -n {remote}"]

@@ -5,7 +5,8 @@
   connection: local
 
   vars:
-    opnsense_dnat_source: "{{ ansible_project_dir }}/ansible/vars/opnsense/dnat.yml"
+    opnsense_dnat_source: >-
+      {{ lookup('ansible.builtin.env', 'ENVIRONMENT_DIR', default=undef()) }}/ansible/vars/opnsense/dnat.yml
 
   tasks:
     - name: Load desired OPNsense DNAT placeholder data
@@ -20,7 +21,7 @@
           - opnsense_dnat_rules is not string
         fail_msg: >-
           opnsense_dnat_rules must be defined as a YAML sequence in
-          environments/astra/ansible/vars/opnsense/dnat.yml.
+          the selected environment ansible/vars/opnsense/dnat.yml.
 
     - name: Stop because OPNsense DNAT management is not implemented
       ansible.builtin.fail:
@@ -29,5 +30,5 @@
           oxlorg.opnsense collection used by this repository does not currently
           provide a stable dedicated Destination NAT / port-forward module, so
           this placeholder performs no API writes. Keep desired DNAT notes in
-          environments/astra/ansible/vars/opnsense/dnat.yml for review only, or create a separate reviewed
+          the selected environment ansible/vars/opnsense/dnat.yml for review only, or create a separate reviewed
           change if a raw API workaround or native module support is introduced.

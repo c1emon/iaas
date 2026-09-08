@@ -8,7 +8,7 @@ readonly VIRT_CUSTOMIZE='/usr/bin/virt-customize'
 readonly VIRT_SYSPREP='/usr/bin/virt-sysprep'
 readonly QM='/usr/sbin/qm'
 readonly FLOCK='/usr/bin/flock'
-readonly CACHE_ROOT='/var/cache/astra/packer'
+readonly CACHE_ROOT='/var/cache/iaas/packer'
 
 # Emit one JSON object per status line; no jq dependency on the node.
 usage() {
@@ -199,7 +199,7 @@ lock_dir='/run/lock'
 if [[ ! -d ${lock_dir} ]]; then
   lock_dir='/var/lock'
 fi
-lock_file="${lock_dir}/astra-pve-template-build.lock"
+lock_file="${lock_dir}/iaas-pve-template-build.lock"
 
 mkdir -p "${DOWNLOAD_DIR}" "${WORK_DIR}"
 

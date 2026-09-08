@@ -8,19 +8,19 @@
     pve_bootstrap_user: pve-ops
     pve_bootstrap_authorized_key: ""
     pve_bootstrap_sudo_commands:
-      - /usr/local/sbin/astra-pve-template-build
-      - /usr/local/sbin/astra-pve-snippet-upload
+      - /usr/local/sbin/iaas-pve-template-build
+      - /usr/local/sbin/iaas-pve-snippet-upload
     pve_bootstrap_template_wrapper_sudoers_src: >-
-      {{ playbook_dir }}/../../../pve-node/sudoers.d/astra-pve-template-build
+      {{ playbook_dir }}/../../../pve-node/sudoers.d/iaas-pve-template-build
     pve_bootstrap_snippet_wrapper_sudoers_src: >-
-      {{ playbook_dir }}/../../../pve-node/sudoers.d/astra-pve-snippet-upload
-    pve_bootstrap_wrapper_src: "{{ playbook_dir }}/../../../pve-node/bin/astra-pve-template-build"
-    pve_bootstrap_snippet_wrapper_src: "{{ playbook_dir }}/../../../pve-node/bin/astra-pve-snippet-upload"
-    pve_bootstrap_wrapper_dest: /usr/local/sbin/astra-pve-template-build
-    pve_bootstrap_snippet_wrapper_dest: /usr/local/sbin/astra-pve-snippet-upload
+      {{ playbook_dir }}/../../../pve-node/sudoers.d/iaas-pve-snippet-upload
+    pve_bootstrap_wrapper_src: "{{ playbook_dir }}/../../../pve-node/bin/iaas-pve-template-build"
+    pve_bootstrap_snippet_wrapper_src: "{{ playbook_dir }}/../../../pve-node/bin/iaas-pve-snippet-upload"
+    pve_bootstrap_wrapper_dest: /usr/local/sbin/iaas-pve-template-build
+    pve_bootstrap_snippet_wrapper_dest: /usr/local/sbin/iaas-pve-snippet-upload
     pve_bootstrap_default_sudo_commands:
-      - /usr/local/sbin/astra-pve-template-build
-      - /usr/local/sbin/astra-pve-snippet-upload
+      - /usr/local/sbin/iaas-pve-template-build
+      - /usr/local/sbin/iaas-pve-snippet-upload
 
   tasks:
     - name: Validate bootstrap inputs
@@ -57,7 +57,7 @@
 
     - name: Install the template build sudoers rule
       ansible.builtin.copy:
-        dest: /etc/sudoers.d/astra-pve-template-build
+        dest: /etc/sudoers.d/iaas-pve-template-build
         src: "{{ pve_bootstrap_template_wrapper_sudoers_src }}"
         remote_src: false
         owner: root
@@ -67,7 +67,7 @@
 
     - name: Install the snippet upload sudoers rule
       ansible.builtin.copy:
-        dest: /etc/sudoers.d/astra-pve-snippet-upload
+        dest: /etc/sudoers.d/iaas-pve-snippet-upload
         src: "{{ pve_bootstrap_snippet_wrapper_sudoers_src }}"
         remote_src: false
         owner: root
@@ -126,7 +126,7 @@
         argv:
           - /usr/sbin/visudo
           - -cf
-          - /etc/sudoers.d/astra-pve-template-build
+          - /etc/sudoers.d/iaas-pve-template-build
       register: pve_bootstrap_sudoers_check
       changed_when: false
 
@@ -135,13 +135,13 @@
         argv:
           - /usr/sbin/visudo
           - -cf
-          - /etc/sudoers.d/astra-pve-snippet-upload
+          - /etc/sudoers.d/iaas-pve-snippet-upload
       register: pve_bootstrap_snippet_sudoers_check
       changed_when: false
 
     - name: Install optional broader sudo allowlist when requested
       ansible.builtin.copy:
-        dest: /etc/sudoers.d/astra-pve-bootstrap-override
+        dest: /etc/sudoers.d/iaas-pve-bootstrap-override
         content: |
           # Managed by automation/ansible/playbooks/pve/bootstrap-pve-ops.yml
           # Temporary preflight override; keep it narrower than ALL.

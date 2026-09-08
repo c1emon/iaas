@@ -68,7 +68,7 @@ join_shell_quoted_args() {
 remote_args=(
   sudo
   -n
-  /usr/local/sbin/astra-pve-template-build
+  /usr/local/sbin/iaas-pve-template-build
   --vmid "${TEMPLATE_VMID}"
   --name "${TEMPLATE_NAME}"
   --image-url-prefix "${IMAGE_URL_PREFIX}"

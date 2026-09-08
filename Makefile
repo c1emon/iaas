@@ -1,9 +1,14 @@
-ROOT ?= $(abspath .)
-ASTRA ?= $(ROOT)/environments/astra
+ROOT ?= $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+ifneq ($(origin ASTRA),undefined)
+$(error ASTRA is no longer supported; set ENVIRONMENT_DIR and OUTPUT_DIR explicitly)
+endif
+ENVIRONMENT_DIR ?=
+OUTPUT_DIR ?=
 AUTOMATION ?= $(ROOT)/automation
-PVE_DIR ?= $(ASTRA)/opentofu/pve
-INVENTORY_DIR ?= $(ASTRA)/inventory
-GENERATED_DIR ?= $(ASTRA)/generated
+PVE_DIR ?=
+INVENTORY_DIR ?= $(ENVIRONMENT_DIR)/inventory
+GENERATED_DIR ?= $(OUTPUT_DIR)/generated
+RUNTIME_DIR ?= $(OUTPUT_DIR)/runtime
 ANSIBLE_CONFIG ?= $(AUTOMATION)/ansible/ansible.cfg
 ANSIBLE_INVENTORY ?= $(GENERATED_DIR)/ansible/pve.yml
 ANSIBLE_PLAYBOOK ?= $(AUTOMATION)/ansible/playbooks/pve/verify-guests.yml
@@ -23,11 +28,11 @@ PVE_TFVARS ?= $(GENERATED_DIR)/opentofu/pve.tfvars.json
 PVE_DOCS ?= $(GENERATED_DIR)/docs/pve-vms.md
 SERVICES_DOCS ?= $(GENERATED_DIR)/docs/services.md
 FOUNDATION_DOCS ?= $(GENERATED_DIR)/docs/foundation-recovery.md
-PVE_USER_DATA_DIR ?= $(ROOT)/.cache/pve-cloud-init/user-data
-BACKUP_DIR ?= $(ROOT)/.cache/tofu-state-backups
+PVE_USER_DATA_DIR ?= $(RUNTIME_DIR)/pve-cloud-init/user-data
+BACKUP_DIR ?= $(RUNTIME_DIR)/tofu-state-backups
 K3S_INTENT ?=
 K3S_INVENTORY ?=
-K3S_REVIEW ?= $(ROOT)/.cache/k3s/review.yml
+K3S_REVIEW ?= $(RUNTIME_DIR)/k3s/review.yml
 K3S_SCOPE ?=
 K3S_ANSIBLE_LIMIT = localhost,$(K3S_SCOPE)
 K3S_RUNTIME_SECRETS ?=
@@ -38,10 +43,45 @@ K3S_SNAPSHOT_PLAYBOOK ?= $(AUTOMATION)/ansible/playbooks/k3s/snapshot.yml
 K3S_UPGRADE_PLAYBOOK ?= $(AUTOMATION)/ansible/playbooks/k3s/upgrade.yml
 K3S_UPGRADE_TARGET ?=
 K3S_OBSERVED_VERSIONS ?=
-K3S_UPGRADE_PLAN ?= $(ROOT)/.cache/k3s/upgrade-plan.json
+K3S_UPGRADE_PLAN ?= $(RUNTIME_DIR)/k3s/upgrade-plan.json
 PLATFORM_HANDOFF_INTENT ?=
 PLATFORM_HANDOFF_OUTPUT ?=
 PLATFORM_HANDOFF_PLAYBOOK ?= $(AUTOMATION)/ansible/playbooks/k3s/platform-handoff.yml
+
+export ANSIBLE_ROLES_PATH := $(AUTOMATION)/ansible/roles
+export ANSIBLE_COLLECTIONS_PATH := $(AUTOMATION)/ansible/collections
+export ANSIBLE_FILTER_PLUGINS := $(AUTOMATION)/ansible/filter_plugins
+export ANSIBLE_LOOKUP_PLUGINS := $(AUTOMATION)/ansible/plugins/lookup
+export ENVIRONMENT_DIR OUTPUT_DIR
+
+.DEFAULT_GOAL := help
+.PHONY: help require-environment require-pve-dir
+help:
+	@printf '%s\n' 'IaaS operations: pve-generate pve-check services-generate services-check foundation-generate foundation-check k3s-check k3s-render' 'Select ENVIRONMENT_DIR and OUTPUT_DIR for environment operations; PVE_DIR selects an external OpenTofu root.' 'Checkout validation: check test secret-scan'
+
+require-environment:
+	@test -n "$(ENVIRONMENT_DIR)" || { printf 'error: ENVIRONMENT_DIR is required\n' >&2; exit 1; }
+	@test -d "$(ENVIRONMENT_DIR)" || { printf 'error: ENVIRONMENT_DIR must exist\n' >&2; exit 1; }
+	@test -n "$(OUTPUT_DIR)" || { printf 'error: OUTPUT_DIR is required\n' >&2; exit 1; }
+	@$(PYTHON) -m iaas_automation.runtime_paths --environment "$(ENVIRONMENT_DIR)" --implementation "$(AUTOMATION)" --output "$(OUTPUT_DIR)" --output "$(GENERATED_DIR)" --output "$(RUNTIME_DIR)" --output "$(PVE_TFVARS)" --output "$(ANSIBLE_INVENTORY)" --output "$(PVE_DOCS)" --output "$(TEMPLATE_BUILD_ENV)" --output "$(SERVICES_DOCS)" --output "$(FOUNDATION_DOCS)" --output "$(PVE_USER_DATA_DIR)" --output "$(BACKUP_DIR)"
+
+require-pve-dir:
+	@test -n "$(PVE_DIR)" || { printf 'error: PVE_DIR is required\n' >&2; exit 1; }
+	@test -d "$(PVE_DIR)" || { printf 'error: PVE_DIR must exist\n' >&2; exit 1; }
+
+pve-generate pve-check services-generate services-check foundation-generate foundation-check foundation-health pve-preflight pve-health lint-yaml opnsense-validate: require-environment
+pve-validate pve-fmt tofu-fmt pve-plan pve-apply pve-destroy pve-backup-state: require-pve-dir
+
+.PHONY: require-output require-k3s-output
+require-output:
+	@test -n "$(OUTPUT_DIR)" || { printf 'error: OUTPUT_DIR is required\n' >&2; exit 1; }
+	@$(PYTHON) -m iaas_automation.runtime_paths --implementation "$(AUTOMATION)" $(if $(ENVIRONMENT_DIR),--environment "$(ENVIRONMENT_DIR)") --output "$(OUTPUT_DIR)" --output "$(RUNTIME_DIR)" --output "$(PVE_USER_DATA_DIR)" --output "$(BACKUP_DIR)"
+
+require-k3s-output: require-output
+	@$(PYTHON) -m iaas_automation.runtime_paths --implementation "$(AUTOMATION)" --input "$(K3S_INTENT)" --input "$(K3S_INVENTORY)" --output "$(K3S_REVIEW)" --output "$(K3S_UPGRADE_PLAN)" $(if $(PLATFORM_HANDOFF_INTENT),--input "$(PLATFORM_HANDOFF_INTENT)") $(if $(PLATFORM_HANDOFF_OUTPUT),--output "$(PLATFORM_HANDOFF_OUTPUT)")
+
+render-cloud-init upload-cloud-init verify-cloud-init pve-backup-state: require-output
+k3s-render: require-k3s-output
 
 .PHONY: generate check-generated test lint-yaml typecheck ansible-lint tofu-fmt tofu-validate opnsense-validate check secret-scan ansible-syntax pve-generate pve-check services-generate services-check foundation-generate foundation-check foundation-health pve-validate pve-fmt pve-preflight pve-health pve-packer-build pve-plan pve-apply pve-destroy pve-verify-guests pve-bootstrap-guests pve-bootstrap-guests-syntax pve-ansible-syntax pve-backup-state render-cloud-init upload-cloud-init verify-cloud-init require-k3s-inputs require-k3s-scoped-inputs require-k3s-online-inputs require-k3s-upgrade-inputs require-platform-handoff-inputs require-platform-handoff-render-inputs k3s-check k3s-render k3s-ansible-syntax k3s-ansible-lint k3s-preflight k3s-verify k3s-deploy k3s-snapshot k3s-upgrade platform-handoff-check platform-handoff-render
 
@@ -53,7 +93,7 @@ test:
 	PYTHONPATH="$(AUTOMATION)/src" $(UV) run --directory "$(ROOT)" pytest
 
 lint-yaml:
-	$(UV) run --directory "$(ROOT)" yamllint "$(INVENTORY_DIR)" "$(ASTRA)/ansible"
+	$(UV) run --directory "$(ROOT)" yamllint "$(INVENTORY_DIR)" "$(ENVIRONMENT_DIR)/ansible"
 
 typecheck:
 	PYTHONPATH="$(AUTOMATION)/src" $(UV) run --directory "$(ROOT)" pyright
@@ -68,7 +108,7 @@ tofu-fmt:
 tofu-validate: pve-validate
 
 opnsense-validate:
-	$(PYTHON) -m iaas_automation.opnsense_validation --vars-dir "$(ASTRA)/ansible/vars/opnsense"
+	$(PYTHON) -m iaas_automation.opnsense_validation --vars-dir "$(ENVIRONMENT_DIR)/ansible/vars/opnsense"
 
 check: check-generated test lint-yaml typecheck ansible-lint tofu-fmt tofu-validate opnsense-validate
 
