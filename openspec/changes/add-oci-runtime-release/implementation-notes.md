@@ -126,3 +126,25 @@ flows (event preparation, command execution and image-label verification); all
 are covered by the focused release tests. The result is neither partial nor
 truncated. The wsx task workspace and both task-owned image tags were removed
 after validation; shared Docker services and caches were preserved.
+
+## First Release attempt and build-context repair
+
+The authorized `v0.1.0-rc.1` Release targets
+`3c697f5a4f73af8334f27e61cc0e540be344c720`. Release workflow
+https://github.com/c1emon/iaas/actions/runs/34184974368 passed source validation,
+the aggregate gate, secret scan, image build and runtime smoke, but failed layer
+inspection: checkout tests had created 17 empty `__pycache__` directories.
+The Docker ignore patterns excluded directory contents rather than directories
+themselves. No image was pushed; public consumption remains unverified.
+
+The repair excludes cache/test/example/provider directories themselves and adds
+explicit Python compilation before PR image builds. The existing image-layer
+check then exercises the previously missing post-Python-execution context.
+Dependency definitions and the published Release tag remain unchanged.
+
+A minimal Docker build on wsx using the exact repaired ignore file retained a
+source file while excluding both populated bytecode caches and empty excluded
+directories. Its temporary container, image tag and directory were removed.
+The 14 release contract tests, OpenSpec strict validation and whitespace checks
+pass. GitNexus reports low change risk with no partial/truncated result; the
+Make target is not indexed, so its two CI callers were checked directly.

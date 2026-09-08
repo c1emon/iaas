@@ -59,6 +59,8 @@ jobs:
           key: iaas-runtime-amd64-${{ hashFiles('pyproject.toml', 'uv.lock', 'automation/runtime/Dockerfile', 'automation/runtime/collections.yml', 'automation/runtime/prune.py') }}
           restore-keys: iaas-runtime-amd64-
       - run: docker buildx create --use
+      - name: Exercise build context after Python execution
+        run: uv run --no-project python -m compileall -q automation/src
       - run: make runtime-build
       - run: make runtime-tofu-check
       - run: uv run python automation/runtime/inspect_image.py

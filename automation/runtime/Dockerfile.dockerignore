@@ -18,10 +18,10 @@
 !automation/runtime/**
 **/README*
 **/AGENTS.md
-**/__pycache__/**
-**/tests/**
-**/examples/**
-**/.terraform/**
+**/__pycache__
+**/tests
+**/examples
+**/.terraform
 **/*.tfstate*
 **/*.tfplan
 **/*.pyc
