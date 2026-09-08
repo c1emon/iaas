@@ -126,7 +126,7 @@ def test_role_orders_prechecks_before_guest_writes_and_preserves_guest_only_boun
 
 
 def test_bootstrap_syntax_and_disabled_tool_proxy_paths_are_valid() -> None:
-    result = _run_ansible(["--syntax-check", "-i", str(ROOT / "environments/astra/generated/ansible/pve.yml"), str(PLAYBOOK)])
+    result = _run_ansible(["--syntax-check", "-i", str(ROOT / "tests/fixtures/environment/generated/ansible/pve.yml"), str(PLAYBOOK)])
     assert result.returncode == 0, result.stdout + result.stderr
 
     normalized = normalize(

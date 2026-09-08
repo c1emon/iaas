@@ -22,10 +22,10 @@ PVE 或 K3s 配置自动创建 VLAN、端口或 Trunk。
 
 | 文件 | 作用 | 可编辑性 |
 | --- | --- | --- |
-| `environments/astra/ansible/inventory.yml` | `switches` 组、主机名、管理地址、设备型号提示。 | 环境源文件。 |
-| `environments/astra/ansible/group_vars/switches.yml` | 连接插件、平台、运行时用户名/密码、端口、超时。 | 环境源文件；凭据只通过环境变量。 |
-| `environments/astra/ansible/vars/switches/sw-core-vlans.yml` | `sw-core` 的声明式资源调用。 | 环境源文件；默认仅 plan。 |
-| `exports/switches/` | 只读事实导出。 | 本地观察产物；不得作为 apply 输入或提交。 |
+| `$ENVIRONMENT_DIR/ansible/inventory.yml` | `switches` 组、主机名、管理地址、设备型号提示。 | 环境源文件。 |
+| `$ENVIRONMENT_DIR/ansible/group_vars/switches.yml` | 连接插件、平台、运行时用户名/密码、端口、超时。 | 环境源文件；凭据只通过环境变量。 |
+| `$ENVIRONMENT_DIR/ansible/vars/switches/<inventory_hostname>-vlans.yml` | 所选主机 的声明式资源调用。 | 环境源文件；默认仅 plan。 |
+| `$OUTPUT_DIR/runtime/exports/switches/` | 只读事实导出。 | 本地观察产物；不得作为 apply 输入或提交。 |
 
 ### 连接变量
 
@@ -36,7 +36,7 @@ PVE 或 K3s 配置自动创建 VLAN、端口或 Trunk。
 | `ansible_user` | SSH 用户，来自 `SWITCH_SSH_USER`。 | 不写入 YAML。 |
 | `ansible_password` | SSH 密码，来自 `SWITCH_SSH_PASSWORD`。 | 不写入 YAML、facts 或日志。 |
 | `ansible_port` | SSH 端口，默认环境变量为空时为 `22`。 | 必须非空。 |
-| `ansible_command_timeout` | 单命令超时秒数。 | 当前环境值为 `30`；变更需针对慢设备验证。 |
+| `ansible_command_timeout` | 单命令超时秒数。 | 由调用方声明；根据设备响应设置。 |
 | `switch_model_hint` | 操作者阅读用型号提示。 | 不替代真实设备能力探测。 |
 
 ### 只读事实选择与导出参数
@@ -57,7 +57,7 @@ adapter、Cisco IOS resource/config 模块或通用 `cli_config`。仓库约束�
 
 ### `switch_config_resources` 结构
 
-`sw-core-vlans.yml` 的根对象为 `switch_config_resources`。允许的资源组为
+`<inventory_hostname>-vlans.yml` 的根对象为 `switch_config_resources`。允许的资源组为
 `vlans`、`base_interfaces`、`lag_interfaces`、`l2_interfaces`、`l3_interfaces`、
 `static_routes` 和 `acls`。每个资源组的值均是模块调用列表：
 
@@ -113,25 +113,25 @@ QinQ、mirror、port isolation、flex monitor link 和 OSPF v2 等仅有 rendere
 
 ## 1.3 操作流程
 
-在 `automation/ansible/` 目录执行以下命令。所有需要 SSH 凭据的命令均通过
-1Password runtime 模板注入。
+在 `automation/ansible/` 目录执行以下命令。先按准备章节安装依赖并设置绝对目录。以下使用调用方 `op run` 模板示例；
+传统 Secret 已注入相同环境变量时，直接执行其后的 `uv run` 命令。
+调用方 group vars 负责将环境变量映射为相应 Ansible 连接变量。
 
 ```bash
+export SWITCH_HOST="your-switch-inventory-host"
 cd automation/ansible
-uv sync
-uv run ansible-galaxy collection install -r requirements.yml
 
 # 在线只读：先验证 SSH/network_cli 基本链路。
-op run --env-file ../../environments/astra/runtime/.env.switch.tpl -- \
-  uv run ansible-playbook playbooks/switches/network-cli-smoke.yml --limit sw-core
+op run --env-file "$SWITCH_ENV_TEMPLATE" -- \
+  uv run ansible-playbook playbooks/switches/network-cli-smoke.yml -i "$ENVIRONMENT_DIR/ansible/inventory.yml" --limit "$SWITCH_HOST"
 
 # 在线只读：收集原生事实并生成本地观察产物。
-op run --env-file ../../environments/astra/runtime/.env.switch.tpl -- \
-  uv run ansible-playbook playbooks/switches/readonly-facts.yml --limit sw-core
+op run --env-file "$SWITCH_ENV_TEMPLATE" -- \
+  uv run ansible-playbook playbooks/switches/readonly-facts.yml -e "switch_export_dir=$OUTPUT_DIR/runtime/exports/switches/$SWITCH_HOST" -i "$ENVIRONMENT_DIR/ansible/inventory.yml" --limit "$SWITCH_HOST"
 
 # 在线但默认不变更：由原生模块以 check mode 预览声明式资源。
-op run --env-file ../../environments/astra/runtime/.env.switch.tpl -- \
-  uv run ansible-playbook playbooks/switches/config-plan.yml --limit sw-core \
+op run --env-file "$SWITCH_ENV_TEMPLATE" -- \
+  uv run ansible-playbook playbooks/switches/config-plan.yml -e "ansible_project_dir=$ENVIRONMENT_DIR" -i "$ENVIRONMENT_DIR/ansible/inventory.yml" --limit "$SWITCH_HOST" \
   --check -e switch_config_apply=false
 ```
 
@@ -142,8 +142,8 @@ op run --env-file ../../environments/astra/runtime/.env.switch.tpl -- \
 只有审查过 plan、记录恢复路径并确认不会切断控制通道后，才可显式执行变更：
 
 ```bash
-op run --env-file ../../environments/astra/runtime/.env.switch.tpl -- \
-  uv run ansible-playbook playbooks/switches/config-plan.yml --limit sw-core \
+op run --env-file "$SWITCH_ENV_TEMPLATE" -- \
+  uv run ansible-playbook playbooks/switches/config-plan.yml -e "ansible_project_dir=$ENVIRONMENT_DIR" -i "$ENVIRONMENT_DIR/ansible/inventory.yml" --limit "$SWITCH_HOST" \
   -e switch_config_apply=true
 ```
 

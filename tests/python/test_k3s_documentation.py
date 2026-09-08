@@ -18,7 +18,7 @@ def test_documentation_exists_and_describes_the_software_only_boundary() -> None
     text = documentation()
 
     assert "当前状态与准入" in text
-    assert "Astra 环境专用 K3s VM/inventory/intent" in text
+    assert "调用方环境的 K3s VM/inventory/intent" in text
     assert "synthetic" in text.lower()
     assert "生产资格" in text
 
@@ -108,5 +108,5 @@ def test_documentation_does_not_claim_live_astra_nodes_or_cluster_qualification(
         "highly available cluster",
     )
     assert all(claim not in lower for claim in forbidden_claims)
-    assert "astra 环境专用 k3s vm/inventory/intent" in lower
+    assert "调用方环境的 k3s vm/inventory/intent" in lower
     assert "Astra 已" not in text

@@ -1,0 +1,151 @@
+---
+# Synthetic regression data; not a deployment environment.
+schema_version: 1
+cluster:
+  name: fixture-pve
+  default_template: debian_13_genericcloud
+  automation:
+    ansible_user: ops
+    template_build:
+      template_key: debian_13_genericcloud
+      image_url: "https://cloud.debian.org/images/cloud/trixie/20260601-2496/d\
+        ebian-13-genericcloud-amd64-20260601-2496.qcow2"
+      image_sha512: "61264ae6968d765e61cf5607a664ba63099ddfb66b8404aa737d06f89b39\
+        c8e0fbaa1517b13705909ff01686d32015a0147436662672b4dacc10b4a171d7993d"
+      image_url_prefix: https://cloud.debian.org/images/cloud/
+      import_storage_role: images
+      disk_storage_role: memory
+      build_domain: localdomain
+      apt_mirror: https://mirrors.tuna.tsinghua.edu.cn/debian
+      apt_security_mirror: https://mirrors.tuna.tsinghua.edu.cn/debian-security
+      timezone: Asia/Shanghai
+      locale: en_US.UTF-8
+      ciuser: builder
+      nameserver: 198.51.100.254
+      build_bridge: br_dev
+    cloud_init:
+      defaults:
+        package_update: false
+        package_upgrade: false
+        ssh_pwauth: false
+        disable_root: true
+      drive_storage_role: memory
+      snippet_storage_role: images
+      snippet_file_prefix: opentofu-vm
+      users:
+        - name: admin
+          gecos: admin
+          groups: sudo
+          shell: /bin/bash
+          sudo:
+            - ALL=(ALL) ALL
+          password_env: PVE_VM_ADMIN_PASSWORD
+          public_key_env: PVE_VM_ADMIN_PUBLIC_KEY
+        - name: ops
+          gecos: ops
+          groups: sudo
+          shell: /bin/bash
+          sudo:
+            - ALL=(ALL) NOPASSWD:ALL
+          password_env: PVE_VM_OPS_PASSWORD
+          public_key_env: PVE_VM_OPS_PUBLIC_KEY
+reserved_vm_id_ranges:
+  templates:
+    - 9000
+    - 9500
+  long_lived:
+    - 1000
+    - 2000
+  ephemeral_lab:
+    - 500
+    - 800
+storage_roles:
+  memory:
+    datastore: memory
+    purpose: vm_template_disks
+    content:
+      - disk
+  images:
+    datastore: images
+    purpose: iso_import_snippets
+    content:
+      - iso
+      - import
+      - snippets
+networks:
+  mgmt:
+    bridge: vmbr0
+    cidr: 192.0.2.0/24
+    gateway: 192.0.2.254
+    dns: 192.0.2.254
+    attach_vms: false
+  storage:
+    bridge: storage
+    cidr: 10.1.1.0/24
+    gateway: null
+    dns: null
+    attach_vms: false
+  dev:
+    bridge: br_dev
+    cidr: 198.51.100.0/24
+    gateway: 198.51.100.254
+    dns: 198.51.100.254
+    attach_vms: true
+  prod:
+    bridge: br_prod
+    cidr: 203.0.113.0/24
+    gateway: 203.0.113.254
+    dns: 203.0.113.254
+    attach_vms: true
+nodes:
+  node-a:
+    mgmt_ip: 192.0.2.72
+    storage_ip: 10.1.1.72
+    ssh_host: node-a
+  node-b:
+    mgmt_ip: 192.0.2.73
+    storage_ip: 10.1.1.73
+    ssh_host: node-b
+vm_defaults:
+  cores: 2
+  memory_mib: 2048
+  root_disk_gib: 20
+  cpu_type: host
+  bios: ovmf
+  machine: q35
+  clone_mode: full
+  scsi_controller: virtio-scsi-single
+  primary_disk: scsi0
+  primary_nics: 1
+  pool: null
+templates:
+  debian_13_genericcloud:
+    vmid: 9001
+    name: debian-13-tmpl-20260616
+    architecture: amd64
+    node: node-a
+    storage_role: memory
+    source_storage_role: images
+    disk_size_gib: 20
+    cpu_type: host
+    bios: ovmf
+    machine: q35
+    clone_mode: full
+    scsi_controller: virtio-scsi-single
+    primary_disk: scsi0
+    primary_nics: 1
+pci_mappings:
+  test-gpu:
+    type: igpu
+    ha_allowed: false
+    defaults:
+      pcie: true
+      rombar: true
+      xvga: false
+    nodes:
+      node-a:
+        path: '0000:00:02.1'
+        iommu_group: 15
+      node-b:
+        path: '0000:00:02.1'
+        iommu_group: 13

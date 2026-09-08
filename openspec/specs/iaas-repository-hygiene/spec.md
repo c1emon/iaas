@@ -15,12 +15,12 @@ The system SHALL not retain broken legacy scripts as supported repository entryp
 - **AND** current Makefile targets, tests, and operator docs SHALL NOT instruct operators to run that broken script as a supported workflow
 
 ### Requirement: Human architecture documentation follows source-of-truth facts
-Current human-maintained architecture documentation SHALL not contradict Astra's authoritative authored facts.
+Current human-maintained architecture documentation SHALL not contradict the selected environment's authoritative authored facts.
 
 #### Scenario: PVE node facts are documented
 - **WHEN** current architecture documentation states concrete PVE node facts such as node names, management addresses, or roles
-- **THEN** those facts SHALL match `environments/astra/inventory/pve-cluster.yml` or be explicitly marked historical/uncertain
-- **AND** current documentation SHALL be corrected when it conflicts with Astra inventory
+- **THEN** those facts SHALL match `$ENVIRONMENT_DIR/inventory/pve-cluster.yml` or be explicitly marked historical/uncertain
+- **AND** current documentation SHALL be corrected when it conflicts with selected environment inventory
 
 #### Scenario: Historical documentation records an old path or fact
 - **WHEN** an immutable OpenSpec archive or prominently labeled historical decision records its original context

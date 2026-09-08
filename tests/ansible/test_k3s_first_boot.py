@@ -27,9 +27,9 @@ def test_live_probe_shape_and_null_credentials(tmp_path):
         'Build runtime facts from read-only probes',
         'Resolve credential and TLS reference sets without retaining secret values']]
     results = [{'rc': 0, 'stdout': value} for value in
-               ['cgroup2fs', 'CapEff', 'yes', '10.10.0.20', '', '20000000000', '', '']]
+               ['cgroup2fs', 'CapEff', 'yes', '198.51.100.20', '', '20000000000', '', '']]
     variables = {
-        'k3s_preflight_node': {'vm_ref': 'localhost', 'node_ip': '10.10.0.20', 'node_nic': 'mgmt0'},
+        'k3s_preflight_node': {'vm_ref': 'localhost', 'node_ip': '198.51.100.20', 'node_nic': 'mgmt0'},
         'k3s_preflight_reachable': True,
         'pve_architecture': 'amd64',
         'k3s_preflight_setup': {'ansible_facts': {'ansible_os_family': 'Debian',

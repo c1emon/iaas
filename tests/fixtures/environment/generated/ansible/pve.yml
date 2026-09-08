@@ -1,0 +1,165 @@
+---
+all:
+  children:
+    pve_vms:
+      hosts:
+        dev-web-01:
+          ansible_connection: ssh
+          ansible_host: 198.51.100.20
+          ansible_user: ops
+          ansible_become: false
+          ansible_become_method: sudo
+          ansible_python_interpreter: auto_silent
+          pve_vmid: 500
+          pve_node: node-a
+          pve_nics:
+            - name: mgmt0
+              role: management
+              network:
+                name: dev
+                bridge: br_dev
+                cidr: 198.51.100.0/24
+                gateway: 198.51.100.254
+                dns: 198.51.100.254
+                attach_vms: true
+              mac_address: 52:54:00:00:01:f4
+              static_ip: 198.51.100.20/24
+              ip_address: 198.51.100.20
+              prefix_length: 24
+              network_cidr: 198.51.100.0/24
+              gateway: 198.51.100.254
+              default_route: true
+              ansible_connection: true
+              dns:
+                - 198.51.100.254
+          pve_ansible_groups:
+            - dev
+            - web
+          pve_tags:
+            - dev
+            - web
+          pve_pool: null
+          pve_template: debian_13_genericcloud
+          pve_architecture: amd64
+          pve_template_vmid: 9001
+          pve_template_node: node-a
+          pve_disk_storage_role: memory
+          pve_disk_datastore: memory
+          pve_started: false
+          pve_on_boot: false
+          pve_cores: 2
+          pve_memory_mib: 2048
+          pve_root_disk_gib: 20
+        prod-app-01:
+          ansible_connection: ssh
+          ansible_host: 203.0.113.20
+          ansible_user: ops
+          ansible_become: false
+          ansible_become_method: sudo
+          ansible_python_interpreter: auto_silent
+          pve_vmid: 1000
+          pve_node: node-a
+          pve_nics:
+            - name: mgmt0
+              role: management
+              network:
+                name: prod
+                bridge: br_prod
+                cidr: 203.0.113.0/24
+                gateway: 203.0.113.254
+                dns: 203.0.113.254
+                attach_vms: true
+              mac_address: 52:54:00:00:03:e8
+              static_ip: 203.0.113.20/24
+              ip_address: 203.0.113.20
+              prefix_length: 24
+              network_cidr: 203.0.113.0/24
+              gateway: 203.0.113.254
+              default_route: true
+              ansible_connection: true
+              dns:
+                - 203.0.113.254
+          pve_ansible_groups:
+            - prod
+            - app
+          pve_tags:
+            - prod
+            - app
+          pve_pool: null
+          pve_template: debian_13_genericcloud
+          pve_architecture: amd64
+          pve_template_vmid: 9001
+          pve_template_node: node-a
+          pve_disk_storage_role: memory
+          pve_disk_datastore: memory
+          pve_started: false
+          pve_on_boot: false
+          pve_cores: 2
+          pve_memory_mib: 2048
+          pve_root_disk_gib: 20
+        media-lab-01:
+          ansible_connection: ssh
+          ansible_host: 198.51.100.21
+          ansible_user: ops
+          ansible_become: false
+          ansible_become_method: sudo
+          ansible_python_interpreter: auto_silent
+          pve_vmid: 501
+          pve_node: node-a
+          pve_nics:
+            - name: mgmt0
+              role: management
+              network:
+                name: dev
+                bridge: br_dev
+                cidr: 198.51.100.0/24
+                gateway: 198.51.100.254
+                dns: 198.51.100.254
+                attach_vms: true
+              mac_address: 52:54:00:00:01:f5
+              static_ip: 198.51.100.21/24
+              ip_address: 198.51.100.21
+              prefix_length: 24
+              network_cidr: 198.51.100.0/24
+              gateway: 198.51.100.254
+              default_route: true
+              ansible_connection: true
+              dns:
+                - 198.51.100.254
+          pve_ansible_groups:
+            - lab
+            - media
+          pve_tags:
+            - lab
+            - media
+            - igpu
+          pve_pool: null
+          pve_template: debian_13_genericcloud
+          pve_architecture: amd64
+          pve_template_vmid: 9001
+          pve_template_node: node-a
+          pve_disk_storage_role: memory
+          pve_disk_datastore: memory
+          pve_started: false
+          pve_on_boot: false
+          pve_cores: 2
+          pve_memory_mib: 2048
+          pve_root_disk_gib: 20
+    dev:
+      hosts:
+        dev-web-01: {}
+    web:
+      hosts:
+        dev-web-01: {}
+    prod:
+      hosts:
+        prod-app-01: {}
+    app:
+      hosts:
+        prod-app-01: {}
+    lab:
+      hosts:
+        media-lab-01: {}
+    media:
+      hosts:
+        media-lab-01: {}

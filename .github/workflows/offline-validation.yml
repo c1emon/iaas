@@ -37,7 +37,7 @@ jobs:
 
       - run: uv run ansible-galaxy collection install -r automation/ansible/requirements.yml -p automation/ansible/collections
 
-      - run: make check ENVIRONMENT_DIR="$PWD/environments/astra" OUTPUT_DIR="$RUNNER_TEMP/iaas-output" GENERATED_DIR="$PWD/environments/astra/generated" PVE_DIR="$PWD/environments/astra/opentofu/pve"
+      - run: make check ENVIRONMENT_DIR="$PWD/tests/fixtures/environment" OUTPUT_DIR="$RUNNER_TEMP/iaas-output" GENERATED_DIR="$PWD/tests/fixtures/environment/generated" PVE_DIR="$PWD/tests/fixtures/environment/opentofu"
 
       - run: make secret-scan
 

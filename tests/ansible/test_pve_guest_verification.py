@@ -12,7 +12,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 ANSIBLE_DIR = ROOT / "automation" / "ansible"
-GENERATED_INVENTORY = ROOT / "environments" / "astra" / "generated" / "ansible" / "pve.yml"
+GENERATED_INVENTORY = ROOT / "tests" / "fixtures" / "environment" / "generated" / "ansible" / "pve.yml"
 PLAYBOOK = ANSIBLE_DIR / "playbooks" / "pve" / "verify-guests.yml"
 TASKS_FILE = ANSIBLE_DIR / "playbooks" / "pve" / "tasks" / "verify-guest.yml"
 BOOTSTRAP_PLAYBOOK = ANSIBLE_DIR / "playbooks" / "pve" / "bootstrap-guests.yml"
@@ -43,7 +43,7 @@ def _write_inventory(path: Path, hosts: dict[str, dict[str, Any]]) -> None:
 
 def _base_hostvars() -> dict[str, Any]:
     return {
-        "ansible_host": "10.10.0.20",
+        "ansible_host": "198.51.100.20",
         "ansible_user": "ops",
         "ansible_connection": "ssh",
         "ansible_become": False,
@@ -56,8 +56,8 @@ def _base_hostvars() -> dict[str, Any]:
                 "role": "management",
                 "ansible_connection": True,
                 "default_route": True,
-                "gateway": "10.10.0.254",
-                "dns": ["10.10.0.254"],
+                "gateway": "198.51.100.254",
+                "dns": ["198.51.100.254"],
             }
         ],
     }

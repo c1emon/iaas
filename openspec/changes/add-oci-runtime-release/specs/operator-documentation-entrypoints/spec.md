@@ -14,8 +14,8 @@ The operator documentation SHALL identify explicitly selected environment source
 - **THEN** the root README SHALL identify the selected generated-output directory and which non-sensitive artifacts an environment repository may commit
 - **AND** detailed state, cache, and observation handling SHALL be linked rather than duplicated
 
-#### Scenario: Operator migrates an Astra-specific invocation
+#### Scenario: Operator migrates an environment-specific invocation
 - **WHEN** a supported runtime example previously relied on an Astra selector or default path
 - **THEN** current documentation SHALL show the generic explicit environment/output inputs and changed helper names
-- **AND** Astra data examples SHALL be identified as one environment rather than universal defaults
+- **AND** actual environment data and execution records SHALL be maintained by callers outside the runtime repository
 - **AND** host helper migration SHALL retain its explicit online authorization boundary

@@ -21,8 +21,8 @@ from iaas_automation.pve_inventory.preflight import run_preflight
 
 
 ROOT = Path(__file__).resolve().parents[2]
-CLUSTER_PATH = ROOT / "environments" / "astra" / "inventory" / "pve-cluster.yml"
-VMS_PATH = ROOT / "environments" / "astra" / "inventory" / "vms.yml"
+CLUSTER_PATH = ROOT / "tests" / "fixtures" / "environment" / "inventory" / "pve-cluster.yml"
+VMS_PATH = ROOT / "tests" / "fixtures" / "environment" / "inventory" / "vms.yml"
 
 class _Leaf:
     def __init__(self, path: str, response: Any, calls: list[tuple[str, str]]) -> None:
@@ -119,18 +119,18 @@ class _FakeProxmox:
 def _payloads() -> dict[str, Any]:
     return {
         "cluster_status": {"quorate": True},
-        "nodes": [{"node": "cohe"}],
-        "cluster_vm_resources": [{"vmid": 9001, "node": "cohe", "name": "debian-13-tmpl-20260616", "template": True}],
-        "pci_mappings": [{"name": "iGpu0", "nodes": [{"node": "cohe"}]}],
-        "pci_mapping_detail": {"iGpu0": {"name": "iGpu0", "nodes": [{"node": "cohe"}]}},
+        "nodes": [{"node": "node-a"}],
+        "cluster_vm_resources": [{"vmid": 9001, "node": "node-a", "name": "debian-13-tmpl-20260616", "template": True}],
+        "pci_mappings": [{"name": "test-gpu", "nodes": [{"node": "node-a"}]}],
+        "pci_mapping_detail": {"test-gpu": {"name": "test-gpu", "nodes": [{"node": "node-a"}]}},
         "node_status": {
-            "cohe": {"status": "online"},
+            "node-a": {"status": "online"},
         },
         "node_storage": {
-            "cohe": [],
+            "node-a": [],
         },
         "vms": {
-            "cohe": [],
+            "node-a": [],
         },
         "vm_status": {},
         "vm_config": {},
@@ -143,41 +143,41 @@ def test_read_only_api_uses_get_only_named_methods() -> None:
     calls: list[tuple[str, str]] = []
     payloads = _payloads()
     payloads["cluster_status"] = [{"quorate": True}]
-    payloads["nodes"] = [{"node": "cohe"}]
-    payloads["cluster_vm_resources"] = [{"vmid": 9001, "node": "cohe", "name": "debian-13-tmpl-20260616", "template": True}]
-    payloads["pci_mappings"] = [{"name": "iGpu0", "nodes": [{"node": "cohe"}]}]
-    payloads["pci_mapping_detail"] = {"iGpu0": {"name": "iGpu0", "nodes": [{"node": "cohe"}]}}
-    payloads["node_status"]["cohe"] = {"status": "online"}
-    payloads["node_network"] = {"cohe": []}
-    payloads["node_storage"]["cohe"] = []
-    payloads["vms"]["cohe"] = []
+    payloads["nodes"] = [{"node": "node-a"}]
+    payloads["cluster_vm_resources"] = [{"vmid": 9001, "node": "node-a", "name": "debian-13-tmpl-20260616", "template": True}]
+    payloads["pci_mappings"] = [{"name": "test-gpu", "nodes": [{"node": "node-a"}]}]
+    payloads["pci_mapping_detail"] = {"test-gpu": {"name": "test-gpu", "nodes": [{"node": "node-a"}]}}
+    payloads["node_status"]["node-a"] = {"status": "online"}
+    payloads["node_network"] = {"node-a": []}
+    payloads["node_storage"]["node-a"] = []
+    payloads["vms"]["node-a"] = []
     payloads["ha_status"] = []
     prox = _FakeProxmox(payloads, calls)
     api = ReadOnlyPveApi(HealthApiRuntimeConfig("https://pve.example.invalid", "pve-ops@pve", "opentofu", "secret", True), prox=prox)
 
     assert not hasattr(api, "prox")
     assert api.cluster_status() == [{"quorate": True}]
-    assert api.nodes() == [{"node": "cohe"}]
-    assert api.node_status("cohe") == {"status": "online"}
-    assert api.node_network("cohe") == []
-    assert api.node_storage("cohe") == []
-    assert api.cluster_vm_resources() == [{"vmid": 9001, "node": "cohe", "name": "debian-13-tmpl-20260616", "template": True}]
-    assert api.vms("cohe") == []
-    assert api.pci_mappings() == [{"name": "iGpu0", "nodes": [{"node": "cohe"}]}]
-    assert api.pci_mapping_detail("iGpu0") == {"name": "iGpu0", "nodes": [{"node": "cohe"}]}
+    assert api.nodes() == [{"node": "node-a"}]
+    assert api.node_status("node-a") == {"status": "online"}
+    assert api.node_network("node-a") == []
+    assert api.node_storage("node-a") == []
+    assert api.cluster_vm_resources() == [{"vmid": 9001, "node": "node-a", "name": "debian-13-tmpl-20260616", "template": True}]
+    assert api.vms("node-a") == []
+    assert api.pci_mappings() == [{"name": "test-gpu", "nodes": [{"node": "node-a"}]}]
+    assert api.pci_mapping_detail("test-gpu") == {"name": "test-gpu", "nodes": [{"node": "node-a"}]}
     assert api.ha_status() == []
     assert api.ceph_status() == {"health": "HEALTH_OK"}
 
     assert calls == [
         ("cluster/status", "get"),
         ("nodes", "get"),
-        ("nodes/cohe/status", "get"),
-        ("nodes/cohe/network", "get"),
-        ("nodes/cohe/storage", "get"),
+        ("nodes/node-a/status", "get"),
+        ("nodes/node-a/network", "get"),
+        ("nodes/node-a/storage", "get"),
         ("cluster/resources?type=vm", "get"),
-        ("nodes/cohe/qemu", "get"),
+        ("nodes/node-a/qemu", "get"),
         ("cluster/mapping/pci", "get"),
-        ("cluster/mapping/pci/iGpu0", "get"),
+        ("cluster/mapping/pci/test-gpu", "get"),
         ("cluster/ha/status/current", "get"),
         ("cluster/ceph/status", "get"),
     ]
@@ -312,17 +312,17 @@ def test_shared_fake_client_satisfies_protocol_for_health_and_preflight() -> Non
     calls: list[tuple[str, str]] = []
     payloads = _payloads()
     payloads["cluster_status"] = [{"quorate": True}]
-    payloads["nodes"] = [{"node": "cohe", "status": "online"}]
-    payloads["node_network"] = {"cohe": [{"iface": "br_dev", "type": "bridge"}, {"iface": "br_prod", "type": "bridge"}]}
-    payloads["node_storage"] = {"cohe": [{"storage": "images", "active": True, "usage": 10}, {"storage": "memory", "active": True, "usage": 10}]}
+    payloads["nodes"] = [{"node": "node-a", "status": "online"}]
+    payloads["node_network"] = {"node-a": [{"iface": "br_dev", "type": "bridge"}, {"iface": "br_prod", "type": "bridge"}]}
+    payloads["node_storage"] = {"node-a": [{"storage": "images", "active": True, "usage": 10}, {"storage": "memory", "active": True, "usage": 10}]}
     payloads["cluster_vm_resources"] = [
-        {"vmid": 9001, "node": "cohe", "name": "debian-13-tmpl-20260616", "template": True},
-        {"vmid": 500, "node": "cohe", "name": "dev-web-01", "template": False},
-        {"vmid": 1000, "node": "cohe", "name": "prod-app-01", "template": False},
-        {"vmid": 501, "node": "cohe", "name": "media-lab-01", "template": False},
+        {"vmid": 9001, "node": "node-a", "name": "debian-13-tmpl-20260616", "template": True},
+        {"vmid": 500, "node": "node-a", "name": "dev-web-01", "template": False},
+        {"vmid": 1000, "node": "node-a", "name": "prod-app-01", "template": False},
+        {"vmid": 501, "node": "node-a", "name": "media-lab-01", "template": False},
     ]
     payloads["vms"] = {
-        "cohe": [
+        "node-a": [
             {"vmid": 9001, "name": "debian-13-tmpl-20260616", "template": True, "status": "stopped"},
             {"vmid": 1000, "name": "prod-app-01", "template": False, "status": "running"},
             {"vmid": 500, "name": "dev-web-01", "template": False, "status": "running"},
@@ -330,19 +330,19 @@ def test_shared_fake_client_satisfies_protocol_for_health_and_preflight() -> Non
         ]
     }
     payloads["vm_status"] = {
-        ("cohe", 9001): {"status": "stopped"},
-        ("cohe", 1000): {"status": "running"},
-        ("cohe", 500): {"status": "running"},
-        ("cohe", 501): {"status": "running"},
+        ("node-a", 9001): {"status": "stopped"},
+        ("node-a", 1000): {"status": "running"},
+        ("node-a", 500): {"status": "running"},
+        ("node-a", 501): {"status": "running"},
     }
     payloads["vm_config"] = {
-        ("cohe", 9001): {"template": True},
-        ("cohe", 1000): {"template": False, "tags": "managed-by-opentofu"},
-        ("cohe", 500): {"template": False, "tags": "managed-by-opentofu"},
-        ("cohe", 501): {"template": False, "tags": "managed-by-opentofu"},
+        ("node-a", 9001): {"template": True},
+        ("node-a", 1000): {"template": False, "tags": "managed-by-opentofu"},
+        ("node-a", 500): {"template": False, "tags": "managed-by-opentofu"},
+        ("node-a", 501): {"template": False, "tags": "managed-by-opentofu"},
     }
-    payloads["pci_mappings"] = [{"name": "iGpu0", "nodes": [{"node": "cohe"}]}]
-    payloads["pci_mapping_detail"] = {"iGpu0": {"name": "iGpu0", "nodes": [{"node": "cohe"}]}}
+    payloads["pci_mappings"] = [{"name": "test-gpu", "nodes": [{"node": "node-a"}]}]
+    payloads["pci_mapping_detail"] = {"test-gpu": {"name": "test-gpu", "nodes": [{"node": "node-a"}]}}
     payloads["ha_status"] = []
     payloads["ceph_status"] = {"health": "HEALTH_OK"}
 

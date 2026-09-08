@@ -7,10 +7,10 @@ Provide a safe PVE automation foundation for declarative VM inventory, Debian 13
 ## Requirements
 
 ### Requirement: YAML source-of-truth for PVE VM automation
-The system SHALL use Astra's operator-authored YAML inventory as the source of truth for PVE cluster defaults, networks, templates, PCI resource mappings, VMID policy, and VM declarations.
+The system SHALL use the selected environment's operator-authored YAML inventory as the source of truth for PVE cluster defaults, networks, templates, PCI resource mappings, VMID policy, and VM declarations.
 
 #### Scenario: Generate OpenTofu and Ansible inputs from one VM declaration
-- **WHEN** an operator declares a VM with node, template, NICs, sizing, lifecycle, and Ansible group data in Astra YAML
+- **WHEN** an operator declares a VM with node, template, NICs, sizing, lifecycle, and Ansible group data in environment-owned YAML
 - **THEN** the system SHALL generate OpenTofu provisioning input, Ansible inventory entries, and human-readable VM documentation from that declaration
 - **AND** it SHALL avoid duplicate manual VM definitions in OpenTofu, Ansible, or current documentation
 
@@ -20,10 +20,10 @@ The system SHALL use Astra's operator-authored YAML inventory as the source of t
 - **AND** the error message SHALL point to the deprecated top-level fields
 
 #### Scenario: Keep generated files reviewable and non-sensitive
-- **WHEN** the generator emits Astra outputs
-- **THEN** it SHALL write `environments/astra/generated/opentofu/pve.tfvars.json`, `environments/astra/generated/ansible/pve.yml`, and `environments/astra/generated/docs/pve-vms.md`
-- **AND** those committed files SHALL NOT contain passwords, hashes, private keys, token secrets, or other secrets
-- **AND** ignore rules SHALL explicitly allow intended committed outputs
+- **WHEN** the generator emits outputs for an explicitly selected environment
+- **THEN** it SHALL write `opentofu/pve.tfvars.json`, `ansible/pve.yml`, and `docs/pve-vms.md` beneath the explicitly selected generated-output directory
+- **AND** those generated files SHALL NOT contain passwords, hashes, private keys, token secrets, or other secrets
+- **AND** environment repositories committing generated outputs SHALL explicitly allow the intended non-sensitive outputs in their ignore rules
 - **AND** validation SHALL detect when committed generated files are stale relative to source YAML
 
 #### Scenario: Reject inconsistent source data before provisioning
@@ -35,7 +35,7 @@ The system SHALL use Astra's operator-authored YAML inventory as the source of t
 - **WHEN** environment inventory declares template, long-lived, and ephemeral/lab VMID bands
 - **THEN** validation SHALL require well-formed non-overlapping bands and unique IDs in the applicable band
 - **AND** environment bands MAY narrow but SHALL NOT silently widen generic provider/PVE or destructive-operation safety limits
-- **AND** reusable validation, rendering, and expectation code SHALL NOT require Astra-specific bands
+- **AND** reusable validation, rendering, and expectation code SHALL NOT require environment-specific bands
 
 ### Requirement: Debian 13 PVE template build foundation
 The system SHALL define a Packer-based process for building a Debian 13 cloud-init-capable PVE template before creating VMs from that template.
@@ -63,7 +63,7 @@ The system SHALL define a Packer-based process for building a Debian 13 cloud-in
 - **AND** it SHALL record the selected route and fallback considerations in the design/runbook
 
 ### Requirement: OpenTofu-managed PVE VM lifecycle
-The system SHALL use OpenTofu with the `bpg/proxmox` provider to manage Astra PVE VMs cloned from declared templates.
+The system SHALL use OpenTofu with the `bpg/proxmox` provider to manage environment PVE VMs cloned from declared templates.
 
 #### Scenario: Provision a VM with static cloud-init network configuration
 - **WHEN** an operator declares a VM with attachable logical networks and static IP addresses
@@ -74,12 +74,12 @@ The system SHALL use OpenTofu with the `bpg/proxmox` provider to manage Astra PV
 
 #### Scenario: Apply default VM hardware settings
 - **WHEN** a VM omits supported hardware settings
-- **THEN** the system SHALL apply validated defaults from the Astra inventory
+- **THEN** the system SHALL apply validated defaults from the selected environment inventory
 - **AND** VM-level declarations MAY override supported defaults
-- **AND** reusable automation SHALL NOT require Astra-specific CPU, memory, disk, BIOS, machine, controller, NIC-count, pool, or clone-mode defaults
+- **AND** reusable automation SHALL NOT require environment-specific CPU, memory, disk, BIOS, machine, controller, NIC-count, pool, or clone-mode defaults
 
 #### Scenario: Verify OVMF EFI disk support
-- **WHEN** Astra defaults use firmware or machine features that require datastore/provider support
+- **WHEN** environment defaults use firmware or machine features that require datastore/provider support
 - **THEN** implementation SHALL validate the required support before first acceptance
 
 #### Scenario: Protect long-lived VMs
@@ -126,13 +126,13 @@ The system SHALL treat existing PVE host bridge configuration as a prerequisite 
 - **AND** the online check SHALL remain separate from offline validation
 
 ### Requirement: PCIe passthrough declaration through PVE resource mappings
-The system SHALL support VM PCIe passthrough by referencing Astra PVE PCI resource mappings rather than raw PCI addresses in VM declarations.
+The system SHALL support VM PCIe passthrough by referencing environment PVE PCI resource mappings rather than raw PCI addresses in VM declarations.
 
 #### Scenario: Attach the existing iGPU mapping to a VM
 - **WHEN** a VM references a declared PCI mapping
 - **THEN** generated OpenTofu SHALL render `hostpci` input using that mapping key and its validated defaults
 - **AND** the VM declaration SHALL NOT hard-code a raw PCI path
-- **AND** reusable automation SHALL NOT require a mapping named `iGpu0` or any Astra node name
+- **AND** reusable automation SHALL NOT require a mapping named a fixed device mapping or any environment node name
 
 #### Scenario: Validate passthrough node compatibility
 - **WHEN** a VM declares a PCI mapping
@@ -158,13 +158,13 @@ The system SHALL support VM PCIe passthrough by referencing Astra PVE PCI resour
 The system SHALL keep future local OpenTofu state ignored and document its operational safety constraints.
 
 #### Scenario: Use local state safely for initial operation
-- **WHEN** operators use the Astra PVE environment root
-- **THEN** OpenTofu state SHALL remain local under `environments/astra/opentofu/pve/` and excluded from Git
+- **WHEN** operators use the environment PVE environment root
+- **THEN** OpenTofu state SHALL remain owned by the selected OpenTofu root/backend and excluded from Git
 - **AND** documentation SHALL describe single-operator assumptions, backups, recovery, and a future remote-backend path
 
 #### Scenario: Back up local state during helper operations
 - **WHEN** a helper runs an apply-like OpenTofu operation
-- **THEN** it SHALL back up future Astra state under the existing ignored state-backup location
+- **THEN** it SHALL back up local state under the selected ignored runtime backup directory
 - **AND** legacy state and backups from before the repository cutover SHALL not be migrated or restored
 
 #### Scenario: Preserve tool ownership boundaries
@@ -178,47 +178,19 @@ The system SHALL keep future local OpenTofu state ignored and document its opera
 - **AND** documentation SHALL state that name resolution requires manual work or a later automation change
 
 ### Requirement: Guest user and automation access model
-The system SHALL create separate human and automation users in new VMs, avoid direct root SSH automation by default, and configure the automation user for repository-owned non-interactive automation.
+The system SHALL derive guest users and the Ansible connection identity from the selected environment's validated inventory and consume caller-resolved credential variables.
 
-#### Scenario: Create human and automation users
+#### Scenario: Render declared guest users
 - **WHEN** cloud-init initializes a new VM
-- **THEN** it SHALL create or configure `clemon` as the human administration user
-- **AND** it SHALL create or configure `ops` as the automation user
-- **AND** `clemon` SHALL retain password-protected sudo capability
-- **AND** `ops` SHALL have explicit non-interactive sudo capability suitable for repository-owned Ansible become and guest verification
+- **THEN** it SHALL render the declared users, sudo policies and supported cloud-init defaults
+- **AND** it SHALL NOT require a particular personal user name or secret provider
+- **AND** passwords and public keys SHALL come from the declared runtime environment variable names without entering committed generated files
 
-#### Scenario: Render Section 4A guest users at runtime
-- **WHEN** the Section 4A runtime helper renders a VM user-data snippet
-- **THEN** it SHALL create both `clemon` and `ops`
-- **AND** it SHALL set password-protected sudo for `clemon`
-- **AND** it SHALL set non-interactive sudo for `ops`
-- **AND** it SHALL disable direct root login, disable SSH password authentication, and disable package update/upgrade on first boot
-- **AND** it SHALL source passwords and SSH public keys from runtime 1Password-provided environment variables
-
-#### Scenario: Connect Ansible through the automation user
+#### Scenario: Connect Ansible through the declared automation user
 - **WHEN** Ansible inventory is generated for managed VMs
-- **THEN** the inventory SHALL use `ops` as the default Ansible connection user
-- **AND** it SHALL configure sudo become to root for privileged operations
-- **AND** the rendered guest configuration SHALL allow this repository-owned automation path to run non-interactively
-- **AND** it SHALL NOT contain sudo passwords, login passwords, private keys, token secrets, or password hashes
-
-#### Scenario: Disable direct root SSH by default
-- **WHEN** cloud-init configures SSH access for a new VM
-- **THEN** direct root SSH login SHALL be disabled by default
-- **AND** SSH access SHALL use key-based authentication supplied at runtime through 1Password SSH Agent or the local SSH agent
-- **AND** SSH password authentication SHALL be disabled by default
-
-#### Scenario: Avoid first-boot package upgrades
-- **WHEN** cloud-init initializes a new VM
-- **THEN** it SHALL NOT run package update or package upgrade by default
-- **AND** package maintenance SHALL be owned by Packer template rebuilds and Ansible baseline workflows
-
-#### Scenario: Render and retain runtime cloud-init snippets
-- **WHEN** Section 4A renders cloud-init user-data for a VM
-- **THEN** the helper SHALL create a snippet in shared `images` storage using a stable `opentofu-vm-<vmid>-user-data.yml` name
-- **AND** OpenTofu SHALL reference that snippet via `user_data_file_id`
-- **AND** the snippet SHALL remain available for the VM lifetime instead of being deleted immediately after upload
-- **AND** snippet upload SHALL use the audited host-side wrapper rather than a broad `sudo install` path
+- **THEN** it SHALL use `cluster.automation.ansible_user` and the validated become settings
+- **AND** callers SHALL provide a matching guest account and the non-interactive privileges required by the selected operations
+- **AND** generated inventory SHALL NOT contain passwords, private keys, token secrets or password hashes
 
 ### Requirement: Runtime cloud-init snippets are exact verified artifacts
 The system SHALL render runtime cloud-init user-data and network-config snippets into local artifacts and verify that uploaded PVE snippets match those exact artifacts by checksum.
@@ -330,24 +302,31 @@ The PVE host-side snippet wrapper SHALL support verifying stored snippet content
 - **AND** it SHALL NOT rewrite, delete, or otherwise mutate the stored snippet during verification
 
 ### Requirement: 1Password runtime secret conventions
-The system SHALL use the `Astra` 1Password vault as the runtime source for infrastructure secrets.
+The system SHALL consume caller-supplied resolved credentials through documented environment variables or protected files. Callers MAY obtain them from 1Password or traditional Secret facilities. The IaaS runtime SHALL NOT retrieve secrets from 1Password or require its CLI or service account token. Reference metadata and item conventions are caller-owned.
 
-#### Scenario: Reference standardized 1Password items
-- **WHEN** automation needs PVE or VM credentials
-- **THEN** it SHALL use short kebab-case item names under the `Astra` vault
-- **AND** the initial item names SHALL include `pve-opentofu-api-token`, `pve-packer-api-token`, `pve-ssh-automation-user`, `vm-user-clemon`, and `vm-user-ops`
-- **AND** fields SHALL use snake_case names such as `username`, `password`, `public_key`, `private_key`, `token_id`, `token_secret`, `api_token`, and `endpoint`
+#### Scenario: Reference caller-selected secret items
+- **WHEN** an environment declares PVE or VM credential references
+- **THEN** the caller SHALL select vault, item and field names according to the supported reference syntax
+- **AND** runtime validation SHALL NOT require a fixed vault, personal identity or item name
 
 #### Scenario: Generate password hashes at runtime
 - **WHEN** cloud-init requires password hashes for VM users
-- **THEN** the automation SHALL retrieve plaintext passwords from 1Password at runtime
+- **THEN** the automation SHALL consume plaintext passwords supplied by the caller through the documented credential inputs
 - **AND** it SHALL generate cloud-init-compatible password hashes during execution
 - **AND** it SHALL NOT write plaintext passwords or generated password hashes into committed generated files
 
 #### Scenario: Inject secrets through op run
 - **WHEN** Packer or OpenTofu commands require secrets
-- **THEN** the runtime wrapper SHALL use `op run` with environment variables sourced from a committed template containing `op://Astra/...` references
+- **THEN** the caller MAY use `op run` with a reference-only template to resolve environment-selected `op://...` references before invoking IaaS
+- **AND** IaaS SHALL receive resolved environment variables or protected files without invoking `op`
 - **AND** committed env templates SHALL NOT contain secret values
+
+#### Scenario: Use a caller-selected vault without changing the runtime
+- **WHEN** an environment supplies valid supported references to another vault
+- **THEN** the caller SHALL resolve its selected references and IaaS SHALL consume the supplied credentials without substituting environment defaults
+- **AND** offline checks SHALL validate references without resolving them
+- **AND** CI callers choosing 1Password SHALL own a separately configured noninteractive identity and its token, without requiring a developer desktop login
+- **AND** callers choosing traditional Secrets SHALL NOT require a 1Password identity
 
 ### Requirement: Separate PVE API and SSH automation identities
 The system SHALL use separate dedicated identities for PVE API automation and PVE node SSH automation.
@@ -363,12 +342,12 @@ The system SHALL use separate dedicated identities for PVE API automation and PV
 - **WHEN** Packer or provider behavior requires SSH access to PVE nodes
 - **THEN** the PVE node SSH user SHALL be `pve-ops`
 - **AND** the SSH user SHALL be provisioned consistently on each node that automation needs to access
-- **AND** SSH authentication SHALL use the key managed by the `pve-ssh-automation-user` 1Password item
+- **AND** SSH authentication SHALL use the caller-supplied key for the dedicated automation identity
 - **AND** the SSH identity SHALL use limited `NOPASSWD` sudo based on spike results rather than broad `NOPASSWD: ALL`
 
 #### Scenario: Deploy the audited PVE host wrapper
 - **WHEN** the PVE node bootstrap playbook runs
-- **THEN** it SHALL copy `automation/pve-node/bin/astra-pve-template-build` to `/usr/local/sbin/astra-pve-template-build`
+- **THEN** it SHALL copy `automation/pve-node/bin/iaas-pve-template-build` to `/usr/local/sbin/iaas-pve-template-build`
 - **AND** the installed wrapper SHALL be owned by `root:root` with mode `0750`
 - **AND** the bootstrap SHALL validate the installed wrapper and sudoers file without mutating system state
 - **AND** the default sudoers policy SHALL be wrapper-only for `pve-ops`
@@ -386,15 +365,21 @@ The system SHALL use separate dedicated identities for PVE API automation and PV
 
 #### Scenario: Bootstrap PVE API identity outside OpenTofu
 - **WHEN** the initial PVE automation identity is prepared
-- **THEN** operators SHALL create `pve-ops@pve`, create the `opentofu` API token, assign initial role/ACLs, and populate 1Password before OpenTofu runs
-- **AND** the initial `AstraAutomation` ACL SHALL be assigned to both `pve-ops@pve` and `pve-ops@pve!opentofu` for PVE 9 privilege-separated token compatibility
-- **AND** the initial `AstraAutomation` role SHALL include `SDN.Use` when VM bridges are checked through PVE SDN paths
+- **THEN** operators SHALL create `pve-ops@pve`, create the `opentofu` API token, assign initial role/ACLs, and make the credentials available through caller-owned environment injection or protected files before OpenTofu runs
+- **AND** the initial environment-selected ACL SHALL be assigned to both `pve-ops@pve` and `pve-ops@pve!opentofu` for PVE 9 privilege-separated token compatibility
+- **AND** the initial environment-selected role SHALL include `SDN.Use` when VM bridges are checked through PVE SDN paths
 - **AND** the OpenTofu configuration that consumes `pve-ops@pve!opentofu` SHALL NOT manage that same API user, token, or initial ACL root of trust in this foundation
 
 #### Scenario: Document PVE identity bootstrap
 - **WHEN** the PVE automation foundation is documented
-- **THEN** documentation SHALL include a bootstrap runbook for creating `pve-ops@pve`, creating `pve-ops@pve!opentofu`, creating `pve-ops@pve!packer`, assigning initial role/ACLs, and filling the related 1Password API token items
+- **THEN** documentation SHALL include a bootstrap runbook for creating `pve-ops@pve`, creating `pve-ops@pve!opentofu`, creating `pve-ops@pve!packer`, assigning initial role/ACLs, and supplying the resulting credentials through either caller-side 1Password injection or traditional Secrets
 - **AND** it SHALL state that future automation of this bootstrap may be introduced separately under an existing administrator identity
+
+#### Scenario: Use generic host helper paths
+- **WHEN** PVE helper source assets, bootstrap declarations, preflight or runtime callers select helper paths
+- **THEN** the canonical names SHALL be `iaas-pve-template-build` and `iaas-pve-snippet-upload`, with matching sudoers and generic execution variables
+- **AND** changing names SHALL preserve argument validation, dedicated identities, wrapper-only permissions and mutual exclusion
+- **AND** existing hosts SHALL require an explicit documented cutover before new callers run, without silent old-name fallback or simultaneous old/new lock domains
 
 ### Requirement: Reserved naming and ID ranges
 The system SHALL validate environment-declared PVE naming and VMID policies against generic safety constraints.
@@ -403,13 +388,13 @@ The system SHALL validate environment-declared PVE naming and VMID policies agai
 - **WHEN** environment inventory defines template, long-lived, and ephemeral/lab VMID bands
 - **THEN** each band SHALL be well formed, non-overlapping, and within generic PVE/provider safety limits
 - **AND** VMs and templates SHALL use the band matching their declared lifecycle
-- **AND** destructive wrappers SHALL enforce absolute protection limits in addition to Astra policy
+- **AND** destructive wrappers SHALL enforce absolute protection limits in addition to environment policy
 
 #### Scenario: Name templates safely and predictably
 - **WHEN** an environment declares a reusable template
 - **THEN** the name SHALL use a validated conservative PVE-safe pattern
 - **AND** date or version naming MAY be declared by environment policy
-- **AND** automation SHALL NOT require an Astra-specific template name
+- **AND** automation SHALL NOT require an environment-specific template name
 
 ### Requirement: Stable offline inventory validation boundary
 The system SHALL keep offline PVE inventory validation as a stable boundary that can be refactored internally without changing operator-facing validation commands or generated artifacts.

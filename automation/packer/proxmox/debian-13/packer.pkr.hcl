@@ -14,20 +14,17 @@ variable "pve_endpoint" {
 
 variable "pve_node" {
   type        = string
-  description = "Default build node, usually cohe"
-  default     = "cohe"
+  description = "Build node supplied by the selected environment"
 }
 
 variable "import_storage" {
   type        = string
   description = "PVE storage for ISO/import/snippet artifacts"
-  default     = "images"
 }
 
 variable "disk_storage" {
   type        = string
   description = "PVE storage for VM/template disks"
-  default     = "memory"
 }
 
 variable "template_vmid" {
@@ -59,8 +56,7 @@ variable "pve_token_secret" {
 
 variable "cache_dir" {
   type        = string
-  description = "Local cache under .cache/packer"
-  default     = ".cache/packer"
+  description = "Explicit writable cache directory selected by the caller"
 }
 
 variable "force_replace" {

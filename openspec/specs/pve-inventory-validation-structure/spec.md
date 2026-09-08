@@ -13,7 +13,7 @@ The system SHALL organize PVE inventory validation implementation into focused m
 - **WHEN** Python callers need PVE inventory validation helpers
 - **THEN** cluster validation helpers SHALL be importable from `iaas_automation.pve_inventory.inventory.validation.cluster`
 - **AND** VM validation helpers SHALL be importable from `iaas_automation.pve_inventory.inventory.validation.vm`
-- **AND** the imported functions SHALL validate Astra's cluster and VM source-of-truth YAML
+- **AND** the imported functions SHALL validate the selected environment's cluster and VM source-of-truth YAML
 - **AND** no `scripts` package or compatibility facade SHALL be required
 
 #### Scenario: Keep shared validation helpers cycle-free
@@ -22,7 +22,7 @@ The system SHALL organize PVE inventory validation implementation into focused m
 - **AND** passthrough validation SHALL NOT import helpers through a compatibility facade
 
 #### Scenario: Preserve offline validation behavior
-- **WHEN** operators run PVE inventory validation or stale-output check commands for Astra
+- **WHEN** operators run PVE inventory validation or stale-output check commands for the selected environment
 - **THEN** the system SHALL produce the same successful results for equivalent valid inventory
 - **AND** it SHALL continue to reject invalid inventory before generation or provisioning
 - **AND** it SHALL NOT require PVE API connectivity for offline validation
@@ -104,6 +104,6 @@ The system SHALL reject PVE VM inventory identifiers that are unsafe for their d
 - **AND** the failure SHALL identify the affected VM and `tags` field context
 
 #### Scenario: Current inventory remains valid under hardened rules
-- **WHEN** `environments/astra/inventory/vms.yml` is validated offline
+- **WHEN** `$ENVIRONMENT_DIR/inventory/vms.yml` is validated offline
 - **THEN** VM names, Ansible groups, PVE tags, and static IPs SHALL pass the hardened rules
 - **AND** generated OpenTofu variables, Ansible inventory, PVE VM documentation, and template build environment output SHALL preserve the same schemas and meanings for unchanged valid input

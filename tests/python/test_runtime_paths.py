@@ -61,7 +61,7 @@ def test_external_readonly_environment_generation_and_stale_check(tmp_path):
     inventory = environment / "inventory"
     inventory.mkdir(parents=True)
     for name in ("pve-cluster.yml", "vms.yml", "services.yml", "foundation.yml"):
-        shutil.copyfile(ROOT / "environments/astra/inventory" / name, inventory / name)
+        shutil.copyfile(ROOT / "tests/fixtures/environment/inventory" / name, inventory / name)
         (inventory / name).chmod(0o444)
     inventory.chmod(0o555)
     environment.chmod(0o555)

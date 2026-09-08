@@ -1,0 +1,19 @@
+---
+# Synthetic regression data; not a deployment environment.
+all:
+  children:
+    opnsense:
+      hosts:
+        firewall-a:
+          ansible_connection: local
+          ansible_host: localhost
+          ansible_python_interpreter: '{{ ansible_playbook_python }}'
+          opnsense_api_host: 192.0.2.254
+          opnsense_fqdn: firewall-a.mgmt.internal.example.invalid
+    switches:
+      hosts:
+        sw-core:
+          ansible_connection: local
+          ansible_host: 192.0.2.20
+          ansible_python_interpreter: '{{ ansible_playbook_python }}'
+          switch_model_hint: SKS8300-12X

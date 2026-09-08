@@ -30,8 +30,10 @@ is `linux/amd64`, suitable for a Linux infra runner. This says nothing new about
 guest architecture support; native Apple Silicon/arm64 images are deferred.
 
 Keep operation names and schemas while replacing environment-specific invocation
-defaults with explicit generic inputs. Do not move or delete `environments/astra`,
-weaken secret-file/SSH/scope protections, change resource addresses, provision a
+defaults with explicit generic inputs. Actual environment data and valuable records
+are moved to the user-selected external `ciop` directory, preserving ignored
+operational material and permissions. Do not weaken secret-file/SSH/scope protections,
+change resource addresses, provision a
 backend, or add platform-side tools and reconciliation. Live execution remains
 the later Forgejo/cluster stages' responsibility.
 
@@ -146,11 +148,10 @@ the caller's current directory. Repository-only tests/build/lint/help do not nee
 an environment when they consume none; environment operations require the
 relevant explicit directories or documented complete file inputs.
 
-`environments/astra/` may remain as the authored data of the environment named
-`astra`; it is no longer a privileged runtime location. Another environment can
-use any external directory with the same schema. Update local callers and CI to
-select their environment explicitly. Examples use `<environment-dir>` and
-`<output-dir>`, with Astra-specific examples limited to its operator context.
+Actual environment inventories, templates, roots, generated references and live
+records live in a caller-owned repository outside this checkout. CI and tests
+use synthetic fixtures under `tests/fixtures/environment/`; they must not read
+actual environment data. Examples use `<environment-dir>` and `<output-dir>`.
 Also generalize OPNsense playbook variable-file defaults and generated document
 source descriptions. Generation describes the selected logical input rather
 than claiming it read `environments/astra`; avoid recording host absolute paths.
@@ -159,9 +160,9 @@ sudoers, temporary-file and lock-file names. Update their callers, source files,
 bootstrap declarations and tests together; legacy environment variable names
 fail with a migration message instead of being silently ignored.
 
-Do not mass-rename historical documents, real host identities, inventory values,
-or independently reviewed host-wrapper protection limits merely because they
-contain `astra`. Those are data/domain contracts. Existing hosts need a separately
+Preserve migrated real documents, host identities and inventory values. Do not alter
+independently reviewed host-wrapper protection limits merely because their historical
+context mentions a particular environment. Those are data/domain contracts. Existing hosts need a separately
 authorized helper cutover before using the new online caller paths: stop helper
 jobs, confirm no old process/lock owner, install and validate the generic helper
 and matching sudoers, remove the old execution permission/entrypoint, then
@@ -289,7 +290,7 @@ The uv installation approach follows [uv's container guidance](https://docs.astr
 
 Keep `make check` as the checkout gate with explicit environment/output inputs;
 do not make an image without tests and
-Astra data pretend to run that checkout-only command. Add distinct repository
+actual environment data pretend to run that checkout-only command. Add distinct repository
 commands for image build/smoke checks, reused by PR and Release workflows.
 PR/main can build/test without logging into GHCR; publication is Release-only.
 

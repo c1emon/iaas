@@ -5,7 +5,7 @@ The system SHALL document state, backup, observation, and cache handling for PVE
 
 #### Scenario: Operator reviews local OpenTofu state handling
 - **WHEN** an operator needs to understand PVE OpenTofu state ownership
-- **THEN** documentation SHALL identify state ownership at the explicitly selected OpenTofu working root/backend, with `environments/astra/opentofu/pve/terraform.tfstate` described only as the existing Astra local-layout example
+- **THEN** documentation SHALL identify state ownership at the explicitly selected OpenTofu working root/backend
 - **AND** it SHALL label the earlier repository relocation's discarded-state behavior as historical and SHALL NOT apply it to a newly selected environment; this change SHALL NOT move, discard or migrate state or existing backups
 - **AND** it SHALL describe the existing backup helper and recovery guidance for the selected local root, without claiming that the helper backs up an external remote backend
 - **AND** it SHALL state that future state and backups must not be committed

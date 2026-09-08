@@ -20,8 +20,8 @@ from iaas_automation.pve_inventory.pve_api.errors import PveApiNotConfiguredErro
 
 
 ROOT = Path(__file__).resolve().parents[2]
-CLUSTER_PATH = ROOT / "environments" / "astra" / "inventory" / "pve-cluster.yml"
-VMS_PATH = ROOT / "environments" / "astra" / "inventory" / "vms.yml"
+CLUSTER_PATH = ROOT / "tests" / "fixtures" / "environment" / "inventory" / "pve-cluster.yml"
+VMS_PATH = ROOT / "tests" / "fixtures" / "environment" / "inventory" / "vms.yml"
 MAKEFILE_PATH = ROOT / "Makefile"
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "offline-validation.yml"
 
@@ -89,9 +89,9 @@ def _model() -> dict[str, Any]:
 def _baseline_api(**overrides: Any) -> _FakeHealthApi:
     responses: dict[str, Any] = {
         "cluster_status": [{"quorate": True}],
-        "nodes": [{"node": "cohe", "status": "online"}],
+        "nodes": [{"node": "node-a", "status": "online"}],
         "node_status": {
-            "cohe": {
+            "node-a": {
                 "cpu": 3.64,
                 "cpuinfo": {"cpus": 4},
                 "memory": {"used": 1_000, "total": 4_000},
@@ -99,13 +99,13 @@ def _baseline_api(**overrides: Any) -> _FakeHealthApi:
             },
         },
         "node_storage": {
-            "cohe": [
+            "node-a": [
                 {"storage": "images", "active": True, "usage": 10},
                 {"storage": "memory", "active": True, "usage": 10},
             ],
         },
         "vms": {
-            "cohe": [
+            "node-a": [
                 {"vmid": 9001, "name": "debian-13-tmpl-20260616", "template": True, "status": "stopped"},
                 {"vmid": 1000, "name": "prod-app-01", "template": False, "status": "running"},
                 {"vmid": 500, "name": "dev-web-01", "template": False, "status": "running"},
@@ -113,16 +113,16 @@ def _baseline_api(**overrides: Any) -> _FakeHealthApi:
             ],
         },
         "vm_status": {
-            ("cohe", 9001): {"status": "stopped"},
-            ("cohe", 1000): {"status": "running"},
-            ("cohe", 500): {"status": "running"},
-            ("cohe", 501): {"status": "running"},
+            ("node-a", 9001): {"status": "stopped"},
+            ("node-a", 1000): {"status": "running"},
+            ("node-a", 500): {"status": "running"},
+            ("node-a", 501): {"status": "running"},
         },
         "vm_config": {
-            ("cohe", 9001): {"template": True},
-            ("cohe", 1000): {"template": False},
-            ("cohe", 500): {"template": False},
-            ("cohe", 501): {"template": False},
+            ("node-a", 9001): {"template": True},
+            ("node-a", 1000): {"template": False},
+            ("node-a", 500): {"template": False},
+            ("node-a", 501): {"template": False},
         },
         "ha_status": [],
         "ceph_status": PveApiNotConfiguredError("not configured"),
@@ -139,17 +139,17 @@ def _results_by_id(results: list[Any]) -> dict[str, Any]:
 def test_health_expectations_derive_from_inventory_model() -> None:
     expectations = derive_health_expectations(_model())
 
-    assert expectations.required_nodes == {"cohe"}
-    assert expectations.optional_nodes == {"node3"}
+    assert expectations.required_nodes == {"node-a"}
+    assert expectations.optional_nodes == {"node-b"}
     assert set(expectations.templates) == {"debian_13_genericcloud"}
     assert {vm["name"] for vm in expectations.declared_vms} == {"dev-web-01", "prod-app-01", "media-lab-01"}
-    assert expectations.required_datastores_by_node["cohe"] == {"images", "memory"}
+    assert expectations.required_datastores_by_node["node-a"] == {"images", "memory"}
 
 
 def test_health_passes_quorum_and_marks_optional_node_missing_while_flagging_capacity() -> None:
     api = _baseline_api(
         node_status={
-            "cohe": {
+            "node-a": {
                 "cpu": 3.64,
                 "cpuinfo": {"cpus": 4},
                 "memory": {"used": 3_700, "total": 4_000},
@@ -163,10 +163,10 @@ def test_health_passes_quorum_and_marks_optional_node_missing_while_flagging_cap
 
     assert result_map["api.reachability"].severity == "PASS"
     assert result_map["cluster.quorum"].severity == "PASS"
-    assert result_map["node.optional.node3"].severity == "WARN"
-    assert result_map["node.capacity.cohe.cpu"].severity == "WARN"
-    assert result_map["node.capacity.cohe.memory"].severity == "WARN"
-    assert result_map["node.capacity.cohe.rootfs"].severity == "FAIL"
+    assert result_map["node.optional.node-b"].severity == "WARN"
+    assert result_map["node.capacity.node-a.cpu"].severity == "WARN"
+    assert result_map["node.capacity.node-a.memory"].severity == "WARN"
+    assert result_map["node.capacity.node-a.rootfs"].severity == "FAIL"
 
 
 @pytest.mark.parametrize(
@@ -178,16 +178,16 @@ def test_health_passes_quorum_and_marks_optional_node_missing_while_flagging_cap
     ],
 )
 def test_health_checks_required_storage_presence_activation_and_usage(storage: list[dict[str, Any]], expected_severity: str) -> None:
-    api = _baseline_api(node_storage={"cohe": storage})
+    api = _baseline_api(node_storage={"node-a": storage})
     results = run_health(CLUSTER_PATH, VMS_PATH, environ={}, api_client=api)
-    assert _results_by_id(results)["storage.cohe.images"].severity == expected_severity
+    assert _results_by_id(results)["storage.node-a.images"].severity == expected_severity
 
 
 def test_health_fails_for_missing_referenced_template_and_non_template_records() -> None:
     api = _baseline_api(
-        vms={"cohe": [{"vmid": 1000, "name": "prod-app-01", "template": False, "status": "running"}]},
-        vm_status={("cohe", 1000): {"status": "stopped"}},
-        vm_config={("cohe", 9001): {"template": False}},
+        vms={"node-a": [{"vmid": 1000, "name": "prod-app-01", "template": False, "status": "running"}]},
+        vm_status={("node-a", 1000): {"status": "stopped"}},
+        vm_config={("node-a", 9001): {"template": False}},
     )
 
     results = run_health(CLUSTER_PATH, VMS_PATH, environ={}, api_client=api)

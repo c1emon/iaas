@@ -17,13 +17,13 @@ def test_parse_pve_bool_accepts_shared_spellings(raw: str, expected: bool) -> No
 
 
 def test_online_runtime_context_keeps_optional_ssh_context_without_api_vars() -> None:
-    runtime = load_online_runtime_context({"PVE_HOST": "cohe", "PVE_SSH_USER": "pve-ops"})
+    runtime = load_online_runtime_context({"PVE_HOST": "node-a", "PVE_SSH_USER": "pve-ops"})
 
     assert runtime.endpoint == ""
     assert runtime.api_username == ""
     assert runtime.api_token_id == ""
     assert runtime.api_token_secret == ""
-    assert runtime.ssh_host == "cohe"
+    assert runtime.ssh_host == "node-a"
     assert runtime.ssh_user == "pve-ops"
 
 

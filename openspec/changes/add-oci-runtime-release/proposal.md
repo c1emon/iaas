@@ -51,7 +51,7 @@ contract. See `docs/decisions/forgejo-iaas-platform-delivery.md`, phase 3.
 - `foundation-recovery-checks`: Generalize the generated recovery document path
   and source description without changing recovery metadata checks.
 - `operator-documentation-entrypoints`: Document generic source/output selection
-  and keep Astra examples specific to that environment.
+  and keep actual environment examples and evidence in the caller-owned repository.
 - `pve-state-and-secret-operations`: Describe external runtime/state locations
   without treating historical Astra paths as portable runtime defaults.
 
@@ -63,9 +63,11 @@ names and their callers/sudoers/bootstrap declarations, dependency
 pins, synthetic tests, `.github/workflows/`, and canonical operator documentation.
 Existing Python CLIs already accept explicit files and should be reused.
 
-There is no real Astra configuration migration, state migration, infrastructure
-access, Forgejo installation, private apply pipeline, handoff correctness repair,
+The user-authorized follow-up moves actual environment configuration and valuable
+records to `/Users/clemon/Workplace/ciop`, including preserved ignored operational
+material. No backend state migration or infrastructure access is performed.
+There is no Forgejo installation, private apply pipeline, handoff correctness repair,
 or platform bootstrap in this change. Standalone wheel/Collection/module-registry
 products, multi-architecture qualification, signing systems, and automatic
-Forgejo update PRs remain out of scope. This proposal is design-only until
-implementation is separately started on the confirmed implementation branch.
+Forgejo update PRs remain out of scope. Implementation and the authorized environment separation are tracked on the
+confirmed implementation branch in `tasks.md` and `implementation-notes.md`.

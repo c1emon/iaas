@@ -6,7 +6,7 @@
 
 ## 6.1 基础服务与恢复元数据
 
-`environments/astra/inventory/foundation.yml` 是基础服务恢复元数据的源文件。它
+`$ENVIRONMENT_DIR/inventory/foundation.yml` 是基础服务恢复元数据的源文件。它
 不部署任何服务，但为每个恢复单元记录以下字段：
 
 | 路径 | 含义 | 使用边界 |
@@ -21,16 +21,16 @@
 | `known_risks` | 已接受风险。 | 必须在验收记录中保留，而不是隐藏。 |
 | `storage_networks` / `k3s_storage_access` | TrueNAS 存储网与 phase 访问范围。 | 限定为 VM K3s 节点；不自动配置交换机/防火墙。 |
 
-当前恢复前置序列至少包括 OPNsense、TrueNAS、内部 DNS、sing-box、Harbor 和
-外部数据库；Authentik 是重要但当前不标为 K3s 前置。具体地址、服务状态和
+恢复前置序列由调用方的依赖声明和 `required_before_k3s` 决定，不预设服务品牌
+或固定机器。具体地址、服务状态和
 恢复材料必须从当前环境与受保护系统确认，不能只从静态 YAML 推断健康。
 
-服务元数据 `environments/astra/inventory/services.yml` 使用 `services[]` →
+服务元数据 `$ENVIRONMENT_DIR/inventory/services.yml` 使用 `services[]` →
 `name`、`owner_vm`、`description`、`endpoints[]`；endpoint 可含 `name`、`fqdn`、
 `port`、`protocol`、`exposure`、`auth`、`dns_hint`、`reverse_proxy_hint`、
 `opnsense_hint`。这些是声明式文档元数据，不会创建 DNS、Reverse Proxy、NAT 或
 防火墙规则。运行 `make services-check` 确保生成的
-`environments/astra/generated/docs/services.md` 未过期。
+`$GENERATED_DIR/docs/services.md` 未过期。
 
 ## 6.2 分阶段验收矩阵
 
@@ -82,13 +82,12 @@ APT proxy、因为 VM 不通而直接改交换机 trunk、因为 PVE state 漂�
 
 ## 6.5 当前已知限制与后续准入
 
-- PVE 节点数量和 VM 分布不自动形成独立物理故障域；N100 仍是已接受的单点。
+- PVE 节点数量和 VM 分布不自动形成独立物理故障域；单点风险由调用方声明并验收。
 - K3s embedded-etcd 快照目前仅为 root-only 节点本地文件，没有异地副本、保留、
   加密、restore 校验或恢复演练。
 - Cilium、Gateway、TrueNAS CSI、Flux 和应用 GitOps 没有当前可执行实现；它们
   需要独立的设计、配置、变更、live 验证和恢复材料。
-- DNS、Harbor、TrueNAS、Authentik、sing-box 和外部数据库是基础服务依赖；其
-  YAML 元数据并不等于备份存在或恢复成功。
+- 调用方声明的基础服务依赖，其 YAML 元数据并不等于备份存在或恢复成功。
 
 在这些限制被实际验证并记录前，结论应限定为“已完成本手册中相应自动化/人工
 阶段的已覆盖证据”，而非“生产就绪”或“灾难恢复已验证”。

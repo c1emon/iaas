@@ -20,9 +20,9 @@ from iaas_automation.services_inventory.validation import load_vm_names, validat
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SERVICES_PATH = ROOT / "environments" / "astra" / "inventory" / "services.yml"
-VMS_PATH = ROOT / "environments" / "astra" / "inventory" / "vms.yml"
-GENERATED_DOCS_PATH = ROOT / "environments" / "astra" / "generated" / "docs" / "services.md"
+SERVICES_PATH = ROOT / "tests" / "fixtures" / "environment" / "inventory" / "services.yml"
+VMS_PATH = ROOT / "tests" / "fixtures" / "environment" / "inventory" / "vms.yml"
+GENERATED_DOCS_PATH = ROOT / "tests" / "fixtures" / "environment" / "generated" / "docs" / "services.md"
 MAKEFILE_PATH = ROOT / "Makefile"
 
 

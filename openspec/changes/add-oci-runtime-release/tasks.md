@@ -33,3 +33,9 @@
 - [x] 5.1 Update canonical operator/developer docs, generic local/container examples, naming migration, external module-root example, noninteractive input requirements, caller-owned 1Password service-account injection and traditional Secret examples using the same runtime inputs, public package setup and rerun guidance; verify examples match the tested command interface and retain platform/private-CI ownership boundaries.
 - [x] 5.2 Synchronize the delivery decision and relevant current docs to reflect GHCR publication and generic execution paths; run `openspec validate add-oci-runtime-release --strict` and appropriate repository checks, and run GitNexus change analysis before any implementation commit.
 - [x] 5.3 When an actual Release is authorized, record its successful workflow, source revision and GHCR digest plus anonymous pull result; leave this task unchecked if only local or simulated publication evidence exists, and do not treat it as Forgejo or infrastructure acceptance.
+
+## 6. User-authorized runtime-only repository follow-up
+
+- [x] 6.1 Preserve actual environment data, ignored operational material and valuable documentation in the caller-owned ciop directory; document module-root relocation without running infrastructure operations.
+- [x] 6.2 Replace real-environment CI/test dependencies with synthetic fixtures and validate the existing offline gate.
+- [x] 6.3 Align operator documentation, current specs and this change with external environment ownership; verify links and migration consistency.

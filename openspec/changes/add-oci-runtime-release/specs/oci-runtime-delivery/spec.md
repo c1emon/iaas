@@ -71,16 +71,16 @@ the 1Password CLI, or require `OP_SERVICE_ACCOUNT_TOKEN`.
 ### Requirement: Runtime paths are environment-neutral
 The system SHALL provide explicit generic environment and output directory
 selection for both local checkout and container execution, with no implicit
-Astra selection or Astra-specific runtime naming.
+Astra selection or environment-specific runtime naming.
 
 #### Scenario: Select another environment
-- **WHEN** an operator supplies `ENVIRONMENT_DIR` and `OUTPUT_DIR` for a valid non-Astra environment
+- **WHEN** an operator supplies `ENVIRONMENT_DIR` and `OUTPUT_DIR` for a valid independently supplied environment
 - **THEN** supported operations SHALL use that environment's authored data and the selected output location
-- **AND** Ansible inventory, domain variable files, generated source descriptions, helper command paths and execution variables SHALL NOT select or describe an unrelated Astra environment
+- **AND** Ansible inventory, domain variable files, generated source descriptions, helper command paths and execution variables SHALL NOT select or describe an unrelated selected environment
 - **AND** common generated data schemas, scope checks and infrastructure safety limits SHALL remain unchanged
 
 #### Scenario: Inputs are missing or legacy selectors are supplied
-- **WHEN** an environment operation lacks its required explicit directory/file inputs or supplies a removed Astra-specific execution variable
+- **WHEN** an environment operation lacks its required explicit directory/file inputs or supplies a removed environment-specific execution variable
 - **THEN** it SHALL fail with an actionable input or migration message before generation, online access, or mutation
 - **AND** it SHALL NOT fall back to `environments/astra` or silently ignore the removed variable
 - **AND** environment-independent help, tests and build commands SHALL NOT require unused environment inputs

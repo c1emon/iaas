@@ -26,7 +26,7 @@ The system SHALL collect XikeOS switch data over encrypted SSH using Ansible `ne
 The system SHALL expose the XikeOS read-only facts workflow through the relocated reusable switch playbook using collection-native facts without requiring a role that only wraps the collection call.
 
 #### Scenario: Run read-only facts through playbook entrypoint
-- **WHEN** the operator runs `automation/ansible/playbooks/switches/readonly-facts.yml` with the Astra inventory
+- **WHEN** the operator runs `automation/ansible/playbooks/switches/readonly-facts.yml` with the selected environment inventory
 - **THEN** the playbook SHALL collect facts with `c1emon.xikeos.xikeos_facts`
 - **AND** the workflow SHALL expose collection-native `ansible_net_*` and `ansible_network_resources` data to caller-owned export tasks
 - **AND** file export, if desired, SHALL be performed by playbook-level or caller-owned tasks after facts collection completes
@@ -38,7 +38,7 @@ The system SHALL expose the XikeOS read-only facts workflow through the relocate
 
 #### Scenario: Keep host connection settings outside playbook implementation
 - **WHEN** the read-only facts workflow is used for a switch host
-- **THEN** host connection settings SHALL remain supplied by Astra inventory or runtime variables rather than being hard-coded in reusable tasks
+- **THEN** host connection settings SHALL remain supplied by selected environment inventory or runtime variables rather than being hard-coded in reusable tasks
 
 ### Requirement: SSH credential configuration
 The system SHALL obtain switch SSH credentials from runtime-provided SSH credential variables rather than Telnet credential variables.

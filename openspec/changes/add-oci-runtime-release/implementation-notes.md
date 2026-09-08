@@ -175,3 +175,32 @@ repository visibility change was performed. All tasks in this change are now
 supported by software and publication evidence; unrelated delivery phases remain
 open. The published tag stays on the tested source commit; subsequent documentation
 commits only record acceptance.
+
+## Runtime-only repository follow-up (2026-09-08)
+
+The user explicitly requested separation of actual environment data and preservation
+of valuable material in `/Users/clemon/Workplace/ciop`. The existing environment,
+ignored cache and export directories were relocated locally with permissions preserved.
+All 31 tracked environment files were verified against the pre-migration HEAD: 30 are
+byte-identical; the OpenTofu root's two module sources now point into `/opt/iaas`, with
+its original saved separately. No backend migration, init, plan or live operation was
+performed on that environment. Seven environment design/history documents and the
+original operator chapter snapshots are preserved in the caller directory.
+
+The runtime checkout now contains synthetic inventory and generated-output fixtures
+for its existing CI/test gate. It contains no actual environment configuration root.
+Operator docs use explicit caller inputs and inventory, and current specs are synced
+with the implemented credential/path contract and external ownership. Historical
+OpenSpec archives retain their original evidence and are not current runtime defaults.
+Packer's reserved configuration no longer defaults to actual nodes/storage/cache paths.
+System/Python/Collection dependency layers and their lock files remain unchanged.
+
+Validation: 513 tests passed; generated-output freshness, YAML formatting, pyright,
+Ansible lint, OpenTofu formatting/init-without-backend/validate and OPNsense validation
+passed on synthetic inputs. Packer formatting, current Markdown target links, repository
+secret scan and a separate synthetic-fixture secret scan passed. All affected current
+specs and the active change passed strict validation. Full spec validation also reports
+four pre-existing placeholder-Purpose warnings in unrelated OPNsense filter/PBR, PVE
+health and rolling-maintenance specs; these are not claimed resolved by this follow-up.
+This is software-only evidence, not renewed qualification of any real environment.
+The published rc.2 tag/image is unchanged by this working-tree follow-up.
