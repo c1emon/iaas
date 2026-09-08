@@ -45,7 +45,11 @@ Forgejo 与引导 Runner 位于目标 K3s 之外。Forgejo 首次安装由管理
 - 私有配置仓库固定镜像 digest，运行时传入环境目录、输出目录和明确操作参数。
 - 通用实现不得依赖仓库内固定 Astra 路径；环境 OpenTofu root 必须能引用镜像内
   随版本交付的通用 modules，或其他明确锁定的模块发布物。
-- 凭据通过受保护的运行时通道注入；CI 不能依赖开发者电脑或交互式 1Password 登录。
+- 凭据由调用方通过环境变量或受保护文件注入，支持调用方 `op run` 和传统 Secret。
+  IaaS 镜像不包含 `op`，不接收 1Password 服务 token；私有 CI 自行管理非交互身份。
+- 版本镜像通过 GitHub Release published 工作流发布到
+  `ghcr.io/<owner>/iaas-runtime`，以匿名拉取验证后的 digest 消费；当前尚无正式发布证据。
+  通用接口和重试规则见 [OCI runtime](../operations/06-oci-runtime.md)。
 - OpenTofu state 使用持久化后端和锁，同一环境串行 apply；部署关联配置提交、
   镜像 digest 和对应 plan。plan 可能包含敏感数据，应作为受保护 CI 产物处理。
 - 配置变更自动触发校验与 plan，apply 经确定的部署授权流程执行。

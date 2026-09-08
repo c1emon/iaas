@@ -34,7 +34,7 @@ firewall/management rules、默认防火墙策略、NAT/DNAT 和关键公网入�
 | `opnsense_api_host` | API 主机或地址。 | 必须与实际管理端点匹配。 |
 | `opnsense_api_url` | 由 host 派生的 HTTPS URL。 | 用于操作者理解；模块默认使用 host。 |
 | `opnsense_ssl_verify` | API TLS 校验开关。 | 当前环境为 `false`；这不是推荐的长期安全状态，启用 CA 后应审查改为 `true`。 |
-| `OPNSENSE_API_KEY` / `OPNSENSE_API_SECRET` | API 身份。 | 只能由 `.env.opnsense.tpl` 注入。 |
+| `OPNSENSE_API_KEY` / `OPNSENSE_API_SECRET` | API 身份。 | 调用方通过 `.env.opnsense.tpl` + `op run` 或传统 Secret 注入相同变量。 |
 
 ## 2.3 声明式资源参数
 

@@ -4,7 +4,7 @@
 - [x] 1.2 Replace `ASTRA` and fixed environment defaults with explicit `ENVIRONMENT_DIR`/`OUTPUT_DIR`, preserving operation names and schemas; verify missing inputs and legacy selectors fail, while environment-independent commands still work.
 - [x] 1.3 Route generated/runtime paths and Ansible inventory, vars, roles, Collections and plugins through the selected directories, retaining reference metadata without a fixed vault while consuming caller-resolved credentials; verify a read-only non-Astra environment works from an arbitrary working directory with no implicit Astra reads/writes or offline secret resolution.
 - [x] 1.4 Generalize generated source descriptions, PVE helper paths, execution variable prefixes and their callers/bootstrap/sudoers assets; verify naming regressions and existing helper argument/identity/locking tests, and document the separate host cutover prerequisite without touching hosts.
-- [ ] 1.5 Migrate supported local/CI callers and add directory-boundary/UID coverage; verify existing grouped regressions pass with explicit inputs and unsafe output placement fails before writes.
+- [x] 1.5 Migrate supported local/CI callers and add directory-boundary/UID coverage; verify existing grouped regressions pass with explicit inputs and unsafe output placement fails before writes.
 
 ## 2. Container contents and OpenTofu integration
 
@@ -23,13 +23,13 @@
 
 ## 4. Release-to-GHCR workflow
 
-- [ ] 4.1 Add `release.published` handling for supported stable/prerelease tags and exact tagged revision selection; verify representative event fixtures reject drafts, edits, tag-only pushes and invalid versions, and document automated-Release token suppression.
-- [ ] 4.2 Gate publication on repository and image checks, transfer the tested image without rebuilding, and limit package-write permission to the dependent publish job; verify workflow configuration and build/publish identity continuity with local fixtures.
-- [ ] 4.3 Publish canonical version tags and OCI source/revision/version metadata using `GITHUB_TOKEN`; verify concurrency, absent-image retry, existing-version no-overwrite and conflicting-source failure with focused registry substitutes before any actual publication.
-- [ ] 4.4 Record the pushed digest in the CI summary and add clean anonymous pull/minimal invocation; verify failures distinguish push success from public consumption and do not report distribution success prematurely.
+- [x] 4.1 Add `release.published` handling for supported stable/prerelease tags and exact tagged revision selection; verify representative event fixtures reject drafts, edits, tag-only pushes and invalid versions, and document automated-Release token suppression.
+- [x] 4.2 Gate publication on repository and image checks, transfer the tested image without rebuilding, and limit package-write permission to the dependent publish job; verify workflow configuration and build/publish identity continuity with local fixtures.
+- [x] 4.3 Publish canonical version tags and OCI source/revision/version metadata using `GITHUB_TOKEN`; verify concurrency, absent-image retry, existing-version no-overwrite and conflicting-source failure with focused registry substitutes before any actual publication.
+- [x] 4.4 Record the pushed digest in the CI summary and add clean anonymous pull/minimal invocation; verify failures distinguish push success from public consumption and do not report distribution success prematurely.
 
 ## 5. Documentation and delivery acceptance
 
-- [ ] 5.1 Update canonical operator/developer docs, generic local/container examples, naming migration, external module-root example, noninteractive input requirements, caller-owned 1Password service-account injection and traditional Secret examples using the same runtime inputs, public package setup and rerun guidance; verify examples match the tested command interface and retain platform/private-CI ownership boundaries.
-- [ ] 5.2 Synchronize the delivery decision and relevant current docs to reflect GHCR publication and generic execution paths; run `openspec validate add-oci-runtime-release --strict` and appropriate repository checks, and run GitNexus change analysis before any implementation commit.
+- [x] 5.1 Update canonical operator/developer docs, generic local/container examples, naming migration, external module-root example, noninteractive input requirements, caller-owned 1Password service-account injection and traditional Secret examples using the same runtime inputs, public package setup and rerun guidance; verify examples match the tested command interface and retain platform/private-CI ownership boundaries.
+- [x] 5.2 Synchronize the delivery decision and relevant current docs to reflect GHCR publication and generic execution paths; run `openspec validate add-oci-runtime-release --strict` and appropriate repository checks, and run GitNexus change analysis before any implementation commit.
 - [ ] 5.3 When an actual Release is authorized, record its successful workflow, source revision and GHCR digest plus anonymous pull result; leave this task unchecked if only local or simulated publication evidence exists, and do not treat it as Forgejo or infrastructure acceptance.

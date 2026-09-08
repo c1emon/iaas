@@ -109,6 +109,9 @@ shell profile、全局 Git 配置、inventory、生成物、facts、diff 或普�
 
 ## 4.4 执行顺序
 
+以下命令继承准备章节中的 `ENVIRONMENT_DIR`、`OUTPUT_DIR` 和 `GENERATED_DIR`。
+新终端须先按该章节重新设置目录，不会自动选择 Astra。
+
 先运行语法检查。若未选 egress policy，可省略两个 egress 变量：
 
 ```bash

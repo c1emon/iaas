@@ -11,6 +11,10 @@ README、设计文档或历史 OpenSpec 记录拼接第二套操作步骤。
 
 ```bash
 uv sync --locked --dev
+export ENVIRONMENT_DIR="$PWD/environments/astra"
+export OUTPUT_DIR="$PWD/.cache/iaas-output"
+export GENERATED_DIR="$ENVIRONMENT_DIR/generated"
+export PVE_DIR="$ENVIRONMENT_DIR/opentofu/pve"
 make generate
 make check
 make secret-scan
@@ -57,4 +61,5 @@ Generated, reviewable non-secret artifacts are under
 - [唯一操作手册](docs/operations/README.md)
 - [文档索引与架构/历史背景](docs/README.md)
 - [可复用自动化实现边界](automation/README.md)
+- [通用 OCI runtime 与调用方凭证接口](docs/operations/06-oci-runtime.md)
 - [外部 platform repository handoff 边界](platform/README.md)

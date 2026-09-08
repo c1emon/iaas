@@ -1,5 +1,8 @@
 # Reusable Automation
 
+Container build, external input and release interface:
+[OCI runtime](../docs/operations/06-oci-runtime.md).
+
 This layer contains mechanisms reusable across environments. It does not own
 Astra topology, VM declarations, runtime templates, generated inputs, or local
 state.

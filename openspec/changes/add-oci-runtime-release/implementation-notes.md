@@ -107,3 +107,22 @@ two task-owned image tags still await final cleanup. Runtime dependency and
 source layers are separate, with source-only cache reuse demonstrated earlier.
 Release workflow configuration and registry substitutes now have 14 passing
 tests, but actual GitHub/GHCR delivery remains unverified.
+
+
+## Release workflow and documentation acceptance
+
+The release event, registry substitute and workflow contract tests pass (14);
+combined with directory-boundary tests, the focused gate reports 23 passed.
+The tested image was saved and loaded on wsx; its image ID remained identical
+and the temporary transfer archive was removed. This verifies local artifact
+continuity, not a GitHub Actions run. Operator docs and the delivery decision
+now describe caller-owned credentials, explicit paths, reusable dependency
+layers, the release workflow, visibility and retry handling consistently.
+OpenSpec strict validation and whitespace checks pass. Task 5.3 remains open:
+no actual Release, GHCR digest or anonymous public pull evidence exists yet.
+
+GitNexus change analysis reports medium risk, limited to three new release CLI
+flows (event preparation, command execution and image-label verification); all
+are covered by the focused release tests. The result is neither partial nor
+truncated. The wsx task workspace and both task-owned image tags were removed
+after validation; shared Docker services and caches were preserved.
