@@ -63,6 +63,16 @@ supported packaging controls; do not delete runtime metadata or embedded plugin
 code indiscriminately by filename extension. Verify packaged operations after
 pruning. No byte-size target or custom per-file manifest system is required.
 
+Keep dependencies and repository implementation in separate final image layers.
+Install OS/tools, the locked Python runtime group and Collections before copying
+repository implementation. Dependency stages may consume their build recipes,
+version/lock metadata and pruning rules, but not the business source tree.
+Code-only changes must reuse dependency installation caches when the builder
+cache is available, and preserve the final dependency layer. Validate this with
+one representative source-only rebuild; no per-file cache matrix is required.
+A dependency lock, tool pin or installation-rule change legitimately invalidates
+its corresponding dependency cache.
+
 Build with an explicit copy allowlist and an exclusion file. Never use an
 unfiltered `COPY . .` followed by deletion: deleted data survives in prior image
 layers. Exclude all real `environments/` data, Git history, developer virtual

@@ -1,0 +1,13 @@
+---
+schema_version: 1
+services:
+  - name: synthetic-web
+    owner_vm: synthetic-vm
+    description: Synthetic smoke service
+    endpoints:
+      - name: web
+        fqdn: web.example.invalid
+        port: 8080
+        protocol: http
+        exposure: internal
+        auth: app

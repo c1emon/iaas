@@ -35,3 +35,75 @@ Type checking: zero errors. Ansible lint: 31 files passed after YAML line wrappi
 OpenSpec strict validation passed. GitNexus change analysis reports eight affected
 flows and HIGH risk, localized to renderers and cloud-init as described above;
 the MCP result has no partial/truncated flag. No image/publication evidence yet.
+
+## Container phase in progress
+
+Credential boundary clarification and matching operator docs were committed as
+`ae4f45e`, after the initial runtime-path phase `37e0b35`. The runtime group keeps
+the existing Paramiko 5.0.0 lock and selects ansible-core 2.21.3. A representative
+credential-input test passes without an op executable or service token; it also
+rejects missing API inputs and an overly readable secret file. This is synthetic
+input handling, not live 1Password qualification.
+
+The initial amd64 build runs on wsx in `/tmp/iaas-oci-release.8caiyG`, with image
+tag `iaas-runtime:oci-release-test` and log `build.log`. Only reusable source was
+transferred; no environment or credential material. The first context predates
+the local NOTICE/uv-license additions and Apple metadata exclusion, so it is not
+the final acceptance build. Check its existing process/log before rebuilding.
+At the latest observation it had installed runtime Python dependencies and was
+installing Collections. No container acceptance or release task is complete.
+Remove task-owned remote workspace and image after the tests; preserve shared
+Docker resources. Source references for pinned download/redistribution choices:
+https://docs.astral.sh/uv/guides/integration/docker/,
+https://opentofu.org/docs/intro/install/standalone/,
+https://docs.hashicorp.com/packer/install,
+https://www.hashicorp.com/blog/hashicorp-adopts-business-source-license.
+
+The first and layered builds completed. The synthetic offline container smoke
+passed generation/freshness, K3s render, UID and negative path cases. One
+source-only Makefile comment rebuild hit both uv and Collection install caches;
+the first final RootFS layer remained identical (`dependency-before.txt` and
+`dependency-after.txt` on the task workspace). The temporary source edit was
+restored; the cache-test image is task-owned and still requires cleanup.
+
+Further resource inspection found and repaired an overly broad pruning rule
+that removed Ansible's executable `plugins/test` package. Actual OPNsense plugin
+import then identified missing runtime httpx; added the existing locked 0.28.1
+version. This rebuild is currently session 69503, log `build-httpx.log`; inspect
+that handle before restarting. The latest local pruning also removes upstream
+Collection OpenSpec material and base-system READMEs identified by the standard
+Docker layer check; this final pruning edit is not yet in that running build.
+The current local smoke script adds Ansible resource imports, shipped role syntax
+checks and optional external-root backend-disabled OpenTofu init/validate with
+lockfile preservation. Its final combined acceptance remains pending.
+
+The httpx build subsequently passed complete smoke, including packaged Ansible
+roles/plugins and the external OpenTofu module root (provider 0.111.1), unchanged
+provider lock and no state creation. Final pruning layer inspection passed after
+fixing the inspector to distinguish `/usr/bin/test` from a test directory.
+The later Collection closure audit found community.general's indirect
+`community.library_inventory_filtering_v1` dependency; pinned it to 1.1.5. The
+updated build/smoke/layer check is session 12531, log `build-closure.log`; it is
+still active at the last observation. Local smoke now asserts every Collection
+dependency constraint against its shipped manifest version.
+
+Checkout aggregate validation passed on 2026-09-08: 512 tests, type checking,
+Ansible lint, generated freshness, YAML, OpenTofu fmt/init/validate and OPNsense
+validation. Two initially failing Make-path tests were repaired to isolate
+inherited Make flags/directory variables. Gitleaks scanned 154 commits and
+reported no leaks. These are software-only results. Release event and registry
+substitute tests: 13 passed; release workflow is drafted, not yet published or
+accepted against GitHub. Documentation explicitly retains this limitation.
+
+## Container phase acceptance
+
+Session 12531 completed successfully: the final pinned Collection closure,
+synthetic offline smoke, packaged Ansible resources, credential input checks,
+external OpenTofu init/validate and layer inspection all passed. This build used
+the repository-owned `build.sh`. Local Docker manifest-list digest is
+`sha256:ed73619a7b34aaa623be63d54a4b3cb93e835968d6fe3ebf361bad9c6cfa3f62`;
+it is a test build, not a GHCR publication reference. The remote workspace and
+two task-owned image tags still await final cleanup. Runtime dependency and
+source layers are separate, with source-only cache reuse demonstrated earlier.
+Release workflow configuration and registry substitutes now have 14 passing
+tests, but actual GitHub/GHCR delivery remains unverified.

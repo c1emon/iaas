@@ -1,0 +1,30 @@
+---
+schema_version: 1
+foundation_hosts:
+  - name: synthetic-router
+    kind: appliance
+    management_identity: https://192.0.2.1
+foundation_services:
+  - name: synthetic-dns
+    host: synthetic-router
+    runtime: appliance
+    tier: required
+    required_before_k3s: true
+    restore_order: 1
+    dependencies: []
+    health_check:
+      type: tcp
+      target: "192.0.2.1:53"
+    backup_restore:
+      profile: synthetic-config
+      restore_runbook: ref:synthetic-restore
+      tested: false
+    break_glass:
+      method: local-console
+      access_path: Physical synthetic console
+      secret_ref: op://synthetic/router/console
+storage_networks: []
+k3s_storage_access:
+  phase_1:
+    node_classes: [vm]
+    storage_networks: []

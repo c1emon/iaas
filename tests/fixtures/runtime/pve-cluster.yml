@@ -1,0 +1,82 @@
+---
+schema_version: 1
+cluster:
+  name: synthetic-pve
+  default_template: synthetic
+  automation:
+    ansible_user: ops
+    template_build:
+      template_key: synthetic
+      image_url: https://images.example.invalid/debian.qcow2
+      image_url_prefix: https://images.example.invalid/
+      image_sha512: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      import_storage_role: images
+      disk_storage_role: disks
+      build_domain: example.invalid
+      apt_mirror: https://deb.example.invalid/debian
+      apt_security_mirror: https://deb.example.invalid/security
+      timezone: UTC
+      locale: en_US.UTF-8
+      ciuser: builder
+      nameserver: 192.0.2.1
+      build_bridge: vmbr1
+    cloud_init:
+      drive_storage_role: disks
+      snippet_storage_role: images
+      snippet_file_prefix: synthetic
+      users:
+        - name: ops
+          gecos: Synthetic operator
+          groups: sudo
+          shell: /bin/bash
+          sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+          password_env: SYNTHETIC_PASSWORD
+          public_key_env: SYNTHETIC_PUBLIC_KEY
+reserved_vm_id_ranges:
+  templates: [9000, 9500]
+  long_lived: [1000, 2000]
+  ephemeral_lab: [500, 800]
+storage_roles:
+  disks: {datastore: synthetic-disks, purpose: vm_template_disks, content: [disk]}
+  images: {datastore: synthetic-images, purpose: iso_import_snippets, content: [iso, import, snippets]}
+networks:
+  lab:
+    bridge: vmbr1
+    cidr: 192.0.2.0/24
+    gateway: 192.0.2.1
+    dns: 192.0.2.1
+    attach_vms: true
+nodes:
+  synthetic-node:
+    mgmt_ip: 198.51.100.10
+    storage_ip: 203.0.113.10
+    ssh_host: synthetic-node.example.invalid
+vm_defaults:
+  cores: 2
+  memory_mib: 2048
+  root_disk_gib: 20
+  cpu_type: host
+  bios: ovmf
+  machine: q35
+  clone_mode: full
+  scsi_controller: virtio-scsi-single
+  primary_disk: scsi0
+  primary_nics: 1
+  pool: null
+templates:
+  synthetic:
+    vmid: 9001
+    name: synthetic-template
+    architecture: amd64
+    node: synthetic-node
+    storage_role: disks
+    source_storage_role: images
+    disk_size_gib: 20
+    cpu_type: host
+    bios: ovmf
+    machine: q35
+    clone_mode: full
+    scsi_controller: virtio-scsi-single
+    primary_disk: scsi0
+    primary_nics: 1
+pci_mappings: {}

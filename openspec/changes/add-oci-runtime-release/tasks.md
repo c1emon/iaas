@@ -1,25 +1,25 @@
 ## 1. Generic environment and runtime paths
 
 - [x] 1.1 Confirm the implementation branch under repository rules and refresh GitNexus impact for actual edit targets; record callers/risk and confirm the worktree has no unrelated changes before implementation.
-- [ ] 1.2 Replace `ASTRA` and fixed environment defaults with explicit `ENVIRONMENT_DIR`/`OUTPUT_DIR`, preserving operation names and schemas; verify missing inputs and legacy selectors fail, while environment-independent commands still work.
-- [ ] 1.3 Route generated/runtime paths and Ansible inventory, vars, roles, Collections and plugins through the selected directories, retaining reference metadata without a fixed vault while consuming caller-resolved credentials; verify a read-only non-Astra environment works from an arbitrary working directory with no implicit Astra reads/writes or offline secret resolution.
-- [ ] 1.4 Generalize generated source descriptions, PVE helper paths, execution variable prefixes and their callers/bootstrap/sudoers assets; verify naming regressions and existing helper argument/identity/locking tests, and document the separate host cutover prerequisite without touching hosts.
+- [x] 1.2 Replace `ASTRA` and fixed environment defaults with explicit `ENVIRONMENT_DIR`/`OUTPUT_DIR`, preserving operation names and schemas; verify missing inputs and legacy selectors fail, while environment-independent commands still work.
+- [x] 1.3 Route generated/runtime paths and Ansible inventory, vars, roles, Collections and plugins through the selected directories, retaining reference metadata without a fixed vault while consuming caller-resolved credentials; verify a read-only non-Astra environment works from an arbitrary working directory with no implicit Astra reads/writes or offline secret resolution.
+- [x] 1.4 Generalize generated source descriptions, PVE helper paths, execution variable prefixes and their callers/bootstrap/sudoers assets; verify naming regressions and existing helper argument/identity/locking tests, and document the separate host cutover prerequisite without touching hosts.
 - [ ] 1.5 Migrate supported local/CI callers and add directory-boundary/UID coverage; verify existing grouped regressions pass with explicit inputs and unsafe output placement fails before writes.
 
 ## 2. Container contents and OpenTofu integration
 
-- [ ] 2.1 Add a Linux amd64 build definition with explicit runtime-only copy allowlist/exclusions and `/opt/iaas` layout; inspect the final image and its layers for absence of docs/READMEs, OpenSpec, tests/fixtures, examples, CI/editor files, build-only tools and real environment/runtime material, while retaining required licenses and runtime metadata; verify existing container smoke operations still work after pruning.
-- [ ] 2.2 Lock the base, execution tools, Python runtime group and Collection dependency closure; verify uv locked installation, required command versions, upstream download checksums and redistribution notices without runtime dependency installation; exclude the caller-owned 1Password CLI.
-- [ ] 2.3 Add the minimal operation entrypoint and writable home/cache conventions; verify no-argument help is side-effect-free and an explicit caller UID can use mounted outputs without weakening secret-file or SSH checks.
-- [ ] 2.4 Add a synthetic external OpenTofu root using the documented image-local module source and provider lock; verify backend-disabled init with lockfile preservation and validate without infrastructure/state access.
+- [x] 2.1 Add a Linux amd64 build definition with explicit runtime-only copy allowlist/exclusions and `/opt/iaas` layout; inspect the final image and its layers for absence of docs/READMEs, OpenSpec, tests/fixtures, examples, CI/editor files, build-only tools and real environment/runtime material, while retaining required licenses and runtime metadata; keep dependencies separate from repository content in the final image, verify one source-only rebuild reuses dependency installation caches and the dependency layer, and verify existing container smoke operations still work after pruning.
+- [x] 2.2 Lock the base, execution tools, Python runtime group and Collection dependency closure; verify uv locked installation, required command versions, upstream download checksums and redistribution notices without runtime dependency installation; exclude the caller-owned 1Password CLI.
+- [x] 2.3 Add the minimal operation entrypoint and writable home/cache conventions; verify no-argument help is side-effect-free and an explicit caller UID can use mounted outputs without weakening secret-file or SSH checks.
+- [x] 2.4 Add a synthetic external OpenTofu root using the documented image-local module source and provider lock; verify backend-disabled init with lockfile preservation and validate without infrastructure/state access.
 
 ## 3. Representative software validation
 
-- [ ] 3.1 Add a repository-owned container smoke command covering grouped PVE/services/foundation generate/check and K3s composition/rendering; verify it passes with no source checkout, no credentials, read-only input and disabled container networking.
-- [ ] 3.2 Exercise packaged Ansible roles/Collections/lookup/filter loading and focused invalid-input, stale-output and missing-directory cases; verify the real shipped entrypoint/resources are used and no external mutation occurs.
-- [ ] 3.3 Reuse build/smoke commands in PR/main CI without GHCR credentials; run the current aggregate checkout gate with explicit inputs plus secret scanning and report software-only results.
+- [x] 3.1 Add a repository-owned container smoke command covering grouped PVE/services/foundation generate/check and K3s composition/rendering; verify it passes with no source checkout, no credentials, read-only input and disabled container networking.
+- [x] 3.2 Exercise packaged Ansible roles/Collections/lookup/filter loading and focused invalid-input, stale-output and missing-directory cases; verify the real shipped entrypoint/resources are used and no external mutation occurs.
+- [x] 3.3 Reuse build/smoke commands in PR/main CI without GHCR credentials; run the current aggregate checkout gate with explicit inputs plus secret scanning and report software-only results.
 
-- [ ] 3.4 Verify representative credentialed input handling with synthetic environment variables and protected files for both caller-side 1Password injection and traditional Secrets; IaaS must work without `op` or `OP_SERVICE_ACCOUNT_TOKEN`, reject missing required credentials without provider fallback, and preserve file/SSH checks. Do not use real credentials or claim live 1Password qualification.
+- [x] 3.4 Verify representative credentialed input handling with synthetic environment variables and protected files for both caller-side 1Password injection and traditional Secrets; IaaS must work without `op` or `OP_SERVICE_ACCOUNT_TOKEN`, reject missing required credentials without provider fallback, and preserve file/SSH checks. Do not use real credentials or claim live 1Password qualification.
 
 ## 4. Release-to-GHCR workflow
 

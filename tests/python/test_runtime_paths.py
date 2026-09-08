@@ -13,6 +13,13 @@ from iaas_automation.runtime_paths import validate_paths
 ROOT = Path(__file__).resolve().parents[2]
 
 
+@pytest.fixture(autouse=True)
+def isolated_make_environment(monkeypatch):
+    for name in ("MAKEFLAGS", "MAKEOVERRIDES", "MFLAGS", "ENVIRONMENT_DIR", "OUTPUT_DIR",
+                 "GENERATED_DIR", "RUNTIME_DIR", "PVE_DIR", "INVENTORY_DIR", "ASTRA"):
+        monkeypatch.delenv(name, raising=False)
+
+
 def test_generated_subtree_and_external_output(tmp_path):
     environment = tmp_path / "environment"
     validate_paths(environment, tmp_path / "implementation", [

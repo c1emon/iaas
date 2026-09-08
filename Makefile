@@ -20,6 +20,7 @@ VM_BASELINE_EGRESS_RUNTIME_SECRETS ?=
 UV ?= uv
 TOFU ?= tofu
 GITLEAKS ?= gitleaks
+RUNTIME_IMAGE ?= iaas-runtime:oci-release-test
 PYTHON ?= PYTHONPATH="$(AUTOMATION)/src" $(UV) run --directory "$(ROOT)" python
 ANSIBLE_LINT_PATHS ?= $(AUTOMATION)/ansible/playbooks/pve $(AUTOMATION)/ansible/playbooks/opnsense $(AUTOMATION)/ansible/roles/vm_baseline
 PACKER_BUILD_SCRIPT ?= $(AUTOMATION)/packer/proxmox/debian-13/build-template.sh
@@ -55,6 +56,16 @@ export ANSIBLE_LOOKUP_PLUGINS := $(AUTOMATION)/ansible/plugins/lookup
 export ENVIRONMENT_DIR OUTPUT_DIR
 
 .DEFAULT_GOAL := help
+.PHONY: runtime-build runtime-smoke runtime-tofu-check
+runtime-build:
+	sh "$(AUTOMATION)/runtime/build.sh" "$(RUNTIME_IMAGE)"
+
+runtime-smoke:
+	$(UV) run --directory "$(ROOT)" python "$(AUTOMATION)/runtime/smoke.py" --image "$(RUNTIME_IMAGE)"
+
+runtime-tofu-check:
+	$(UV) run --directory "$(ROOT)" python "$(AUTOMATION)/runtime/smoke.py" --image "$(RUNTIME_IMAGE)" --tofu
+
 .PHONY: help require-environment require-pve-dir
 help:
 	@printf '%s\n' 'IaaS operations: pve-generate pve-check services-generate services-check foundation-generate foundation-check k3s-check k3s-render' 'Select ENVIRONMENT_DIR and OUTPUT_DIR for environment operations; PVE_DIR selects an external OpenTofu root.' 'Checkout validation: check test secret-scan'
