@@ -48,7 +48,8 @@ Forgejo 与引导 Runner 位于目标 K3s 之外。Forgejo 首次安装由管理
 - 凭据由调用方通过环境变量或受保护文件注入，支持调用方 `op run` 和传统 Secret。
   IaaS 镜像不包含 `op`，不接收 1Password 服务 token；私有 CI 自行管理非交互身份。
 - 版本镜像通过 GitHub Release published 工作流发布到
-  `ghcr.io/<owner>/iaas-runtime`，以匿名拉取验证后的 digest 消费；当前尚无正式发布证据。
+  `ghcr.io/c1emon/iaas-runtime`，以匿名拉取验证后的 digest 消费；`v0.1.0-rc.2`
+  已于 2026-09-08 完成发布与匿名拉取验收，源码提交为 `42fd9c8`。
   通用接口和重试规则见 [OCI runtime](../operations/06-oci-runtime.md)。
 - OpenTofu state 使用持久化后端和锁，同一环境串行 apply；部署关联配置提交、
   镜像 digest 和对应 plan。plan 可能包含敏感数据，应作为受保护 CI 产物处理。
@@ -78,8 +79,10 @@ controllers。Flux CLI 的一次性执行与集群内 controllers 的持续运�
   选型与版本。验收：配置输入明确，能够生成部署配置。
 - [ ] 2. 整理仓库边界：确定公开 `iaas`、私有 `astra-ops` 与 `platform` 的真实位置
   和职责。验收：每类配置有唯一维护位置。
-- [ ] 3. 打包通用实现：支持外部环境/输出目录，构建并发布版本化 OCI 镜像。
+- [x] 3. 打包通用实现：支持外部环境/输出目录，构建并发布版本化 OCI 镜像。
   验收：固定 digest 镜像能独立读取合成配置并执行校验、生成。
+  证据：`v0.1.0-rc.2` 的构建镜像通过合成输入 smoke 后原样发布，且匿名拉取成功；
+  digest 和工作流链接见 [OCI runtime](../operations/06-oci-runtime.md)。这不代表后续平台阶段完成。
 - [ ] 4. 建立 Forgejo 执行环境：部署 Forgejo、Runner、持久化与备份；验证 Git、
   镜像下载和管理网连通。验收：目标 K3s 不可用时仍能执行部署。
 - [ ] 5. 建立私有流水线：固定镜像、注入非交互式凭据、配置 state/锁、校验、plan、

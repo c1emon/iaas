@@ -148,3 +148,30 @@ directories. Its temporary container, image tag and directory were removed.
 The 14 release contract tests, OpenSpec strict validation and whitespace checks
 pass. GitNexus reports low change risk with no partial/truncated result; the
 Make target is not indexed, so its two CI callers were checked directly.
+
+## Final publication acceptance — 2026-09-08
+
+The user authorized `v0.1.0-rc.2` from
+`42fd9c82511de2d9a646e02e6f7bd7148b688f5a`. The Release is
+https://github.com/c1emon/iaas/releases/tag/v0.1.0-rc.2 and the successful workflow is
+https://github.com/c1emon/iaas/actions/runs/34185770926 (attempt 2).
+
+Published digest:
+`ghcr.io/c1emon/iaas-runtime@sha256:9feb560f05a059e37c7bfc0a6f7042bfe6d6a6510cf8edb86f498bd2c03cb5c8`.
+Build, aggregate checks, synthetic runtime smoke, layer inspection, tested-image
+save/load identity and publication succeeded in attempt 1. The anonymous job
+initially failed because the package was private. The owner set it public and
+reran the failed job; anonymous digest pull and help invocation then succeeded,
+without rebuilding or republishing. The local CLI could read Actions results
+but lacked permission to request a rerun, so that action was performed by the
+owner in GitHub.
+
+An independent wsx check used a fresh empty DOCKER_CONFIG, anonymously pulled
+the exact digest and ran its help with networking disabled and a read-only root.
+OCI source/revision/version labels matched the authorized release. The temporary
+configuration and task-downloaded image were removed, with no container left.
+No infrastructure deployment, host helper cutover, Forgejo qualification or
+repository visibility change was performed. All tasks in this change are now
+supported by software and publication evidence; unrelated delivery phases remain
+open. The published tag stays on the tested source commit; subsequent documentation
+commits only record acceptance.

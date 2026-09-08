@@ -2,8 +2,21 @@
 
 This runtime packages reusable Python, Ansible and OpenTofu resources for
 Linux amd64. Image publication is not infrastructure deployment or Forgejo
-acceptance. The implementation is under validation; no public release digest is
-recorded yet. Use only a digest reported by a successful release workflow.
+acceptance. The first publicly consumable prerelease is
+[`v0.1.0-rc.2`](https://github.com/c1emon/iaas/releases/tag/v0.1.0-rc.2), from
+source commit `42fd9c82511de2d9a646e02e6f7bd7148b688f5a`:
+
+```text
+ghcr.io/c1emon/iaas-runtime@sha256:9feb560f05a059e37c7bfc0a6f7042bfe6d6a6510cf8edb86f498bd2c03cb5c8
+```
+
+[Release workflow 34185770926](https://github.com/c1emon/iaas/actions/runs/34185770926)
+passed build, tested-image transfer, publication and anonymous digest pull/help
+invocation on 2026-09-08. The anonymous job passed on attempt 2 after the owner
+made the package public; the image was not rebuilt. An independent anonymous
+pull/help check on wsx also passed. These are runtime software acceptance results.
+The earlier `v0.1.0-rc.1` failed before publication and has no usable image digest.
+For future versions, use only a digest reported by a successful release workflow.
 
 ## Directory and command interface
 
