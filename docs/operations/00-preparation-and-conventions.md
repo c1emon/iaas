@@ -7,7 +7,7 @@
 
 | 类别 | 必须准备 | 不得提交或输出 |
 | --- | --- | --- |
-| 控制机 | macOS/Linux、Git、`uv`、OpenTofu、Ansible 依赖、1Password CLI/会话、SSH agent。 | 私钥、SSH agent 导出、shell 历史中的密码。 |
+| 控制机 | macOS/Linux、Git、`uv`、OpenTofu、Ansible 依赖、SSH agent；仅选择 1Password 注入时准备调用方 CLI/认证。 | 私钥、SSH agent 导出、shell 历史中的密码。 |
 | 仓库 | 干净工作树、已同步依赖、当前生成物、已审查的变更范围。 | `.venv`、provider 缓存、Ansible collection、临时导出。 |
 | 网络设备 | 设备管理地址、可靠的本地或带外控制台路径、受限 API/SSH 凭据。 | OPNsense API secret、交换机密码、设备导出中的凭据。 |
 | PVE/VM | PVE API 与 SSH 运行时环境、模板镜像 URL/校验值、PVE 存储和 bridge 事实、VM 用户公钥。 | OpenTofu state、cloud-init 用户密码、VM 私钥。 |
@@ -17,6 +17,11 @@
 
 ```bash
 uv sync --locked --dev
+# 从仓库根目录执行；这里显式选择 Astra，其他环境替换这些路径。
+export ENVIRONMENT_DIR="$PWD/environments/astra"
+export OUTPUT_DIR="$PWD/.cache/iaas-output"
+export GENERATED_DIR="$ENVIRONMENT_DIR/generated"
+export PVE_DIR="$ENVIRONMENT_DIR/opentofu/pve"
 make generate
 make check
 make secret-scan
@@ -70,17 +75,26 @@ collection 是本地依赖，绝不提交到仓库。
 
 | 场景 | 入口 | 约束 |
 | --- | --- | --- |
-| PVE API、VM cloud-init 用户材料 | `environments/astra/runtime/.env.pve-opentofu.tpl` | 通过 1Password 运行时注入；模板只含变量名。 |
-| OPNsense API | `environments/astra/runtime/.env.opnsense.tpl` | 通过 `op run --env-file … --` 注入。 |
-| 交换机 SSH | `environments/astra/runtime/.env.switch.tpl` | 通过 `op run --env-file … --` 注入。 |
+| PVE API、VM cloud-init 用户材料 | `environments/astra/runtime/.env.pve-opentofu.tpl` | 调用方用 1Password 或传统 Secret 注入相同变量；模板不含秘密值。 |
+| OPNsense API | `environments/astra/runtime/.env.opnsense.tpl` | 调用方通过 `op run --env-file … --` 或传统 Secret 注入。 |
+| 交换机 SSH | `environments/astra/runtime/.env.switch.tpl` | 调用方通过 `op run --env-file … --` 或传统 Secret 注入。 |
 | VM baseline egress / K3s | 仓库外显式路径 | 仅允许受限权限的 JSON；不得把解析后的值放到 CLI、inventory、facts 或日志。 |
 
 ### Runtime 模板变量
 
 下表是三个仓库内 runtime 模板的完整变量接口。左列是命令实际读取的环境变量，
-不是可以填入 Git 的示例值；`op://…` 引用仅保留在 `.tpl` 中，由 1Password 在
-子进程启动时解析。修改变量名、将秘密改写为明文，或在 shell 中临时覆盖这些
-变量，都会绕过当前已审查的运行时边界。
+不是可以填入 Git 的秘密示例值。IaaS 只接收解析后的环境变量或受保护文件，
+不执行 `op`、不解析引用，也不要求 `OP_SERVICE_ACCOUNT_TOKEN`。镜像不捆绑 `op`。
+
+- 1Password 路径：调用方使用 `op run --env-file <reference-template> -- <command>`
+  解析引用并注入；CI 调用方自行管理服务身份、vault 权限和 CI Secret 中的
+  `OP_SERVICE_ACCOUNT_TOKEN`。容器只接收该操作需要的变量/文件，不传入该服务 token。
+- 传统 Secret 路径：调用方通过 CI Secret、宿主环境或受保护文件挂载提供相同输入，
+  直接运行命令，无需 1Password 账户、CLI 或登录。
+
+每个凭证明确选择一个来源；缺失时失败，不自动查询 provider 或回退。
+不得把秘密写入命令行、提交文件或日志；两种方式均保留文件属主/权限及 SSH 校验。
+离线命令不需要真实凭证。
 
 | 模板 | 变量 | 用途与约束 |
 | --- | --- | --- |
@@ -94,7 +108,8 @@ collection 是本地依赖，绝不提交到仓库。
 | 同上 | `SWITCH_SSH_PORT` | SSH TCP 端口，当前模板为 `22`；如目标设备不同，先在受控模板引用/运行时材料中审查后调整。 |
 
 K3s 运行时 JSON 的键为 `op://vault/item/field` 形式的外部引用，值为该动作需要
-的实际秘密。加载器拒绝符号链接、非普通文件、组/其他用户可读文件和空映射。
+的实际秘密。引用在这里是匹配 intent 的标识键，并不触发 1Password 读取；
+传统 Secret 调用方也可按相同键生成映射。加载器拒绝符号链接、非普通文件、组/其他用户可读文件和空映射。
 创建后应至少执行 `chmod 600 <file>`，且文件必须位于仓库外。
 
 示意形状（仅展示键和值类型，不是可提交文件）：

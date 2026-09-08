@@ -29,7 +29,19 @@
 | `environments/astra/generated/ansible/pve.yml` | 生成的 VM SSH/网络事实。 | VM bootstrap、guest verify、K3s inventory 输入。 |
 | `environments/astra/generated/packer/debian-13.env` | 非敏感模板构建参数。 | Packer helper 输入。 |
 | `environments/astra/generated/docs/pve-vms.md` | VM 声明的可读表格。 | 审查参考，不是源配置。 |
-| `environments/astra/runtime/.env.pve-opentofu.tpl` | PVE API、SSH 和 cloud-init 用户材料的运行时变量名。 | 仅通过 1Password 注入。 |
+| `environments/astra/runtime/.env.pve-opentofu.tpl` | PVE API、SSH 和 cloud-init 用户材料的运行时变量名。 | 调用方通过 1Password 或传统 Secret 注入相同变量。 |
+
+本章示例从仓库根目录执行，先显式选择目录（Astra 是本章操作对象，不是运行时默认）：
+
+```bash
+export ENVIRONMENT_DIR="$PWD/environments/astra"
+export OUTPUT_DIR="$PWD/.cache/iaas-output"
+export GENERATED_DIR="$ENVIRONMENT_DIR/generated"
+export PVE_DIR="$ENVIRONMENT_DIR/opentofu/pve"
+```
+
+后续 Make 命令继承以上目录。切换终端后重新设置；其他环境使用对应绝对路径。
+凭证来源见 [运行时凭据约定](00-preparation-and-conventions.md#04-运行时凭据与文件权限)。
 
 先运行：
 
@@ -48,10 +60,9 @@ make pve-bootstrap-guests-syntax
 wrapper。使用一个已有的、受控的 PVE 管理账户与 runtime 提供的 SSH 公钥执行：
 
 ```bash
-cd automation/ansible
-PVE_SSH_AUTOMATION_PUBLIC_KEY="$(op read op://Astra/pve-ssh-automation-user/public_key)" \
-  uv run ansible-playbook -i '<pve-node>,' -u <existing-admin-login> --become \
-  playbooks/pve/bootstrap-pve-ops.yml \
+# 调用方已提供 PVE_SSH_AUTOMATION_PUBLIC_KEY；可来自 op read 或传统 Secret。
+uv run ansible-playbook -i '<pve-node>,' -u <existing-admin-login> --become \
+  automation/ansible/playbooks/pve/bootstrap-pve-ops.yml \
   -e pve_bootstrap_authorized_key="$PVE_SSH_AUTOMATION_PUBLIC_KEY"
 ```
 
@@ -59,12 +70,13 @@ PVE_SSH_AUTOMATION_PUBLIC_KEY="$(op read op://Astra/pve-ssh-automation-user/publ
 多命令 preflight sudo 白名单只能在明确窗口内使用，验证后必须缩回到 wrapper-only
 规则。它不更改全局 SSHD 策略。
 
+已有主机须先完成 [helper 切换前置步骤](pve-helper-cutover.md)，禁止两代 helper 并行运行。
 在每个 PVE build node 安装并检查 wrapper：
 
 ```bash
 sudo install -m 750 -o root -g root \
-  automation/pve-node/bin/astra-pve-template-build \
-  /usr/local/sbin/astra-pve-template-build
+  automation/pve-node/bin/iaas-pve-template-build \
+  /usr/local/sbin/iaas-pve-template-build
 # 先复制 sudoers 文件到临时路径，以 visudo 校验后再以 root:root / 0440 安装。
 sudo visudo -cf <temporary-sudoers-file>
 ```
@@ -72,12 +84,12 @@ sudo visudo -cf <temporary-sudoers-file>
 PVE 节点需具备 `curl`、`shasum`、`cp`、`virt-customize`、`virt-sysprep`、`qm`
 和 `flock`；安装 `libguestfs-tools` 可提供两个 `virt-*` 工具。wrapper 与 sudoers
 必须保持 root-owned，`pve-ops` 仅能无密码执行
-`/usr/local/sbin/astra-pve-template-build`。可用下列只读 smoke 验证安装：
+`/usr/local/sbin/iaas-pve-template-build`。可用下列只读 smoke 验证安装：
 
 ```bash
 ssh <existing-admin-login>@<pve-node> \
-  'sudo -n visudo -cf /etc/sudoers.d/astra-pve-template-build'
-ssh pve-ops@<pve-node> 'sudo -n /usr/local/sbin/astra-pve-template-build --help'
+  'sudo -n visudo -cf /etc/sudoers.d/iaas-pve-template-build'
+ssh pve-ops@<pve-node> 'sudo -n /usr/local/sbin/iaas-pve-template-build --help'
 ```
 
 ## 3.4 `pve-cluster.yml` 参数
@@ -222,7 +234,7 @@ IOMMU/VFIO/设备绑定。`make pve-preflight` 会只读检查 mapping，不会�
 
 构建过程使用生成的 `environments/astra/generated/packer/debian-13.env`；直接
 调用 helper 时必须显式设置 `TEMPLATE_BUILD_ENV`。`PVE_HOST` 始终是明确的 build
-node SSH host/IP。远端缓存位于 `/var/cache/astra/packer`，模板命名为
+node SSH host/IP。远端缓存位于 `/var/cache/iaas/packer`，模板命名为
 `debian-13-tmpl-YYYYMMDD`。wrapper 会写临时 deb822 source、删除旧
 `/etc/apt/sources.list`、执行 APT 更新、安装 cloud-init、清理 cloud-init logs 并
 通过 virt-sysprep 移除机器特有状态；这些仅发生在模板构建机/镜像内，不能代替
@@ -234,6 +246,7 @@ node SSH host/IP。远端缓存位于 `/var/cache/astra/packer`，模板命名�
 op run --env-file environments/astra/runtime/.env.pve-opentofu.tpl -- \
   make pve-packer-build PVE_HOST=<pve-management-host-or-ip>
 
+# 以下 op run 示例仅用于调用方选择 1Password 的情况。
 # 在线只读：分别用于健康与 apply 前置条件。
 op run --env-file environments/astra/runtime/.env.pve-opentofu.tpl -- make pve-health
 op run --env-file environments/astra/runtime/.env.pve-opentofu.tpl -- make pve-preflight
@@ -242,6 +255,10 @@ op run --env-file environments/astra/runtime/.env.pve-opentofu.tpl -- make pve-p
 op run --env-file environments/astra/runtime/.env.pve-opentofu.tpl -- \
   make pve-plan STORAGE_ID=images
 ```
+
+传统 Secret 调用方在注入相同环境变量后，直接运行 `make pve-health`、
+`make pve-preflight` 或经授权的 `make pve-plan STORAGE_ID=images`，省略 `op run`。
+以上命令仍继承本章开头的四个目录变量；IaaS 不接收 1Password 服务 token。
 
 审查计划时逐项确认 clone 源、VMID、节点、storage、NIC bridge/MAC、cloud-init
 snippet、long-lived destroy protection、启动策略与 passthrough。仅在这些项目和
@@ -253,11 +270,11 @@ op run --env-file environments/astra/runtime/.env.pve-opentofu.tpl -- \
 ```
 
 `pve-apply` 会渲染、上传并验证 cloud-init snippets，并在 apply 前后备份本地
-OpenTofu state 到忽略的 `.cache/tofu-state-backups/`。state 位于
+OpenTofu state 到`$OUTPUT_DIR/runtime/tofu-state-backups/`。state 位于
 `environments/astra/opentofu/pve/terraform.tfstate`，是单操作者本地状态；不得
 提交、复制到 issue 或用删除 state 的方式修复漂移。
 
-同样受保护的本地路径包括 `.cache/pve-cloud-init/user-data/`（cloud-init 渲染
+同样受保护的本地路径包括 `$OUTPUT_DIR/runtime/pve-cloud-init/user-data/`（cloud-init 渲染
 输出和 manifest/checksum）与 `.cache/packer/`（本地 Packer cache）。它们是
 可删除重建的运行数据，但不得在仍有相关工作流运行时自动清理，也不得作为新
 PVE root 的隐式 state 输入。

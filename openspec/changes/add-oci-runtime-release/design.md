@@ -75,7 +75,7 @@ generated documents: `services-generate` and `foundation-generate` still write
 their requested output to the caller's output directory at runtime.
 
 Use a digest-pinned Linux base and exact releases for uv, Python, Ansible,
-OpenTofu, and required execution CLIs (including SSH, Packer and 1Password CLI
+OpenTofu, and required execution CLIs (including SSH and Packer
 where existing exposed operations need them). Reuse `uv.lock`, resolve the
 runtime dependency group explicitly, and pin required Collections and their
 dependency closure. Verify downloaded tools using upstream checksums. Preserve
@@ -164,12 +164,34 @@ Use the existing explicit K3s inventory/intent/scope and runtime-secret inputs.
 Path relocation does not repair or qualify the handoff workflow. Existing
 domain validation semantics and scope requirements remain unchanged.
 
-Secret reference syntax and the current supported provider remain unchanged.
-References and vault selection come from the selected environment; Astra item
-names belong to Astra configuration. Offline operations never resolve those
-references. A later private CI pipeline supplies a noninteractive service
-identity for the existing runtime injection mechanisms; this change neither
-creates that identity nor introduces another provider abstraction.
+Credential acquisition belongs to the caller, not the IaaS runtime. IaaS accepts
+resolved credentials through documented environment variables or explicitly
+supplied protected files (including SSH keys and K3s runtime secrets). It does
+not authenticate to 1Password, resolve `op://` references, invoke `op`, or require
+`OP_SERVICE_ACCOUNT_TOKEN`. Do not bundle the 1Password CLI in the runtime image.
+
+The caller can use either `op run` with environment-owned reference templates,
+or traditional CI Secrets, host environment injection and protected Secret file
+mounts. Both routes supply the same operation inputs; no provider selector or
+provider abstraction is added inside IaaS. Reference-only environment metadata
+may retain its schema and be checked offline, but is not a resolved credential.
+Missing required values fail before the credentialed operation; there is no
+implicit provider lookup or fallback. Password hashing uses caller-supplied
+plaintext in memory and retains existing protected output rules.
+
+For CI using 1Password, the private caller owns a noninteractive service account,
+its vault permissions, the CI Secret containing its token, and CLI installation.
+It resolves secrets before invoking IaaS and passes only the operation's required
+values/files into the container, not its 1Password bootstrap token or desktop
+session. Traditional Secret callers need no 1Password account, login or binary.
+Astra item/vault naming remains environment-specific, not a runtime restriction.
+This change does not provision service identities or a private deployment pipeline.
+
+Offline generation, validation and image smoke tests need no credential provider
+or real secrets. Public image build/release jobs need no infrastructure secrets;
+GHCR publication retains its separate ephemeral `GITHUB_TOKEN`. Neither input
+route may embed credentials in the image, committed files, command-line values
+or logs, or weaken sensitive-file owner/mode and SSH host-key checks.
 
 Illustrative planned invocation (the image/entrypoint does not exist yet):
 

@@ -45,7 +45,7 @@ The system SHALL use separate dedicated identities for PVE API automation and PV
 - **WHEN** Packer or provider behavior requires SSH access to PVE nodes
 - **THEN** the PVE node SSH user SHALL be `pve-ops`
 - **AND** the SSH user SHALL be provisioned consistently on each node that automation needs to access
-- **AND** SSH authentication SHALL use the key managed by the `pve-ssh-automation-user` 1Password item
+- **AND** SSH authentication SHALL use the caller-supplied key for the dedicated automation identity; Astra callers MAY source it from the `pve-ssh-automation-user` 1Password item
 - **AND** the SSH identity SHALL use limited `NOPASSWD` sudo based on spike results rather than broad `NOPASSWD: ALL`
 
 #### Scenario: Deploy the audited PVE host wrapper
@@ -68,14 +68,14 @@ The system SHALL use separate dedicated identities for PVE API automation and PV
 
 #### Scenario: Bootstrap PVE API identity outside OpenTofu
 - **WHEN** the initial PVE automation identity is prepared
-- **THEN** operators SHALL create `pve-ops@pve`, create the `opentofu` API token, assign initial role/ACLs, and populate 1Password before OpenTofu runs
+- **THEN** operators SHALL create `pve-ops@pve`, create the `opentofu` API token, assign initial role/ACLs, and make the credentials available through caller-owned environment injection or protected files before OpenTofu runs
 - **AND** the initial `AstraAutomation` ACL SHALL be assigned to both `pve-ops@pve` and `pve-ops@pve!opentofu` for PVE 9 privilege-separated token compatibility
 - **AND** the initial `AstraAutomation` role SHALL include `SDN.Use` when VM bridges are checked through PVE SDN paths
 - **AND** the OpenTofu configuration that consumes `pve-ops@pve!opentofu` SHALL NOT manage that same API user, token, or initial ACL root of trust in this foundation
 
 #### Scenario: Document PVE identity bootstrap
 - **WHEN** the PVE automation foundation is documented
-- **THEN** documentation SHALL include a bootstrap runbook for creating `pve-ops@pve`, creating `pve-ops@pve!opentofu`, creating `pve-ops@pve!packer`, assigning initial role/ACLs, and filling the related 1Password API token items
+- **THEN** documentation SHALL include a bootstrap runbook for creating `pve-ops@pve`, creating `pve-ops@pve!opentofu`, creating `pve-ops@pve!packer`, assigning initial role/ACLs, and supplying the resulting credentials through either caller-side 1Password injection or traditional Secrets
 - **AND** it SHALL state that future automation of this bootstrap may be introduced separately under an existing administrator identity
 
 #### Scenario: Use generic host helper paths
@@ -85,7 +85,7 @@ The system SHALL use separate dedicated identities for PVE API automation and PV
 - **AND** existing hosts SHALL require an explicit documented cutover before new callers run, without silent old-name fallback or simultaneous old/new lock domains
 
 ### Requirement: 1Password runtime secret conventions
-The system SHALL use environment-supplied 1Password references as the runtime source for infrastructure secrets, without a hard-coded vault in reusable execution paths. The existing Astra environment retains its current item conventions.
+The system SHALL consume caller-supplied resolved credentials through documented environment variables or protected files. Callers MAY obtain them from 1Password or traditional Secret facilities. The IaaS runtime SHALL NOT retrieve secrets from 1Password or require its CLI or service account token. Existing Astra reference metadata and item conventions remain environment-specific.
 
 #### Scenario: Reference standardized 1Password items
 - **WHEN** the Astra environment declares PVE or VM credentials
@@ -95,17 +95,19 @@ The system SHALL use environment-supplied 1Password references as the runtime so
 
 #### Scenario: Generate password hashes at runtime
 - **WHEN** cloud-init requires password hashes for VM users
-- **THEN** the automation SHALL retrieve plaintext passwords from 1Password at runtime
+- **THEN** the automation SHALL consume plaintext passwords supplied by the caller through the documented credential inputs
 - **AND** it SHALL generate cloud-init-compatible password hashes during execution
 - **AND** it SHALL NOT write plaintext passwords or generated password hashes into committed generated files
 
 #### Scenario: Inject secrets through op run
 - **WHEN** Packer or OpenTofu commands require secrets
-- **THEN** the runtime wrapper SHALL use `op run` with environment variables sourced from a committed template containing environment-selected `op://...` references (including `op://Astra/...` for the Astra environment)
+- **THEN** the caller MAY use `op run` with a reference-only template to resolve environment-selected `op://...` references before invoking IaaS (including `op://Astra/...` for Astra)
+- **AND** IaaS SHALL receive resolved environment variables or protected files without invoking `op`
 - **AND** committed env templates SHALL NOT contain secret values
 
 #### Scenario: Use a non-Astra vault without changing the runtime
 - **WHEN** an environment supplies valid supported references to another vault
-- **THEN** the runtime SHALL use those explicit references without substituting Astra defaults
+- **THEN** the caller SHALL resolve its selected references and IaaS SHALL consume the supplied credentials without substituting Astra defaults
 - **AND** offline checks SHALL validate references without resolving them
-- **AND** live CI secret access SHALL require a separately configured noninteractive identity, not a developer desktop login
+- **AND** CI callers choosing 1Password SHALL own a separately configured noninteractive identity and its token, without requiring a developer desktop login
+- **AND** callers choosing traditional Secrets SHALL NOT require a 1Password identity

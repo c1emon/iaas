@@ -18,6 +18,9 @@ contract. See `docs/decisions/forgejo-iaas-platform-delivery.md`, phase 3.
   for environment operations in both checkout and container modes. Remove the
   `ASTRA` selector and implicit Astra path fallbacks; preserve operation names
   and domain schemas, and update supported callers.
+- Keep credential acquisition with the caller: accept resolved environment variables
+  and protected files supplied by either 1Password injection or traditional Secrets;
+  do not bundle `op` or require 1Password authentication inside IaaS.
 - Define a stable image-local module location for externally owned OpenTofu
   roots and keep generated files, credentials, plan/state, and caches external.
 - Publish versioned public images to `ghcr.io/<owner>/iaas-runtime` when a
