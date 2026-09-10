@@ -50,6 +50,7 @@ archive state.
 
 | Change | Outcome area |
 |---|---|
+| `extend-opnsense-foundation-capabilities` | Runtime baseline repairs, reviewed dependencies, URL table/network-group aliases and bounded read-only diagnostics; software acceptance complete, live appliance qualification separate. |
 | `manage-opnsense-filter-rules` | OPNsense filter rule management. |
 | `support-opnsense-filter-rule-net-arrays` | OPNsense network-array support for filter rules. |
 | `support-opnsense-filter-rule-port-arrays` | OPNsense port-array support for filter rules. |

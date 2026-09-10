@@ -66,7 +66,8 @@ def execute(tmp_path,settings,*,make=False,limit=None):
     extra=tmp_path/'extra.json';extra.write_text(json.dumps(variables))
     env=os.environ|{'ANSIBLE_CONFIG':str(ANSIBLE/'ansible.cfg'),'ANSIBLE_LOCAL_TEMP':str(tmp_path/'local'),
                     'ENVIRONMENT_DIR':str(environment),'OUTPUT_DIR':str(output)}
-    for name in ('OPNSENSE_TARGET','OPNSENSE_DIAGNOSTICS_REQUEST','OPNSENSE_DIAGNOSTICS_OUTPUT'):
+    for name in ('OPNSENSE_TARGET','OPNSENSE_DIAGNOSTICS_REQUEST','OPNSENSE_DIAGNOSTICS_OUTPUT',
+                 'MAKEFLAGS','MAKEOVERRIDES','MFLAGS'):
         env.pop(name,None)
     if make:
         command=['make','-f',str(ROOT/'Makefile'),'opnsense-diagnose',

@@ -47,5 +47,5 @@ preserve the existing uncommitted work. Design updates do not complete these tas
 ## 5. Documentation and software acceptance
 
 - [x] 5.1 Update the OPNsense manual and generic examples for resource fields, dependency ownership, entrypoints, required permissions, diagnostic limits and existing Gateway/PBR use.
-- [ ] 5.2 Run focused tests, Ansible syntax/lint and the existing synthetic offline gate; verify runtime entrypoint availability and preserve source/dependency image layering without publishing a new image.
-- [ ] 5.3 Validate the change strictly and run complete GitNexus change analysis before implementation commits; record actual software evidence and leave live appliance qualification explicitly separate.
+- [x] 5.2 Run focused tests, Ansible syntax/lint and the existing synthetic offline gate; verify runtime entrypoint availability and preserve source/dependency image layering without publishing a new image.
+- [x] 5.3 Validate the change strictly and run complete GitNexus change analysis before implementation commits; record actual software evidence and leave live appliance qualification explicitly separate.

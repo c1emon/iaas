@@ -19,6 +19,11 @@ def main() -> None:
         environment = work / "environment"
         shutil.copytree(root / "tests/fixtures/runtime", environment / "inventory")
         shutil.copytree(root / "tests/fixtures/k3s", environment / "k3s")
+        (environment / "ansible").mkdir()
+        (environment / "ansible/inventory.yml").write_text(
+            "all:\n  children:\n    opnsense:\n      hosts:\n        synthetic-firewall: {}\n")
+        (environment / "diagnostic.json").write_text(
+            '{"schema_version":1,"kind":"states","selector":{"source_ip":"invalid"}}')
         output = work / "output"
         output.mkdir()
         command = ["docker", "run", "--rm", "--network", "none", "--read-only",
@@ -36,6 +41,9 @@ def main() -> None:
         assert not list(output.iterdir()), "help created output"
         run("generate")
         run("check-generated")
+        diagnostic = run("opnsense-diagnose", "OPNSENSE_TARGET=synthetic-firewall",
+                         "OPNSENSE_DIAGNOSTICS_REQUEST=/environment/diagnostic.json", succeeds=False)
+        assert "invalid_request_or_output" in diagnostic, "diagnostic admission did not run"
         # Parse the shipped roles/playbooks without running their tasks.
         for playbook in ("verify-guests.yml", "bootstrap-guests.yml"):
             subprocess.run([*command, "-e", "ANSIBLE_LOCAL_TEMP=/tmp/ansible",
@@ -49,6 +57,8 @@ init_plugin_loader()
 assert lookup_loader.get('k3s_protected_secret') is not None
 assert lookup_loader.get('vm_baseline_protected_secret') is not None
 assert list(filter_loader.all())
+assert filter_loader.get('opnsense_diagnostic_controller') is not None
+assert filter_loader.get('opnsense_alias_plan') is not None
 from ansible_collections.ansible.netcommon.plugins.module_utils.network.common import utils
 from ansible_collections.oxlorg.opnsense.plugins.modules import alias
 from ansible_collections.c1emon.xikeos.plugins.modules import xikeos_command
@@ -106,7 +116,7 @@ else:
         run("pve-generate", "OUTPUT_DIR=/environment/inventory", succeeds=False)
         run("pve-generate", "ASTRA=legacy", succeeds=False)
         run("pve-generate", "ENVIRONMENT_DIR=", succeeds=False)
-        print("runtime smoke: offline generation/check, K3s rendering, UID, missing/unsafe/stale inputs passed")
+        print("runtime smoke: offline generation/check, K3s rendering, OPNsense plugins/admission, UID, missing/unsafe/stale inputs passed")
 
 
 if __name__ == "__main__":
