@@ -22,8 +22,8 @@ preserve the existing uncommitted work. Design updates do not complete these tas
 
 ## 1. Refresh the reviewed execution dependencies
 
-- [ ] 1.1 Upgrade Ansible to 14.4.0 and the runtime core pin to 2.21.4 together; update uv.lock selectively and align community.general 13.4.0/netcommon 8.6.2 in both Collection manifests, retaining the reviewed unchanged dependencies.
-- [ ] 1.2 Validate the candidate stack with the existing synthetic offline gate and representative OPNsense/XikeOS checks; rebuild the final runtime image with the updated dependency layer and smoke-test that image, record resolved versions and commit this upgrade separately before feature implementation.
+- [x] 1.1 Upgrade Ansible to 14.4.0 and the runtime core pin to 2.21.4 together; update uv.lock selectively and align community.general 13.4.0/netcommon 8.6.2 in both Collection manifests, retaining the reviewed unchanged dependencies.
+- [x] 1.2 Validate the candidate stack with the existing synthetic offline gate and representative OPNsense/XikeOS checks; rebuild the final runtime image with the updated dependency layer and smoke-test that image, record resolved versions and commit this upgrade separately before feature implementation.
 
 ## 2. Confirm interfaces and regression scope
 

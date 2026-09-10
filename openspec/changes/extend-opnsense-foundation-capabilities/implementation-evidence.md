@@ -52,3 +52,9 @@
 - After wsx SSH agent access recovered, built the final linux/amd64 image from commit `77e8b68` using an isolated task builder. Loaded the cached result explicitly because the docker-container builder does not load images by default.
 - The existing `automation/runtime/smoke.py --tofu` passed against that image: offline generation/check, shipped plugin loading and Collection dependency closure, K3s render, caller UID, rejected missing/unsafe/stale inputs, and external synthetic OpenTofu init/validate. No infrastructure plan/apply or live appliance operation was run.
 - `automation/runtime/inspect_image.py` passed: excluded runtime contents absent and required OS/tool notices retained. Together with the 614-test offline gate and strict validation above, this completes Stage 0 on the shipped baseline. The temporary build workspace and isolated builder remain task-owned for the following dependency build and will be removed at final cleanup.
+
+## Reviewed dependency refresh (1.1–1.2)
+
+- Upgraded Ansible to 14.4.0 and exact core to 2.21.4. Selective `uv lock` changed only these two package versions; both Collection manifests now align community.general 13.4.0 and ansible.netcommon 8.6.2. Other reviewed dependencies and Docker tool/system pins are unchanged.
+- Candidate `make check` passed all 614 tests and the complete synthetic offline gate. Actual pinned Collection helpers also passed representative XikeOS VLAN planning/idempotency and OPNsense frequency/reference checks.
+- Rebuilt and loaded the candidate final linux/amd64 image on wsx. Its core reports 2.21.4; existing final-image smoke (including external synthetic OpenTofu init/validate) and image-layer inspection both passed. This is software-only compatibility evidence, with no live appliance qualification or image publication. The isolated builder is retained for source-layer reuse and final task cleanup.

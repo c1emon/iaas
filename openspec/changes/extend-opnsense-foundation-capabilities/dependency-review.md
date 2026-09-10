@@ -3,7 +3,7 @@
 This review covers the Ansible/OPNsense execution stack used by this change. It is
 not a repository-wide toolchain upgrade or an appliance OS upgrade.
 
-| Dependency | Current lock/pin | Reviewed target | Decision |
+| Dependency | Baseline at design review | Reviewed target | Decision |
 | --- | --- | --- | --- |
 | oxlorg.opnsense | 26.1.11 | 26.1.11 | Keep; GitHub latest stable and Galaxy published versions agree |
 | ansible | 14.3.1 | 14.4.0 | Upgrade dev package together with core |
@@ -27,8 +27,9 @@ change's own safe-output and path validation contracts.
 
 A temporary copy of pyproject.toml/uv.lock with only the proposed Ansible/core edits
 resolved successfully using `uv lock --upgrade-package ansible --upgrade-package
-ansible-core`. The resulting lock changed only those two package versions. No current
-workspace dependency file or Python environment was upgraded. This proves dependency
+ansible-core`. The resulting lock changed only those two package versions. At design-review time, no
+workspace dependency file or Python environment was upgraded. Implementation and
+image acceptance are now recorded in `implementation-evidence.md`. This proves dependency
 resolution, not runtime or appliance compatibility.
 
 The selected Collection targets match the official Ansible 14.4.0 build manifest;
