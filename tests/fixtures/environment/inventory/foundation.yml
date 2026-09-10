@@ -1,6 +1,6 @@
 ---
 # Synthetic regression data; not a deployment environment.
-schema_version: 1
+schema_version: 2
 foundation_hosts:
   - name: opnsense
     kind: appliance
@@ -26,7 +26,7 @@ foundation_hosts:
     extra_addresses:
       - 198.19.0.253
     notes: sing-box proxy gateway node.
-  - name: external-databases
+  - name: external-database-hosts
     kind: external-dependency
     management_identity: external dedicated database hosts / provider
     notes: External database hosts outside repository control.
@@ -138,7 +138,7 @@ foundation_services:
       access_path: UI + SSH
       secret_ref: op://foundation/harbor/admin
   - name: external-databases
-    host: external-databases
+    host: external-database-hosts
     external_dependency: true
     runtime: external
     tier: critical
@@ -182,12 +182,11 @@ storage_networks:
   - name: storage-vlan
     vlan_id: 33
     subnet: 198.18.0.0/24
-    truenas_endpoint: 198.18.0.210
+    endpoint: 198.18.0.210
     notes: PVE ↔ TrueNAS storage network.
-k3s_storage_access:
-  phase_1:
-    node_classes:
-      - vm
-    storage_networks:
-      - storage-vlan
-    notes: Only VM-based K3s nodes may access the storage VLAN in the first phase.
+storage_access:
+  node_classes:
+    - vm
+  storage_networks:
+    - storage-vlan
+  notes: Declared storage access for this example's VM nodes.

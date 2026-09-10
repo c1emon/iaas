@@ -19,11 +19,34 @@
 | `backup_restore` | profile 与现行恢复手册路径。 | 记录责任与材料，不产生备份。 |
 | `break_glass` | 方法、访问路径、外部 secret reference。 | 值不得打印或提交。 |
 | `known_risks` | 已接受风险。 | 必须在验收记录中保留，而不是隐藏。 |
-| `storage_networks` / `k3s_storage_access` | TrueNAS 存储网与 phase 访问范围。 | 限定为 VM K3s 节点；不自动配置交换机/防火墙。 |
+| `storage_networks` / `storage_access`（schema 2，可选） | 存储 subnet/endpoint、可选 VLAN 与显式节点类别/网络引用。 | 只记录事实；不自动配置网络或部署服务。 |
 
 恢复前置序列由调用方的依赖声明和 `required_before_k3s` 决定，不预设服务品牌
 或固定机器。具体地址、服务状态和
 恢复材料必须从当前环境与受保护系统确认，不能只从静态 YAML 推断健康。
+
+新文件使用 `schema_version: 2`，仍需显式声明 `foundation_hosts` 和
+`foundation_services`。未声明存储部分就不产生存储策略；每个 storage network
+包含 `name`、`subnet`、子网内的 `endpoint`，可选 `vlan_id`（1–4094）和 `notes`。
+`storage_access` 包含显式 `node_classes`（vm、bare-metal 或两者）、所选
+`storage_networks` 名称和可选 notes；不要求选择全部网络，也不增加 bare-metal
+K3s 部署能力。重复名称/VLAN/列表项、未知字段与悬空引用会被拒绝。
+
+schema 1 仍按原字段读取 `truenas_endpoint` 与 `k3s_storage_access.phase_1`，
+保留 VM-only 和全部网络范围。迁移到 schema 2 时由调用方显式将 endpoint 改名、
+将 phase_1 内容移到 storage_access，并重新审查节点类别；工具不重写调用方文件。
+两版均拒绝依赖自身、循环、依赖 restore_order 不小于服务的顺序，以及 K3s 前置
+服务集合遗漏其服务依赖。外部主机引用是叶子，不能与服务名称冲突。YAML 项目顺序
+不再是恢复策略；生成的启动/恢复清单使用已验证的显式 restore_order。
+
+HTTPS（含 HTTPS API）探针启用正常 CA 与主机名验证。私有 CA 使用
+`health_check.ca_file`，相对路径以选中的 inventory 文件目录解析；不能用于非
+HTTPS 检查。DNS 必须指定 `resolver`，不再回退公共 DNS。支持 A、AAAA、CNAME、
+TXT、SRV、ANY；TXT 多段按 UTF-8 拼接，SRV 值为 `priority weight port target`，
+域名答案不带末尾点并小写，IP 答案使用规范表示。expected_answer 为字符串或列表，
+至少一项精确匹配即通过；ANY 接受这些已支持类型。响应最多 4096 字节、128 条 answer，
+截断、身份/问题不符、无支持答案与畸形压缩指针都失败，不尝试无限重试。汇总只含状态
+和计数，不输出返回 TXT、URL 查询或异常中的秘密。一个探针失败不会中止其他服务检查。
 
 服务元数据 `$ENVIRONMENT_DIR/inventory/services.yml` 使用 `services[]` →
 `name`、`owner_vm`、`description`、`endpoints[]`；endpoint 可含 `name`、`fqdn`、

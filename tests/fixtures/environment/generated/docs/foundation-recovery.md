@@ -30,7 +30,7 @@ Offline checks (`make foundation-check`) validate schema, references, restore or
 | truenas | appliance | 192.0.2.210 | 198.18.0.210, 203.0.113.210 | no | TrueNAS SCALE storage and data services. |
 | foundation-a | bare-metal | 192.0.2.15 | 203.0.113.15 | yes | Docker host for Authentik, Harbor, SmartDNS, Postfix, and Traefik. |
 | rk3588 | bare-metal | 192.0.2.253 | 198.19.0.253 | no | sing-box proxy gateway node. |
-| external-databases | external-dependency | external dedicated database hosts / provider | - | no | External database hosts outside repository control. |
+| external-database-hosts | external-dependency | external dedicated database hosts / provider | - | no | External database hosts outside repository control. |
 
 ## Foundation services
 
@@ -41,7 +41,7 @@ Offline checks (`make foundation-check`) validate schema, references, restore or
 | internal-dns | foundation-a | compose | critical | yes | 3 | no | opnsense | dns internal.example.invalid (A) via 203.0.113.15 -> 203.0.113.15 | smartdns-config; runbook: docs/operations/06-acceptance-and-recovery.md | local-admin; access: SSH + console; secret_ref: op://foundation/smartdns/admin | - |
 | sing-box | rk3588 | systemd | critical | yes | 4 | no | opnsense, internal-dns | tcp 198.19.0.253:1080 | sing-box-config; runbook: docs/operations/06-acceptance-and-recovery.md | local-admin; access: SSH + console; secret_ref: op://foundation/sing-box/admin | - |
 | harbor | foundation-a | compose | critical | yes | 5 | no | internal-dns, truenas | https https://203.0.113.15 [200, 302, 401] | harbor-data; runbook: docs/operations/06-acceptance-and-recovery.md | local-admin; access: UI + SSH; secret_ref: op://foundation/harbor/admin | - |
-| external-databases | external-databases | external | critical | yes | 6 | yes | opnsense, internal-dns | tcp external-db.example.invalid:5432 | external-database; runbook: docs/operations/06-acceptance-and-recovery.md | provider-console; access: ticketed support / local admin; secret_ref: ref:provider-managed | - |
+| external-databases | external-database-hosts | external | critical | yes | 6 | yes | opnsense, internal-dns | tcp external-db.example.invalid:5432 | external-database; runbook: docs/operations/06-acceptance-and-recovery.md | provider-console; access: ticketed support / local admin; secret_ref: ref:provider-managed | - |
 | authentik | foundation-a | compose | important | no | - | no | internal-dns | https https://203.0.113.15 [200, 302, 401] | authentik-config; runbook: docs/operations/06-acceptance-and-recovery.md | local-admin; access: UI + console; secret_ref: op://foundation/authentik/admin | - |
 
 ## Dependencies
@@ -94,15 +94,15 @@ Offline checks (`make foundation-check`) validate schema, references, restore or
 
 ## Storage-network facts
 
-| Name | VLAN | Subnet | TrueNAS endpoint | Notes |
+| Name | VLAN | Subnet | Endpoint | Notes |
 |---|---:|---|---|---|
 | storage-vlan | 33 | 198.18.0.0/24 | 198.18.0.210 | PVE ↔ TrueNAS storage network. |
 
-### K3s storage access
+### Storage access
 
-- Phase 1 node classes: vm
-- Phase 1 storage networks: storage-vlan
-- Notes: Only VM-based K3s nodes may access the storage VLAN in the first phase.
+- node classes: vm
+- storage networks: storage-vlan
+- Notes: Declared storage access for this example's VM nodes.
 
 ## Warnings and known risks
 

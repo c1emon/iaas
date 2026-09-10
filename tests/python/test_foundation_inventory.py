@@ -41,7 +41,7 @@ def test_valid_foundation_inventory_renders_expected_document() -> None:
     assert "| foundation-a | bare-metal | 192.0.2.15 | 203.0.113.15 | yes |" in markdown
     assert "| authentik | foundation-a | compose | important | no | - | no | internal-dns | https https://203.0.113.15 [200, 302, 401] | authentik-config; runbook: docs/operations/06-acceptance-and-recovery.md" in markdown
     assert "accepted single point of failure" in markdown
-    assert "Only VM-based K3s nodes may access the storage VLAN" in markdown
+    assert "Declared storage access for this example's VM nodes" in markdown
 
 
 def test_markdown_renderer_escapes_table_sensitive_content_and_remains_non_sensitive() -> None:
@@ -86,13 +86,98 @@ def test_validation_rejects_duplicates_unknown_refs_restore_order_and_missing_me
 def test_validation_rejects_inconsistent_storage_facts_and_secret_like_values() -> None:
     doc = copy.deepcopy(load_yaml(INVENTORY_PATH))
     doc["storage_networks"][0]["subnet"] = "10.34.0.0/24"
-    with pytest.raises(ValidationError, match="truenas_endpoint: must be inside subnet"):
+    with pytest.raises(ValidationError, match="endpoint: must be inside subnet"):
         _validated_model(doc)
 
     secret_doc = copy.deepcopy(load_yaml(INVENTORY_PATH))
     secret_doc["foundation_services"][0]["break_glass"]["secret_ref"] = "plaintext-secret"
     with pytest.raises(ValidationError, match="sensitive keys must use an external secret reference"):
         validate_foundation_inventory(secret_doc)
+
+
+def test_neutral_storage_is_optional_and_legacy_layout_stays_explicit() -> None:
+    doc = load_yaml(INVENTORY_PATH)
+    legacy = copy.deepcopy(doc)
+    legacy["schema_version"] = 1
+    legacy["k3s_storage_access"] = {"phase_1": legacy.pop("storage_access")}
+    for network in legacy["storage_networks"]:
+        network["truenas_endpoint"] = network.pop("endpoint")
+    assert "Phase 1 node classes: vm" in build_markdown(_validated_model(legacy))
+    doc.pop("storage_access")
+    doc.pop("storage_networks")
+    rendered = build_markdown(_validated_model(doc))
+    assert "Storage-network facts" not in rendered
+    assert "storage access" not in rendered
+
+
+def test_probe_inputs_require_resolver_and_scope_ca_to_https() -> None:
+    doc = load_yaml(INVENTORY_PATH)
+    next(service for service in doc["foundation_services"] if service["health_check"]["type"] == "dns")["health_check"].pop("resolver")
+    with pytest.raises(ValidationError, match="resolver"):
+        _validated_model(doc)
+    doc = load_yaml(INVENTORY_PATH)
+    check = doc["foundation_services"][0]["health_check"]
+    check.update(type="tcp", target="example.test:443", ca_file="private-ca.pem")
+    with pytest.raises(ValidationError, match="only valid for HTTPS"):
+        _validated_model(doc)
+
+
+def test_ca_path_is_resolved_from_selected_inventory(monkeypatch, tmp_path):
+    doc = load_yaml(INVENTORY_PATH)
+    doc["foundation_services"][0]["health_check"].update(type="https", target="https://example.test", ca_file="trust/ca.pem")
+    path = tmp_path / "foundation.yml"
+    path.write_text(yaml.safe_dump(doc))
+    def observe(model):
+        assert model["foundation_services"][0]["health_check"]["ca_file"] == str(tmp_path / "trust/ca.pem")
+        return []
+    monkeypatch.setattr("iaas_automation.foundation_inventory.cli.run_health_checks", observe)
+    assert foundation_main(["--inventory", str(path), "--health"]) == 0
+
+
+@pytest.mark.parametrize("case", ["self", "cycle", "order", "closure", "ambiguous"])
+def test_dependency_admission_rejects_invalid_graphs(case) -> None:
+    doc = load_yaml(INVENTORY_PATH)
+    services = doc["foundation_services"]
+    if case == "self":
+        services[0]["dependencies"] = [services[0]["name"]]
+    elif case == "cycle":
+        for service in services:
+            service["required_before_k3s"] = False
+            service.pop("restore_order", None)
+        services[0]["dependencies"] = [services[1]["name"]]
+        services[1]["dependencies"] = [services[0]["name"]]
+    elif case == "order":
+        services[0]["restore_order"], services[1]["restore_order"] = 2, 1
+    elif case == "closure":
+        services[0]["dependencies"] = [services[-1]["name"]]
+    else:
+        doc["foundation_hosts"][-1]["name"] = services[-1]["name"]
+        services[-2]["host"] = services[-1]["name"]
+    with pytest.raises(ValidationError):
+        _validated_model(doc)
+
+
+def test_recovery_order_comes_from_facts_not_yaml_order() -> None:
+    doc = load_yaml(INVENTORY_PATH)
+    before = _validated_model(doc)
+    doc["foundation_services"].reverse()
+    after = _validated_model(doc)
+    assert before["recovery_order"] == after["recovery_order"]
+
+
+@pytest.mark.parametrize("field,value", [("vlan_id", 4095), ("unexpected", True)])
+def test_neutral_storage_rejects_invalid_fields(field, value) -> None:
+    doc = load_yaml(INVENTORY_PATH)
+    doc["storage_networks"][0][field] = value
+    with pytest.raises(ValidationError):
+        _validated_model(doc)
+
+
+def test_neutral_storage_supports_optional_vlan_and_selected_node_classes() -> None:
+    doc = load_yaml(INVENTORY_PATH)
+    doc["storage_networks"][0].pop("vlan_id")
+    doc["storage_access"]["node_classes"] = ["vm", "bare-metal"]
+    assert _validated_model(doc)["storage_access"]["node_classes"] == ["vm", "bare-metal"]
 
 
 def test_health_classification_uses_fake_probes_and_render_report() -> None:

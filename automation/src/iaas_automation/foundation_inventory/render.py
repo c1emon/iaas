@@ -167,28 +167,31 @@ def build_markdown(model: dict[str, Any]) -> str:
             f"| {_cell(service['name'])} | {_cell(break_glass['method'])} | {_cell(break_glass['access_path'])} | {_cell(break_glass.get('secret_ref'))} | {_cell(break_glass.get('notes'))} |"
         )
 
-    lines.extend([
-        "",
-        "## Storage-network facts",
-        "",
-        "| Name | VLAN | Subnet | TrueNAS endpoint | Notes |",
-        "|---|---:|---|---|---|",
-    ])
-    for network in model["storage_networks"]:
-        lines.append(
-            f"| {_cell(network['name'])} | {_cell(network['vlan_id'])} | {_cell(network['subnet'])} | {_cell(network['truenas_endpoint'])} | {_cell(network.get('notes'))} |"
-        )
+    legacy = model["schema_version"] == 1
+    if model["storage_networks"]:
+        endpoint_label = "TrueNAS endpoint" if legacy else "Endpoint"
+        lines.extend([
+            "", "## Storage-network facts", "",
+            f"| Name | VLAN | Subnet | {endpoint_label} | Notes |",
+            "|---|---:|---|---|---|",
+        ])
+        for network in model["storage_networks"]:
+            endpoint = network["truenas_endpoint" if legacy else "endpoint"]
+            lines.append(
+                f"| {_cell(network['name'])} | {_cell(network['vlan_id'])} | {_cell(network['subnet'])} | {_cell(endpoint)} | {_cell(network.get('notes'))} |"
+            )
 
-    access = model["k3s_storage_access"]["phase_1"]
-    lines.extend([
-        "",
-        "### K3s storage access",
-        "",
-        f"- Phase 1 node classes: {_cell(_join(access['node_classes']))}",
-        f"- Phase 1 storage networks: {_cell(_join(access['storage_networks']))}",
-    ])
-    if access.get("notes"):
-        lines.append(f"- Notes: {_cell(access['notes'])}")
+    access = model["k3s_storage_access"]["phase_1"] if legacy else model.get("storage_access")
+    if access is not None:
+        title = "K3s storage access" if legacy else "Storage access"
+        prefix = "Phase 1 " if legacy else ""
+        lines.extend([
+            "", f"### {title}", "",
+            f"- {prefix}node classes: {_cell(_join(access['node_classes']))}",
+            f"- {prefix}storage networks: {_cell(_join(access['storage_networks']))}",
+        ])
+        if access.get("notes"):
+            lines.append(f"- Notes: {_cell(access['notes'])}")
 
     lines.extend([
         "",
