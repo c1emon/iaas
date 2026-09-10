@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "kind": "alias",
+  "alias_name": "REMOTE_NETWORKS",
+  "limit": 100
+}

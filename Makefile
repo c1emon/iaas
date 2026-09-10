@@ -49,6 +49,10 @@ K3S_UPGRADE_PLAN ?= $(RUNTIME_DIR)/k3s/upgrade-plan.json
 PLATFORM_HANDOFF_INTENT ?=
 PLATFORM_HANDOFF_OUTPUT ?=
 PLATFORM_HANDOFF_PLAYBOOK ?= $(AUTOMATION)/ansible/playbooks/k3s/platform-handoff.yml
+OPNSENSE_TARGET ?=
+OPNSENSE_DIAGNOSTICS_REQUEST ?=
+OPNSENSE_DIAGNOSTICS_OUTPUT ?=
+export OPNSENSE_TARGET OPNSENSE_DIAGNOSTICS_REQUEST OPNSENSE_DIAGNOSTICS_OUTPUT
 
 export ANSIBLE_ROLES_PATH := $(AUTOMATION)/ansible/roles
 export ANSIBLE_COLLECTIONS_PATH := $(AUTOMATION)/ansible/collections
@@ -71,6 +75,11 @@ runtime-tofu-check:
 help:
 	@printf '%s\n' 'IaaS operations: pve-generate pve-check services-generate services-check foundation-generate foundation-check k3s-check k3s-render' 'Select ENVIRONMENT_DIR and OUTPUT_DIR for environment operations; PVE_DIR selects an external OpenTofu root.' 'Checkout validation: check test secret-scan'
 	@printf '%s\n' 'Standalone k3s-preflight requires K3S_PREFLIGHT_MODE=install|converge|upgrade; deploy and upgrade select their own mode.'
+	@printf '%s\n' 'opnsense-diagnose: set OPNSENSE_TARGET and absolute OPNSENSE_DIAGNOSTICS_REQUEST; opted-in details also require OPNSENSE_DIAGNOSTICS_OUTPUT.'
+
+.PHONY: opnsense-diagnose
+opnsense-diagnose: require-environment
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(ENVIRONMENT_DIR)/ansible/inventory.yml" "$(AUTOMATION)/ansible/playbooks/opnsense/diagnostics.yml"
 
 require-environment:
 	@test -n "$(ENVIRONMENT_DIR)" || { printf 'error: ENVIRONMENT_DIR is required\n' >&2; exit 1; }

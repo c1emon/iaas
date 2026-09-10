@@ -185,7 +185,63 @@ destination_invert；排除自身接口的反选与包含自身接口不是同�
 不要把 `manage-dnat.yml` 加入变更链：它的预期结果是校验输入后失败，以防把
 未实现的 DNAT 误认为已被管理。
 
-## 2.5 验收与停止
+## 2.5 有界只读诊断
+
+使用同一环境清单和调用方注入的 API 凭据。必须明确一个 `opnsense` 组内的 inventory host，
+不能传组名、通配符或 Ansible `--limit`；工具先在控制端校验目标、请求和输出路径。
+`ENVIRONMENT_DIR`、`OUTPUT_DIR` 和请求路径均使用绝对路径。
+
+```sh
+make opnsense-diagnose \
+  OPNSENSE_TARGET=your-firewall-inventory-host \
+  OPNSENSE_DIAGNOSTICS_REQUEST=/absolute/diagnostic-request.json
+```
+
+直接 Ansible 使用相同校验（先在仓库执行 `uv sync --locked --dev`）：
+
+```sh
+ANSIBLE_CONFIG="$PWD/automation/ansible/ansible.cfg" uv run ansible-playbook \
+  -i "$ENVIRONMENT_DIR/ansible/inventory.yml" \
+  automation/ansible/playbooks/opnsense/diagnostics.yml \
+  -e '{"opnsense_diagnostics_target":"your-firewall-inventory-host","opnsense_diagnostics_request":"/absolute/diagnostic-request.json"}'
+```
+
+请求为 JSON 或 YAML 映射，固定 `schema_version: 1`。三种示例见
+`tests/fixtures/opnsense-capabilities/diagnose-*.json`，地址和规则身份须由调用方替换。
+
+| kind | 必需选择条件 | 可选选择条件 |
+| --- | --- | --- |
+| `alias` | `alias_name` | 无；分别报告配置项数量和实际表项观测。 |
+| `rule_logs` | `rule` 或 source/destination IP | `rule` 使用 scope＋slug 或 UUID；可叠加 IP、protocol、端口、interface、since/until。 |
+| `states` | source/destination IP | protocol、source_port、destination_port。 |
+
+地址字段为 `source_ip`、`destination_ip`，只接受 IPv4/IPv6 字面地址；条件按 AND 组合。
+protocol 使用小写 `tcp/udp/icmp/icmpv6`，端口为 1–65535 的整数且必须配 TCP/UDP。
+日志时间为带 `Z` 的 UTC RFC3339 字符串；同时提供 since/until 时必须顺序正确。
+`limit` 默认 100，范围 1–1000；未知字段和不适用的选择条件会被拒绝。
+
+默认控制台仅输出带版本、时间、目标、选择条件、计数和覆盖范围的摘要，不输出表项、日志、状态记录或 URL。
+`ok` 的零匹配仅针对实际检查的可评估样本；`unsupported` 和 `error` 都返回非零退出码，观测计数为 null。
+缺少必需字段、规则关联或无法区分后端失败的空数据不会被解释为零流量。
+固定版本的 `query_states` 返回 `current: 0` 时属于错误页；其他无法确认的空观测标为 unsupported。
+
+API 连接/read timeout 分别为 5/15 秒，每个响应最多 2 MiB、一次操作累计最多 8 MiB，最多查询 5 页。
+日志只读取有限的近期样本，不是历史日志检索；时间缺少时区时不能做 UTC 过滤。
+状态按返回的 src_addr/dst_addr 精确匹配，NAT、接口、gateway 等作为独立可选字段，不推断完整路径或最新规则是否生效。
+配置保存、表项存在和 URL 定期刷新成功是不同事实；接口未提供的更新时间保持不可用。
+
+需要详情时，在请求中显式设置 `include_details: true`，同时传入
+`OPNSENSE_DIAGNOSTICS_OUTPUT=$OUTPUT_DIR/runtime/opnsense-diagnostics/fw/result.json`；直接 Ansible 对应
+`opnsense_diagnostics_output`。目录为 `0700`、文件为 `0600`，禁止符号链接、越界或覆盖请求、清单及手写输入。
+只指定输出路径不会启用详情，未启用时不创建详情文件。
+
+所需设备权限按操作选择：别名配置使用 `Firewall: Aliases`，表项使用 `Diagnostics: PF Table IP addresses`，
+日志使用 `Diagnostics: Logs: Firewall: Live View`；规则选择还需要 `Firewall: Rules [new]` 和
+`Diagnostics: Firewall sessions`，状态查询使用 `Diagnostics: Show States`。
+其中部分设备权限也包含写操作，但本诊断入口只调用固定的只读操作，不刷新别名、不激活规则、不清理状态。
+权限、字段和限制以 core 26.1.11 源码为基线；软件测试不代表某台设备或流量路径已经验收。
+
+## 2.6 验收与停止
 
 验收至少包括：API 连通、目标对象身份与顺序正确、管理路径保持可达、所需的
 PVE/VM/Registry/DNS 路径经过实际测试，以及未出现未解释的规则阴影或网关

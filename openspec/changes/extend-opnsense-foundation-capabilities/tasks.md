@@ -39,13 +39,13 @@ preserve the existing uncommitted work. Design updates do not complete these tas
 
 ## 4. Add bounded read-only diagnostics
 
-- [ ] 4.1 Implement shared request validation and the Make/direct-Ansible entrypoints using an exact single-host target, explicit input paths, OCI operation allowlist and caller-owned credentials.
-- [ ] 4.2 Implement alias loading, rule log and connection-state adapters with fixed read-only operations, bounded responses, selector-specific required fields and explicit optional metadata/correlation.
-- [ ] 4.3 Implement versioned summaries, ok/unsupported/error distinctions including unknown-observation nonzero exits, and the explicit OPNSENSE_DIAGNOSTICS_OUTPUT/direct-playbook path for opt-in protected detail files using existing path-safety helpers.
-- [ ] 4.4 Test each diagnostic kind with representative success/empty/truncated, unavailable capability, auth/permission failure, timeout, backend-empty ambiguity, missing required correlation and malformed-response cases; verify no mutation calls, sensitive console output or unsafe file writes.
+- [x] 4.1 Implement shared request validation and the Make/direct-Ansible entrypoints using an exact single-host target, explicit input paths, OCI operation allowlist and caller-owned credentials.
+- [x] 4.2 Implement alias loading, rule log and connection-state adapters with fixed read-only operations, bounded responses, selector-specific required fields and explicit optional metadata/correlation.
+- [x] 4.3 Implement versioned summaries, ok/unsupported/error distinctions including unknown-observation nonzero exits, and the explicit OPNSENSE_DIAGNOSTICS_OUTPUT/direct-playbook path for opt-in protected detail files using existing path-safety helpers.
+- [x] 4.4 Test each diagnostic kind with representative success/empty/truncated, unavailable capability, auth/permission failure, timeout, backend-empty ambiguity, missing required correlation and malformed-response cases; verify no mutation calls, sensitive console output or unsafe file writes.
 
 ## 5. Documentation and software acceptance
 
-- [ ] 5.1 Update the OPNsense manual and generic examples for resource fields, dependency ownership, entrypoints, required permissions, diagnostic limits and existing Gateway/PBR use.
+- [x] 5.1 Update the OPNsense manual and generic examples for resource fields, dependency ownership, entrypoints, required permissions, diagnostic limits and existing Gateway/PBR use.
 - [ ] 5.2 Run focused tests, Ansible syntax/lint and the existing synthetic offline gate; verify runtime entrypoint availability and preserve source/dependency image layering without publishing a new image.
 - [ ] 5.3 Validate the change strictly and run complete GitNexus change analysis before implementation commits; record actual software evidence and leave live appliance qualification explicitly separate.
