@@ -20,10 +20,12 @@ jobs:
           python-version: "3.12"
 
       - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.12.9"
 
       - uses: opentofu/setup-opentofu@v1
         with:
-          tofu_version: latest
+          tofu_version: "1.12.6"
 
       - name: Install gitleaks
         env:
@@ -35,7 +37,7 @@ jobs:
 
       - run: uv sync --locked --dev
 
-      - run: uv run ansible-galaxy collection install -r automation/ansible/requirements.yml -p automation/ansible/collections
+      - run: uv run ansible-galaxy collection install --no-deps -r automation/ansible/requirements.yml -p automation/ansible/collections
 
       - run: make check ENVIRONMENT_DIR="$PWD/tests/fixtures/environment" OUTPUT_DIR="$RUNNER_TEMP/iaas-output" GENERATED_DIR="$PWD/tests/fixtures/environment/generated" PVE_DIR="$PWD/tests/fixtures/environment/opentofu"
 

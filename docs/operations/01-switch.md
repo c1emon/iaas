@@ -44,7 +44,7 @@ PVE 或 K3s 配置自动创建 VLAN、端口或 Trunk。
 `readonly-facts.yml` 直接调用 `c1emon.xikeos.xikeos_facts`，不会进入配置模式。
 控制端使用 `paramiko` 作为 `network_cli` 的 Python SSH 后端；不得改用旧 Cisco IOS
 adapter、Cisco IOS resource/config 模块或通用 `cli_config`。仓库约束原生 collection
-版本为 `>=0.2.1,<0.3.0`，需要与 `uv sync` 一起安装；facts/resource 解析依赖（包括
+版本固定为 `0.2.1`，需要与 `uv sync` 一起安装；facts/resource 解析依赖（包括
 `ttp`、`textfsm`）也必须在控制端可用。
 
 | 变量 | 默认/允许值 | 作用与约束 |

@@ -16,7 +16,7 @@ OPERATIONS_DIR = ROOT / "docs" / "operations"
 def test_dependency_metadata_includes_native_collection() -> None:
     requirements = (ANSIBLE_DIR / "requirements.yml").read_text()
     assert "name: c1emon.xikeos" in requirements
-    assert 'version: ">=0.2.1,<0.3.0"' in requirements
+    assert 'version: "0.2.1"' in requirements
 
 
 def test_switch_inventory_uses_native_network_os() -> None:
