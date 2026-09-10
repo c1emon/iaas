@@ -158,6 +158,19 @@ op run --env-file "$OPNSENSE_ENV_TEMPLATE" -- \
 同一规则集不得无迁移计划地混用手工与 Ansible 所有权；alias 类型变更也不得
 由自动 delete/recreate 猜测完成，必须以明确变更单处理。
 
+四个 managed playbook 默认仅在配置发生变化后激活固定资源 target，普通 no-op
+不 reload；`--check` 始终不激活。模块内自动 reload 已显式关闭。若 CRUD 批次失败，
+之前的项目可能已保存，但本次不会继续 reload，也不自动回滚。若最后 reload 失败，
+输出明确区分保存与激活；检查设备后，可用同一 playbook、输入和目标重试，并附加
+`-e '{"opnsense_force_reload": true}'`。此选项允许配置已无差异时再次激活。
+必须使用 JSON/YAML boolean；`-e opnsense_force_reload=true` 的字符串形式会被拒绝。
+
+Gateway 数值边界与当前固定 Collection 一致：priority 为 0–255，weight 为 1–5，
+latency/interval/time_period 为 1–9999，loss_low/high 为 1–99，data_length 为 0–9999。
+loss_interval 仅声明整数；工作流不增加 Collection 未声明的范围。整个期望批次在
+凭据访问和写入前校验。deny rule 的管理接口保护会同时考虑 destination_net 与
+destination_invert；排除自身接口的反选与包含自身接口不是同一种规则。
+
 不要把 `manage-dnat.yml` 加入变更链：它的预期结果是校验输入后失败，以防把
 未实现的 DNAT 误认为已被管理。
 

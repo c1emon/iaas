@@ -14,3 +14,9 @@
 - Preflight: 34 tests passed across `test_k3s_first_boot.py`, `test_k3s_preflight.py`, and `test_k3s_template_whitespace.py`. Actual Ansible fact-building tasks parse capability bits and exact address/interface pairs; zero bits, address prefixes and wrong interfaces cannot satisfy the expected observation.
 - `ansible-lint` passed for the preflight role and handoff playbook (5 files). These are local synthetic observations and certificate checks; no appliance or cluster was contacted.
 - Task 0.6 remains open: upgrade drift and exact post-upgrade version/readiness checks are still pending. Tasks 0.4–0.5 are also pending.
+
+## OPNsense admission and activation recovery (0.8–0.9)
+
+- `uv run pytest -q tests/python/test_opnsense_validation.py`: 30 passed. Current Collection primitive bounds are enforced before credentials/writes; a bad second gateway rejects the batch. Priority/data length zero and representative upper-bound failures are covered.
+- `uv run pytest -q tests/ansible/test_opnsense_recovery.py`: 8 passed. Actual activation blocks run with inert command substitutes for all four managed resource kinds, covering no-op, failed reload then explicit no-change retry, check mode, invalid string flags and a preceding partial-CRUD failure. Direct Ansible destination inversion checks agree with Python cases.
+- Ansible lint passed for all four managed playbooks plus imported credential preflight (5 files). No appliance API was contacted; saved/active behavior on real appliances is not qualified here.

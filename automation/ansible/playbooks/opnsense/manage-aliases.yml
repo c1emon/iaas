@@ -16,6 +16,13 @@
       {{ lookup('ansible.builtin.env', 'ENVIRONMENT_DIR', default=undef()) }}/ansible/vars/opnsense/aliases.yml
 
   tasks:
+    - name: Validate explicit activation recovery option before credential access
+      ansible.builtin.assert:
+        that:
+          - opnsense_force_reload | default(false) is boolean
+        fail_msg: opnsense_force_reload must be a YAML or JSON boolean
+      changed_when: false
+
     - name: Validate desired OPNsense aliases locally
       ansible.builtin.command:
         argv:
@@ -63,14 +70,28 @@
     - name: Create or update desired aliases additively
       oxlorg.opnsense.alias_multi:
         aliases: "{{ opnsense_aliases }}"
+        reload: false
         multi_control:
           output_info: true
       register: opnsense_alias_apply
       when: opnsense_aliases | length > 0
 
     - name: Reload OPNsense alias target after alias changes
-      oxlorg.opnsense.reload:
-        target: alias
       when:
-        - opnsense_alias_apply is defined
-        - opnsense_alias_apply is changed
+        - not ansible_check_mode
+        - (opnsense_alias_apply | default({})) is changed or opnsense_force_reload | default(false)
+      block:
+        - name: Activate saved alias configuration
+          oxlorg.opnsense.reload:
+            target: alias
+        - name: Report activation success
+          ansible.builtin.debug:
+            msg: "OPNsense alias: reconciliation succeeded; activation succeeded"
+      rescue:
+        - name: Report saved configuration and failed activation
+          ansible.builtin.fail:
+            msg: >-
+              OPNsense alias: reconciliation succeeded but activation failed;
+              saved configuration may differ from active configuration. Review the
+              appliance, then retry the same target with opnsense_force_reload=true
+              as a JSON/YAML boolean. No rollback was performed.

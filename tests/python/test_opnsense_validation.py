@@ -37,7 +37,7 @@ def test_committed_supported_desired_state_passes_without_rewrite() -> None:
         ("vips", lambda document: document["opnsense_vips"][0].update({"interface": "LAN"}), "interface: has invalid syntax"),
         ("vips", lambda document: document["opnsense_vips"].append(deepcopy(document["opnsense_vips"][0])), "duplicate managed identity"),
         ("gateways", lambda document: document["opnsense_gateways"][0].update({"default_gw": True}), "default_gw: must be false"),
-        ("gateways", lambda document: document["opnsense_gateways"][0].update({"priority": 256}), "priority: must be within 1..255"),
+        ("gateways", lambda document: document["opnsense_gateways"][0].update({"priority": 256}), "priority: must be within 0..255"),
         ("gateways", lambda document: document["opnsense_gateways"][0].update({"latency_low": 501}), "latency_low must not exceed"),
         ("gateways", lambda document: document["opnsense_gateways"][0].update({"ip_protocol": "inet6"}), "gateway and monitor must be inet6"),
         ("filter-rules", lambda document: document["opnsense_filter_rules"][0].update({"description": "manual"}), "description: is generated"),
@@ -53,6 +53,37 @@ def test_invalid_resource_values_fail_with_field_paths(
     mutate(document)
     with pytest.raises(ValidationError, match=match):
         validate_document(resource, document)
+
+
+@pytest.mark.parametrize("field,value", [("latency_high", 10000), ("loss_high", 100), ("interval", 10000)])
+def test_invalid_second_gateway_rejects_complete_batch(field, value) -> None:
+    document = _document("gateways")
+    second = deepcopy(document["opnsense_gateways"][0])
+    second.update(name="second", gateway="192.0.2.254")
+    second[field] = value
+    document["opnsense_gateways"].append(second)
+    with pytest.raises(ValidationError, match=field):
+        validate_document("gateways", document)
+
+
+def test_gateway_collection_zero_boundaries() -> None:
+    document = _document("gateways")
+    document["opnsense_gateways"][0].update(priority=0, data_length=0)
+    validate_document("gateways", document)
+
+
+@pytest.mark.parametrize("destination,invert,valid", [
+    (["opt8"], True, True), (["opt8"], False, False),
+    (["opt9"], True, False), (["opt9"], False, True),
+])
+def test_deny_rule_destination_inversion(destination, invert, valid) -> None:
+    document = _document("filter-rules")
+    document["opnsense_filter_rules"][3].update(destination_net=destination, destination_invert=invert)
+    if valid:
+        validate_document("filter-rules", document)
+    else:
+        with pytest.raises(ValidationError, match="deny rule"):
+            validate_document("filter-rules", document)
 
 
 def test_invalid_document_shape_fails_closed() -> None:

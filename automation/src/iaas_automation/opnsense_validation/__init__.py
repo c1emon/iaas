@@ -195,12 +195,15 @@ def _validate_gateway(record: dict[str, Any], path: str) -> tuple[str, str]:
         _boolean(record[field], f"{path}.{field}")
     if record["default_gw"] is not False:
         _error(f"{path}.default_gw", "must be false")
-    numbers = {"latency_low": 0, "latency_high": 0, "loss_low": 0, "loss_high": 0,
-               "interval": 1, "time_period": 1, "loss_interval": 1, "data_length": 1,
-               "priority": 1, "weight": 1}
-    for field, minimum in numbers.items():
-        maximum = 255 if field == "priority" else 5 if field == "weight" else None
+    numbers = {"latency_low": (1, 9999), "latency_high": (1, 9999),
+               "loss_low": (1, 99), "loss_high": (1, 99), "interval": (1, 9999),
+               "time_period": (1, 9999), "data_length": (0, 9999),
+               "priority": (0, 255), "weight": (1, 5)}
+    for field, (minimum, maximum) in numbers.items():
         _integer(record[field], f"{path}.{field}", minimum=minimum, maximum=maximum)
+    # The pinned Collection declares an integer, with no primitive range for this field.
+    if type(record["loss_interval"]) is not int:
+        _error(f"{path}.loss_interval", "must be an integer")
     if record["latency_low"] > record["latency_high"]:
         _error(path, "latency_low must not exceed latency_high")
     if record["loss_low"] > record["loss_high"]:
@@ -233,7 +236,11 @@ def _validate_filter_rule(record: dict[str, Any], path: str) -> tuple[str]:
             _error(f"{path}.{field}", f"must be one of {', '.join(sorted(allowed))}")
     _net_values(record["source_net"], f"{path}.source_net")
     destination = _net_values(record["destination_net"], f"{path}.destination_net")
-    if record["action"] in {"block", "reject"} and set(interfaces) & set(destination):
+    own_destinations = (set(interfaces) - set(destination) if record.get("destination_invert", False)
+                        else set(interfaces) & set(destination))
+    if record.get("destination_invert", False) and "any" in destination:
+        own_destinations = set()
+    if record["action"] in {"block", "reject"} and own_destinations:
         _error(f"{path}.destination_net", "deny rule must not include its own interface")
     for field in {"source_port", "destination_port"} & record.keys():
         _ports(record[field], f"{path}.{field}")

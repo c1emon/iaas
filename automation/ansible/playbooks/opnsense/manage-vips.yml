@@ -16,6 +16,13 @@
       {{ lookup('ansible.builtin.env', 'ENVIRONMENT_DIR', default=undef()) }}/ansible/vars/opnsense/vips.yml
 
   tasks:
+    - name: Validate explicit activation recovery option before credential access
+      ansible.builtin.assert:
+        that:
+          - opnsense_force_reload | default(false) is boolean
+        fail_msg: opnsense_force_reload must be a YAML or JSON boolean
+      changed_when: false
+
     - name: Validate desired OPNsense IP Alias VIPs locally
       ansible.builtin.command:
         argv:
@@ -79,8 +86,21 @@
       when: opnsense_vips | length > 0
 
     - name: Reload OPNsense interface_vip target after VIP changes  # noqa: args[module]
-      oxlorg.opnsense.reload:
-        target: interface_vip
       when:
-        - opnsense_vip_apply is defined
-        - opnsense_vip_apply is changed
+        - not ansible_check_mode
+        - (opnsense_vip_apply | default({})) is changed or opnsense_force_reload | default(false)
+      block:
+        - name: Activate saved interface_vip configuration  # noqa: args[module]
+          oxlorg.opnsense.reload:
+            target: interface_vip
+        - name: Report activation success
+          ansible.builtin.debug:
+            msg: "OPNsense interface_vip: reconciliation succeeded; activation succeeded"
+      rescue:
+        - name: Report saved configuration and failed activation
+          ansible.builtin.fail:
+            msg: >-
+              OPNsense interface_vip: reconciliation succeeded but activation failed;
+              saved configuration may differ from active configuration. Review the
+              appliance, then retry the same target with opnsense_force_reload=true
+              as a JSON/YAML boolean. No rollback was performed.

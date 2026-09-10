@@ -11,8 +11,8 @@ preserve the existing uncommitted work. Design updates do not complete these tas
 - [ ] 0.5 Stage and checksum upgrade artifacts before stopping services; preserve serial server-before-agent ordering, safe bounded restart verification and explicit failure recovery without datastore rollback (R06).
 - [ ] 0.6 Parse real capability bits and exact IP/interface facts; refresh and compare observed versions before upgrade, and verify exact node identity/version/readiness after each upgraded node and at completion (R07).
 - [x] 0.7 Correct handoff DNS/IP TLS verification and IPv6 endpoint formatting while preserving authoritative CA and same-scope K3s verification (R08).
-- [ ] 0.8 Add explicit opnsense_force_reload recovery for managed alias/gateway/VIP/rule workflows, including no-change retry and check-mode behavior; distinguish saved configuration, activation success and partial failure (R09).
-- [ ] 0.9 Align Gateway numeric bounds with the pinned Collection and correct destination inversion handling in both validation paths; reject an invalid batch before its first write (R10).
+- [x] 0.8 Add explicit opnsense_force_reload recovery for managed alias/gateway/VIP/rule workflows, including no-change retry and check-mode behavior; distinguish saved configuration, activation success and partial failure (R09).
+- [x] 0.9 Align Gateway numeric bounds with the pinned Collection and correct destination inversion handling in both validation paths; reject an invalid batch before its first write (R10).
 - [ ] 0.10 Emit reviewable sanitized switch plan summaries with optional protected detail output; isolate OPNsense export artifacts by target and include target identity (R11–R12).
 - [ ] 0.11 Reject recovery self-dependencies, cycles, invalid ordering and an incomplete required startup dependency set; derive deterministic recovery output from validated facts (R13).
 - [ ] 0.12 Introduce optional application-neutral foundation storage facts with explicit legacy compatibility; remove provider-specific K3s artifact URL special cases while retaining exact version/checksum verification (R14).
