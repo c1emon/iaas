@@ -21,13 +21,20 @@ def run_tasks(tmp_path, tasks, variables):
                           capture_output=True, text=True, check=False)
 
 
-def test_live_probe_shape_and_null_credentials(tmp_path):
+@pytest.mark.parametrize('capabilities,addresses,caps_ok,interface_ok', [
+    ('CapEff:\t0000000000201000', '2: mgmt0 inet 198.51.100.20/24 scope global mgmt0', True, True),
+    ('CapEff:\t0000000000000000', '2: mgmt0 inet 198.51.100.20/24 scope global mgmt0', False, True),
+    ('CapEff:\t0000000000201000', '2: mgmt0 inet 198.51.100.200/24 scope global mgmt0', True, False),
+    ('CapEff:\t0000000000201000', '2: other0 inet 198.51.100.20/24 scope global other0', True, False),
+])
+def test_live_probe_shape_and_null_credentials(tmp_path, capabilities, addresses, caps_ok, interface_ok):
     source = yaml.safe_load((ANSIBLE / 'roles/k3s_preflight/tasks/main.yml').read_text())
     selected = [task for task in source if task['name'] in [
+        'Parse the exact observed node address and interface',
         'Build runtime facts from read-only probes',
         'Resolve credential and TLS reference sets without retaining secret values']]
     results = [{'rc': 0, 'stdout': value} for value in
-               ['cgroup2fs', 'CapEff', 'yes', '198.51.100.20', '', '20000000000', '', '']]
+               ['cgroup2fs', capabilities, 'yes', addresses, '', '20000000000', '', '']]
     variables = {
         'k3s_preflight_node': {'vm_ref': 'localhost', 'node_ip': '198.51.100.20', 'node_nic': 'mgmt0'},
         'k3s_preflight_reachable': True,
@@ -39,10 +46,14 @@ def test_live_probe_shape_and_null_credentials(tmp_path):
         'k3s_preflight_artifact': {'credential_ref': None},
         'k3s_preflight_service_proxy': {'credential_ref': None},
         'k3s_preflight_registry_mirrors': [{'auth_ref': None}],
+        'expected_caps': ['NET_ADMIN', 'SYS_ADMIN'] if caps_ok else [],
+        'expected_interface': 'mgmt0' if interface_ok else '',
     }
     selected.append({'ansible.builtin.assert': {'that': [
         "k3s_preflight_runtime.os_family == 'Debian'",
         'k3s_preflight_runtime.free_bytes | int == 20000000000',
+        'k3s_preflight_runtime.kernel_capabilities == expected_caps',
+        'k3s_preflight_runtime.node_interface == expected_interface',
         'k3s_preflight_required_credential_refs == []']}})
     result = run_tasks(tmp_path, selected, variables)
     assert result.returncode == 0, result.stdout + result.stderr

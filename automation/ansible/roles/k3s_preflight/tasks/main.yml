@@ -50,7 +50,7 @@
     - name: time
       command: "timedatectl show -p NTPSynchronized --value"
     - name: interface
-      command: "ip -o -4 addr show"
+      command: "ip -o addr show"
     - name: ports
       command: "ss -lntu"
     - name: disk
@@ -101,6 +101,16 @@
   when: hostvars[k3s_preflight_node.vm_ref].k3s_preflight_facts is defined
   changed_when: false
 
+- name: Parse the exact observed node address and interface
+  ansible.builtin.set_fact:
+    k3s_preflight_observed_interface: >-
+      {{ k3s_preflight_probes.results[3]
+         | k3s_interface_observation(k3s_preflight_node.node_ip, k3s_preflight_node.node_nic) }}
+  when:
+    - k3s_preflight_reachable | default(false)
+    - hostvars[k3s_preflight_node.vm_ref].k3s_preflight_facts is not defined
+  changed_when: false
+
 - name: Build runtime facts from read-only probes
   ansible.builtin.set_fact:
     k3s_preflight_runtime:
@@ -110,15 +120,11 @@
       pve_architecture: "{{ hostvars[k3s_preflight_node.vm_ref].pve_architecture | default('unknown') }}"
       cgroups_v2: "{{ k3s_preflight_probes.results[0].stdout | default('') == 'cgroup2fs' }}"
       kernel_capabilities: >-
-        {{ ['NET_ADMIN', 'SYS_ADMIN']
-           if k3s_preflight_probes.results[1].rc | default(1) == 0 else [] }}
+        {{ k3s_preflight_probes.results[1] | k3s_capabilities }}
       time_synchronized: >-
         {{ k3s_preflight_probes.results[2].stdout | default('') | trim | lower == 'yes' }}
-      node_ip: "{{ k3s_preflight_node.node_ip }}"
-      node_interface: >-
-        {{ k3s_preflight_node.node_nic
-           if k3s_preflight_node.node_ip | default('')
-              in (k3s_preflight_probes.results[3].stdout | default('')) else '' }}
+      node_ip: "{{ k3s_preflight_observed_interface.node_ip }}"
+      node_interface: "{{ k3s_preflight_observed_interface.node_interface }}"
       ports_available: >-
         {%- set ns = namespace(ok=(k3s_preflight_probes.results[4].rc | default(1) | int == 0)) -%}
         {%- for result in k3s_preflight_port_checks.results | default([]) -%}
@@ -437,7 +443,7 @@
           | difference(k3s_preflight_runtime.kernel_capabilities | default([])) | length) == 0 }}
     k3s_preflight_interface_ok: >-
       {{ k3s_preflight_runtime.node_ip | default('') == k3s_preflight_node.node_ip
-         and k3s_preflight_runtime.node_interface | default('') | length > 0 }}
+         and k3s_preflight_runtime.node_interface | default('') == k3s_preflight_node.node_nic }}
     k3s_preflight_disk_ok: >-
       {{ k3s_preflight_runtime.free_bytes | default(0) | int >= k3s_preflight_min_free_bytes }}
     k3s_preflight_artifact_ok: >-

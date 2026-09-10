@@ -96,18 +96,25 @@
                      | regex_replace('^.*=', '') | regex_replace(':', '') | lower | trim }}
       changed_when: false
 
+    - name: Select DNS or IP certificate identity and format the connection endpoint
+      ansible.builtin.set_fact:
+        platform_handoff_tls: >-
+          {{ platform_handoff_model.cluster.api_endpoint.address | platform_handoff_tls_endpoint }}
+      changed_when: false
+
     - name: Verify the declared API endpoint against the authoritative server CA
       ansible.builtin.command:
         argv:
           - openssl
           - s_client
           - -connect
-          - "{{ platform_handoff_model.cluster.api_endpoint.address }}:6443"
+          - "{{ platform_handoff_tls.connect }}"
           - -CAfile
           - "{{ platform_handoff_ca_path }}"
           - -verify_return_error
-          - -verify_hostname
-          - "{{ platform_handoff_model.cluster.api_endpoint.address }}"
+          - "{{ platform_handoff_tls.verify_option }}"
+          - "{{ platform_handoff_tls.identity }}"
+        stdin: ""
       delegate_to: "{{ platform_handoff_initial_servers[0].vm_ref }}"
       become: true
       changed_when: false

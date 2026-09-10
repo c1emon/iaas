@@ -10,7 +10,7 @@ preserve the existing uncommitted work. Design updates do not complete these tas
 - [ ] 0.4 Implement the explicit standalone preflight mode and operation-selected deploy/upgrade modes using the repair-plan state table and shared read-only facts; reject foreign/ambiguous installation state without rejecting an expected installed cluster (R05).
 - [ ] 0.5 Stage and checksum upgrade artifacts before stopping services; preserve serial server-before-agent ordering, safe bounded restart verification and explicit failure recovery without datastore rollback (R06).
 - [ ] 0.6 Parse real capability bits and exact IP/interface facts; refresh and compare observed versions before upgrade, and verify exact node identity/version/readiness after each upgraded node and at completion (R07).
-- [ ] 0.7 Correct handoff DNS/IP TLS verification and IPv6 endpoint formatting while preserving authoritative CA and same-scope K3s verification (R08).
+- [x] 0.7 Correct handoff DNS/IP TLS verification and IPv6 endpoint formatting while preserving authoritative CA and same-scope K3s verification (R08).
 - [ ] 0.8 Add explicit opnsense_force_reload recovery for managed alias/gateway/VIP/rule workflows, including no-change retry and check-mode behavior; distinguish saved configuration, activation success and partial failure (R09).
 - [ ] 0.9 Align Gateway numeric bounds with the pinned Collection and correct destination inversion handling in both validation paths; reject an invalid batch before its first write (R10).
 - [ ] 0.10 Emit reviewable sanitized switch plan summaries with optional protected detail output; isolate OPNsense export artifacts by target and include target identity (R11–R12).
