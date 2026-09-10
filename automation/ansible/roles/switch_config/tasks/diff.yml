@@ -89,6 +89,10 @@
         regex_search(switch_config_forbidden_command_pattern) is none
     fail_msg: Native collection check-mode output included a forbidden command.
 
+- name: Report sanitized object changes
+  ansible.builtin.debug:
+    msg: "{{ switch_config_collection_preview | switch_plan_summary }}"
+
 - name: Report plan-only status
   ansible.builtin.debug:
     msg: >-

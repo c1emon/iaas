@@ -27,7 +27,7 @@ firewall/management rules、默认防火墙策略、NAT/DNAT 和关键公网入�
 | `$ENVIRONMENT_DIR/ansible/inventory.yml` | `opnsense` 组、主机别名、API host/FQDN。 | 环境源文件。 |
 | `$ENVIRONMENT_DIR/ansible/group_vars/opnsense.yml` | `opnsense_api_url`、`opnsense_ssl_verify`、API key/secret 入口。 | Key/secret 仅用环境变量。 |
 | `$ENVIRONMENT_DIR/ansible/vars/opnsense/*.yml` | 声明式期望状态。 | 不从 export 复制回写。 |
-| `$OUTPUT_DIR/runtime/exports/opnsense/` | API 导出/快照。 | 本地观察产物，不是 apply 输入。 |
+| `$OUTPUT_DIR/runtime/exports/opnsense/<inventory_hostname>/` | 按设备隔离的 API 导出。 | 本地观察产物，不是 apply 输入。 |
 
 | 变量 | 含义 | 约束 |
 | --- | --- | --- |
@@ -109,7 +109,7 @@ make opnsense-validate
 以下为调用方 `op run` 注入示例；传统 Secret 已注入同名变量时直接执行 `uv run`。
 调用方 group vars 负责将环境变量映射为 Ansible API 连接变量。
 然后在 `automation/ansible/` 目录运行在线只读 API smoke、导出
-或快照。导出写入本地 `$OUTPUT_DIR/runtime/exports/opnsense/`，不改设备配置；快照/导出内容可能含
+或快照。导出写入本地 `$OUTPUT_DIR/runtime/exports/opnsense/<inventory_hostname>/`，不改设备配置；快照/导出内容可能含
 敏感信息，应按本手册的本地观察产物规则处理。
 
 ```bash

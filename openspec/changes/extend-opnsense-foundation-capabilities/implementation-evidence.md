@@ -35,3 +35,8 @@
 - `test_k3s_upgrade_staging.py`: 5 local real-task cases passed (download/checksum/version/stop failure and successful activation), using file transport and a service command substitute. Active files/services remain unchanged in the failure cases.
 - Preflight/upgrade/state/staging grouping: 47 passed; final stop/start failure handling recheck: 12 passed. Actual server/agent template-and-probe execution in disposable roots: 2 passed. K3s group run: 266 passed, 3 outdated acquisition assertions failed; updated acquisition file rerun: 7 passed. The prior URL/version policy tests now correspond to actual version verification and never try external downloads.
 - Relevant Ansible lint passed for 27 files; strict OpenSpec validation and pyright passed. These are software-only tests and substitutes, not a real K3s upgrade rehearsal. The stage 0 final offline/image gate remains pending.
+
+## Operator reports and export isolation (0.10)
+
+- Switch previews expose object change type and field names without raw commands or configuration values; optional per-target detail uses the existing runtime path guard and private directory/file permissions. OPNsense exports are isolated by inventory identity and attributed in each JSON artifact.
+- Representative real local Ansible tasks verify two independent firewall exports, sanitized switch console output, opt-in detail and 0700/0600 permissions. Four report tests and eleven existing XikeOS migration tests passed; affected Ansible lint passed (9 files). No device was contacted.

@@ -41,12 +41,18 @@
         description: DHCPv6 prefix lease facts
 
   tasks:
+    - name: Validate isolated OPNsense export directory
+      ansible.builtin.set_fact:
+        opnsense_target_export_dir: >-
+          {{ opnsense_export_dir |
+             protected_report_directory(inventory_hostname, ansible_project_dir | default(none)) }}
+
     - name: Run OPNsense API credential preflight
       ansible.builtin.import_tasks: tasks/api-credential-preflight.yml
 
     - name: Create local OPNsense export directory
       ansible.builtin.file:
-        path: "{{ opnsense_export_dir }}"
+        path: "{{ opnsense_target_export_dir }}"
         state: directory
         mode: "0700"
 
@@ -62,6 +68,7 @@
         label: "{{ item.name }}"
       register: opnsense_config_candidate_results
       changed_when: false
+      no_log: true
 
     - name: Export observed-only DHCP facts
       oxlorg.opnsense.raw:
@@ -78,16 +85,18 @@
         label: "{{ item.name }}"
       register: opnsense_dhcp_fact_results
       changed_when: false
+      no_log: true
 
     - name: Write first-stage candidate export files
       ansible.builtin.copy:
-        dest: "{{ opnsense_export_dir }}/{{ item.item.name }}.json"
+        dest: "{{ opnsense_target_export_dir }}/{{ item.item.name }}.json"
         mode: "0600"
         content: |
           {{ {
             "category": "first-stage-management-candidate",
             "description": item.item.description,
             "target": item.item.target,
+            "device": inventory_hostname,
             "managed_desired_state": false,
             "review_required_before_promotion": true,
             "result": item
@@ -95,14 +104,16 @@
       loop: "{{ opnsense_config_candidate_results.results }}"
       loop_control:
         label: "{{ item.item.name }}"
+      no_log: true
 
     - name: Write observed-only DHCP fact export files
       ansible.builtin.copy:
-        dest: "{{ opnsense_export_dir }}/{{ item.item.name }}.json"
+        dest: "{{ opnsense_target_export_dir }}/{{ item.item.name }}.json"
         mode: "0600"
         content: |
           {{ {
             "category": "observed-only-fact",
+            "device": inventory_hostname,
             "description": item.item.description,
             "endpoint": item.item.module ~ "/" ~ item.item.controller ~ "/" ~ item.item.command,
             "managed_desired_state": false,
@@ -112,13 +123,16 @@
       loop: "{{ opnsense_dhcp_fact_results.results }}"
       loop_control:
         label: "{{ item.item.name }}"
+      no_log: true
 
     - name: Write export README
       ansible.builtin.copy:
-        dest: "{{ opnsense_export_dir }}/README.md"
+        dest: "{{ opnsense_target_export_dir }}/README.md"
         mode: "0600"
         content: |
           # OPNsense local export
+
+          Inventory target: {{ inventory_hostname }}
 
           This directory is ignored by Git because raw exports may contain topology, lease, hostname, MAC address, and
           IPv6 prefix data.
@@ -137,4 +151,4 @@
 
     - name: Show export location
       ansible.builtin.debug:
-        msg: "Wrote read-only OPNsense export artifacts to {{ opnsense_export_dir }}"
+        msg: "Wrote read-only OPNsense export artifacts to {{ opnsense_target_export_dir }}"

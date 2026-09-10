@@ -15,6 +15,30 @@
       } }}
   no_log: true
 
+- name: Write optional protected switch report
+  when: switch_config_detail_dir | default('') | length > 0
+  delegate_to: localhost
+  connection: local
+  block:
+    - name: Validate per-target switch report directory
+      ansible.builtin.set_fact:
+        switch_config_report_directory: >-
+          {{ switch_config_detail_dir |
+             protected_report_directory(inventory_hostname, ansible_project_dir | default(none)) }}
+
+    - name: Create protected switch report directory
+      ansible.builtin.file:
+        path: "{{ switch_config_report_directory }}"
+        state: directory
+        mode: "0700"
+
+    - name: Write protected switch report
+      ansible.builtin.copy:
+        dest: "{{ switch_config_report_directory }}/plan.json"
+        mode: "0600"
+        content: "{{ {'target': inventory_hostname, 'report': switch_config_change_report} | to_nice_json }}"
+      no_log: true
+
 - name: Report switch configuration change status
   ansible.builtin.debug:
     msg: >-
