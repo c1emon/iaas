@@ -431,6 +431,22 @@ def test_cloud_init_upload_and_verify_use_existing_manifest_without_rerender(mon
     assert any("--verify" in argv[2] and "--sha256" in argv[2] for argv in calls)
 
 
+@pytest.mark.parametrize("command", ["upload", "verify"])
+@pytest.mark.parametrize("source_state", ["missing", "changed"])
+def test_cloud_init_rejects_stale_source_before_ssh(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, command: str, source_state: str) -> None:
+    tfvars = tmp_path / "current.json"
+    tfvars.write_text("{}")
+    write_rendered_artifacts([], tfvars, "images", tmp_path / "rendered")
+    if source_state == "missing":
+        tfvars.unlink()
+    else:
+        tfvars.write_text('{"changed": true}')
+    monkeypatch.setattr(cloud_init_ssh.subprocess, "run", lambda *a, **kw: pytest.fail("unexpected SSH"))
+    with pytest.raises(ValidationError, match="tfvars"):
+        cloud_init_main([command, "--tfvars", str(tfvars), "--output-dir", str(tmp_path / "rendered"),
+                         "--storage-id", "images", "--pve-host", "example.invalid", "--ssh-user", "ops"])
+
+
 def test_cloud_init_load_rendered_artifacts_rejects_checksum_mismatch(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("PVE_VM_ADMIN_PASSWORD", "admin-password")
     monkeypatch.setenv("PVE_VM_ADMIN_PUBLIC_KEY", "ssh-ed25519 AAAAadmin admin@example")
@@ -445,7 +461,7 @@ def test_cloud_init_load_rendered_artifacts_rejects_checksum_mismatch(monkeypatc
     snippet_path.write_text(snippet_path.read_text(encoding="utf-8") + "# drift\n", encoding="utf-8")
 
     with pytest.raises(ValidationError, match=snippets[0].name):
-        load_rendered_artifacts(tmp_path, "images")
+        load_rendered_artifacts(tmp_path, "images", tfvars_path)
 
 
 def test_cloud_init_upload_timeout_is_operator_readable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -625,7 +641,7 @@ def test_cloud_init_load_rendered_artifacts_rejects_unsafe_manifest_values(monke
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     with pytest.raises(ValidationError, match="file_name|sha256"):
-        load_rendered_artifacts(tmp_path, "images")
+        load_rendered_artifacts(tmp_path, "images", tfvars_path)
 
 
 def test_cloud_init_storage_roles_split_by_purpose() -> None:

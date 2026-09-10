@@ -73,9 +73,10 @@ fi
 resolve_target_path() {
   local resolved=''
   if resolved="$(${IAAS_PVE_SNIPPET_UPLOAD_PVESM:-${PVESM}} path "${storage_id}:snippets/${filename}" 2>/dev/null)" && [[ -n ${resolved} ]]; then
+    [[ ${resolved} == /* && ${resolved} != *$'\n'* && ${resolved} == */snippets/"${filename}" ]] || die 'pvesm returned an invalid snippet path'
     printf '%s\n' "${resolved}"
   else
-    printf '/mnt/pve/%s/snippets/%s\n' "${storage_id}" "${filename}"
+    die 'unable to resolve snippet storage path with pvesm'
   fi
 }
 

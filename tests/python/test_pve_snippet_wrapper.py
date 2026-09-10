@@ -142,6 +142,17 @@ def test_verify_missing_file_fails(tmp_path: Path) -> None:
     assert "missing snippet" in result.stderr
 
 
+def test_unresolved_storage_fails_before_writes(tmp_path: Path) -> None:
+    fake_pvesm = tmp_path / "pvesm"
+    fake_pvesm.write_text("#!/bin/sh\nexit 1\n")
+    fake_pvesm.chmod(0o755)
+    result = run_wrapper(["--storage", "images", "--filename", "opentofu-vm-501-user-data.yml"],
+                         os.environ | {"IAAS_PVE_SNIPPET_UPLOAD_PVESM": str(fake_pvesm)})
+    assert result.returncode != 0
+    assert "unable to resolve" in result.stderr
+    assert list(tmp_path.iterdir()) == [fake_pvesm]
+
+
 def test_verify_rejects_invalid_sha256_argument() -> None:
     result = run_wrapper([
         "--verify",

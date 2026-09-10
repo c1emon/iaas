@@ -63,7 +63,7 @@ def write_rendered_artifacts(snippets: list[CloudInitSnippet], tfvars_path: Path
     write_text(manifest_path(output_dir), json.dumps(manifest, indent=2, sort_keys=True) + "\n", secure=True)
 
 
-def load_rendered_artifacts(output_dir: Path, storage_id: str) -> list[CloudInitSnippet]:
+def load_rendered_artifacts(output_dir: Path, storage_id: str, tfvars_path: Path) -> list[CloudInitSnippet]:
     validate_storage_id(storage_id)
     manifest_file = manifest_path(output_dir)
     if not manifest_file.exists():
@@ -71,6 +71,12 @@ def load_rendered_artifacts(output_dir: Path, storage_id: str) -> list[CloudInit
     payload = load_json(manifest_file)
     require(isinstance(payload, dict), f"{manifest_file}: expected a JSON object")
     require(payload.get("schema_version") == MANIFEST_SCHEMA_VERSION, f"{manifest_file}: unsupported manifest schema version")
+    try:
+        source_bytes = tfvars_path.read_bytes()
+    except OSError as exc:
+        raise ValidationError("unable to read current --tfvars input") from exc
+    require(payload.get("source_tfvars_sha256") == sha256_hex(source_bytes),
+            "rendered manifest does not match current --tfvars; render cloud-init again")
     manifest_storage_id = payload.get("storage_id")
     require(isinstance(manifest_storage_id, str) and manifest_storage_id, f"{manifest_file}: storage_id must be a non-empty string")
     validate_storage_id(manifest_storage_id)

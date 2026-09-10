@@ -4,9 +4,9 @@ Stage 0 is mandatory. Do not start stages 1–5 until 0.15 passes. Before applyi
 this change, obtain the implementation-branch choice required by AGENTS.md and
 preserve the existing uncommitted work. Design updates do not complete these tasks.
 
-- [ ] 0.1 Fix recursive Makefile selection, reject stale generated inputs before plan/apply and serialize render → upload → verify → apply even with inherited parallel MAKEFLAGS; reproduce arbitrary-directory and parallel execution with safe command substitutes (R01–R02).
-- [ ] 0.2 Bind cloud-init upload/verify to the current explicit tfvars through the existing manifest source hash; reject missing, stale or mismatched input before SSH (R03).
-- [ ] 0.3 Make snippet storage resolution authoritative and fail before directory creation or writes when it cannot be established; remove guessed-path fallback (R04).
+- [x] 0.1 Fix recursive Makefile selection, reject stale generated inputs before plan/apply and serialize render → upload → verify → apply even with inherited parallel MAKEFLAGS; reproduce arbitrary-directory and parallel execution with safe command substitutes (R01–R02).
+- [x] 0.2 Bind cloud-init upload/verify to the current explicit tfvars through the existing manifest source hash; reject missing, stale or mismatched input before SSH (R03).
+- [x] 0.3 Make snippet storage resolution authoritative and fail before directory creation or writes when it cannot be established; remove guessed-path fallback (R04).
 - [ ] 0.4 Implement the explicit standalone preflight mode and operation-selected deploy/upgrade modes using the repair-plan state table and shared read-only facts; reject foreign/ambiguous installation state without rejecting an expected installed cluster (R05).
 - [ ] 0.5 Stage and checksum upgrade artifacts before stopping services; preserve serial server-before-agent ordering, safe bounded restart verification and explicit failure recovery without datastore rollback (R06).
 - [ ] 0.6 Parse real capability bits and exact IP/interface facts; refresh and compare observed versions before upgrade, and verify exact node identity/version/readiness after each upgraded node and at completion (R07).

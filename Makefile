@@ -1,4 +1,5 @@
 ROOT ?= $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+RUNTIME_MAKEFILE := $(abspath $(lastword $(MAKEFILE_LIST)))
 ifneq ($(origin ASTRA),undefined)
 $(error ASTRA is no longer supported; set ENVIRONMENT_DIR and OUTPUT_DIR explicitly)
 endif
@@ -187,19 +188,25 @@ pve-backup-state:
 	@mkdir -p "$(BACKUP_DIR)"
 	@stamp="$$(date +%Y%m%dT%H%M%S)_$$$$"; phase="$${BACKUP_PHASE:-snapshot}"; if [ -f "$(PVE_DIR)/terraform.tfstate" ]; then cp "$(PVE_DIR)/terraform.tfstate" "$(BACKUP_DIR)/$${stamp}-$${phase}-terraform.tfstate"; fi
 
-pve-plan: render-cloud-init
-	$(MAKE) pve-backup-state BACKUP_PHASE=before
+pve-plan:
+	$(MAKE) -f "$(RUNTIME_MAKEFILE)" pve-check
+	$(MAKE) -f "$(RUNTIME_MAKEFILE)" render-cloud-init
+	$(MAKE) -f "$(RUNTIME_MAKEFILE)" pve-backup-state BACKUP_PHASE=before
 	$(TOFU) -chdir="$(PVE_DIR)" plan -var-file="$(PVE_TFVARS)"
 
-pve-apply: render-cloud-init upload-cloud-init verify-cloud-init
-	$(MAKE) pve-backup-state BACKUP_PHASE=before
+pve-apply:
+	$(MAKE) -f "$(RUNTIME_MAKEFILE)" pve-check
+	$(MAKE) -f "$(RUNTIME_MAKEFILE)" render-cloud-init
+	$(MAKE) -f "$(RUNTIME_MAKEFILE)" upload-cloud-init
+	$(MAKE) -f "$(RUNTIME_MAKEFILE)" verify-cloud-init
+	$(MAKE) -f "$(RUNTIME_MAKEFILE)" pve-backup-state BACKUP_PHASE=before
 	$(TOFU) -chdir="$(PVE_DIR)" apply -var-file="$(PVE_TFVARS)"
-	$(MAKE) pve-backup-state BACKUP_PHASE=after
+	$(MAKE) -f "$(RUNTIME_MAKEFILE)" pve-backup-state BACKUP_PHASE=after
 
 pve-destroy:
-	$(MAKE) pve-backup-state BACKUP_PHASE=before
+	$(MAKE) -f "$(RUNTIME_MAKEFILE)" pve-backup-state BACKUP_PHASE=before
 	$(TOFU) -chdir="$(PVE_DIR)" destroy -var-file="$(PVE_TFVARS)"
-	$(MAKE) pve-backup-state BACKUP_PHASE=after
+	$(MAKE) -f "$(RUNTIME_MAKEFILE)" pve-backup-state BACKUP_PHASE=after
 
 pve-verify-guests:
 	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(ANSIBLE_INVENTORY)" "$(ANSIBLE_PLAYBOOK)"
