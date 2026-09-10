@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from ipaddress import ip_address, ip_network
 from typing import Any
+from urllib.parse import urlsplit
 import re
 
 from iaas_automation.common.errors import require
@@ -124,7 +125,7 @@ def _validate_health_check(service_name: str, service_index: int, health_check: 
     """Normalize the declared read-only probe for one service."""
     require_unknown_keys(
         health_check,
-        {"type", "target", "expected_status", "record_type", "resolver", "expected_answer", "timeout_seconds"},
+        {"type", "target", "expected_status", "record_type", "resolver", "expected_answer", "timeout_seconds", "ca_file"},
         f"foundation inventory.foundation_services[{service_index}].health_check",
     )
     probe_type = _require_choice(health_check.get("type"), f"foundation inventory.foundation_services[{service_index}].health_check.type", HEALTH_TYPE_CHOICES)
@@ -142,16 +143,24 @@ def _validate_health_check(service_name: str, service_index: int, health_check: 
     record_type = health_check.get("record_type")
     resolver = health_check.get("resolver")
     expected_answer = health_check.get("expected_answer")
+    ca_file = health_check.get("ca_file")
+    if ca_file is not None:
+        ca_file = require_non_empty_string(ca_file, f"foundation service {service_name}.health_check.ca_file")
+        require(probe_type in {"https", "api"} and target.startswith("https://"),
+                "health_check.ca_file: only valid for HTTPS probes")
 
     if probe_type in {"http", "https", "api"}:
         require(target.startswith(("http://", "https://")), f"foundation inventory.foundation_services[{service_index}].health_check.target: must look like a URL")
+        parsed = urlsplit(target)
+        require(bool(parsed.hostname) and parsed.username is None and parsed.password is None,
+                "health_check.target: require an HTTP(S) host without credentials")
+        require(probe_type != "https" or parsed.scheme == "https", "https probe requires an HTTPS URL")
     elif probe_type == "tcp":
         require(HOST_PORT_RE.fullmatch(target) is not None, f"foundation inventory.foundation_services[{service_index}].health_check.target: must look like host:port")
         if expected_status is not None:
             require(False, f"foundation inventory.foundation_services[{service_index}].health_check.expected_status: not valid for tcp health checks")
     elif probe_type == "dns":
-        if resolver is not None:
-            resolver = require_non_empty_string(resolver, f"foundation inventory.foundation_services[{service_index}].health_check.resolver")
+        resolver = require_non_empty_string(resolver, f"foundation inventory.foundation_services[{service_index}].health_check.resolver")
         if record_type is not None:
             record_type = _require_choice(record_type, f"foundation inventory.foundation_services[{service_index}].health_check.record_type", {"a", "aaaa", "cname", "txt", "srv", "any"})
         if expected_answer is not None:
@@ -171,6 +180,7 @@ def _validate_health_check(service_name: str, service_index: int, health_check: 
         "expected_answer": expected_answer,
         "timeout_seconds": timeout_seconds,
         "service": service_name,
+        "ca_file": ca_file,
     }
 
 
@@ -373,16 +383,91 @@ def _normalize_k3s_storage_access(doc: dict[str, Any], storage_network_names: se
     return {"phase_1": {"node_classes": node_classes, "storage_networks": phase_storage_networks, "notes": notes}, "notes": top_notes}
 
 
+def _validate_dependencies(services: list[dict[str, Any]], external_hosts: set[str]) -> None:
+    by_name = {service["name"]: service for service in services}
+    require(not (set(by_name) & external_hosts),
+            "foundation inventory: ambiguous service/external-host dependency name")
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(name: str) -> None:
+        require(name not in visiting, f"foundation inventory: dependency cycle at {name}")
+        if name in visited:
+            return
+        visiting.add(name)
+        service = by_name[name]
+        for dependency in service["dependencies"]:
+            require(dependency != name, f"foundation inventory: self-dependency at {name}")
+            if dependency in external_hosts:
+                continue
+            parent = by_name[dependency]
+            if service["required_before_k3s"]:
+                require(parent["required_before_k3s"],
+                        f"foundation inventory: required startup set omits dependency {dependency} of {name}")
+            if service["restore_order"] is not None and parent["restore_order"] is not None:
+                require(parent["restore_order"] < service["restore_order"],
+                        f"foundation inventory: dependency {dependency} must have a lower restore_order than {name}")
+            visit(dependency)
+        visiting.remove(name)
+        visited.add(name)
+
+    for name in sorted(by_name):
+        visit(name)
+
+
+def _normalize_neutral_storage(networks: list[Any], access: Any) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    normalized = []
+    names: set[str] = set()
+    vlans: set[int] = set()
+    for index, raw in enumerate(networks):
+        context = f"foundation inventory.storage_networks[{index}]"
+        network = as_mapping(raw, context)
+        require_unknown_keys(network, {"name", "subnet", "endpoint", "vlan_id", "notes"}, context)
+        name = _require_slug(network.get("name"), f"{context}.name")
+        require(name not in names, f"{context}: duplicate storage network name")
+        names.add(name)
+        subnet = require_non_empty_string(network.get("subnet"), f"{context}.subnet")
+        endpoint = require_non_empty_string(network.get("endpoint"), f"{context}.endpoint")
+        require(ip_address(endpoint) in ip_network(subnet, strict=False), f"{context}.endpoint: must be inside subnet")
+        vlan = network.get("vlan_id")
+        if "vlan_id" in network:
+            vlan = require_positive_int(vlan, f"{context}.vlan_id")
+            require(vlan <= 4094, f"{context}.vlan_id: must be in 1..4094")
+            require(vlan not in vlans, f"{context}: duplicate vlan_id")
+            vlans.add(vlan)
+        notes = network.get("notes")
+        if notes is not None:
+            notes = require_non_empty_string(notes, f"{context}.notes")
+        normalized.append({"name": name, "subnet": subnet, "endpoint": endpoint, "vlan_id": vlan, "notes": notes})
+    normalized_access = None
+    if access is not None:
+        context = "foundation inventory.storage_access"
+        access = as_mapping(access, context)
+        require_unknown_keys(access, {"node_classes", "storage_networks", "notes"}, context)
+        classes = _require_string_list(access.get("node_classes"), f"{context}.node_classes")
+        require(len(classes) == len(set(classes)), f"{context}.node_classes: duplicates are not allowed")
+        require(bool(classes) and set(classes) <= {"vm", "bare-metal"}, f"{context}.node_classes: use vm and/or bare-metal")
+        selected = _require_string_list(access.get("storage_networks"), f"{context}.storage_networks")
+        require(len(selected) == len(set(selected)), f"{context}.storage_networks: duplicates are not allowed")
+        require(bool(selected) and set(selected) <= names, f"{context}.storage_networks: must reference declared networks")
+        notes = access.get("notes")
+        if notes is not None:
+            notes = require_non_empty_string(notes, f"{context}.notes")
+        normalized_access = {"node_classes": classes, "storage_networks": selected, "notes": notes}
+    return normalized, normalized_access
+
+
 def validate_foundation_inventory(doc: dict[str, Any]) -> dict[str, Any]:
     """Validate the foundation inventory and return a normalized model."""
-    require_unknown_keys(doc, {"schema_version", "foundation_hosts", "foundation_services", "storage_networks", "k3s_storage_access"}, "foundation inventory")
-    require(doc.get("schema_version") == 1, "foundation inventory: schema_version must be 1")
+    version = doc.get("schema_version")
+    require(type(version) is int and version in {1, 2}, "foundation inventory: schema_version must be 1 or 2")
+    access_key = "k3s_storage_access" if version == 1 else "storage_access"
+    require_unknown_keys(doc, {"schema_version", "foundation_hosts", "foundation_services", "storage_networks", access_key}, "foundation inventory")
     _scan_non_sensitive(doc, "foundation inventory")
 
     hosts = as_list(doc.get("foundation_hosts"), "foundation inventory.foundation_hosts")
     services = as_list(doc.get("foundation_services"), "foundation inventory.foundation_services")
-    storage_networks = as_list(doc.get("storage_networks"), "foundation inventory.storage_networks")
-    k3s_storage_access_raw = as_mapping(doc.get("k3s_storage_access"), "foundation inventory.k3s_storage_access")
+    storage_networks = as_list(doc.get("storage_networks", [] if version == 2 else None), "foundation inventory.storage_networks")
 
     normalized_hosts: list[dict[str, Any]] = []
     normalized_services: list[dict[str, Any]] = []
@@ -408,24 +493,25 @@ def validate_foundation_inventory(doc: dict[str, Any]) -> dict[str, Any]:
             _normalize_service(service_map, index, seen_service_names, host_kinds, host_names, service_name_pool, external_host_names, restore_orders)
         )
 
-    for index, network in enumerate(storage_networks):
-        network_map = as_mapping(network, f"foundation inventory.storage_networks[{index}]")
-        normalized_storage_networks.append(_normalize_storage_network(network_map, index, {item["name"] for item in normalized_storage_networks}, {item["vlan_id"] for item in normalized_storage_networks}))
+    if version == 1:
+        for index, network in enumerate(storage_networks):
+            network_map = as_mapping(network, f"foundation inventory.storage_networks[{index}]")
+            normalized_storage_networks.append(_normalize_storage_network(network_map, index, {item["name"] for item in normalized_storage_networks}, {item["vlan_id"] for item in normalized_storage_networks}))
+        storage_network_names = {network["name"] for network in normalized_storage_networks}
+        normalized_access = _normalize_k3s_storage_access(as_mapping(doc.get(access_key), f"foundation inventory.{access_key}"), storage_network_names)
+    else:
+        normalized_storage_networks, normalized_access = _normalize_neutral_storage(storage_networks, doc.get(access_key))
 
-    storage_network_names = {network["name"] for network in normalized_storage_networks}
-    normalized_k3s_storage_access = _normalize_k3s_storage_access(k3s_storage_access_raw, storage_network_names)
-
-    required_orders = [service["restore_order"] for service in normalized_services if service["required_before_k3s"]]
-    require(required_orders == sorted(required_orders), "foundation inventory: required-before-K3s services must be declared in restore-order sequence")
+    _validate_dependencies(normalized_services, external_host_names)
 
     for service in normalized_services:
         if service["host"] is not None and host_kinds.get(service["host"]) == "external-dependency":
             require(service["external_dependency"], f"foundation inventory.foundation_services[{service['name']}]: external dependency hosts must be explicitly marked external_dependency")
 
     return {
-        "schema_version": 1,
+        "schema_version": version,
         "foundation_hosts": normalized_hosts,
         "foundation_services": normalized_services,
         "storage_networks": normalized_storage_networks,
-        "k3s_storage_access": normalized_k3s_storage_access,
+        access_key: normalized_access,
     }

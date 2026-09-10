@@ -20,7 +20,7 @@ def test_handoff_playbook_reads_authoritative_ca_and_never_mutates_cluster() -> 
     assert "ansible.builtin.slurp:" in text
     assert "exactly one X.509 CA certificate" in text
     assert "-verify_return_error" in text
-    assert "-verify_hostname" in text
+    assert "platform_handoff_tls.verify_option" in text
     assert "sha256:" in text
     for forbidden in ("kubernetes.core.", "helm", "flux", "kubectl apply", "state: present"):
         assert forbidden not in text.lower()

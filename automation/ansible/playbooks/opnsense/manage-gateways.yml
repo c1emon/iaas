@@ -39,6 +39,13 @@
       - state
 
   tasks:
+    - name: Validate explicit activation recovery option before credential access
+      ansible.builtin.assert:
+        that:
+          - opnsense_force_reload | default(false) is boolean
+        fail_msg: opnsense_force_reload must be a YAML or JSON boolean
+      changed_when: false
+
     - name: Validate desired OPNsense PBR gateways locally
       ansible.builtin.command:
         argv:
@@ -103,40 +110,63 @@
           default_gw to false. This workflow must not manage default-route
           ownership.
 
-    - name: Create, update, or remove declared PBR gateways additively  # noqa: args[module]
-      oxlorg.opnsense.gateway:
-        name: "{{ item.name }}"
-        interface: "{{ item.interface }}"
-        ip_protocol: "{{ item.ip_protocol }}"
-        gateway: "{{ item.gateway }}"
-        default_gw: "{{ item.default_gw }}"
-        far_gw: "{{ item.far_gw }}"
-        monitor_disable: "{{ item.monitor_disable }}"
-        monitor_noroute: "{{ item.monitor_noroute }}"
-        monitor: "{{ item.monitor }}"
-        force_down: "{{ item.force_down }}"
-        latency_low: "{{ item.latency_low }}"
-        latency_high: "{{ item.latency_high }}"
-        loss_low: "{{ item.loss_low }}"
-        loss_high: "{{ item.loss_high }}"
-        interval: "{{ item.interval }}"
-        time_period: "{{ item.time_period }}"
-        loss_interval: "{{ item.loss_interval }}"
-        data_length: "{{ item.data_length }}"
-        priority: "{{ item.priority }}"
-        weight: "{{ item.weight }}"
-        description: "{{ item.description }}"
-        state: "{{ item.state }}"
-        reload: false
-      loop: "{{ opnsense_gateways }}"
-      loop_control:
-        label: "{{ item.name }} {{ item.gateway }} {{ item.state }}"
-      register: opnsense_gateway_apply
-      when: opnsense_gateways | length > 0
+    - name: Reconcile declared OPNsense gateway configuration
+      block:
+        - name: Create, update, or remove declared PBR gateways additively  # noqa: args[module]
+          oxlorg.opnsense.gateway:
+            name: "{{ item.name }}"
+            interface: "{{ item.interface }}"
+            ip_protocol: "{{ item.ip_protocol }}"
+            gateway: "{{ item.gateway }}"
+            default_gw: "{{ item.default_gw }}"
+            far_gw: "{{ item.far_gw }}"
+            monitor_disable: "{{ item.monitor_disable }}"
+            monitor_noroute: "{{ item.monitor_noroute }}"
+            monitor: "{{ item.monitor }}"
+            force_down: "{{ item.force_down }}"
+            latency_low: "{{ item.latency_low }}"
+            latency_high: "{{ item.latency_high }}"
+            loss_low: "{{ item.loss_low }}"
+            loss_high: "{{ item.loss_high }}"
+            interval: "{{ item.interval }}"
+            time_period: "{{ item.time_period }}"
+            loss_interval: "{{ item.loss_interval }}"
+            data_length: "{{ item.data_length }}"
+            priority: "{{ item.priority }}"
+            weight: "{{ item.weight }}"
+            description: "{{ item.description }}"
+            state: "{{ item.state }}"
+            reload: false
+          loop: "{{ opnsense_gateways }}"
+          loop_control:
+            label: "{{ item.name }} {{ item.gateway }} {{ item.state }}"
+          register: opnsense_gateway_apply
+          when: opnsense_gateways | length > 0
+      rescue:
+        - name: Report partial configuration reconciliation
+          ansible.builtin.fail:
+            msg: >-
+              OPNsense gateway: reconciliation failed. Partial configuration changes may have been saved;
+              activation was not attempted. No rollback was performed. Review and correct the cause,
+              then rerun this target; use opnsense_force_reload=true as a JSON/YAML boolean
+              when activation recovery is required.
 
     - name: Reload OPNsense gateway target after gateway changes  # noqa: args[module]
-      oxlorg.opnsense.reload:
-        target: gateway
       when:
-        - opnsense_gateway_apply is defined
-        - opnsense_gateway_apply is changed
+        - not ansible_check_mode
+        - (opnsense_gateway_apply | default({})) is changed or opnsense_force_reload | default(false)
+      block:
+        - name: Activate saved gateway configuration  # noqa: args[module]
+          oxlorg.opnsense.reload:
+            target: gateway
+        - name: Report activation success
+          ansible.builtin.debug:
+            msg: "OPNsense gateway: reconciliation succeeded; activation succeeded"
+      rescue:
+        - name: Report saved configuration and failed activation
+          ansible.builtin.fail:
+            msg: >-
+              OPNsense gateway: reconciliation succeeded but activation failed;
+              saved configuration may differ from active configuration. Review the
+              appliance, then retry the same target with opnsense_force_reload=true
+              as a JSON/YAML boolean. No rollback was performed.

@@ -48,11 +48,11 @@ def main(argv: list[str] | None = None) -> int:
         write_rendered_artifacts(snippets, args.tfvars, args.storage_id, args.output_dir)
         print(f"rendered {len(snippets)} cloud-init snippets to {args.output_dir}")
     elif args.command == "upload":
-        snippets = load_rendered_artifacts(args.output_dir, args.storage_id)
+        snippets = load_rendered_artifacts(args.output_dir, args.storage_id, args.tfvars)
         upload_snippets(snippets, args)
         print(f"uploaded {len(snippets)} cloud-init snippets to {args.pve_host}")
     elif args.command == "verify":
-        snippets = load_rendered_artifacts(args.output_dir, args.storage_id)
+        snippets = load_rendered_artifacts(args.output_dir, args.storage_id, args.tfvars)
         verify_snippets(snippets, args)
         print(f"verified {len(snippets)} cloud-init snippets on {args.pve_host}")
     return 0

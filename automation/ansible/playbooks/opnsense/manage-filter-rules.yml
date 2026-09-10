@@ -31,6 +31,13 @@
       - destination_net
 
   tasks:
+    - name: Validate explicit activation recovery option before credential access
+      ansible.builtin.assert:
+        that:
+          - opnsense_force_reload | default(false) is boolean
+        fail_msg: opnsense_force_reload must be a YAML or JSON boolean
+      changed_when: false
+
     - name: Validate desired OPNsense new filter rules locally
       ansible.builtin.command:
         argv:
@@ -118,12 +125,15 @@
         that:
           - >-
             item.action not in ['block', 'reject']
-            or item.destination_net is string
-            or item.interface | intersect(item.destination_net) | length == 0
+            or (not (item.destination_invert | default(false))
+                and item.interface | intersect(rule_destinations) | length == 0)
+            or ((item.destination_invert | default(false))
+                and ('any' in rule_destinations or item.interface | difference(rule_destinations) | length == 0))
         fail_msg: >-
           Rule {{ item.scope }}:{{ item.slug }} denies traffic to its own interface.
-          Remove {{ item.interface | intersect(item.destination_net) | join(', ') }}
-          from destination_net.
+          Review destination_net together with destination_invert.
+      vars:
+        rule_destinations: "{{ [item.destination_net] if item.destination_net is string else item.destination_net }}"
       loop: "{{ opnsense_filter_rules }}"
       loop_control:
         label: "{{ item.scope }}:{{ item.slug }}"
@@ -189,20 +199,44 @@
         fail_msg: >-
           Generated OPNsense new filter rule descriptions must be globally unique.
 
-    - name: Create, update, or remove declared new filter rules additively  # noqa: args[module]
-      oxlorg.opnsense.rule_multi:
-        rules: "{{ opnsense_filter_rule_apply_rules }}"
-        match_fields:
-          - description
-        reload: false
-        multi_control:
-          output_info: true
-      register: opnsense_filter_rule_apply
-      when: opnsense_filter_rule_apply_rules | length > 0
+    - name: Reconcile declared OPNsense rule configuration
+      block:
+        - name: Create, update, or remove declared new filter rules additively  # noqa: args[module]
+          oxlorg.opnsense.rule_multi:
+            rules: "{{ opnsense_filter_rule_apply_rules }}"
+            match_fields:
+              - description
+            reload: false
+            multi_control:
+              output_info: true
+              fail_verify: true
+          register: opnsense_filter_rule_apply
+          when: opnsense_filter_rule_apply_rules | length > 0
+      rescue:
+        - name: Report partial configuration reconciliation
+          ansible.builtin.fail:
+            msg: >-
+              OPNsense rule: reconciliation failed. Partial configuration changes may have been saved;
+              activation was not attempted. No rollback was performed. Review and correct the cause,
+              then rerun this target; use opnsense_force_reload=true as a JSON/YAML boolean
+              when activation recovery is required.
 
     - name: Reload OPNsense rule target after filter rule changes  # noqa: args[module]
-      oxlorg.opnsense.reload:
-        target: rule
       when:
-        - opnsense_filter_rule_apply is defined
-        - opnsense_filter_rule_apply is changed
+        - not ansible_check_mode
+        - (opnsense_filter_rule_apply | default({})) is changed or opnsense_force_reload | default(false)
+      block:
+        - name: Activate saved rule configuration  # noqa: args[module]
+          oxlorg.opnsense.reload:
+            target: rule
+        - name: Report activation success
+          ansible.builtin.debug:
+            msg: "OPNsense rule: reconciliation succeeded; activation succeeded"
+      rescue:
+        - name: Report saved configuration and failed activation
+          ansible.builtin.fail:
+            msg: >-
+              OPNsense rule: reconciliation succeeded but activation failed;
+              saved configuration may differ from active configuration. Review the
+              appliance, then retry the same target with opnsense_force_reload=true
+              as a JSON/YAML boolean. No rollback was performed.

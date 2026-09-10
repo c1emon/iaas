@@ -35,6 +35,14 @@
               else 'host is unreachable; checks were not attempted') }}
   changed_when: false
 
+- name: Block deployment and upgrade when required host observations are unavailable
+  ansible.builtin.assert:
+    that:
+      - k3s_preflight_reachable or k3s_preflight_mode == 'install'
+    fail_msg: required host is unreachable; no mutation admission can be established
+    quiet: true
+  changed_when: false
+
 - name: Probe read-only host prerequisites
   ansible.builtin.command: "{{ k3s_preflight_probe.command }}"
   delegate_to: "{{ k3s_preflight_node.vm_ref }}"
@@ -50,7 +58,7 @@
     - name: time
       command: "timedatectl show -p NTPSynchronized --value"
     - name: interface
-      command: "ip -o -4 addr show"
+      command: "ip -o addr show"
     - name: ports
       command: "ss -lntu"
     - name: disk
@@ -65,8 +73,6 @@
         *Path("/etc/apt/sources.list.d").glob("*.sources")];
         print("\n".join(line for p in paths if p.is_file() for line in p.read_text().splitlines()
         if re.match(r"^\s*(deb\s|URIs:)",line)))'
-    - name: install_state
-      command: "test ! -e /usr/local/bin/k3s"
   loop_control:
     loop_var: k3s_preflight_probe
     label: "{{ k3s_preflight_probe.name }}"
@@ -101,6 +107,44 @@
   when: hostvars[k3s_preflight_node.vm_ref].k3s_preflight_facts is defined
   changed_when: false
 
+- name: Parse the exact observed node address and interface
+  ansible.builtin.set_fact:
+    k3s_preflight_observed_interface: >-
+      {{ k3s_preflight_probes.results[3]
+         | k3s_interface_observation(k3s_preflight_node.node_ip, k3s_preflight_node.node_nic) }}
+  when:
+    - k3s_preflight_reachable | default(false)
+    - hostvars[k3s_preflight_node.vm_ref].k3s_preflight_facts is not defined
+  changed_when: false
+
+- name: Observe installation ownership without exposing configuration or tokens
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - "{{ lookup('ansible.builtin.file', role_path ~ '/files/probe_installation.py') }}"
+    stdin: >-
+      {{ {'role': k3s_preflight_node.role,
+          'sha256': k3s_runtime_model.cluster.artifacts[k3s_preflight_node.architecture].sha256,
+          'config': lookup('ansible.builtin.template', role_path ~ '/../k3s_runtime_config/templates/config.yaml.j2'),
+          'unit': lookup('ansible.builtin.template', role_path ~ '/../'
+                         ~ ('k3s_server/templates/k3s.service.j2' if k3s_preflight_node.role == 'server'
+                            else 'k3s_agent/templates/k3s-agent.service.j2'))} | to_json }}
+  vars:
+    k3s_runtime_model: "{{ hostvars['localhost'].k3s_model }}"
+    k3s_runtime_node: "{{ k3s_preflight_node }}"
+    k3s_runtime_join_token: ""
+    k3s_server_binary_path: /usr/local/bin/k3s
+    k3s_agent_binary_path: /usr/local/bin/k3s
+  delegate_to: "{{ k3s_preflight_node.vm_ref }}"
+  register: k3s_preflight_installation_probe
+  changed_when: false
+  failed_when: false
+  when:
+    - k3s_preflight_reachable | default(false)
+    - hostvars[k3s_preflight_node.vm_ref].k3s_preflight_facts is not defined
+  no_log: true
+
 - name: Build runtime facts from read-only probes
   ansible.builtin.set_fact:
     k3s_preflight_runtime:
@@ -110,15 +154,11 @@
       pve_architecture: "{{ hostvars[k3s_preflight_node.vm_ref].pve_architecture | default('unknown') }}"
       cgroups_v2: "{{ k3s_preflight_probes.results[0].stdout | default('') == 'cgroup2fs' }}"
       kernel_capabilities: >-
-        {{ ['NET_ADMIN', 'SYS_ADMIN']
-           if k3s_preflight_probes.results[1].rc | default(1) == 0 else [] }}
+        {{ k3s_preflight_probes.results[1] | k3s_capabilities }}
       time_synchronized: >-
         {{ k3s_preflight_probes.results[2].stdout | default('') | trim | lower == 'yes' }}
-      node_ip: "{{ k3s_preflight_node.node_ip }}"
-      node_interface: >-
-        {{ k3s_preflight_node.node_nic
-           if k3s_preflight_node.node_ip | default('')
-              in (k3s_preflight_probes.results[3].stdout | default('')) else '' }}
+      node_ip: "{{ k3s_preflight_observed_interface.node_ip }}"
+      node_interface: "{{ k3s_preflight_observed_interface.node_interface }}"
       ports_available: >-
         {%- set ns = namespace(ok=(k3s_preflight_probes.results[4].rc | default(1) | int == 0)) -%}
         {%- for result in k3s_preflight_port_checks.results | default([]) -%}
@@ -134,7 +174,7 @@
       artifact_reachable: false
       registry_reachable: false
       registry_tls_files_valid: false
-      conflicting_install_state: "{{ k3s_preflight_probes.results[7].rc | default(1) != 0 }}"
+      installation: "{{ k3s_preflight_installation_probe.stdout | default('{}', true) | from_json }}"
   when:
     - k3s_preflight_reachable | default(false)
     - hostvars[k3s_preflight_node.vm_ref].k3s_preflight_facts is not defined
@@ -435,9 +475,18 @@
     k3s_preflight_caps_ok: >-
       {{ (k3s_preflight_required_capabilities
           | difference(k3s_preflight_runtime.kernel_capabilities | default([])) | length) == 0 }}
+    k3s_preflight_installation_ok: >-
+      {{ k3s_preflight_runtime.installation | default({})
+         | k3s_installation_allowed(k3s_preflight_mode, k3s_preflight_cluster.version,
+                                    k3s_preflight_artifact.sha256) }}
+    k3s_preflight_ports_ok: >-
+      {{ k3s_preflight_runtime.ports_available | default(false)
+         or (k3s_preflight_installation_ok
+             and k3s_preflight_runtime.installation.state | default('') == 'managed'
+             and k3s_preflight_runtime.installation.service_active | default(false)) }}
     k3s_preflight_interface_ok: >-
       {{ k3s_preflight_runtime.node_ip | default('') == k3s_preflight_node.node_ip
-         and k3s_preflight_runtime.node_interface | default('') | length > 0 }}
+         and k3s_preflight_runtime.node_interface | default('') == k3s_preflight_node.node_nic }}
     k3s_preflight_disk_ok: >-
       {{ k3s_preflight_runtime.free_bytes | default(0) | int >= k3s_preflight_min_free_bytes }}
     k3s_preflight_artifact_ok: >-
@@ -473,10 +522,11 @@
         line: >-
           {{ ('PASS' if k3s_preflight_interface_ok else 'FAIL')
              ~ ' preflight.' ~ k3s_preflight_node.vm_ref ~ '.interface: derived node IP ownership' }}
-      - severity: "{{ 'PASS' if k3s_preflight_runtime.ports_available | default(false) | bool else 'FAIL' }}"
+      - severity: "{{ 'PASS' if k3s_preflight_ports_ok else 'FAIL' }}"
         line: >-
-          {{ ('PASS' if k3s_preflight_runtime.ports_available | default(false) | bool else 'FAIL')
-             ~ ' preflight.' ~ k3s_preflight_node.vm_ref ~ '.ports: required K3s ports are available' }}
+          {{ ('PASS' if k3s_preflight_ports_ok else 'FAIL')
+             ~ ' preflight.' ~ k3s_preflight_node.vm_ref
+             ~ '.ports: ports free or expected managed service active' }}
       - severity: "{{ 'PASS' if k3s_preflight_disk_ok else 'FAIL' }}"
         line: >-
           {{ ('PASS' if k3s_preflight_disk_ok else 'FAIL')
@@ -497,9 +547,10 @@
         line: >-
           {{ ('PASS' if k3s_preflight_runtime.registry_tls_files_valid | default(false) | bool else 'FAIL')
              ~ ' preflight.' ~ k3s_preflight_node.vm_ref ~ '.registry-tls: referenced files are valid' }}
-      - severity: "{{ 'FAIL' if k3s_preflight_runtime.conflicting_install_state | default(false) | bool else 'PASS' }}"
+      - severity: "{{ 'PASS' if k3s_preflight_installation_ok else 'FAIL' }}"
         line: >-
-          {{ ('FAIL' if k3s_preflight_runtime.conflicting_install_state | default(false) | bool else 'PASS')
-             ~ ' preflight.' ~ k3s_preflight_node.vm_ref ~ '.conflict: no conflicting K3s install' }}
+          {{ ('PASS' if k3s_preflight_installation_ok else 'FAIL')
+             ~ ' preflight.' ~ k3s_preflight_node.vm_ref ~ '.installation: '
+             ~ (k3s_preflight_runtime.installation.state | default('unknown')) ~ ' for ' ~ k3s_preflight_mode }}
   when: k3s_preflight_reachable | default(false)
   changed_when: false

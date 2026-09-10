@@ -1,7 +1,7 @@
 # opnsense-filter-rule-management Specification
 
 ## Purpose
-TBD - created by archiving change manage-opnsense-filter-rules. Update Purpose after archive.
+Manage declared API-backed OPNsense firewall rules from reviewed YAML, with stable identities, validated inputs and explicit configuration activation and recovery.
 
 ## Requirements
 
@@ -134,15 +134,26 @@ The system SHALL NOT delete, disable, or purge OPNsense filter rules that are ab
 - **THEN** the filter rule management workflow leaves that rule present and unchanged
 
 ### Requirement: Filter rule apply after successful changes
-The system SHALL apply or reload the OPNsense filter rule target after successfully applying declared filter rule changes.
+The system SHALL activate the fixed OPNsense rule target after successful declared changes and support an explicit activation-recovery retry independent of CRUD change detection.
 
 #### Scenario: Filter rule apply changes OPNsense state
-- **WHEN** the filter rule management workflow creates, updates, or removes a declared filter rule successfully
-- **THEN** the workflow applies or reloads the OPNsense filter rule target so the changes become active
+- **WHEN** declared create, update or removal operations complete successfully with actual changes
+- **THEN** the workflow SHALL reload the rule target once and report whether activation succeeded
 
 #### Scenario: Filter rule apply makes no changes
-- **WHEN** the filter rule management workflow completes without creating, updating, or removing any declared filter rule
-- **THEN** the workflow does not perform an unnecessary apply or reload operation
+- **WHEN** reconciliation makes no changes and opnsense_force_reload is false or omitted
+- **THEN** the workflow SHALL NOT perform an unnecessary reload
+
+#### Scenario: Operator retries failed activation
+- **WHEN** a previous invocation saved configuration but failed activation and the caller explicitly sets opnsense_force_reload to true
+- **THEN** successful admission and reconciliation SHALL reload the same fixed target even when CRUD returns no changes
+- **AND** failed activation SHALL return nonzero with saved-versus-active status and retry guidance
+- **AND** the workflow SHALL NOT infer rollback or successful data-plane behavior
+
+#### Scenario: Check mode or partial CRUD failure occurs
+- **WHEN** the workflow is in check mode or a declared write fails
+- **THEN** it SHALL NOT activate configuration
+- **AND** a write failure SHALL report that partial configuration changes may remain without claiming success
 
 ### Requirement: Safe credential handling for filter rule management
 The system SHALL use environment-provided OPNsense API credentials for filter rule management and SHALL NOT store real credentials in repository files.
@@ -165,3 +176,15 @@ The system SHALL include validation commands for the filter rule management work
 #### Scenario: YAML and Ansible linting pass
 - **WHEN** the operator runs the documented lint commands
 - **THEN** the repository YAML and filter rule management workflow pass linting without errors
+
+### Requirement: Inversion-aware destination safety
+Filter-rule safety checks SHALL evaluate destination inversion consistently in Python admission and Ansible before writes while retaining explicit ownership and management-access protections.
+
+#### Scenario: Caller declares an inverted destination
+- **WHEN** an otherwise valid deny rule targets the inverse of its own interface network
+- **THEN** the workflow SHALL NOT classify that rule as denying the uninverted interface network solely from a literal name intersection
+- **AND** it SHALL preserve the caller's explicit inversion without inventing routing policy
+
+#### Scenario: A non-inverted unsafe rule is supplied
+- **WHEN** a rule violates the retained management-access protection under its actual match semantics
+- **THEN** validation SHALL still reject it before writes

@@ -1,0 +1,85 @@
+---
+- name: Admit one OPNsense diagnostic on the controller
+  vars: &diagnostic_inputs
+    opnsense_diagnostics_target: "{{ lookup('ansible.builtin.env', 'OPNSENSE_TARGET', default='') }}"
+    opnsense_diagnostics_request: "{{ lookup('ansible.builtin.env', 'OPNSENSE_DIAGNOSTICS_REQUEST', default='') }}"
+    opnsense_diagnostics_output: "{{ lookup('ansible.builtin.env', 'OPNSENSE_DIAGNOSTICS_OUTPUT', default='') }}"
+  hosts: >-
+    {{ opnsense_diagnostics_target | default('') |
+       opnsense_diagnostic_controller(groups, ansible_limit | default(none)) }}
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Validate diagnostic request and protected output before credentials
+      ansible.builtin.command:
+        argv: &diagnostic_command
+          - uv
+          - run
+          - --no-sync
+          - --directory
+          - "{{ playbook_dir }}/../../../.."
+          - python
+          - -m
+          - iaas_automation.opnsense_diagnostics
+          - --target
+          - "{{ opnsense_diagnostics_target }}"
+          - --request
+          - "{{ opnsense_diagnostics_request | default('') }}"
+          - --output-dir
+          - "{{ lookup('ansible.builtin.env', 'OUTPUT_DIR', default='') }}"
+          - --detail
+          - "{{ opnsense_diagnostics_output | default('') }}"
+          - --environment
+          - "{{ lookup('ansible.builtin.env', 'ENVIRONMENT_DIR', default='') }}"
+          - --inventories
+          - "{{ ansible_inventory_sources | to_json }}"
+      environment:
+        PYTHONPATH: "{{ playbook_dir }}/../../../src"
+      changed_when: false
+      check_mode: false
+
+    - name: Record successful controller admission
+      ansible.builtin.set_fact:
+        opnsense_diagnostics_admitted: true
+
+- name: Run the admitted read-only diagnostic
+  vars: *diagnostic_inputs
+  hosts: "{{ opnsense_diagnostics_target | default('localhost', true) }}"
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Require successful admission of this exact target
+      ansible.builtin.assert:
+        that:
+          - hostvars['localhost'].opnsense_diagnostics_admitted | default(false)
+          - inventory_hostname == opnsense_diagnostics_target
+          - ansible_play_hosts_all | length == 1
+
+    - name: Run OPNsense API credential preflight
+      ansible.builtin.import_tasks: tasks/api-credential-preflight.yml
+
+    - name: Observe the fixed diagnostic operation
+      ansible.builtin.command:
+        argv: "{{ diagnostic_base_command + ['--execute'] }}"
+        stdin: >-
+          {{ {'host': opnsense_api_host, 'api_key': opnsense_api_key,
+              'api_secret': opnsense_api_secret, 'ssl_verify': opnsense_ssl_verify} | to_json }}
+      vars:
+        diagnostic_base_command: *diagnostic_command
+      environment:
+        PYTHONPATH: "{{ playbook_dir }}/../../../src"
+      register: opnsense_diagnostic_execution
+      changed_when: false
+      failed_when: false
+      check_mode: false
+      no_log: true
+
+    - name: Show safe diagnostic summary
+      ansible.builtin.debug:
+        msg: "{{ opnsense_diagnostic_execution.stdout | opnsense_diagnostic_summary }}"
+
+    - name: Fail when the required observation did not succeed
+      ansible.builtin.assert:
+        that:
+          - opnsense_diagnostic_execution.rc == 0
+        fail_msg: Diagnostic observation failed or is unsupported; see the safe summary above.

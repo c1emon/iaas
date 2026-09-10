@@ -44,7 +44,8 @@ options:
 class LookupModule(LookupBase):
     """Bridge the strict runtime channel into a redacted Ansible task."""
 
-    def run(
+    # Ansible's unannotated abstract stub is inferred as None; lookup results are lists.
+    def run(  # pyright: ignore[reportIncompatibleMethodOverride]
         self, terms: list[Any], variables: dict[str, Any] | None = None, **kwargs: Any
     ) -> list[str]:
         secret_file = kwargs.get("secret_file")

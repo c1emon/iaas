@@ -26,17 +26,10 @@
       - k3s_acquisition_artifact.sha256 | default('', true) is match('^[a-f0-9]{64}$')
       - k3s_acquisition_artifact.url is not search('[?#]')
       - >-
-        (k3s_acquisition_artifact.url
-         | regex_search('^https://[^?#]*/' ~ (k3s_acquisition_cluster.version | regex_escape) ~ '(/|$)')
-         | default('', true) | length) > 0
-        or k3s_acquisition_artifact.url ==
-           ('https://rancher-mirror.rancher.cn/k3s/'
-            ~ (k3s_acquisition_cluster.version | replace('+', '-')) ~ '/k3s')
-      - >-
         (k3s_acquisition_artifact.credential_ref | default('', true) | length == 0)
         or (k3s_acquisition_runtime_secret_file | default('', true) | string | length > 0)
     fail_msg: >-
-      K3s acquisition requires the exact composed version path, HTTPS URL, SHA-256,
+      K3s acquisition requires a caller-selected HTTPS URL, SHA-256,
       and an explicit protected runtime secret path when authentication is declared
   changed_when: false
   no_log: true
@@ -69,3 +62,26 @@
       {{ k3s_acquisition_artifact.proxy_url | default('', true) }}
       {%- endif -%}
   no_log: true
+
+- name: Read the acquired executable version
+  ansible.builtin.command:
+    argv:
+      - "{{ k3s_acquisition_binary_path }}"
+      - --version
+  register: k3s_acquisition_observed_version
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+  no_log: true
+
+- name: Require the exact declared version from the acquired executable
+  ansible.builtin.assert:
+    that:
+      - k3s_acquisition_observed_version.rc | default(1) == 0
+      - >-
+        k3s_acquisition_observed_version.stdout | default('')
+        is match('^k3s version ' ~ (k3s_acquisition_cluster.version | regex_escape) ~ '(?:\s|$)')
+    fail_msg: acquired K3s executable does not report the exact declared version
+    quiet: true
+  when: not ansible_check_mode
+  changed_when: false

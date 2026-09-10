@@ -67,6 +67,7 @@ archived OpenSpec changes.
 
 | Outcome | Representative references |
 |---|---|
+| Runtime baseline repairs, reviewed dependencies, URL table/network-group aliases and bounded read-only diagnostics; software acceptance complete, live appliance qualification separate. | `openspec/changes/archive/2026-09-10-extend-opnsense-foundation-capabilities/` |
 | PVE automation foundation, inventory validation, validation entrypoints, and reliability milestone. | `openspec/changes/archive/2026-06-22-add-pve-automation-foundation/`, `openspec/changes/archive/2026-06-22-split-pve-inventory-validation/`, `openspec/changes/archive/2026-06-23-add-iaas-validation-entrypoints/`, `openspec/changes/archive/2026-06-23-complete-p0-iaas-reliability/` |
 | PVE online safety rails and runtime verification. | `openspec/changes/archive/2026-06-24-add-pve-online-preflight/`, `openspec/changes/archive/2026-06-26-add-pve-guest-verification/` |
 | PVE rolling maintenance procedure. | [`docs/operations/03-pve.md`](operations/03-pve.md), `openspec/changes/archive/2026-08-25-add-pve-rolling-maintenance-runbook/` |

@@ -16,6 +16,13 @@
       {{ lookup('ansible.builtin.env', 'ENVIRONMENT_DIR', default=undef()) }}/ansible/vars/opnsense/aliases.yml
 
   tasks:
+    - name: Validate explicit activation recovery option before credential access
+      ansible.builtin.assert:
+        that:
+          - opnsense_force_reload | default(false) is boolean
+        fail_msg: opnsense_force_reload must be a YAML or JSON boolean
+      changed_when: false
+
     - name: Validate desired OPNsense aliases locally
       ansible.builtin.command:
         argv:
@@ -60,17 +67,69 @@
           Each desired alias must define name, type, content, description,
           enabled, and state fields compatible with oxlorg.opnsense.alias_multi.
 
-    - name: Create or update desired aliases additively
-      oxlorg.opnsense.alias_multi:
-        aliases: "{{ opnsense_aliases }}"
-        multi_control:
-          output_info: true
-      register: opnsense_alias_apply
-      when: opnsense_aliases | length > 0
+    # Credentials are inherited through the Collection's all -> system action group.
+    - name: Read existing alias definitions before any write  # noqa: args[module]
+      oxlorg.opnsense.list:
+        target: alias
+      register: opnsense_alias_live
+      changed_when: false
+      no_log: true
+
+    - name: Validate the effective graph and plan dependency batches
+      ansible.builtin.set_fact:
+        opnsense_alias_plan_result: "{{ opnsense_aliases | opnsense_alias_plan(opnsense_alias_live.data) }}"
+        opnsense_alias_apply:
+          changed: false
+      no_log: true
+
+    - name: Report admitted alias plan
+      ansible.builtin.debug:
+        msg:
+          present: "{{ opnsense_alias_plan_result.present_count }}"
+          removals: "{{ opnsense_alias_plan_result.removal_count }}"
+          would_change: "{{ opnsense_alias_plan_result.would_change }}"
+
+    - name: Report check-mode configuration difference
+      ansible.builtin.set_fact:
+        opnsense_alias_apply:
+          changed: "{{ opnsense_alias_plan_result.would_change }}"
+      changed_when: opnsense_alias_plan_result.would_change
+      when: ansible_check_mode
+
+    - name: Reconcile admitted alias batches in dependency order
+      when: not ansible_check_mode
+      block:
+        - name: Apply one dependency batch at a time
+          ansible.builtin.include_tasks: tasks/apply-alias-batch.yml
+          loop: "{{ opnsense_alias_plan_result.batches }}"
+          loop_control:
+            loop_var: opnsense_alias_batch
+            label: "{{ opnsense_alias_batch[0].name }}"
+      rescue:
+        - name: Report partial alias reconciliation
+          ansible.builtin.fail:
+            msg: >-
+              OPNsense alias reconciliation failed. Some configuration may have been saved;
+              later batches and activation were not attempted. No rollback was performed.
+              Review and correct the cause, then rerun this target; use opnsense_force_reload=true
+              as a JSON/YAML boolean when activation recovery is required.
 
     - name: Reload OPNsense alias target after alias changes
-      oxlorg.opnsense.reload:
-        target: alias
       when:
-        - opnsense_alias_apply is defined
-        - opnsense_alias_apply is changed
+        - not ansible_check_mode
+        - (opnsense_alias_apply | default({})) is changed or opnsense_force_reload | default(false)
+      block:
+        - name: Activate saved alias configuration  # noqa: args[module]
+          oxlorg.opnsense.reload:
+            target: alias
+        - name: Report activation success
+          ansible.builtin.debug:
+            msg: "OPNsense alias: reconciliation succeeded; activation succeeded"
+      rescue:
+        - name: Report saved configuration and failed activation
+          ansible.builtin.fail:
+            msg: >-
+              OPNsense alias: reconciliation succeeded but activation failed;
+              saved configuration may differ from active configuration. Review the
+              appliance, then retry the same target with opnsense_force_reload=true
+              as a JSON/YAML boolean. No rollback was performed.

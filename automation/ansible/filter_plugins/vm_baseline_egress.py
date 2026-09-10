@@ -5,7 +5,7 @@ from __future__ import annotations
 import ipaddress
 import re
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, NoReturn
 from urllib.parse import urlparse
 
 from ansible.errors import AnsibleFilterError
@@ -28,7 +28,7 @@ _POLICY_KEYS = {
 }
 
 
-def _fail(message: str) -> None:
+def _fail(message: str) -> NoReturn:
     raise AnsibleFilterError(f"vm_baseline_egress_policy: {message}")
 
 

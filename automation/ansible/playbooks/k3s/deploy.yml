@@ -4,6 +4,7 @@
   vars:
     k3s_model_path: "{{ k3s_deploy_model_path | default('') }}"
     k3s_preflight_scope: "{{ k3s_deploy_scope | default([]) }}"
+    k3s_preflight_mode: converge
     k3s_runtime_secret_file: "{{ k3s_deploy_runtime_secret_file | default('') }}"
 
 - name: Resolve one explicit whole-cluster K3s deployment scope

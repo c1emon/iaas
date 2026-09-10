@@ -1,4 +1,5 @@
 ROOT ?= $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+RUNTIME_MAKEFILE := $(abspath $(lastword $(MAKEFILE_LIST)))
 ifneq ($(origin ASTRA),undefined)
 $(error ASTRA is no longer supported; set ENVIRONMENT_DIR and OUTPUT_DIR explicitly)
 endif
@@ -48,6 +49,10 @@ K3S_UPGRADE_PLAN ?= $(RUNTIME_DIR)/k3s/upgrade-plan.json
 PLATFORM_HANDOFF_INTENT ?=
 PLATFORM_HANDOFF_OUTPUT ?=
 PLATFORM_HANDOFF_PLAYBOOK ?= $(AUTOMATION)/ansible/playbooks/k3s/platform-handoff.yml
+OPNSENSE_TARGET ?=
+OPNSENSE_DIAGNOSTICS_REQUEST ?=
+OPNSENSE_DIAGNOSTICS_OUTPUT ?=
+export OPNSENSE_TARGET OPNSENSE_DIAGNOSTICS_REQUEST OPNSENSE_DIAGNOSTICS_OUTPUT
 
 export ANSIBLE_ROLES_PATH := $(AUTOMATION)/ansible/roles
 export ANSIBLE_COLLECTIONS_PATH := $(AUTOMATION)/ansible/collections
@@ -69,6 +74,12 @@ runtime-tofu-check:
 .PHONY: help require-environment require-pve-dir
 help:
 	@printf '%s\n' 'IaaS operations: pve-generate pve-check services-generate services-check foundation-generate foundation-check k3s-check k3s-render' 'Select ENVIRONMENT_DIR and OUTPUT_DIR for environment operations; PVE_DIR selects an external OpenTofu root.' 'Checkout validation: check test secret-scan'
+	@printf '%s\n' 'Standalone k3s-preflight requires K3S_PREFLIGHT_MODE=install|converge|upgrade; deploy and upgrade select their own mode.'
+	@printf '%s\n' 'opnsense-diagnose: set OPNSENSE_TARGET and absolute OPNSENSE_DIAGNOSTICS_REQUEST; opted-in details also require OPNSENSE_DIAGNOSTICS_OUTPUT.'
+
+.PHONY: opnsense-diagnose
+opnsense-diagnose: require-environment
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(ENVIRONMENT_DIR)/ansible/inventory.yml" "$(AUTOMATION)/ansible/playbooks/opnsense/diagnostics.yml"
 
 require-environment:
 	@test -n "$(ENVIRONMENT_DIR)" || { printf 'error: ENVIRONMENT_DIR is required\n' >&2; exit 1; }
@@ -187,19 +198,25 @@ pve-backup-state:
 	@mkdir -p "$(BACKUP_DIR)"
 	@stamp="$$(date +%Y%m%dT%H%M%S)_$$$$"; phase="$${BACKUP_PHASE:-snapshot}"; if [ -f "$(PVE_DIR)/terraform.tfstate" ]; then cp "$(PVE_DIR)/terraform.tfstate" "$(BACKUP_DIR)/$${stamp}-$${phase}-terraform.tfstate"; fi
 
-pve-plan: render-cloud-init
-	$(MAKE) pve-backup-state BACKUP_PHASE=before
+pve-plan:
+	$(MAKE) -f "$(RUNTIME_MAKEFILE)" pve-check
+	$(MAKE) -f "$(RUNTIME_MAKEFILE)" render-cloud-init
+	$(MAKE) -f "$(RUNTIME_MAKEFILE)" pve-backup-state BACKUP_PHASE=before
 	$(TOFU) -chdir="$(PVE_DIR)" plan -var-file="$(PVE_TFVARS)"
 
-pve-apply: render-cloud-init upload-cloud-init verify-cloud-init
-	$(MAKE) pve-backup-state BACKUP_PHASE=before
+pve-apply:
+	$(MAKE) -f "$(RUNTIME_MAKEFILE)" pve-check
+	$(MAKE) -f "$(RUNTIME_MAKEFILE)" render-cloud-init
+	$(MAKE) -f "$(RUNTIME_MAKEFILE)" upload-cloud-init
+	$(MAKE) -f "$(RUNTIME_MAKEFILE)" verify-cloud-init
+	$(MAKE) -f "$(RUNTIME_MAKEFILE)" pve-backup-state BACKUP_PHASE=before
 	$(TOFU) -chdir="$(PVE_DIR)" apply -var-file="$(PVE_TFVARS)"
-	$(MAKE) pve-backup-state BACKUP_PHASE=after
+	$(MAKE) -f "$(RUNTIME_MAKEFILE)" pve-backup-state BACKUP_PHASE=after
 
 pve-destroy:
-	$(MAKE) pve-backup-state BACKUP_PHASE=before
+	$(MAKE) -f "$(RUNTIME_MAKEFILE)" pve-backup-state BACKUP_PHASE=before
 	$(TOFU) -chdir="$(PVE_DIR)" destroy -var-file="$(PVE_TFVARS)"
-	$(MAKE) pve-backup-state BACKUP_PHASE=after
+	$(MAKE) -f "$(RUNTIME_MAKEFILE)" pve-backup-state BACKUP_PHASE=after
 
 pve-verify-guests:
 	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(ANSIBLE_INVENTORY)" "$(ANSIBLE_PLAYBOOK)"
@@ -250,9 +267,13 @@ k3s-ansible-syntax: require-k3s-inputs
 k3s-ansible-lint:
 	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-lint "$(AUTOMATION)/ansible/playbooks/k3s" "$(AUTOMATION)/ansible/roles/k3s_acquisition" "$(AUTOMATION)/ansible/roles/k3s_agent" "$(AUTOMATION)/ansible/roles/k3s_preflight" "$(AUTOMATION)/ansible/roles/k3s_prerequisites" "$(AUTOMATION)/ansible/roles/k3s_runtime_config" "$(AUTOMATION)/ansible/roles/k3s_server" "$(AUTOMATION)/ansible/roles/k3s_snapshot" "$(AUTOMATION)/ansible/roles/k3s_upgrade" "$(AUTOMATION)/ansible/roles/k3s_verify"
 
-k3s-preflight: require-k3s-online-inputs k3s-render
+.PHONY: require-k3s-preflight-mode
+require-k3s-preflight-mode:
+	@case "$(K3S_PREFLIGHT_MODE)" in install|converge|upgrade) ;; *) printf 'error: K3S_PREFLIGHT_MODE must be install, converge or upgrade\n' >&2; exit 1 ;; esac
+
+k3s-preflight: require-k3s-preflight-mode require-k3s-online-inputs k3s-render
 	$(PYTHON) -m iaas_automation.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --scope "$(K3S_SCOPE)" --runtime-secrets "$(K3S_RUNTIME_SECRETS)"
-	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(K3S_INVENTORY)" -l "$(K3S_ANSIBLE_LIMIT)" -e "k3s_model_path=$(K3S_REVIEW)" -e "k3s_preflight_scope=$(K3S_SCOPE)" -e "k3s_runtime_secret_file=$(K3S_RUNTIME_SECRETS)" "$(K3S_PREFLIGHT_PLAYBOOK)"
+	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(K3S_INVENTORY)" -l "$(K3S_ANSIBLE_LIMIT)" -e "k3s_model_path=$(K3S_REVIEW)" -e "k3s_preflight_scope=$(K3S_SCOPE)" -e "k3s_preflight_mode=$(K3S_PREFLIGHT_MODE)" -e "k3s_runtime_secret_file=$(K3S_RUNTIME_SECRETS)" "$(K3S_PREFLIGHT_PLAYBOOK)"
 
 k3s-verify: require-k3s-scoped-inputs k3s-render
 	$(PYTHON) -m iaas_automation.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --scope "$(K3S_SCOPE)"

@@ -1,7 +1,7 @@
 # pve-cluster-health-check Specification
 
 ## Purpose
-TBD - created by archiving change add-pve-cluster-health-check. Update Purpose after archive.
+Provide an explicit read-only PVE cluster health command that reports observations for the caller-selected environment without adding live infrastructure access to the default offline gate.
 
 ## Requirements
 

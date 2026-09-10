@@ -1,0 +1,25 @@
+---
+# Synthetic schema/composition example, not deployment policy.
+opnsense_aliases:
+- name: DESTINATION_GROUP
+  type: networkgroup
+  content:
+  - REMOTE_NETWORKS
+  description: Synthetic caller-selected example
+  enabled: true
+  state: present
+- name: SOURCE_NETWORKS
+  type: network
+  content:
+  - 198.51.100.0/24
+  description: Synthetic caller-selected example
+  enabled: true
+  state: present
+- name: REMOTE_NETWORKS
+  type: urltable
+  content:
+  - https://lists.example.invalid/networks.txt
+  description: Synthetic caller-selected example
+  enabled: true
+  state: present
+  updatefreq_days: '0.5'

@@ -42,7 +42,7 @@ collection：
 
 ```bash
 uv sync --locked --dev
-uv run ansible-galaxy collection install -r automation/ansible/requirements.yml -p automation/ansible/collections
+uv run ansible-galaxy collection install --no-deps -r automation/ansible/requirements.yml -p automation/ansible/collections
 ```
 
 本地 collection 未被 Ansible 自动发现时，按该次命令显式设置

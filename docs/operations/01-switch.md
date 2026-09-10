@@ -44,7 +44,7 @@ PVE 或 K3s 配置自动创建 VLAN、端口或 Trunk。
 `readonly-facts.yml` 直接调用 `c1emon.xikeos.xikeos_facts`，不会进入配置模式。
 控制端使用 `paramiko` 作为 `network_cli` 的 Python SSH 后端；不得改用旧 Cisco IOS
 adapter、Cisco IOS resource/config 模块或通用 `cli_config`。仓库约束原生 collection
-版本为 `>=0.2.1,<0.3.0`，需要与 `uv sync` 一起安装；facts/resource 解析依赖（包括
+版本固定为 `0.2.1`，需要与 `uv sync` 一起安装；facts/resource 解析依赖（包括
 `ttp`、`textfsm`）也必须在控制端可用。
 
 | 变量 | 默认/允许值 | 作用与约束 |
@@ -54,6 +54,12 @@ adapter、Cisco IOS resource/config 模块或通用 `cli_config`。仓库约束�
 | `switch_export_formats` | 默认 `[yaml, json]`。 | 仅控制结构化观察产物格式。 |
 | `switch_export_save_raw` | 默认 `false`。 | `true` 才保存原始 CLI 输出；只能用于明确排障，导出视为敏感本地材料。 |
 | `switch_export_dir` / `switch_raw_output_dir` | 默认 `exports/switches/<inventory_hostname>/` 及其 `raw-output/` 子目录。 | 本地观察路径，绝不作为 desired-state 输入或提交。 |
+
+计划会显示按资源分组的对象变更（新增、删除、更新及变化字段），不显示命令、描述或地址值。
+未变化的计划显示 `changed_objects: 0`。需要原始详情时，显式传入
+`-e switch_config_detail_dir=/absolute/private/report-directory`；每台设备写入
+`<目录>/<inventory_hostname>/plan.json`，目录权限为 `0700`、文件为 `0600`。
+详情可能包含拓扑信息；目录必须位于实现代码和环境手写输入之外。
 
 ### `switch_config_resources` 结构
 

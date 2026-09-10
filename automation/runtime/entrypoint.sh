@@ -8,7 +8,7 @@ fi
 operation=$1
 shift
 case "$operation" in
-    generate|check-generated|pve-*|services-generate|services-check|foundation-generate|foundation-check|foundation-health|opnsense-validate|render-cloud-init|upload-cloud-init|verify-cloud-init|k3s-*|platform-handoff-*) ;;
+    generate|check-generated|pve-*|services-generate|services-check|foundation-generate|foundation-check|foundation-health|opnsense-validate|opnsense-diagnose|render-cloud-init|upload-cloud-init|verify-cloud-init|k3s-*|platform-handoff-*) ;;
     *) printf 'error: unsupported runtime operation: %s\n' "$operation" >&2; exit 2 ;;
 esac
 for argument do

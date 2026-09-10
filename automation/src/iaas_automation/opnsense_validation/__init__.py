@@ -8,6 +8,7 @@ from typing import Any, NoReturn
 import yaml
 
 from iaas_automation.common.errors import ValidationError
+from .aliases import ALIAS_NAME, validate_frequency, validate_local, validate_url
 
 
 RESOURCE_FILES = {
@@ -132,13 +133,21 @@ def _net_values(value: Any, path: str) -> list[str]:
 
 
 def _validate_alias(record: dict[str, Any], path: str) -> tuple[str]:
-    _shape(record, path, {"name", "type", "content", "description", "enabled", "state"})
-    name = _string(record["name"], f"{path}.name", pattern=IDENTIFIER)
+    _shape(record, path, {"name", "type", "content", "description", "enabled", "state"}, {"updatefreq_days"})
+    name = _string(record["name"], f"{path}.name", pattern=ALIAS_NAME)
     if len(name) > 32:
         _error(f"{path}.name", "must be at most 32 characters")
     alias_type = _string(record["type"], f"{path}.type")
-    if alias_type not in {"host", "network", "port"}:
-        _error(f"{path}.type", "must be one of host, network, port")
+    if alias_type not in {"host", "network", "port", "urltable", "networkgroup"}:
+        _error(f"{path}.type", "must be one of host, network, port, urltable, networkgroup")
+    state = _state(record["state"], f"{path}.state")
+    if alias_type == 'urltable':
+        if state == 'present' and 'updatefreq_days' not in record:
+            _error(f"{path}.updatefreq_days", "is required for present URL tables")
+        if 'updatefreq_days' in record:
+            validate_frequency(record['updatefreq_days'], f"{path}.updatefreq_days")
+    elif 'updatefreq_days' in record:
+        _error(f"{path}.updatefreq_days", "is only allowed for URL tables")
     content = _list(record["content"], f"{path}.content")
     if not content:
         _error(f"{path}.content", "must not be empty")
@@ -146,6 +155,10 @@ def _validate_alias(record: dict[str, Any], path: str) -> tuple[str]:
         item_path = f"{path}.content[{index}]"
         if alias_type == "port":
             _ports(item, item_path)
+        elif alias_type == 'urltable':
+            validate_url(item, item_path)
+        elif alias_type == 'networkgroup':
+            _string(item, item_path, pattern=ALIAS_NAME)
         else:
             _ip_or_network(_string(item, item_path), item_path)
     _string(record["description"], f"{path}.description")
@@ -195,12 +208,15 @@ def _validate_gateway(record: dict[str, Any], path: str) -> tuple[str, str]:
         _boolean(record[field], f"{path}.{field}")
     if record["default_gw"] is not False:
         _error(f"{path}.default_gw", "must be false")
-    numbers = {"latency_low": 0, "latency_high": 0, "loss_low": 0, "loss_high": 0,
-               "interval": 1, "time_period": 1, "loss_interval": 1, "data_length": 1,
-               "priority": 1, "weight": 1}
-    for field, minimum in numbers.items():
-        maximum = 255 if field == "priority" else 5 if field == "weight" else None
+    numbers = {"latency_low": (1, 9999), "latency_high": (1, 9999),
+               "loss_low": (1, 99), "loss_high": (1, 99), "interval": (1, 9999),
+               "time_period": (1, 9999), "data_length": (0, 9999),
+               "priority": (0, 255), "weight": (1, 5)}
+    for field, (minimum, maximum) in numbers.items():
         _integer(record[field], f"{path}.{field}", minimum=minimum, maximum=maximum)
+    # The pinned Collection declares an integer, with no primitive range for this field.
+    if type(record["loss_interval"]) is not int:
+        _error(f"{path}.loss_interval", "must be an integer")
     if record["latency_low"] > record["latency_high"]:
         _error(path, "latency_low must not exceed latency_high")
     if record["loss_low"] > record["loss_high"]:
@@ -223,7 +239,7 @@ def _validate_filter_rule(record: dict[str, Any], path: str) -> tuple[str]:
     _state(record["state"], f"{path}.state")
     for field in {"enabled", "quick"} | ({"source_invert"} if "source_invert" in record else set()) | ({"destination_invert"} if "destination_invert" in record else set()) | ({"log"} if "log" in record else set()):
         _boolean(record[field], f"{path}.{field}")
-    _integer(record["sequence"], f"{path}.sequence", minimum=1, maximum=999999)
+    _integer(record["sequence"], f"{path}.sequence", minimum=1, maximum=99999)
     interfaces = _list(record["interface"], f"{path}.interface")
     for index, interface in enumerate(interfaces):
         _string(interface, f"{path}.interface[{index}]", pattern=INTERFACE)
@@ -233,7 +249,11 @@ def _validate_filter_rule(record: dict[str, Any], path: str) -> tuple[str]:
             _error(f"{path}.{field}", f"must be one of {', '.join(sorted(allowed))}")
     _net_values(record["source_net"], f"{path}.source_net")
     destination = _net_values(record["destination_net"], f"{path}.destination_net")
-    if record["action"] in {"block", "reject"} and set(interfaces) & set(destination):
+    own_destinations = (set(interfaces) - set(destination) if record.get("destination_invert", False)
+                        else set(interfaces) & set(destination))
+    if record.get("destination_invert", False) and "any" in destination:
+        own_destinations = set()
+    if record["action"] in {"block", "reject"} and own_destinations:
         _error(f"{path}.destination_net", "deny rule must not include its own interface")
     for field in {"source_port", "destination_port"} & record.keys():
         _ports(record[field], f"{path}.{field}")
@@ -260,6 +280,8 @@ def validate_document(resource: str, document: Any) -> None:
         if identity in identities:
             _error(path, f"duplicate managed identity {' / '.join(identity)}")
         identities.add(identity)
+    if resource == 'aliases':
+        validate_local(records)
 
 
 def validate_file(resource: str, path: Path) -> None:

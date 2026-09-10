@@ -53,6 +53,12 @@ def main(argv: list[str] | None = None) -> int:
 
     inventory_doc = load_yaml(args.inventory)
     inventory = validate_foundation_inventory(inventory_doc)
+    for service in inventory["foundation_services"]:
+        check = service.get("health_check")
+        if check and check.get("ca_file"):
+            ca_file = Path(check["ca_file"])
+            if not ca_file.is_absolute():
+                check["ca_file"] = str(args.inventory.parent / ca_file)
     model = build_model(inventory)
     docs = build_markdown(model)
 

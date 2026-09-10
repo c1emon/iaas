@@ -1,0 +1,87 @@
+{
+  "source_baseline": "OPNsense core 26.1.11; synthetic values",
+  "alias_configuration": {
+    "current": 1,
+    "rowCount": 1,
+    "total": 1,
+    "rows": [
+      {
+        "uuid": "11111111-2222-4333-8444-555555555555",
+        "name": "REMOTE_NETWORKS",
+        "type": "urltable",
+        "content": "https://lists.example.invalid/networks.txt",
+        "enabled": "1",
+        "updatefreq": "0.5"
+      }
+    ]
+  },
+  "alias_table": {
+    "current": 1,
+    "rowCount": 1,
+    "total": 1,
+    "rows": [
+      {
+        "ip": "192.0.2.0/24"
+      }
+    ]
+  },
+  "rule_configuration": {
+    "current": 1,
+    "rowCount": 1,
+    "total": 1,
+    "rows": [
+      {
+        "uuid": "11111111-2222-4333-8444-555555555555",
+        "description": "iaas:opnsense:filter:example:route",
+        "enabled": "1"
+      }
+    ]
+  },
+  "rule_ids": {
+    "items": [
+      {
+        "id": "11111111-2222-4333-8444-555555555555",
+        "descr": "iaas:opnsense:filter:example:route"
+      }
+    ]
+  },
+  "logs": [
+    {
+      "rid": "11111111-2222-4333-8444-555555555555",
+      "src": "198.51.100.10",
+      "dst": "192.0.2.10",
+      "srcport": "52000",
+      "dstport": "443",
+      "protoname": "tcp",
+      "protonum": "6",
+      "interface": "igb0",
+      "action": "pass",
+      "dir": "in",
+      "__timestamp__": "2026-09-10T12:00:00",
+      "__digest__": "synthetic"
+    }
+  ],
+  "states": {
+    "current": 1,
+    "rowCount": 1,
+    "total": 1,
+    "rows": [
+      {
+        "src_addr": "198.51.100.10",
+        "dst_addr": "192.0.2.10",
+        "src_port": "52000",
+        "dst_port": "443",
+        "proto": "tcp",
+        "iface": "igb0",
+        "interface": "LAN",
+        "nat_addr": null,
+        "nat_port": null,
+        "gateway": null,
+        "bytes": [
+          100,
+          200
+        ]
+      }
+    ]
+  }
+}

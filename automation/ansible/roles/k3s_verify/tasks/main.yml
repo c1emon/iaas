@@ -12,6 +12,7 @@
     argv:
       - k3s
       - kubectl
+      - --request-timeout=15s
       - get
       - --raw=/readyz
   delegate_to: "{{ k3s_verify_node.vm_ref }}"
@@ -28,6 +29,7 @@
     argv:
       - k3s
       - kubectl
+      - --request-timeout=15s
       - get
       - nodes
       - -o
@@ -46,6 +48,7 @@
     argv:
       - k3s
       - kubectl
+      - --request-timeout=15s
       - get
       - --raw=/readyz?verbose
   delegate_to: "{{ k3s_verify_node.vm_ref }}"

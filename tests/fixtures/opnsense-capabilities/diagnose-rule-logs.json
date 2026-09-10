@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "kind": "rule_logs",
+  "rule": {
+    "scope": "example",
+    "slug": "route"
+  },
+  "source_ip": "198.51.100.10",
+  "protocol": "tcp",
+  "destination_port": 443,
+  "limit": 100
+}

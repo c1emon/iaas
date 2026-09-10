@@ -1,7 +1,7 @@
 # opnsense-pbr-gateway-management Specification
 
 ## Purpose
-TBD - created by archiving change manage-opnsense-pbr-gateways. Update Purpose after archive.
+Manage declared OPNsense policy-routing gateways from reviewed YAML while preserving caller-owned default-route policy and reporting reconciliation and activation outcomes.
 
 ## Requirements
 
@@ -72,15 +72,26 @@ The system SHALL limit PBR gateway management to explicitly declared gateway obj
 - **THEN** that rule is handled outside the PBR gateway management workflow
 
 ### Requirement: Gateway reload after successful changes
-The system SHALL reload the OPNsense gateway target after successfully applying declared gateway changes.
+The system SHALL activate the fixed OPNsense gateway target after successful declared changes and support an explicit activation-recovery retry independent of CRUD change detection.
 
 #### Scenario: Gateway apply changes OPNsense state
-- **WHEN** the PBR gateway management workflow creates, updates, or removes a declared gateway successfully
-- **THEN** the workflow reloads the OPNsense `gateway` target so the changes become active
+- **WHEN** declared create, update or removal operations complete successfully with actual changes
+- **THEN** the workflow SHALL reload the gateway target once and report whether activation succeeded
 
 #### Scenario: Gateway apply makes no changes
-- **WHEN** the PBR gateway management workflow completes without creating, updating, or removing any declared gateway
-- **THEN** the workflow does not reload the OPNsense `gateway` target
+- **WHEN** reconciliation makes no changes and opnsense_force_reload is false or omitted
+- **THEN** the workflow SHALL NOT perform an unnecessary reload
+
+#### Scenario: Operator retries failed activation
+- **WHEN** a previous invocation saved configuration but failed activation and the caller explicitly sets opnsense_force_reload to true
+- **THEN** successful admission and reconciliation SHALL reload the same fixed target even when CRUD returns no changes
+- **AND** failed activation SHALL return nonzero with saved-versus-active status and retry guidance
+- **AND** the workflow SHALL NOT infer rollback or successful data-plane behavior
+
+#### Scenario: Check mode or partial CRUD failure occurs
+- **WHEN** the workflow is in check mode or a declared write fails
+- **THEN** it SHALL NOT activate configuration
+- **AND** a write failure SHALL report that partial configuration changes may remain without claiming success
 
 ### Requirement: Safe credential handling for PBR gateway management
 The system SHALL use environment-provided OPNsense API credentials for PBR gateway management and SHALL NOT store real credentials in repository files.

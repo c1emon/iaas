@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -60,7 +61,7 @@ def _facts(**overrides: Any) -> dict[str, Any]:
         "artifact_reachable": True,
         "registry_reachable": True,
         "registry_tls_files_valid": True,
-        "conflicting_install_state": False,
+        "installation": {"state": "fresh"},
     }
     facts.update(overrides)
     return facts
@@ -85,6 +86,7 @@ def _extra(scope: list[str] | None = None) -> list[str]:
             {
                 "k3s_model_path": str(MODEL),
                 "k3s_preflight_scope": scope or ["synthetic-server-01"],
+                "k3s_preflight_mode": "install",
             }
         ),
     ]
@@ -93,6 +95,30 @@ def _extra(scope: list[str] | None = None) -> list[str]:
 def test_playbook_syntax_check_passes() -> None:
     result = _run(["-i", "localhost,", str(PLAYBOOK), "--syntax-check"])
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("mode,deploy,upgrade", [("", "", ""), ("wrong", "", ""),
+                                                ("install", "model.yml", ""), ("converge", "", "model.yml")])
+def test_mode_rejection_precedes_model_or_host_access(mode, deploy, upgrade):
+    result = _run(["-i", "localhost,", str(PLAYBOOK), "-e", json.dumps({
+        "k3s_preflight_mode": mode, "k3s_deploy_model_path": deploy, "k3s_upgrade_model_path": upgrade})])
+    assert result.returncode != 0
+    assert "without a policy override" in result.stdout
+    assert "Load the validated" not in result.stdout
+
+
+@pytest.mark.parametrize("mode,version,valid", [("converge", "v1.35.1+k3s1", True),
+                                              ("upgrade", "v1.34.0+k3s1", True),
+                                              ("converge", "v1.34.0+k3s1", False)])
+def test_installed_cluster_uses_operation_policy(tmp_path, mode, version, valid):
+    model = yaml.safe_load(MODEL.read_text())
+    node = model["nodes"][0]
+    inventory = tmp_path / "installed.yml"
+    _write_inventory(inventory, {node["vm_ref"]: _host(ports_available=False, installation={
+        "state": "managed", "version": version, "sha256": model["cluster"]["artifacts"][node["architecture"]]["sha256"],
+        "service_active": True, "datastore": True})})
+    result = _run(["-i", str(inventory), str(PLAYBOOK), *_extra(), "-e", json.dumps({"k3s_preflight_mode": mode})])
+    assert (result.returncode == 0) == valid, result.stdout + result.stderr
 
 
 def test_no_hosts_is_reported_without_remote_access(tmp_path: Path) -> None:
@@ -154,7 +180,7 @@ def test_preflight_path_contains_no_mutation_modules_or_commands() -> None:
     source = "\n".join(path.read_text(encoding="utf-8") for path in [PLAYBOOK, ROLE_TASKS])
     assert "apt update" not in source
     assert "ansible.builtin.apt" not in source
-    assert not re.search(r"ansible\.builtin\.(copy|template|file|lineinfile|blockinfile|replace|package|service|systemd)", source)
+    assert not re.search(r"^\s+ansible\.builtin\.(copy|template|file|lineinfile|blockinfile|replace|package|service|systemd):", source, re.M)
     assert not re.search(r"\b(command|shell):\s*(apt|apt-get|systemctl|service|rm|mv|cp|tee|sed\s+-i|curl\s+.*-o|wget\s+.*-O)\b", source)
 
 

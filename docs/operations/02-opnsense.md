@@ -27,7 +27,7 @@ firewall/management rules、默认防火墙策略、NAT/DNAT 和关键公网入�
 | `$ENVIRONMENT_DIR/ansible/inventory.yml` | `opnsense` 组、主机别名、API host/FQDN。 | 环境源文件。 |
 | `$ENVIRONMENT_DIR/ansible/group_vars/opnsense.yml` | `opnsense_api_url`、`opnsense_ssl_verify`、API key/secret 入口。 | Key/secret 仅用环境变量。 |
 | `$ENVIRONMENT_DIR/ansible/vars/opnsense/*.yml` | 声明式期望状态。 | 不从 export 复制回写。 |
-| `$OUTPUT_DIR/runtime/exports/opnsense/` | API 导出/快照。 | 本地观察产物，不是 apply 输入。 |
+| `$OUTPUT_DIR/runtime/exports/opnsense/<inventory_hostname>/` | 按设备隔离的 API 导出。 | 本地观察产物，不是 apply 输入。 |
 
 | 变量 | 含义 | 约束 |
 | --- | --- | --- |
@@ -44,12 +44,24 @@ firewall/management rules、默认防火墙策略、NAT/DNAT 和关键公网入�
 
 | 字段 | 含义 | 约束 |
 | --- | --- | --- |
-| `name` | 别名稳定名称。 | 变更前检查所有引用；避免重名。 |
-| `type` | `host`、`network`、`port` 等 OPNsense alias 类型。 | 与 `content` 类型一致。 |
-| `content` | 地址、网段或端口列表。 | 每个值必须与 alias 类型匹配。 |
+| `name` | 别名稳定名称。 | 遵循固定版本语法，最多 31 字符；字母或单下划线前缀，只含字母数字下划线，不允许双下划线前缀。 |
+| `type` | `host`、`network`、`port`、`urltable`、`networkgroup`。 | 与 `content` 类型一致；已有名称不能直接改变类型。 |
+| `content` | 地址、网段、端口、HTTP(S) URL 或别名名称列表。 | 按类型校验；组成员必须是地址兼容别名。 |
+| `updatefreq_days` | URL table 的刷新周期（天）。 | present 必填，absent 可省略；其他类型禁止。使用引号字符串，如 `"1"`、`"0.5"`，最小 0.1 且最多一位小数，不允许丢失精度。 |
 | `description` | 人类可读用途。 | 不作为秘密或业务配置载体。 |
 | `enabled` | 是否启用。 | 显式布尔值。 |
 | `state` | `present` 或 `absent`。 | `absent` 是变更操作，先审查引用。 |
+
+URL 由调用方选择，不允许用户名密码、fragment 或嵌入凭据；普通查询参数也必须是非秘密配置。
+还须符合固定 Collection 的 URL 语法；IPv6 字面地址、单标签主机名等不受该版本支持的形式会在离线阶段拒绝。
+运行时不下载或改写列表，配置保存和激活成功不代表列表已加载。OPNsense 负责定期刷新。
+
+组引用会先在本地校验，再只读解析外部定义。按依赖顺序创建成员和组，先释放旧引用、后按设备现有依赖反序删除。
+未声明的对象不被接管。删除仍受设备的最终引用保护；失败可能留下已保存的部分配置，不会自动回滚或激活。
+Check mode 使用读取到的配置生成计划，不写入临时成员，也不触发 reload。
+旧配置中含连字符、点、数字开头或 32 字符的别名名称将被提前拒绝；按设备命名规则由调用方规划迁移，工具不自动改名。
+
+通用 schema/组合示例见 `tests/fixtures/opnsense-capabilities/`，仅供审查，不能直接作为部署策略。
 
 ### 过滤规则：`vars/opnsense/filter-rules.yml`
 
@@ -60,7 +72,7 @@ firewall/management rules、默认防火墙策略、NAT/DNAT 和关键公网入�
 | --- | --- | --- |
 | `scope`、`slug` | 稳定规则身份。 | 小写数字连字符格式；修改相当于新规则。 |
 | `state`、`enabled` | 生命周期和启用状态。 | `state` 只能为 `present`/`absent`。 |
-| `sequence` | 规则顺序。 | 推荐 1–99 核心、100–199 策略路由、200–499 特例、900+ 宽泛默认规则。 |
+| `sequence` | 规则顺序。 | 整数 1–99999；推荐 1–99 核心、100–199 策略路由、200–499 特例、900+ 宽泛默认规则。 |
 | `interface` | OPNsense 接口 ID 列表。 | 用 API 接受的 ID，不使用 UI 显示名。 |
 | `direction`、`action`、`quick` | 匹配方向、动作、快速匹配。 | 先用 readonly/export 确认现有顺序与语义。 |
 | `ip_protocol`、`protocol` | IP 族与传输协议。 | `inet`/`inet46` 等须与地址和目标服务一致。 |
@@ -109,7 +121,7 @@ make opnsense-validate
 以下为调用方 `op run` 注入示例；传统 Secret 已注入同名变量时直接执行 `uv run`。
 调用方 group vars 负责将环境变量映射为 Ansible API 连接变量。
 然后在 `automation/ansible/` 目录运行在线只读 API smoke、导出
-或快照。导出写入本地 `$OUTPUT_DIR/runtime/exports/opnsense/`，不改设备配置；快照/导出内容可能含
+或快照。导出写入本地 `$OUTPUT_DIR/runtime/exports/opnsense/<inventory_hostname>/`，不改设备配置；快照/导出内容可能含
 敏感信息，应按本手册的本地观察产物规则处理。
 
 ```bash
@@ -158,10 +170,79 @@ op run --env-file "$OPNSENSE_ENV_TEMPLATE" -- \
 同一规则集不得无迁移计划地混用手工与 Ansible 所有权；alias 类型变更也不得
 由自动 delete/recreate 猜测完成，必须以明确变更单处理。
 
+四个 managed playbook 默认仅在配置发生变化后激活固定资源 target，普通 no-op
+不 reload；`--check` 始终不激活。模块内自动 reload 已显式关闭。若 CRUD 批次失败，
+之前的项目可能已保存，但本次不会继续 reload，也不自动回滚。若最后 reload 失败，
+输出明确区分保存与激活；检查设备后，可用同一 playbook、输入和目标重试，并附加
+`-e '{"opnsense_force_reload": true}'`。此选项允许配置已无差异时再次激活。
+必须使用 JSON/YAML boolean；`-e opnsense_force_reload=true` 的字符串形式会被拒绝。
+
+Gateway 数值边界与当前固定 Collection 一致：priority 为 0–255，weight 为 1–5，
+latency/interval/time_period 为 1–9999，loss_low/high 为 1–99，data_length 为 0–9999。
+loss_interval 仅声明整数；工作流不增加 Collection 未声明的范围。整个期望批次在
+凭据访问和写入前校验。deny rule 的管理接口保护会同时考虑 destination_net 与
+destination_invert；排除自身接口的反选与包含自身接口不是同一种规则。
+
 不要把 `manage-dnat.yml` 加入变更链：它的预期结果是校验输入后失败，以防把
 未实现的 DNAT 误认为已被管理。
 
-## 2.5 验收与停止
+## 2.5 有界只读诊断
+
+使用同一环境清单和调用方注入的 API 凭据。必须明确一个 `opnsense` 组内的 inventory host，
+不能传组名、通配符或 Ansible `--limit`；工具先在控制端校验目标、请求和输出路径。
+`ENVIRONMENT_DIR`、`OUTPUT_DIR` 和请求路径均使用绝对路径。
+
+```sh
+make opnsense-diagnose \
+  OPNSENSE_TARGET=your-firewall-inventory-host \
+  OPNSENSE_DIAGNOSTICS_REQUEST=/absolute/diagnostic-request.json
+```
+
+直接 Ansible 使用相同校验（先在仓库执行 `uv sync --locked --dev`）：
+
+```sh
+ANSIBLE_CONFIG="$PWD/automation/ansible/ansible.cfg" uv run ansible-playbook \
+  -i "$ENVIRONMENT_DIR/ansible/inventory.yml" \
+  automation/ansible/playbooks/opnsense/diagnostics.yml \
+  -e '{"opnsense_diagnostics_target":"your-firewall-inventory-host","opnsense_diagnostics_request":"/absolute/diagnostic-request.json"}'
+```
+
+请求为 JSON 或 YAML 映射，固定 `schema_version: 1`。三种示例见
+`tests/fixtures/opnsense-capabilities/diagnose-*.json`，地址和规则身份须由调用方替换。
+
+| kind | 必需选择条件 | 可选选择条件 |
+| --- | --- | --- |
+| `alias` | `alias_name` | 无；分别报告配置项数量和实际表项观测。 |
+| `rule_logs` | `rule` 或 source/destination IP | `rule` 使用 scope＋slug 或 UUID；可叠加 IP、protocol、端口、interface、since/until。 |
+| `states` | source/destination IP | protocol、source_port、destination_port。 |
+
+地址字段为 `source_ip`、`destination_ip`，只接受 IPv4/IPv6 字面地址；条件按 AND 组合。
+protocol 使用小写 `tcp/udp/icmp/icmpv6`，端口为 1–65535 的整数且必须配 TCP/UDP。
+日志时间为带 `Z` 的 UTC RFC3339 字符串；同时提供 since/until 时必须顺序正确。
+`limit` 默认 100，范围 1–1000；未知字段和不适用的选择条件会被拒绝。
+
+默认控制台仅输出带版本、时间、目标、选择条件、计数和覆盖范围的摘要，不输出表项、日志、状态记录或 URL。
+`ok` 的零匹配仅针对实际检查的可评估样本；`unsupported` 和 `error` 都返回非零退出码，观测计数为 null。
+缺少必需字段、规则关联或无法区分后端失败的空数据不会被解释为零流量。
+固定版本的 `query_states` 返回 `current: 0` 时属于错误页；其他无法确认的空观测标为 unsupported。
+
+API 连接/read timeout 分别为 5/15 秒，每个响应最多 2 MiB、一次操作累计最多 8 MiB，最多查询 5 页。
+日志只读取有限的近期样本，不是历史日志检索；时间缺少时区时不能做 UTC 过滤。
+状态按返回的 src_addr/dst_addr 精确匹配，NAT、接口、gateway、route-to/reply-to/dup-to 和 rtable 按接口实际返回标记可用性，不推断完整路径或最新规则是否生效。
+配置保存、表项存在和 URL 定期刷新成功是不同事实；接口未提供的更新时间保持不可用。
+
+需要详情时，在请求中显式设置 `include_details: true`，同时传入
+`OPNSENSE_DIAGNOSTICS_OUTPUT=$OUTPUT_DIR/runtime/opnsense-diagnostics/fw/result.json`；直接 Ansible 对应
+`opnsense_diagnostics_output`。目录为 `0700`、文件为 `0600`，禁止符号链接、越界或覆盖请求、清单及手写输入。
+只指定输出路径不会启用详情，未启用时不创建详情文件。
+
+所需设备权限按操作选择：别名配置使用 `Firewall: Aliases`，表项使用 `Diagnostics: PF Table IP addresses`，
+日志使用 `Diagnostics: Logs: Firewall: Live View`；规则选择还需要 `Firewall: Rules [new]` 和
+`Diagnostics: Firewall sessions`，状态查询使用 `Diagnostics: Show States`。
+其中部分设备权限也包含写操作，但本诊断入口只调用固定的只读操作，不刷新别名、不激活规则、不清理状态。
+权限、字段和限制以 core 26.1.11 源码为基线；软件测试不代表某台设备或流量路径已经验收。
+
+## 2.6 验收与停止
 
 验收至少包括：API 连通、目标对象身份与顺序正确、管理路径保持可达、所需的
 PVE/VM/Registry/DNS 路径经过实际测试，以及未出现未解释的规则阴影或网关

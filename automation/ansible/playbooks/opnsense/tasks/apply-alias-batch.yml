@@ -1,0 +1,14 @@
+---
+- name: Create update or remove one admitted alias batch
+  oxlorg.opnsense.alias_multi:
+    aliases: "{{ opnsense_alias_batch }}"
+    reload: false
+    multi_control:
+      fail_verify: true
+  register: opnsense_alias_batch_apply
+  no_log: true
+
+- name: Accumulate saved alias changes
+  ansible.builtin.set_fact:
+    opnsense_alias_apply:
+      changed: "{{ opnsense_alias_apply.changed or opnsense_alias_batch_apply.changed }}"

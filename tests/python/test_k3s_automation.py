@@ -255,14 +255,14 @@ def test_artifact_url_rejects_invalid_or_secret_bearing_forms(url: str) -> None:
         build_composed_model(intent, inventory)
 
 
-def test_artifact_url_must_use_the_exact_declared_k3s_version_path() -> None:
+def test_artifact_url_path_is_caller_owned() -> None:
     intent, inventory = valid_documents()
     intent["cluster"]["artifacts"]["amd64"]["url"] = (
         "https://artifacts.synthetic.invalid/k3s/v1.34.9+k3s1/amd64/k3s"
     )
 
-    with pytest.raises(ValidationError, match="exact cluster.version"):
-        build_composed_model(intent, inventory)
+    model = build_composed_model(intent, inventory)
+    assert model["cluster"]["version"] == intent["cluster"]["version"]
 
 
 def test_registry_name_and_rewrite_regex_are_validated() -> None:
@@ -430,7 +430,7 @@ def test_makefile_separates_offline_and_online_k3s_entrypoints() -> None:
     assert "k3s-render:" in makefile
     assert "K3S_INTENT" in makefile
     assert "K3S_INVENTORY" in makefile
-    assert "k3s-preflight: require-k3s-online-inputs" in makefile
+    assert "k3s-preflight: require-k3s-preflight-mode require-k3s-online-inputs" in makefile
     assert "k3s-verify: require-k3s-scoped-inputs" in makefile
     assert "k3s-deploy: require-k3s-online-inputs" in makefile
     assert "k3s-snapshot: require-k3s-scoped-inputs" in makefile

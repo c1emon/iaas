@@ -63,7 +63,8 @@ def test_acquisition_is_pinned_to_the_composed_architecture_and_checksum() -> No
     assert "no_log: true" in source
     assert "get.k3s.io" not in source
     assert "shell:" not in source
-    assert "command:" not in source
+    commands = [task["ansible.builtin.command"] for task in yaml.safe_load(source) if "ansible.builtin.command" in task]
+    assert commands == [{"argv": ["{{ k3s_acquisition_binary_path }}", "--version"]}]
 
 
 def test_acquisition_uses_only_an_action_scoped_proxy_environment() -> None:
@@ -109,12 +110,12 @@ def test_missing_checksum_fails_before_get_url(tmp_path: Path) -> None:
     assert "Acquire the exact pinned K3s executable" not in result.stdout
 
 
-def test_version_path_mismatch_fails_before_get_url(tmp_path: Path) -> None:
+def test_non_https_url_fails_before_get_url(tmp_path: Path) -> None:
     playbook = tmp_path / "wrong-version.yml"
     _write_role_playbook(
         playbook,
         {
-            "url": "https://artifacts.synthetic.invalid/k3s/v1.35.0+k3s1/amd64/k3s",
+            "url": "http://artifacts.synthetic.invalid/k3s/v1.35.0+k3s1/amd64/k3s",
             "sha256": "a" * 64,
         },
     )
@@ -148,5 +149,6 @@ def test_auth_value_is_not_serialized_into_role_facts() -> None:
     source = ROLE.read_text(encoding="utf-8")
 
     assert "k3s_acquisition_credentials:" not in source
-    assert "register: k3s_acquisition" not in source
+    registers = [task["register"] for task in yaml.safe_load(source) if "register" in task]
+    assert registers == ["k3s_acquisition_observed_version"]
     assert "lookup('k3s_protected_secret'" in source

@@ -269,7 +269,15 @@ op run --env-file "$PVE_ENV_TEMPLATE" -- \
   make pve-apply STORAGE_ID="$PVE_SNIPPET_STORAGE"
 ```
 
-`pve-apply` 会渲染、上传并验证 cloud-init snippets，并在 apply 前后备份本地
+`pve-plan` 和 `pve-apply` 先检查生成输入与当前 inventory 一致；过期时先显式
+执行 `pve-generate` 并审查结果。可以从其他目录用 `make -f /path/to/iaas/Makefile`
+调用，递归步骤会保留该 Makefile。`pve-apply` 即使继承并行 MAKEFLAGS，也按顺序
+渲染、上传、验证 cloud-init snippets，失败即停止后续步骤；共享同一输出目录的
+多次运行仍须由调用方串行执行。单独 upload/verify 会用现有 manifest 的源 hash
+核对当前显式 tfvars，缺失或不匹配时不会连接 SSH。主机 helper 必须由 `pvesm`
+成功解析存储路径，不能再依赖猜测的 `/mnt/pve` 回退路径。
+
+`pve-apply` 在 apply 前后备份本地
 OpenTofu state 到`$OUTPUT_DIR/runtime/tofu-state-backups/`。state 位于
 `$PVE_DIR/terraform.tfstate`，是单操作者本地状态；不得
 提交、复制到 issue 或用删除 state 的方式修复漂移。

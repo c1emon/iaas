@@ -14,15 +14,33 @@ VERSION = 'v1.35.1+k3s1'
 CN = 'https://rancher-mirror.rancher.cn/k3s/v1.35.1-k3s1/k3s'
 
 
+@pytest.mark.parametrize('observed,valid', [(VERSION, True), ('v1.35.0+k3s1', False), (VERSION + '0', False)])
+def test_acquired_binary_reports_exact_version(tmp_path, observed, valid):
+    binary = tmp_path / 'k3s'
+    binary.write_text('#!/bin/sh\nprintf "%s\\n" "k3s version ' + observed + ' (synthetic)"\n')
+    binary.chmod(0o755)
+    role = yaml.safe_load((ROOT / 'automation/ansible/roles/k3s_acquisition/tasks/main.yml').read_text())
+    names = [task['name'] for task in role]
+    assert names.index('Acquire the exact pinned K3s executable through the resolved artifact path') < names.index('Read the acquired executable version')
+    tasks = role[-2:]
+    play = tmp_path / 'version.yml'
+    play.write_text(yaml.safe_dump([{'hosts': 'localhost', 'connection': 'local', 'gather_facts': False,
+                                   'vars': {'k3s_acquisition_binary_path': str(binary),
+                                            'k3s_acquisition_cluster': {'version': VERSION}}, 'tasks': tasks}]))
+    result = subprocess.run(['uv', 'run', 'ansible-playbook', '-i', 'localhost,', str(play)],
+                            cwd=ROOT, capture_output=True, text=True)
+    assert (result.returncode == 0) == valid, result.stdout + result.stderr
+
+
 @pytest.mark.parametrize('url,checksum,valid', [
     (CN, 'a' * 64, True),
     ('https://github.com/k3s-io/k3s/releases/download/' + VERSION + '/k3s', 'a' * 64, True),
     ('https://internal.synthetic.invalid/' + VERSION + '/k3s', 'a' * 64, True),
-    (CN.replace('1.35.1', '1.35.0'), 'a' * 64, False),
-    (CN.replace('rancher-mirror.rancher.cn', 'other.invalid'), 'a' * 64, False),
+    ('https://artifacts.synthetic.invalid/by-checksum/binary', 'a' * 64, True),
+    (CN.replace('rancher-mirror.rancher.cn', 'other.invalid'), 'a' * 64, True),
     (CN.replace('https:', 'http:'), 'a' * 64, False),
     (CN + '?version=' + VERSION, 'a' * 64, False),
-    (CN + '-arm64', 'a' * 64, False),
+    (CN + '-arm64', 'a' * 64, True),
     (CN, '', False),
 ])
 def test_model_and_role_agree_without_acquiring_binary(tmp_path, url, checksum, valid):

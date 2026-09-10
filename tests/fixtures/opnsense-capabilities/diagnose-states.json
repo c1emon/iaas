@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "kind": "states",
+  "source_ip": "198.51.100.10",
+  "destination_ip": "192.0.2.10",
+  "protocol": "tcp",
+  "destination_port": 443,
+  "limit": 100
+}
