@@ -41,8 +41,14 @@
 - Switch previews expose object change type and field names without raw commands or configuration values; optional per-target detail uses the existing runtime path guard and private directory/file permissions. OPNsense exports are isolated by inventory identity and attributed in each JSON artifact.
 - Representative real local Ansible tasks verify two independent firewall exports, sanitized switch console output, opt-in detail and 0700/0600 permissions. Four report tests and eleven existing XikeOS migration tests passed; affected Ansible lint passed (9 files). No device was contacted.
 
-## Shipped CI baseline and Stage 0 gate (0.14; 0.15 incomplete)
+## Shipped CI baseline and initial Stage 0 gate (0.14)
 
 - Main CI now pins OpenTofu 1.12.6 and uv 0.12.9 and installs the same explicit Collection closure as the shipped image with `--no-deps`. Candidate dependency updates have not started. Existing dependency-before-source Docker layers are unchanged.
 - `make check` against the synthetic environment passed: 614 tests, YAML validation, pyright (0 errors), Ansible lint (31 files), OpenTofu formatting/init/validation, generated-output checks and OPNsense offline admission. PVE/K3s syntax checks and strict OpenSpec validation passed. This is software-only evidence.
 - Final-image build/smoke remains outstanding: this Mac has no Docker CLI; the authorized wsx connection failed because the SSH agent could not sign (communication with agent failed). No remote resource was created. Task 0.15 and stages 1–5 remain unchecked until the final image is tested.
+
+## Final Stage 0 image acceptance (0.15)
+
+- After wsx SSH agent access recovered, built the final linux/amd64 image from commit `77e8b68` using an isolated task builder. Loaded the cached result explicitly because the docker-container builder does not load images by default.
+- The existing `automation/runtime/smoke.py --tofu` passed against that image: offline generation/check, shipped plugin loading and Collection dependency closure, K3s render, caller UID, rejected missing/unsafe/stale inputs, and external synthetic OpenTofu init/validate. No infrastructure plan/apply or live appliance operation was run.
+- `automation/runtime/inspect_image.py` passed: excluded runtime contents absent and required OS/tool notices retained. Together with the 614-test offline gate and strict validation above, this completes Stage 0 on the shipped baseline. The temporary build workspace and isolated builder remain task-owned for the following dependency build and will be removed at final cleanup.

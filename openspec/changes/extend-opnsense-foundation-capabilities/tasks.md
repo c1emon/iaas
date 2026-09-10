@@ -18,7 +18,7 @@ preserve the existing uncommitted work. Design updates do not complete these tas
 - [x] 0.12 Introduce optional application-neutral foundation storage facts with explicit legacy compatibility; remove provider-specific K3s artifact URL special cases while retaining exact version/checksum verification (R14).
 - [x] 0.13 Make foundation HTTPS trust explicit, require caller-selected DNS resolvers, support the declared record types and bound DNS parsing including pointer cycles; keep observations redacted and failures classified (R15).
 - [x] 0.14 Align the main CI gate with the currently shipped tool/Collection baseline and add representative real-orchestration regressions for repaired entrypoints and lifecycle states; preserve dependency/source image layering (R16).
-- [ ] 0.15 Update affected module manuals/help, generic fixtures and migration guidance; complete focused regressions, affected Ansible syntax/lint, the existing synthetic offline gate, final-image smoke and strict OpenSpec validation. Perform GitNexus change analysis before focused repair commits and record software-only evidence. Only then allow stage 1 dependency refresh and stages 2–5 features.
+- [x] 0.15 Update affected module manuals/help, generic fixtures and migration guidance; complete focused regressions, affected Ansible syntax/lint, the existing synthetic offline gate, final-image smoke and strict OpenSpec validation. Perform GitNexus change analysis before focused repair commits and record software-only evidence. Only then allow stage 1 dependency refresh and stages 2–5 features.
 
 ## 1. Refresh the reviewed execution dependencies
 
