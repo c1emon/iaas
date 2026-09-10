@@ -1,7 +1,7 @@
 # pve-rolling-maintenance-runbook Specification
 
 ## Purpose
-TBD - created by archiving change add-pve-rolling-maintenance-runbook. Update Purpose after archive.
+Document operator-driven PVE rolling maintenance, including prerequisites, per-node steps, abort criteria and recovery records, without automating infrastructure mutations.
 
 ## Requirements
 

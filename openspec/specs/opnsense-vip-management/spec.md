@@ -50,15 +50,26 @@ The system SHALL NOT delete, disable, or purge OPNsense VIPs that are absent fro
 - **THEN** the VIP management workflow leaves that VIP present and unchanged
 
 ### Requirement: VIP reload after successful changes
-The system SHALL reload the OPNsense VIP target after successfully applying declared VIP changes.
+The system SHALL activate the fixed OPNsense interface_vip target after successful declared changes and support an explicit activation-recovery retry independent of CRUD change detection.
 
 #### Scenario: VIP apply changes OPNsense state
-- **WHEN** the VIP management workflow creates, updates, or removes a declared VIP successfully
-- **THEN** the workflow reloads the OPNsense `interface_vip` target so the changes become active
+- **WHEN** declared create, update or removal operations complete successfully with actual changes
+- **THEN** the workflow SHALL reload the interface_vip target once and report whether activation succeeded
 
 #### Scenario: VIP apply makes no changes
-- **WHEN** the VIP management workflow completes without creating, updating, or removing any declared VIP
-- **THEN** the workflow does not reload the OPNsense `interface_vip` target
+- **WHEN** reconciliation makes no changes and opnsense_force_reload is false or omitted
+- **THEN** the workflow SHALL NOT perform an unnecessary reload
+
+#### Scenario: Operator retries failed activation
+- **WHEN** a previous invocation saved configuration but failed activation and the caller explicitly sets opnsense_force_reload to true
+- **THEN** successful admission and reconciliation SHALL reload the same fixed target even when CRUD returns no changes
+- **AND** failed activation SHALL return nonzero with saved-versus-active status and retry guidance
+- **AND** the workflow SHALL NOT infer rollback or successful data-plane behavior
+
+#### Scenario: Check mode or partial CRUD failure occurs
+- **WHEN** the workflow is in check mode or a declared write fails
+- **THEN** it SHALL NOT activate configuration
+- **AND** a write failure SHALL report that partial configuration changes may remain without claiming success
 
 ### Requirement: Safe credential handling for VIP management
 The system SHALL use environment-provided OPNsense API credentials for VIP management and SHALL NOT store real credentials in repository files.
