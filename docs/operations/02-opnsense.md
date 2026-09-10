@@ -44,12 +44,23 @@ firewall/management rules、默认防火墙策略、NAT/DNAT 和关键公网入�
 
 | 字段 | 含义 | 约束 |
 | --- | --- | --- |
-| `name` | 别名稳定名称。 | 变更前检查所有引用；避免重名。 |
-| `type` | `host`、`network`、`port` 等 OPNsense alias 类型。 | 与 `content` 类型一致。 |
-| `content` | 地址、网段或端口列表。 | 每个值必须与 alias 类型匹配。 |
+| `name` | 别名稳定名称。 | 遵循固定版本语法，最多 31 字符；字母或单下划线前缀，只含字母数字下划线，不允许双下划线前缀。 |
+| `type` | `host`、`network`、`port`、`urltable`、`networkgroup`。 | 与 `content` 类型一致；已有名称不能直接改变类型。 |
+| `content` | 地址、网段、端口、HTTP(S) URL 或别名名称列表。 | 按类型校验；组成员必须是地址兼容别名。 |
+| `updatefreq_days` | URL table 的刷新周期（天）。 | present 必填，absent 可省略；其他类型禁止。使用引号字符串，如 `"1"`、`"0.5"`，最小 0.1 且最多一位小数，不允许丢失精度。 |
 | `description` | 人类可读用途。 | 不作为秘密或业务配置载体。 |
 | `enabled` | 是否启用。 | 显式布尔值。 |
 | `state` | `present` 或 `absent`。 | `absent` 是变更操作，先审查引用。 |
+
+URL 由调用方选择，不允许用户名密码、fragment 或嵌入凭据；普通查询参数也必须是非秘密配置。
+运行时不下载或改写列表，配置保存和激活成功不代表列表已加载。OPNsense 负责定期刷新。
+
+组引用会先在本地校验，再只读解析外部定义。按依赖顺序创建成员和组，先释放旧引用、后按设备现有依赖反序删除。
+未声明的对象不被接管。删除仍受设备的最终引用保护；失败可能留下已保存的部分配置，不会自动回滚或激活。
+Check mode 使用读取到的配置生成计划，不写入临时成员，也不触发 reload。
+旧配置中含连字符、点、数字开头或 32 字符的别名名称将被提前拒绝；按设备命名规则由调用方规划迁移，工具不自动改名。
+
+通用 schema/组合示例见 `tests/fixtures/opnsense-capabilities/`，仅供审查，不能直接作为部署策略。
 
 ### 过滤规则：`vars/opnsense/filter-rules.yml`
 

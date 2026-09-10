@@ -27,15 +27,15 @@ preserve the existing uncommitted work. Design updates do not complete these tas
 
 ## 2. Confirm interfaces and regression scope
 
-- [ ] 2.1 Inspect the pinned Collection and a documented upstream OPNsense version; record methods, schemas, permissions and bounds for alias loading, log queries, rule correlation and state queries, with representative synthetic response fixtures.
-- [ ] 2.2 Confirm existing static-alias, Gateway/PBR, credential and path boundaries; define diagnostic request/result schema and document any upstream capability limits without application-specific defaults.
+- [x] 2.1 Inspect the pinned Collection and a documented upstream OPNsense version; record methods, schemas, permissions and bounds for alias loading, log queries, rule correlation and state queries, with representative synthetic response fixtures.
+- [x] 2.2 Confirm existing static-alias, Gateway/PBR, credential and path boundaries; define diagnostic request/result schema and document any upstream capability limits without application-specific defaults.
 
 ## 3. Extend alias inputs and lifecycle
 
-- [ ] 3.1 Add type-specific `urltable`/`updatefreq_days` and `networkgroup` validation; preserve existing static aliases, unknown-field rejection and pre-credential offline admission.
-- [ ] 3.2 Add local dependency validation and explicit read-only resolution of external references, using desired/live effective graphs and preserving the server in-use deletion guard.
-- [ ] 3.3 Apply present aliases in dependency order and removals in reverse order through the pinned Collection; preserve unlisted objects, reload-on-success and honest partial-failure reporting.
-- [ ] 3.4 Test representative valid/invalid types, lossless refresh precision, references, cycles, simultaneous group/member deletion, reference-release updates, type-change refusal, external ownership and failure-before-write paths; include Gateway/PBR composition regression without adding application policy.
+- [x] 3.1 Add type-specific `urltable`/`updatefreq_days` and `networkgroup` validation; preserve existing static aliases, unknown-field rejection and pre-credential offline admission.
+- [x] 3.2 Add local dependency validation and explicit read-only resolution of external references, using desired/live effective graphs and preserving the server in-use deletion guard.
+- [x] 3.3 Apply present aliases in dependency order and removals in reverse order through the pinned Collection; preserve unlisted objects, reload-on-success and honest partial-failure reporting.
+- [x] 3.4 Test representative valid/invalid types, lossless refresh precision, references, cycles, simultaneous group/member deletion, reference-release updates, type-change refusal, external ownership and failure-before-write paths; include Gateway/PBR composition regression without adding application policy.
 
 ## 4. Add bounded read-only diagnostics
 

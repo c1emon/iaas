@@ -8,6 +8,7 @@ from typing import Any, NoReturn
 import yaml
 
 from iaas_automation.common.errors import ValidationError
+from .aliases import ALIAS_NAME, validate_frequency, validate_local, validate_url
 
 
 RESOURCE_FILES = {
@@ -132,13 +133,21 @@ def _net_values(value: Any, path: str) -> list[str]:
 
 
 def _validate_alias(record: dict[str, Any], path: str) -> tuple[str]:
-    _shape(record, path, {"name", "type", "content", "description", "enabled", "state"})
-    name = _string(record["name"], f"{path}.name", pattern=IDENTIFIER)
+    _shape(record, path, {"name", "type", "content", "description", "enabled", "state"}, {"updatefreq_days"})
+    name = _string(record["name"], f"{path}.name", pattern=ALIAS_NAME)
     if len(name) > 32:
         _error(f"{path}.name", "must be at most 32 characters")
     alias_type = _string(record["type"], f"{path}.type")
-    if alias_type not in {"host", "network", "port"}:
-        _error(f"{path}.type", "must be one of host, network, port")
+    if alias_type not in {"host", "network", "port", "urltable", "networkgroup"}:
+        _error(f"{path}.type", "must be one of host, network, port, urltable, networkgroup")
+    state = _state(record["state"], f"{path}.state")
+    if alias_type == 'urltable':
+        if state == 'present' and 'updatefreq_days' not in record:
+            _error(f"{path}.updatefreq_days", "is required for present URL tables")
+        if 'updatefreq_days' in record:
+            validate_frequency(record['updatefreq_days'], f"{path}.updatefreq_days")
+    elif 'updatefreq_days' in record:
+        _error(f"{path}.updatefreq_days", "is only allowed for URL tables")
     content = _list(record["content"], f"{path}.content")
     if not content:
         _error(f"{path}.content", "must not be empty")
@@ -146,6 +155,10 @@ def _validate_alias(record: dict[str, Any], path: str) -> tuple[str]:
         item_path = f"{path}.content[{index}]"
         if alias_type == "port":
             _ports(item, item_path)
+        elif alias_type == 'urltable':
+            validate_url(item, item_path)
+        elif alias_type == 'networkgroup':
+            _string(item, item_path, pattern=ALIAS_NAME)
         else:
             _ip_or_network(_string(item, item_path), item_path)
     _string(record["description"], f"{path}.description")
@@ -267,6 +280,8 @@ def validate_document(resource: str, document: Any) -> None:
         if identity in identities:
             _error(path, f"duplicate managed identity {' / '.join(identity)}")
         identities.add(identity)
+    if resource == 'aliases':
+        validate_local(records)
 
 
 def validate_file(resource: str, path: Path) -> None:

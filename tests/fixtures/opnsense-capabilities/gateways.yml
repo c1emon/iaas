@@ -1,0 +1,24 @@
+---
+opnsense_gateways:
+- name: EXAMPLE_GATEWAY
+  interface: wan
+  ip_protocol: inet
+  gateway: 192.0.2.254
+  default_gw: false
+  far_gw: false
+  monitor_disable: false
+  monitor_noroute: false
+  monitor: 192.0.2.1
+  force_down: false
+  latency_low: 200
+  latency_high: 500
+  loss_low: 10
+  loss_high: 20
+  interval: 1
+  time_period: 60
+  loss_interval: 4
+  data_length: 1
+  priority: 255
+  weight: 1
+  description: Synthetic caller-selected gateway
+  state: present

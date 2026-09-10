@@ -1,0 +1,21 @@
+---
+opnsense_filter_rules:
+- scope: example
+  slug: route
+  state: present
+  enabled: true
+  sequence: 100
+  interface:
+  - lan
+  direction: in
+  action: pass
+  quick: true
+  ip_protocol: inet
+  protocol: TCP
+  source_net:
+  - SOURCE_NETWORKS
+  destination_net:
+  - DESTINATION_GROUP
+  destination_invert: true
+  gateway: EXAMPLE_GATEWAY
+  log: true

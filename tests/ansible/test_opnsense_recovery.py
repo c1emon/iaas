@@ -41,7 +41,10 @@ def test_managed_activation_recovery(tmp_path, resource, key):
     activation = source["tasks"][-1]
     original_reload = activation["block"][0]
     assert "oxlorg.opnsense.reload" in original_reload
-    mutation = next(task for task in source["tasks"] if task.get("register") == f"opnsense_{key}_apply")
+    if resource == 'aliases':
+        mutation = yaml.safe_load((ANSIBLE / 'playbooks/opnsense/tasks/apply-alias-batch.yml').read_text())[0]
+    else:
+        mutation = next(task for task in source["tasks"] if task.get("register") == f"opnsense_{key}_apply")
     module = next(name for name in mutation if name.startswith("oxlorg.opnsense."))
     assert mutation[module]["reload"] is False
     for changed, force, check, reload_fails, crud_fails, expected in [

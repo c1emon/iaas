@@ -127,6 +127,10 @@ def test_supported_mutation_playbooks_validate_before_credentials_and_mutation(
     assert source.index(f'"{{{{ {source_variable} }}}}"', validator) > validator
     assert validator < source.index("ansible.builtin.include_vars:")
     assert validator < source.index("tasks/api-credential-preflight.yml")
+    if resource == 'aliases':
+        batch = ROOT / 'automation/ansible/playbooks/opnsense/tasks/apply-alias-batch.yml'
+        assert mutation in batch.read_text()
+        mutation = 'tasks/apply-alias-batch.yml'
     assert validator < source.index(mutation)
     assert validator < source.index("oxlorg.opnsense.reload:")
     assert "'ENVIRONMENT_DIR', default=undef()" in source
