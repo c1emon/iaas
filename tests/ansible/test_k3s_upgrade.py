@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -16,6 +17,15 @@ ANSIBLE_DIR = ROOT / "automation" / "ansible"
 PLAYBOOK = ANSIBLE_DIR / "playbooks" / "k3s" / "upgrade.yml"
 ROLE_DIR = ANSIBLE_DIR / "roles" / "k3s_upgrade"
 MODEL = ROOT / "tests" / "fixtures" / "k3s" / "expected-review.yml"
+
+
+def _node_response(model):
+    return json.dumps({"items": [{
+        "metadata": {"name": node["vm_ref"], "labels": {"node-role.kubernetes.io/control-plane": "true"}
+                     if node["role"] == "server" else {}},
+        "status": {"nodeInfo": {"kubeletVersion": model["cluster"]["version"]},
+                   "conditions": [{"type": "Ready", "status": "True"}]},
+    } for node in model["nodes"]]})
 
 
 def _run(args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -47,7 +57,7 @@ def _role_playbook(path: Path, *, result: dict[str, Any]) -> None:
                         "k3s_upgrade_observed_version": "v1.35.1+k3s1",
                         "k3s_upgrade_skip": True,
                         "k3s_upgrade_synthetic": True,
-                        "k3s_upgrade_synthetic_result": result,
+                        "k3s_upgrade_synthetic_result": {"post_nodes_stdout": _node_response(model), **result},
                     },
                     "roles": ["k3s_upgrade"],
                 }
@@ -83,7 +93,8 @@ def test_synthetic_stop_failure_blocks_before_acquisition(tmp_path: Path) -> Non
     assert "service stop failed" in result.stdout + result.stderr
 
 
-def test_full_synthetic_upgrade_runs_preflight_snapshot_and_server_then_agents(tmp_path: Path) -> None:
+@pytest.mark.parametrize("drift", [False, True])
+def test_full_synthetic_upgrade_runs_preflight_snapshot_and_server_then_agents(tmp_path: Path, drift: bool) -> None:
     model = yaml.safe_load(MODEL.read_text(encoding="utf-8"))
     target = model["cluster"]["version"]
     refs = [node["vm_ref"] for node in model["nodes"]]
@@ -103,7 +114,7 @@ def test_full_synthetic_upgrade_runs_preflight_snapshot_and_server_then_agents(t
         "artifact_reachable": True,
         "registry_reachable": True,
         "registry_tls_files_valid": True,
-        "conflicting_install_state": False,
+        "installation": {"state": "managed", "version": "v1.34.0+k3s1", "service_active": True, "datastore": True},
     }
     hosts: dict[str, dict[str, Any]] = {}
     for node in model["nodes"]:
@@ -113,8 +124,15 @@ def test_full_synthetic_upgrade_runs_preflight_snapshot_and_server_then_agents(t
             "k3s_preflight_credentials": True,
             "k3s_upgrade_synthetic_result": {
                 "pre_health_stdout": "active" if node["role"] == "agent" else "ok",
-                "post_nodes_stdout": node["vm_ref"],
+                "post_nodes_stdout": _node_response(model),
+                "observed_version": "v1.34.1+k3s1" if drift else "v1.34.0+k3s1",
                 "post_service_stdout": "active",
+            },
+            "k3s_verify_command_outputs": {
+                "api": {"rc": 0, "stdout": "ok"},
+                "etcd": {"rc": 0, "stdout": "[+]etcd ok"},
+                "service": {"rc": 0, "stdout": "active"},
+                "nodes": {"rc": 0, "stdout": _node_response(model)},
             },
         }
         if node["vm_ref"] == model["cluster"]["snapshot"]["source_vm_ref"]:
@@ -141,6 +159,11 @@ def test_full_synthetic_upgrade_runs_preflight_snapshot_and_server_then_agents(t
         "k3s_upgrade_synthetic": True,
     }
     result = _run(["-i", str(inventory), str(PLAYBOOK), "-e", json.dumps(extra)])
+    if drift:
+        assert result.returncode != 0
+        assert "differs from supplied observations" in result.stdout
+        assert "Create the same-scope pre-upgrade" not in result.stdout
+        return
     assert result.returncode == 0, result.stdout + result.stderr
     output = result.stdout
     assert "PASS snapshot.synthetic-server-01" in output

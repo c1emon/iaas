@@ -8,6 +8,18 @@
     k3s_preflight_scope: []
     k3s_preflight_results: []
   tasks:
+    - name: Require an explicit operation-compatible preflight mode before host or credential access
+      ansible.builtin.assert:
+        that:
+          - k3s_preflight_mode | default('') in ['install', 'converge', 'upgrade']
+          - k3s_deploy_model_path | default('') | length == 0 or k3s_preflight_mode == 'converge'
+          - k3s_upgrade_model_path | default('') | length == 0 or k3s_preflight_mode == 'upgrade'
+        fail_msg: >-
+          standalone preflight requires install, converge or upgrade mode;
+          deploy selects converge and upgrade selects upgrade without a policy override
+        quiet: true
+      changed_when: false
+
     - name: Require an explicit composed K3s model path
       ansible.builtin.assert:
         that:
@@ -63,6 +75,16 @@
         fail_msg: >-
           preflight scope contains nodes absent from the validated composed model:
           {{ k3s_scope_unknown | join(', ') }}
+      changed_when: false
+
+    - name: Require every mutation-scope node to be present in the selected inventory
+      ansible.builtin.assert:
+        that:
+          - >-
+            k3s_preflight_mode == 'install'
+            or (k3s_scope | difference(groups['all'] | default([])) | length == 0)
+        fail_msg: deployment or upgrade scope contains hosts missing from the selected inventory
+        quiet: true
       changed_when: false
 
     - name: Report an empty inventory selection without contacting a host

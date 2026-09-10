@@ -161,7 +161,59 @@
   vars:
     k3s_model_path: "{{ hostvars['localhost'].k3s_upgrade_model_path | default(k3s_upgrade_model_path) }}"
     k3s_preflight_scope: "{{ hostvars['localhost'].k3s_upgrade_scope_normalized }}"
+    k3s_preflight_mode: upgrade
     k3s_runtime_secret_file: "{{ k3s_upgrade_runtime_secret_file }}"
+
+- name: Refresh every node version before the first upgrade mutation
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Read each installed K3s executable version
+      ansible.builtin.command:
+        argv: [/usr/local/bin/k3s, --version]
+      delegate_to: "{{ item }}"
+      become: true
+      loop: "{{ k3s_upgrade_scope_normalized }}"
+      register: k3s_upgrade_live_versions
+      changed_when: false
+      failed_when: false
+      when: not (k3s_upgrade_synthetic | default(false) | bool)
+      no_log: true
+
+    - name: Require one exact prior version plus the exact target for resumable upgrades
+      ansible.builtin.assert:
+        that:
+          - >-
+            k3s_upgrade_observed_versions.values() | unique
+            | reject('equalto', k3s_upgrade_target_version) | list | length <= 1
+        fail_msg: unsupported mixed versions; only one exact prior version may coexist with the exact target
+        quiet: true
+      changed_when: false
+
+    - name: Reject supplied observations that drifted before upgrade
+      ansible.builtin.assert:
+        that:
+          - item.rc | default(1) == 0
+          - >-
+            item.stdout | default('') is match(
+              '^k3s version ' ~ (k3s_upgrade_observed_versions[item.item] | regex_escape) ~ '(?:\s|$)')
+        fail_msg: actual K3s version differs from supplied observations; regenerate the upgrade plan
+        quiet: true
+      loop: "{{ k3s_upgrade_live_versions.results | default([]) }}"
+      when: not (k3s_upgrade_synthetic | default(false) | bool)
+      no_log: true
+
+    - name: Compare explicit synthetic live observations without host access
+      ansible.builtin.assert:
+        that:
+          - >-
+            hostvars[item].k3s_upgrade_synthetic_result.observed_version | default('')
+            == k3s_upgrade_observed_versions[item]
+        fail_msg: synthetic live version differs from supplied observations
+        quiet: true
+      loop: "{{ k3s_upgrade_scope_normalized }}"
+      when: k3s_upgrade_synthetic | default(false) | bool
+      changed_when: false
 
 - name: Create the same-scope pre-upgrade K3s snapshot
   import_playbook: snapshot.yml
@@ -246,3 +298,9 @@
       when:
         - inventory_hostname in k3s_upgrade_scope_normalized
         - k3s_upgrade_current_node.role == 'agent'
+
+- name: Re-run shared verification over the complete upgraded scope
+  import_playbook: verify.yml
+  vars:
+    k3s_model_path: "{{ hostvars['localhost'].k3s_upgrade_model_path }}"
+    k3s_verify_scope: "{{ hostvars['localhost'].k3s_upgrade_scope_normalized }}"

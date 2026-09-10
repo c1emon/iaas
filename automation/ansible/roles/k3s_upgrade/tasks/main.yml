@@ -29,7 +29,7 @@
     k3s_upgrade_post_service_rc: "{{ k3s_upgrade_synthetic_result.post_service_rc | default(0) | int }}"
     k3s_upgrade_post_service_stdout: "{{ k3s_upgrade_synthetic_result.post_service_stdout | default('active') }}"
     k3s_upgrade_post_nodes_rc: "{{ k3s_upgrade_synthetic_result.post_nodes_rc | default(0) | int }}"
-    k3s_upgrade_post_nodes_stdout: "{{ k3s_upgrade_synthetic_result.post_nodes_stdout | default(inventory_hostname) }}"
+    k3s_upgrade_post_nodes_stdout: "{{ k3s_upgrade_synthetic_result.post_nodes_stdout | default('') }}"
   when: k3s_upgrade_synthetic | bool
   changed_when: false
 
@@ -93,16 +93,45 @@
   when: k3s_upgrade_skip | bool
   changed_when: false
 
-- name: Stop the selected K3s service before replacing its executable
-  ansible.builtin.systemd:
-    name: "{{ k3s_upgrade_service_name }}"
-    state: stopped
-  register: k3s_upgrade_stop_service
-  failed_when: false
+- name: Stage the exact target before stopping any service
   when:
     - not (k3s_upgrade_skip | bool)
     - not (k3s_upgrade_synthetic | bool)
-  no_log: true
+  block:
+    - name: Acquire and verify the node-local staged executable
+      ansible.builtin.include_role:
+        name: k3s_acquisition
+      vars:
+        k3s_acquisition_model_node: "{{ k3s_upgrade_node }}"
+        k3s_acquisition_cluster: "{{ k3s_upgrade_model.cluster }}"
+        k3s_acquisition_binary_path: "{{ k3s_upgrade_binary_path }}.staged"
+        k3s_acquisition_runtime_proxy: "{{ k3s_upgrade_runtime_proxy }}"
+        k3s_acquisition_runtime_secret_file: "{{ k3s_upgrade_runtime_secret_file }}"
+  rescue:
+    - name: Report failed staging without changing active files or services
+      ansible.builtin.fail:
+        msg: >-
+          K3s {{ k3s_upgrade_node.vm_ref }} staging/checksum/version verification failed.
+          The active executable and service were not changed; inspect the artifact
+          source and retry. Any staged file is retained at {{ k3s_upgrade_binary_path }}.staged.
+
+- name: Stop the selected K3s service before replacing its executable
+  when:
+    - not (k3s_upgrade_skip | bool)
+    - not (k3s_upgrade_synthetic | bool)
+  block:
+    - name: Request a successful stop before replacing the executable
+      ansible.builtin.systemd:
+        name: "{{ k3s_upgrade_service_name }}"
+        state: stopped
+      register: k3s_upgrade_stop_service
+      no_log: true
+  rescue:
+    - name: Report a failed stop without activating the staged executable
+      ansible.builtin.fail:
+        msg: >-
+          K3s {{ k3s_upgrade_node.vm_ref }} service stop failed; the active executable
+          was not replaced. Inspect the service and retry; the verified staged file is retained.
 
 - name: Normalize the synthetic stop result
   ansible.builtin.set_fact:
@@ -124,29 +153,46 @@
   when: not (k3s_upgrade_skip | bool)
   changed_when: false
 
-- name: Acquire the exact target executable with its pinned checksum
-  ansible.builtin.include_role:
-    name: k3s_acquisition
-  vars:
-    k3s_acquisition_model_node: "{{ k3s_upgrade_node }}"
-    k3s_acquisition_cluster: "{{ k3s_upgrade_model.cluster }}"
-    k3s_acquisition_binary_path: "{{ k3s_upgrade_binary_path }}"
-    k3s_acquisition_runtime_proxy: "{{ k3s_upgrade_runtime_proxy }}"
-    k3s_acquisition_runtime_secret_file: "{{ k3s_upgrade_runtime_secret_file }}"
+- name: Activate the verified staged executable after a successful stop
   when:
     - not (k3s_upgrade_skip | bool)
     - not (k3s_upgrade_synthetic | bool)
+  block:
+    - name: Copy the staged executable atomically to its active path
+      ansible.builtin.copy:
+        src: "{{ k3s_upgrade_binary_path }}.staged"
+        dest: "{{ k3s_upgrade_binary_path }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
+  rescue:
+    - name: Report activation failure and the manual recovery boundary
+      ansible.builtin.fail:
+        msg: >-
+          K3s {{ k3s_upgrade_node.vm_ref }} executable activation failed after service stop.
+          Inspect the active executable before restarting manually; the staged artifact
+          remains at {{ k3s_upgrade_binary_path }}.staged. Later nodes are blocked.
+          No version downgrade or datastore rollback was attempted.
 
 - name: Start the selected K3s service after replacing its executable
-  ansible.builtin.systemd:
-    name: "{{ k3s_upgrade_service_name }}"
-    state: started
-  register: k3s_upgrade_start_service
-  failed_when: false
   when:
     - not (k3s_upgrade_skip | bool)
     - not (k3s_upgrade_synthetic | bool)
-  no_log: true
+  block:
+    - name: Request service start with the verified target executable
+      ansible.builtin.systemd:
+        name: "{{ k3s_upgrade_service_name }}"
+        state: started
+      register: k3s_upgrade_start_service
+      no_log: true
+  rescue:
+    - name: Report failed service activation without implicit rollback
+      ansible.builtin.fail:
+        msg: >-
+          K3s {{ k3s_upgrade_node.vm_ref }} service start failed after activation;
+          later nodes are blocked. Inspect logs and the retained staged artifact before
+          manual recovery. No version downgrade or datastore rollback was attempted.
 
 - name: Normalize synthetic post-upgrade results
   ansible.builtin.set_fact:
@@ -163,119 +209,23 @@
     that:
       - not (k3s_upgrade_start_service.failed | default(false) | bool)
       - k3s_upgrade_start_service.rc | default(0) | int == 0
-    fail_msg: "K3s {{ k3s_upgrade_node.vm_ref }} service start failed; upgrade stopped"
-    quiet: true
-  when: not (k3s_upgrade_skip | bool)
-  changed_when: false
-
-- name: Probe the upgraded server API
-  ansible.builtin.command:
-    argv:
-      - k3s
-      - kubectl
-      - get
-      - --raw=/readyz
-  register: k3s_upgrade_post_api_command
-  changed_when: false
-  failed_when: false
-  ignore_unreachable: true
-  no_log: true
-  when:
-    - not (k3s_upgrade_skip | bool)
-    - not (k3s_upgrade_synthetic | bool)
-    - k3s_upgrade_node.role == 'server'
-
-- name: Probe upgraded server embedded-etcd health
-  ansible.builtin.command:
-    argv:
-      - k3s
-      - kubectl
-      - get
-      - --raw=/readyz?verbose
-  register: k3s_upgrade_post_etcd_command
-  changed_when: false
-  failed_when: false
-  ignore_unreachable: true
-  no_log: true
-  when:
-    - not (k3s_upgrade_skip | bool)
-    - not (k3s_upgrade_synthetic | bool)
-    - k3s_upgrade_node.role == 'server'
-
-- name: Probe the upgraded agent service
-  ansible.builtin.command:
-    argv:
-      - systemctl
-      - is-active
-      - k3s-agent
-  register: k3s_upgrade_post_agent_service_command
-  changed_when: false
-  failed_when: false
-  ignore_unreachable: true
-  when:
-    - not (k3s_upgrade_skip | bool)
-    - not (k3s_upgrade_synthetic | bool)
-    - k3s_upgrade_node.role == 'agent'
-
-- name: Verify upgraded agent registration from the K3s API server
-  ansible.builtin.command:
-    argv:
-      - k3s
-      - kubectl
-      - get
-      - nodes
-      - -o
-      - name
-  delegate_to: "{{ k3s_upgrade_api_host | default(inventory_hostname, true) }}"
-  register: k3s_upgrade_post_nodes_command
-  changed_when: false
-  failed_when: false
-  ignore_unreachable: true
-  no_log: true
-  when:
-    - not (k3s_upgrade_skip | bool)
-    - not (k3s_upgrade_synthetic | bool)
-    - k3s_upgrade_node.role == 'agent'
-
-- name: Normalize live post-upgrade verification results
-  ansible.builtin.set_fact:
-    k3s_upgrade_post_health_rc: >-
-      {{ k3s_upgrade_post_api_command.rc | default(1) | int
-         if k3s_upgrade_node.role == 'server'
-         else k3s_upgrade_post_nodes_command.rc | default(1) | int }}
-    k3s_upgrade_post_health_stdout: >-
-      {{ k3s_upgrade_post_api_command.stdout | default('') | trim
-         if k3s_upgrade_node.role == 'server'
-         else k3s_upgrade_post_nodes_command.stdout | default('') | trim }}
-    k3s_upgrade_post_service_rc: >-
-      {{ 0 if k3s_upgrade_node.role == 'server'
-         else k3s_upgrade_post_agent_service_command.rc | default(1) | int }}
-    k3s_upgrade_post_service_stdout: >-
-      {{ 'active' if k3s_upgrade_node.role == 'server'
-         else k3s_upgrade_post_agent_service_command.stdout | default('') | trim }}
-    k3s_upgrade_post_etcd_stdout: >-
-      {{ k3s_upgrade_post_etcd_command.stdout | default('') | trim
-         if k3s_upgrade_node.role == 'server' else '' }}
-  when:
-    - not (k3s_upgrade_skip | bool)
-    - not (k3s_upgrade_synthetic | bool)
-  changed_when: false
-
-- name: Require API, etcd, node registration, and service health after upgrade
-  ansible.builtin.assert:
-    that:
-      - k3s_upgrade_post_health_rc | int == 0
-      - >-
-        (k3s_upgrade_node.role == 'server'
-         and k3s_upgrade_post_health_stdout | lower == 'ok'
-         and 'etcd ok' in (k3s_upgrade_post_etcd_stdout | default('') | lower))
-        or (k3s_upgrade_node.role == 'agent'
-            and k3s_upgrade_node.vm_ref in k3s_upgrade_post_health_stdout
-            and k3s_upgrade_post_service_rc | int == 0
-            and k3s_upgrade_post_service_stdout | lower == 'active')
     fail_msg: >-
-      K3s {{ k3s_upgrade_node.vm_ref }} failed post-upgrade API/etcd or
-      node/service verification; upgrade stopped
+      K3s {{ k3s_upgrade_node.vm_ref }} service start failed after activation; later nodes
+      are blocked. Inspect service logs and the retained {{ k3s_upgrade_binary_path }}.staged
+      artifact before manual recovery. No version downgrade or datastore rollback was attempted.
     quiet: true
   when: not (k3s_upgrade_skip | bool)
   changed_when: false
+
+- name: Verify the selected node after activation or exact-target skip
+  block:
+    - name: Run bounded API service and node checks
+      ansible.builtin.include_tasks: verify-upgraded.yml
+  rescue:
+    - name: Stop the upgrade after failed verification
+      ansible.builtin.fail:
+        msg: >-
+          K3s {{ k3s_upgrade_node.vm_ref }} verification failed; later nodes are blocked.
+          Inspect the service, API and node state before manual recovery. The staged
+          artifact is retained at {{ k3s_upgrade_binary_path }}.staged when acquired.
+          No version downgrade or datastore rollback was attempted.

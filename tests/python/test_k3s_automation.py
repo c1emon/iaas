@@ -430,7 +430,7 @@ def test_makefile_separates_offline_and_online_k3s_entrypoints() -> None:
     assert "k3s-render:" in makefile
     assert "K3S_INTENT" in makefile
     assert "K3S_INVENTORY" in makefile
-    assert "k3s-preflight: require-k3s-online-inputs" in makefile
+    assert "k3s-preflight: require-k3s-preflight-mode require-k3s-online-inputs" in makefile
     assert "k3s-verify: require-k3s-scoped-inputs" in makefile
     assert "k3s-deploy: require-k3s-online-inputs" in makefile
     assert "k3s-snapshot: require-k3s-scoped-inputs" in makefile

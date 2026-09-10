@@ -42,6 +42,7 @@ def test_live_probe_shape_and_null_credentials(tmp_path, capabilities, addresses
         'k3s_preflight_setup': {'ansible_facts': {'ansible_os_family': 'Debian',
                               'ansible_distribution': 'Debian', 'ansible_architecture': 'x86_64'}},
         'k3s_preflight_probes': {'results': results},
+        'k3s_preflight_installation_probe': {'stdout': '{"state": "fresh"}'},
         'k3s_preflight_port_checks': {'results': []},
         'k3s_preflight_artifact': {'credential_ref': None},
         'k3s_preflight_service_proxy': {'credential_ref': None},

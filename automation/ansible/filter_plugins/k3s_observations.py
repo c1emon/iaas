@@ -1,6 +1,7 @@
 """Parse read-only Linux observations without substituting desired state."""
 
 import ipaddress
+import json
 import re
 
 
@@ -33,7 +34,63 @@ def k3s_interface_observation(probe, address, interface):
     return missing
 
 
+def k3s_node_healthy(response, node, version):
+    """Require an exact API node/version and the established readiness boundary."""
+    try:
+        payload = json.loads(response) if isinstance(response, str) else response
+        matches = [item for item in payload["items"] if item["metadata"]["name"] == node["vm_ref"]]
+        if len(matches) != 1:
+            return False
+        observed = matches[0]
+        status = observed["status"]
+        labels = observed["metadata"].get("labels", {})
+        role = "server" if any(key in labels for key in ["node-role.kubernetes.io/control-plane", "node-role.kubernetes.io/master"]) else "agent"
+        if role != node["role"] or status["nodeInfo"]["kubeletVersion"] != version:
+            return False
+        conditions = status["conditions"]
+        ready = [condition for condition in conditions if condition["type"] == "Ready"]
+        if len(ready) != 1:
+            return False
+        condition = ready[0]
+        if condition["status"] == "True":
+            return True
+        cni_pattern = (r"^(?:container runtime network not ready: networkready=false "
+                       r"reason:networkpluginnotready message:)?(?:network plugin returns error: )?"
+                       r"cni plugin not initialized$")
+        return (condition["status"] == "False"
+                and condition.get("reason", "").lower() in {"kubeletnotready", "networkpluginnotready"}
+                and re.fullmatch(cni_pattern, condition.get("message", "").lower()) is not None
+                and not any(item["status"] == "True" and item["type"] not in {"Ready", "EtcdIsVoter"}
+                            for item in conditions))
+    except (ValueError, TypeError, KeyError):
+        return False
+
+
+def k3s_installation_allowed(facts, mode, version, checksum):
+    state = facts.get("state")
+    if state == "fresh":
+        return mode in {"install", "converge"}
+    if state == "artifact-only":
+        return mode == "converge" and facts.get("version") == version and facts.get("sha256") == checksum
+    if state != "managed":
+        return False
+    if mode == "converge":
+        return facts.get("version") == version and facts.get("sha256") == checksum
+    if mode != "upgrade" or not facts.get("datastore"):
+        return False
+    pattern = r"^v(\d+)\.(\d+)\.(\d+)\+k3s(\d+)$"
+    current, target = re.fullmatch(pattern, facts.get("version", "")), re.fullmatch(pattern, version)
+    if current is None or target is None:
+        return False
+    before, after = tuple(map(int, current.groups())), tuple(map(int, target.groups()))
+    if before == after and facts.get("sha256") != checksum:
+        return False
+    return before <= after and before[0] == after[0] and after[1] - before[1] in {0, 1}
+
+
 class FilterModule:
     def filters(self):
         return {"k3s_capabilities": k3s_capabilities,
-                "k3s_interface_observation": k3s_interface_observation}
+                "k3s_interface_observation": k3s_interface_observation,
+                "k3s_node_healthy": k3s_node_healthy,
+                "k3s_installation_allowed": k3s_installation_allowed}
