@@ -199,16 +199,27 @@
         fail_msg: >-
           Generated OPNsense new filter rule descriptions must be globally unique.
 
-    - name: Create, update, or remove declared new filter rules additively  # noqa: args[module]
-      oxlorg.opnsense.rule_multi:
-        rules: "{{ opnsense_filter_rule_apply_rules }}"
-        match_fields:
-          - description
-        reload: false
-        multi_control:
-          output_info: true
-      register: opnsense_filter_rule_apply
-      when: opnsense_filter_rule_apply_rules | length > 0
+    - name: Reconcile declared OPNsense rule configuration
+      block:
+        - name: Create, update, or remove declared new filter rules additively  # noqa: args[module]
+          oxlorg.opnsense.rule_multi:
+            rules: "{{ opnsense_filter_rule_apply_rules }}"
+            match_fields:
+              - description
+            reload: false
+            multi_control:
+              output_info: true
+              fail_verify: true
+          register: opnsense_filter_rule_apply
+          when: opnsense_filter_rule_apply_rules | length > 0
+      rescue:
+        - name: Report partial configuration reconciliation
+          ansible.builtin.fail:
+            msg: >-
+              OPNsense rule: reconciliation failed. Partial configuration changes may have been saved;
+              activation was not attempted. No rollback was performed. Review and correct the cause,
+              then rerun this target; use opnsense_force_reload=true as a JSON/YAML boolean
+              when activation recovery is required.
 
     - name: Reload OPNsense rule target after filter rule changes  # noqa: args[module]
       when:

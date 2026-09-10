@@ -159,3 +159,54 @@ def test_optional_configuration_fields_do_not_block_evaluable_observation():
     rules=deepcopy(FIXTURE['rule_configuration']);rules['rows'][0].pop('uuid')
     result,_=observe(API(rules=rules),request('rule_logs',rule={'scope':'example','slug':'route'}),'fw')
     assert result['status']=='ok' and result['metadata']['configuration']['uuid'] is None
+
+
+def test_detail_normalized_boundary_never_chmods_ancestors(tmp_path,monkeypatch):
+    base=tmp_path.resolve();(base/'anchor').mkdir()
+    output=base/'output';root=output/'runtime/opnsense-diagnostics'
+    root.mkdir(parents=True)
+    output.chmod(0o755)
+    source=base/'request.json';source.write_text(json.dumps(request('states',include_details=True)))
+    detail=root/'detail.json';lexical_output=base/'anchor/../output'
+    _,selected=admit(str(source),str(lexical_output),str(detail))
+    chmod=Path.chmod;changed=[]
+    def bounded_chmod(path,mode):
+        assert path==root or root in path.parents,'chmod escaped diagnostic root'
+        changed.append(path);chmod(path,mode)
+    monkeypatch.setattr(Path,'chmod',bounded_chmod)
+    write_detail(selected,{'status':'ok'},[],lexical_output/'runtime/opnsense-diagnostics')
+    assert changed==[root] and output.stat().st_mode&0o777==0o755
+    assert root.stat().st_mode&0o777==0o700 and detail.stat().st_mode&0o777==0o600
+    with pytest.raises(ValueError):
+        write_detail(base/'outside.json',{'status':'ok'},[],root)
+    assert not (base/'outside.json').exists()
+
+
+@pytest.mark.parametrize('source',['198.51.100.10','203.0.113.1'])
+def test_mixed_log_protocols_exclude_definite_nonmatches_before_unknown_fields(source):
+    unrelated={'src':source,'dst':'192.0.2.10','protoname':'icmp'}
+    selected=request('rule_logs',protocol='tcp',destination_port=443)
+    result,rows=observe(API(logs=[unrelated,FIXTURE['logs'][0]]),selected,'fw')
+    assert result['status']=='ok' and result['counts']['matched']==1 and len(rows)==1
+    possible=unrelated|{'src':'198.51.100.10','protoname':'tcp'}
+    result,rows=observe(API(logs=[possible,FIXTURE['logs'][0]]),selected,'fw')
+    assert result['status']=='unsupported' and result['reason']=='selector_field_unavailable'
+    assert result['counts']['matched'] is None and not rows
+
+
+@pytest.mark.parametrize('route',['route-to','reply-to','dup-to'])
+def test_state_route_observations_remain_distinct_from_gateway(route):
+    row=FIXTURE['states']['rows'][0]|{route:'192.0.2.254','rtable':1}
+    result,rows=observe(API(states=FIXTURE['states']|{'rows':[row]}),request(),'fw')
+    assert result['status']=='ok' and rows[0][route]=='192.0.2.254' and rows[0]['rtable']==1
+    assert rows[0]['gateway'] is None
+    optional=result['metadata']['optional_fields']
+    assert optional[route]['available_rows']==1 and optional['rtable']['available_rows']==1
+    assert optional['gateway']['available_rows']==0
+
+
+@pytest.mark.parametrize('patch',[{'route-to':{}},{'rtable':'1'},{'rtable':True}])
+def test_malformed_route_observations_are_not_reported_as_valid(patch):
+    row=FIXTURE['states']['rows'][0]|patch
+    result,rows=observe(API(states=FIXTURE['states']|{'rows':[row]}),request(),'fw')
+    assert result['status']=='error' and result['counts']['matched'] is None and not rows

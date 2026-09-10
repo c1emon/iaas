@@ -3,10 +3,12 @@
   "venv": ".venv",
   "pythonVersion": "3.12",
   "include": [
-    "scripts",
-    "ansible"
+    "automation/src",
+    "automation/ansible",
+    "automation/runtime"
   ],
   "exclude": [
-    "ansible/collections"
-  ]
+    "automation/ansible/collections"
+  ],
+  "extraPaths": ["automation/src"]
 }

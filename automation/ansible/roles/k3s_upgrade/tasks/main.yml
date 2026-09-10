@@ -38,6 +38,7 @@
     argv:
       - k3s
       - kubectl
+      - --request-timeout=15s
       - get
       - --raw=/readyz
   register: k3s_upgrade_pre_api_command

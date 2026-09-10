@@ -3,6 +3,8 @@
   oxlorg.opnsense.alias_multi:
     aliases: "{{ opnsense_alias_batch }}"
     reload: false
+    multi_control:
+      fail_verify: true
   register: opnsense_alias_batch_apply
   no_log: true
 

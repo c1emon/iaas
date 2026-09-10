@@ -53,6 +53,7 @@ firewall/management rules、默认防火墙策略、NAT/DNAT 和关键公网入�
 | `state` | `present` 或 `absent`。 | `absent` 是变更操作，先审查引用。 |
 
 URL 由调用方选择，不允许用户名密码、fragment 或嵌入凭据；普通查询参数也必须是非秘密配置。
+还须符合固定 Collection 的 URL 语法；IPv6 字面地址、单标签主机名等不受该版本支持的形式会在离线阶段拒绝。
 运行时不下载或改写列表，配置保存和激活成功不代表列表已加载。OPNsense 负责定期刷新。
 
 组引用会先在本地校验，再只读解析外部定义。按依赖顺序创建成员和组，先释放旧引用、后按设备现有依赖反序删除。
@@ -71,7 +72,7 @@ Check mode 使用读取到的配置生成计划，不写入临时成员，也不
 | --- | --- | --- |
 | `scope`、`slug` | 稳定规则身份。 | 小写数字连字符格式；修改相当于新规则。 |
 | `state`、`enabled` | 生命周期和启用状态。 | `state` 只能为 `present`/`absent`。 |
-| `sequence` | 规则顺序。 | 推荐 1–99 核心、100–199 策略路由、200–499 特例、900+ 宽泛默认规则。 |
+| `sequence` | 规则顺序。 | 整数 1–99999；推荐 1–99 核心、100–199 策略路由、200–499 特例、900+ 宽泛默认规则。 |
 | `interface` | OPNsense 接口 ID 列表。 | 用 API 接受的 ID，不使用 UI 显示名。 |
 | `direction`、`action`、`quick` | 匹配方向、动作、快速匹配。 | 先用 readonly/export 确认现有顺序与语义。 |
 | `ip_protocol`、`protocol` | IP 族与传输协议。 | `inet`/`inet46` 等须与地址和目标服务一致。 |
@@ -227,7 +228,7 @@ protocol 使用小写 `tcp/udp/icmp/icmpv6`，端口为 1–65535 的整数且�
 
 API 连接/read timeout 分别为 5/15 秒，每个响应最多 2 MiB、一次操作累计最多 8 MiB，最多查询 5 页。
 日志只读取有限的近期样本，不是历史日志检索；时间缺少时区时不能做 UTC 过滤。
-状态按返回的 src_addr/dst_addr 精确匹配，NAT、接口、gateway 等作为独立可选字段，不推断完整路径或最新规则是否生效。
+状态按返回的 src_addr/dst_addr 精确匹配，NAT、接口、gateway、route-to/reply-to/dup-to 和 rtable 按接口实际返回标记可用性，不推断完整路径或最新规则是否生效。
 配置保存、表项存在和 URL 定期刷新成功是不同事实；接口未提供的更新时间保持不可用。
 
 需要详情时，在请求中显式设置 `include_details: true`，同时传入

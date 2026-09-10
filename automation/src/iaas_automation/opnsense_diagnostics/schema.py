@@ -109,6 +109,8 @@ def admit(request_path, output_dir, detail_path, environment=None, inventories=(
 
 def write_detail(path,result,rows,root):
     # The caller runs admission again immediately before this write.
+    path=path.resolve();root=root.resolve()
+    require(root in path.parents,'detail output must be beneath the diagnostics root')
     missing=[];parent=path.parent
     while not parent.exists(): missing.append(parent);parent=parent.parent
     for directory in reversed(missing): directory.mkdir(mode=0o700)

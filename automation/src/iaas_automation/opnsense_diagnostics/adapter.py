@@ -3,12 +3,13 @@ from datetime import datetime, timezone
 import ipaddress
 import json
 import re
+from typing import NoReturn
 from urllib.parse import urlsplit
 from uuid import UUID
 
 import requests
 
-from .schema import ALIAS_NAME
+from .schema import ALIAS_NAME,utc_time
 
 MAX_RESPONSE_BYTES=2*1024*1024
 MAX_TOTAL_BYTES=8*1024*1024
@@ -28,7 +29,7 @@ class ObservationError(Exception):
         self.status=status;self.reason=reason
 
 
-def problem(reason,status='error'):
+def problem(reason,status='error') -> NoReturn:
     raise ObservationError(status,reason)
 
 
@@ -116,36 +117,43 @@ def match_row(row,request,kind,rid=None):
             'source_port':'srcport' if kind=='rule_logs' else 'src_port',
             'destination_port':'dstport' if kind=='rule_logs' else 'dst_port',
             'protocol':'protoname' if kind=='rule_logs' else 'proto','interface':'interface'}
-    selected=True
+    failures=[]
     for key,field in fields.items():
         if key not in request: continue
-        if field not in row: problem('selector_field_unavailable','unsupported')
-        value=row[field]
-        if key.endswith('_ip'):
-            try:
-                if not isinstance(value,str): raise ValueError
-                value=str(ipaddress.ip_address(value))
-            except ValueError: problem('malformed_address')
-        elif key.endswith('_port'):
-            try:
-                if isinstance(value,bool) or not isinstance(value,(str,int)): raise ValueError
-                value=int(value)
-                if not 0<=value<=65535: raise ValueError
-            except ValueError: problem('malformed_port')
-        else:
-            if not isinstance(value,str) or not value: problem('malformed_selector_field')
-            if key=='protocol': value=value.lower()
-        selected &= value==request[key]
+        try:
+            if field not in row: problem('selector_field_unavailable','unsupported')
+            value=row[field]
+            if key.endswith('_ip'):
+                try:
+                    if not isinstance(value,str): raise ValueError
+                    value=str(ipaddress.ip_address(value))
+                except ValueError: problem('malformed_address')
+            elif key.endswith('_port'):
+                try:
+                    if isinstance(value,bool) or not isinstance(value,(str,int)): raise ValueError
+                    value=int(value)
+                    if not 0<=value<=65535: raise ValueError
+                except ValueError: problem('malformed_port')
+            else:
+                if not isinstance(value,str) or not value: problem('malformed_selector_field')
+                if key=='protocol': value=value.lower()
+            if value!=request[key]: return False
+        except ObservationError as error:
+            # An unrelated protocol/rule/address can still prove this row cannot match.
+            failures.append(error)
     if rid is not None:
-        if 'rid' not in row: problem('rule_correlation_unavailable','unsupported')
-        if not isinstance(row['rid'],str): problem('malformed_rule_identity')
-        selected &= row['rid']==rid
+        if 'rid' not in row: failures.append(ObservationError('unsupported','rule_correlation_unavailable'))
+        elif not isinstance(row['rid'],str): failures.append(ObservationError('error','malformed_rule_identity'))
+        elif row['rid']!=rid: return False
     if 'since' in request or 'until' in request:
         observed=timestamp(row.get('__timestamp__'))
-        if observed is None: problem('timestamp_timezone_unavailable','unsupported')
-        if 'since' in request: selected &= observed>=timestamp(request['since'])
-        if 'until' in request: selected &= observed<=timestamp(request['until'])
-    return selected
+        if observed is None: failures.append(ObservationError('unsupported','timestamp_timezone_unavailable'))
+        else:
+            if 'since' in request and observed<utc_time(request['since']): return False
+            if 'until' in request and observed>utc_time(request['until']): return False
+    if failures:
+        raise next((error for error in failures if error.status=='error'),failures[0])
+    return True
 
 
 def result_base(request,target):
@@ -227,14 +235,23 @@ def observe(client,request,target):
                     if len(raw)>=total: break
                     if not part: problem('incomplete_state_page','unsupported')
                 if not raw: problem('state_observation_unavailable','unsupported')
+                if total is None: problem('malformed_page')
                 result['truncated']=len(raw)<total
                 result['metadata']['tuple_semantics']='returned_src_addr_and_dst_addr'
             matched=[row for row in raw if match_row(row,request,kind,rid)]
+            if kind=='states':
+                for row in matched:
+                    for field in ('route-to','reply-to','dup-to'):
+                        if row.get(field) is not None and (not isinstance(row[field],str) or not row[field]):
+                            problem('malformed_route_observation')
+                    if row.get('rtable') is not None and (type(row['rtable']) is not int or row['rtable']<0):
+                        problem('malformed_route_observation')
             fields=(('rid','src','dst','srcport','dstport','protoname','interface','action','dir','__timestamp__') if kind=='rule_logs'
-                    else ('src_addr','dst_addr','src_port','dst_port','proto','iface','interface','nat_addr','nat_port','gateway','bytes','state'))
+                    else ('src_addr','dst_addr','src_port','dst_port','proto','iface','interface','nat_addr','nat_port','gateway',
+                          'route-to','reply-to','dup-to','rtable','bytes','state'))
             rows=[{field:row[field] for field in fields if field in row} for row in matched[:limit]]
             result['truncated'] |= len(matched)>limit
-            optional=('__timestamp__',) if kind=='rule_logs' else ('nat_addr','nat_port','gateway','interface','bytes')
+            optional=('__timestamp__',) if kind=='rule_logs' else ('nat_addr','nat_port','gateway','route-to','reply-to','dup-to','rtable','interface','bytes')
             result['metadata']['optional_fields']={field:{
                 'available_rows':sum((timestamp(row.get(field)) is not None if field=='__timestamp__' else row.get(field) is not None) for row in matched),
                 'reason':'no_matching_observations' if not matched else 'only_reported_values_are_observed',

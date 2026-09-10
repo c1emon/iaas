@@ -67,7 +67,8 @@
           Each desired alias must define name, type, content, description,
           enabled, and state fields compatible with oxlorg.opnsense.alias_multi.
 
-    - name: Read existing alias definitions before any write
+    # Credentials are inherited through the Collection's all -> system action group.
+    - name: Read existing alias definitions before any write  # noqa: args[module]
       oxlorg.opnsense.list:
         target: alias
       register: opnsense_alias_live
@@ -118,7 +119,7 @@
         - not ansible_check_mode
         - (opnsense_alias_apply | default({})) is changed or opnsense_force_reload | default(false)
       block:
-        - name: Activate saved alias configuration
+        - name: Activate saved alias configuration  # noqa: args[module]
           oxlorg.opnsense.reload:
             target: alias
         - name: Report activation success

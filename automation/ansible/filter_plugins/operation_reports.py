@@ -34,12 +34,23 @@ def switch_plan_summary(previews):
             if result.get("skipped"):
                 continue
             before, after = result.get("before"), result.get("after")
-            if not isinstance(before, list) or not isinstance(after, list):
-                raise ValueError("native preview lacks before/after observations")
             identity = keys.get(kind, ("name",))
             def indexed(objects):
+                if isinstance(objects, dict) and kind in {
+                    "base_interfaces", "lag_interfaces", "l2_interfaces", "l3_interfaces"
+                }:
+                    normalized = []
+                    for name, obj in objects.items():
+                        if not isinstance(obj, dict) or obj.get("name", name) != name:
+                            raise ValueError("native preview has ambiguous object identity")
+                        normalized.append({"name": name, **obj})
+                    objects = normalized
+                if not isinstance(objects, list):
+                    raise ValueError("native preview lacks before/after observations")
                 mapped = {}
                 for obj in objects:
+                    if not isinstance(obj, dict):
+                        raise ValueError("native preview has malformed object observations")
                     key = tuple(str(obj.get(field, "")) for field in identity)
                     if not any(key) or key in mapped:
                         raise ValueError("native preview has ambiguous object identity")

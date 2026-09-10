@@ -69,21 +69,31 @@
           Each desired VIP must define description, interface, CIDR address,
           bind, expand, and state fields. State must be present or absent.
 
-    - name: Create, update, or remove declared IP Alias VIPs additively  # noqa: args[module]
-      oxlorg.opnsense.interface_vip:
-        description: "{{ item.description }}"
-        interface: "{{ item.interface }}"
-        address: "{{ item.address }}"
-        bind: "{{ item.bind }}"
-        expand: "{{ item.expand }}"
-        mode: ipalias
-        state: "{{ item.state }}"
-        reload: false
-      loop: "{{ opnsense_vips }}"
-      loop_control:
-        label: "{{ item.interface }} {{ item.address }} {{ item.description }}"
-      register: opnsense_vip_apply
-      when: opnsense_vips | length > 0
+    - name: Reconcile declared OPNsense interface_vip configuration
+      block:
+        - name: Create, update, or remove declared IP Alias VIPs additively  # noqa: args[module]
+          oxlorg.opnsense.interface_vip:
+            description: "{{ item.description }}"
+            interface: "{{ item.interface }}"
+            address: "{{ item.address }}"
+            bind: "{{ item.bind }}"
+            expand: "{{ item.expand }}"
+            mode: ipalias
+            state: "{{ item.state }}"
+            reload: false
+          loop: "{{ opnsense_vips }}"
+          loop_control:
+            label: "{{ item.interface }} {{ item.address }} {{ item.description }}"
+          register: opnsense_vip_apply
+          when: opnsense_vips | length > 0
+      rescue:
+        - name: Report partial configuration reconciliation
+          ansible.builtin.fail:
+            msg: >-
+              OPNsense interface_vip: reconciliation failed. Partial configuration changes may have been saved;
+              activation was not attempted. No rollback was performed. Review and correct the cause,
+              then rerun this target; use opnsense_force_reload=true as a JSON/YAML boolean
+              when activation recovery is required.
 
     - name: Reload OPNsense interface_vip target after VIP changes  # noqa: args[module]
       when:

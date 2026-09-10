@@ -239,7 +239,7 @@ def _validate_filter_rule(record: dict[str, Any], path: str) -> tuple[str]:
     _state(record["state"], f"{path}.state")
     for field in {"enabled", "quick"} | ({"source_invert"} if "source_invert" in record else set()) | ({"destination_invert"} if "destination_invert" in record else set()) | ({"log"} if "log" in record else set()):
         _boolean(record[field], f"{path}.{field}")
-    _integer(record["sequence"], f"{path}.sequence", minimum=1, maximum=999999)
+    _integer(record["sequence"], f"{path}.sequence", minimum=1, maximum=99999)
     interfaces = _list(record["interface"], f"{path}.interface")
     for index, interface in enumerate(interfaces):
         _string(interface, f"{path}.interface[{index}]", pattern=INTERFACE)

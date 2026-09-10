@@ -39,11 +39,25 @@ def validate_url(value, path):
             raise ValueError
         if parsed.port is not None and not 1 <= parsed.port <= 65535:
             raise ValueError
+        # The pinned Collection accepts dotted DNS names or IPv4 URL hosts,
+        # excludes IPv4 first octets outside 1..223 and last octets 0/255,
+        # and requires any explicit port to contain two to five digits.
+        try:
+            address = ipaddress.ip_address(parsed.hostname)
+        except ValueError:
+            if not re.fullmatch(r'(?:[a-z\u00a1-\uffff0-9](?:-?[a-z\u00a1-\uffff0-9])*\.)+[a-z\u00a1-\uffff]{2,}',
+                                parsed.hostname, re.IGNORECASE):
+                raise ValueError
+        else:
+            if address.version != 4 or not 1 <= address.packed[0] <= 223 or not 1 <= address.packed[-1] <= 254:
+                raise ValueError
+        if ':' in parsed.netloc and not re.fullmatch(r'[0-9]{2,5}', parsed.netloc.rsplit(':', 1)[1]):
+            raise ValueError
         if any(key.lower() in {"token", "access_token", "api_key", "key", "password", "secret", "auth", "signature", "sig"}
                for key, _ in parse_qsl(parsed.query)):
             raise ValueError
     except (ValueError, TypeError):
-        fail(path + " must be an absolute non-secret HTTP(S) URL without userinfo or fragment")
+        fail(path + " must be a provider-compatible absolute non-secret HTTP(S) URL without userinfo or fragment")
 
 
 def dependency_order(graph):

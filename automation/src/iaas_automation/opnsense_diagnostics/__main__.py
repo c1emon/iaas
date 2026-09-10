@@ -51,7 +51,9 @@ def main():
             print(json.dumps(result));return 1
         result,rows=observe(client,request,args.target)
         secrets=(key,secret,base64.b64encode(f'{key}:{secret}'.encode()).decode())
-        result=redact(result,secrets);rows=redact(rows,secrets)
+        redacted_result=redact(result,secrets)
+        if not isinstance(redacted_result,dict): raise ValueError
+        result=redacted_result;rows=redact(rows,secrets)
         if path is not None:
             admit(args.request,args.output_dir,args.detail,args.environment,inventories)
             write_detail(path,result,rows,Path(args.output_dir)/'runtime/opnsense-diagnostics')
