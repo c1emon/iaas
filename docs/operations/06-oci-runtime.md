@@ -1,8 +1,18 @@
 # OCI runtime
 
-This runtime packages reusable Python, Ansible and OpenTofu resources for
-Linux amd64. Image publication is not infrastructure deployment or Forgejo
-acceptance. The first publicly consumable prerelease is
+The new [native launcher](../runtime-launcher.md) and
+[environment configuration](../runtime-configuration.md) are implemented on the
+runtime adaptation branch. They require an image exposing interface version 1
+through `capabilities`; the historical release below retains the legacy Make
+interface and is not a launcher-compatible release. Current implementation and
+local test boundaries are recorded in [validation](../runtime-adaptation-validation.md).
+
+Current builds package reusable Python, Ansible and OpenTofu resources for
+Linux amd64 and arm64. The updated Release workflow publishes both under one
+version manifest after both tested artifacts pass; see the
+[launcher guide](../runtime-launcher.md#native-arm64-builds). Image publication is
+not infrastructure deployment or Forgejo acceptance. The historical AMD64-only
+first publicly consumable prerelease is
 [`v0.1.0-rc.2`](https://github.com/c1emon/iaas/releases/tag/v0.1.0-rc.2), from
 source commit `42fd9c82511de2d9a646e02e6f7bd7148b688f5a`:
 

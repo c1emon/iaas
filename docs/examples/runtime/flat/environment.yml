@@ -1,0 +1,14 @@
+---
+schema_version: 1
+environment: synthetic-lab
+facts:
+  network: facts.yml
+components:
+  opnsense:
+    inputs:
+      aliases: aliases.yml
+scenarios:
+  empty:
+    opnsense:
+      inputs:
+        aliases: empty-aliases.yml

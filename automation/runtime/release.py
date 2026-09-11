@@ -17,8 +17,9 @@ def validate_event(event_name: str, event: dict) -> str:
     tag = release.get("tag_name", "")
     if event_name != "release" or event.get("action") != "published" or release.get("draft") is not False:
         raise ValueError("only a published non-draft Release can publish an image")
-    if not isinstance(tag, str) or not VERSION.fullmatch(tag) or len(tag) > 128:
-        raise ValueError("release tag must be OCI-compatible vX.Y.Z[-prerelease], without build metadata")
+    # Leave six characters for the per-architecture tag suffix.
+    if not isinstance(tag, str) or not VERSION.fullmatch(tag) or len(tag) > 122:
+        raise ValueError("release tag must be OCI-compatible vX.Y.Z[-prerelease], at most 122 characters, without build metadata")
     if "-" in tag:
         for identifier in tag.split("-", 1)[1].split("."):
             if identifier.isdigit() and len(identifier) > 1 and identifier.startswith("0"):
@@ -49,25 +50,90 @@ def check_labels(labels: dict, metadata: dict) -> None:
             raise ValueError(f"image {name} does not match release; existing versions are never overwritten")
 
 
-def publish(metadata: dict, tested_image: str) -> str:
+ARCHITECTURES = ("amd64", "arm64")
+
+
+def registry_manifest(reference: str, insecure: bool = False) -> dict | None:
+    flags = ["--insecure"] if insecure else []
+    result = subprocess.run(["docker", "manifest", "inspect", *flags, reference], capture_output=True, text=True)
+    if result.returncode == 0:
+        return json.loads(result.stdout)
+    if any(marker in result.stderr.lower() for marker in ("manifest unknown", "no such manifest", "name unknown")):
+        return None
+    raise RuntimeError("registry lookup failed; cannot establish that version is absent")
+
+
+def pulled_digest(reference: str, architecture: str) -> str:
+    output = command("docker", "pull", "--platform", f"linux/{architecture}", reference)
+    match = re.search(r"(?m)^Digest: (sha256:[0-9a-f]{64})$", output)
+    if not match:
+        raise RuntimeError("registry pull did not report a digest")
+    return match[1]
+
+
+def verify_image(manifest: dict | None, digest: str, record: dict) -> None:
+    descriptor = record.get("Descriptor") or {}
+    # Containerd exposes a manifest descriptor; classic Docker exposes the config ID.
+    matches = descriptor["digest"] == digest if descriptor else (
+        manifest is not None and manifest.get("config", {}).get("digest") == record["Id"])
+    if manifest is None or not matches:
+        raise ValueError("registry image differs from tested artifact; existing versions are never overwritten")
+
+
+def verify_index(index: dict, image: str, records: dict, insecure: bool = False) -> None:
+    manifests = index.get("manifests", [])
+    if len(manifests) != len(ARCHITECTURES) or {
+        (item.get("platform", {}).get("os"), item.get("platform", {}).get("architecture"))
+        for item in manifests
+    } != {("linux", arch) for arch in ARCHITECTURES}:
+        raise ValueError("existing version must contain exactly linux/amd64 and linux/arm64; never overwritten")
+    for item in manifests:
+        architecture = item["platform"]["architecture"]
+        child = registry_manifest(f"{image}@{item['digest']}", insecure)
+        verify_image(child, item["digest"], records[architecture])
+
+
+def publish(metadata: dict, tested_image: str, *, insecure: bool = False) -> str:
     image = metadata["image"]
     version = f"{image}:{metadata['tag']}"
-    check_labels(json.loads(command("docker", "image", "inspect", tested_image))[0]["Config"].get("Labels") or {}, metadata)
-    existing = subprocess.run(["docker", "manifest", "inspect", version], capture_output=True, text=True)
-    if existing.returncode == 0:
-        command("docker", "pull", version)
-        record = json.loads(command("docker", "image", "inspect", version))[0]
+    records = {}
+    # Admit both tested artifacts before writing anything to the registry.
+    for architecture in ARCHITECTURES:
+        record = json.loads(command("docker", "image", "inspect", "--platform", f"linux/{architecture}",
+                                    f"{tested_image}-{architecture}"))[0]
         check_labels(record["Config"].get("Labels") or {}, metadata)
-    elif any(marker in existing.stderr.lower() for marker in ("manifest unknown", "no such manifest", "name unknown")):
-        command("docker", "tag", tested_image, version)
-        command("docker", "push", version)
-        record = json.loads(command("docker", "image", "inspect", version))[0]
+        if (record["Os"], record["Architecture"]) != ("linux", architecture):
+            raise ValueError("tested image architecture mismatch")
+        records[architecture] = record
+    existing = registry_manifest(version, insecure)
+    if existing is not None:
+        verify_index(existing, image, records, insecure)
+        digest = pulled_digest(version, "amd64")
     else:
-        raise RuntimeError("registry lookup failed; cannot establish that version is absent")
-    digests = [value for value in record.get("RepoDigests", []) if value.startswith(image + "@sha256:")]
-    if not digests:
-        raise RuntimeError("image operation succeeded but registry digest is unavailable")
-    return digests[0]
+        references = []
+        for architecture in ARCHITECTURES:
+            child_tag = f"{version}-{architecture}"
+            child = registry_manifest(child_tag, insecure)
+            if child is None:
+                command("docker", "tag", f"{tested_image}-{architecture}", child_tag)
+                # Export only the tested platform, excluding any local build index/attestation.
+                command("docker", "push", "--platform", f"linux/{architecture}", child_tag)
+            child_digest = pulled_digest(child_tag, architecture)
+            reference = f"{image}@{child_digest}"
+            verify_image(registry_manifest(reference, insecure), child_digest, records[architecture])
+            references.append(reference)
+        flags = ["--insecure"] if insecure else []
+        command("docker", "manifest", "create", *flags, version, *references)
+        output = command("docker", "manifest", "push", *flags, "--purge", version)
+        digest = output.splitlines()[-1]
+        if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+            raise RuntimeError("manifest publication did not report a digest")
+    reference = f"{image}@{digest}"
+    published = registry_manifest(reference, insecure)
+    if published is None:
+        raise RuntimeError("published manifest is unavailable")
+    verify_index(published, image, records, insecure)
+    return reference
 
 
 def main() -> None:

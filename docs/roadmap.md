@@ -89,6 +89,7 @@ this roadmap consolidation.
 | OpenSpec archive cleanup | Several complete active changes should be verified and archived to reduce planning drift. |
 | Documentation cleanup | Keep `docs/README.md`, this roadmap, and historical labels aligned; avoid treating old proposal queues as current status. |
 | Service metadata and exposure details | Continue improving service metadata and generated docs before coupling DNS, reverse proxy, or firewall mutation. |
+| Runtime configuration/local execution adaptation, S3 state and saved-plan application | [Requirements input](iaas-runtime-adaptation-requirements.md) and [archived OpenSpec change](../openspec/changes/archive/2026-09-11-adapt-runtime-config-and-local-execution/proposal.md); implementation and bounded local validation completed, including multi-architecture image delivery. Formal remote publication remains unexecuted. Actual backend configuration and credentials remain caller-owned. |
 
 ## Deferred / scale-triggered ideas
 
@@ -96,7 +97,6 @@ this roadmap consolidation.
 |---|---|
 | NetBox / DCIM-IPAM source of truth | VLAN, IP, device, or multi-operator complexity outgrows YAML. |
 | Terragrunt | OpenTofu roots/environments multiply enough that backend/provider duplication becomes painful. |
-| Remote OpenTofu state | Multi-operator workflow or real CI apply requires shared state. |
 | SOPS/age or similar secret workflow | Secret rotation/sharing needs exceed current 1Password/env injection practices. |
 | GitOps auto-apply | A separate application platform exists and automatic mutation is safe; keep PVE, firewall, and switch apply manual for now. |
 | Internal CI trigger path | Internal Forgejo/Woodpecker-style triggers are needed for read-only environment checks or release validation. |
@@ -104,6 +104,29 @@ this roadmap consolidation.
 | High-privilege PVE hardware mapping bootstrap | PCI mapping management becomes frequent enough to justify a separate privileged OpenTofu root. |
 | PVE API/runtime adapter consolidation beyond current state | New maintenance pain appears after the archived adapter consolidation and package reorganizations. |
 | Deeper switch, DNS, firewall, or OPNsense mutation | Read-only export/diff and generated plan documentation exist first. |
+
+### Deferred: PVE concurrency protection beyond serial execution
+
+The caller reports that its current CI permits only one serial run. The current
+runtime adaptation therefore assumes that the complete snippet upload and apply
+workflow runs serially, and local mutations do not overlap CI deployments.
+S3 native state locking remains required by the selected runtime design; it does
+not cover SSH snippet uploads before OpenTofu starts. A stale saved plan may be
+rejected after snippets have already been uploaded, so failure does not imply
+zero infrastructure side effects.
+
+| Candidate | Risk addressed and revisit condition |
+|---|---|
+| Shared execution lock covering snippet upload through apply | Revisit if local and CI mutations, or multiple runners, must operate concurrently against the same environment. Prevent overlapping workflows from overwriting snippets before the native state lock is acquired. |
+| Immutable snippets referenced by saved plans | Revisit if overlapping uploads must be supported, or a rejected plan must not overwrite snippets used by existing VMs. Evaluate content-based filenames using existing checksums and atomic create-only publication; separately define retention of referenced files. Unreferenced uploads may still remain after failure. |
+
+These are alternatives for a later focused OpenSpec design, not two committed
+implementation tasks. Deferral does not block the current serial workflow; it
+retains the caller's responsibility to avoid overlapping mutations and the
+possibility of snippet writes before a stale plan is rejected. If a trigger is
+met, compare the smallest sufficient option and its maintenance cost before
+authorizing implementation. No additional lock, immutable publication scheme or
+snippet cleanup mechanism is included in the current runtime adaptation scope.
 
 ## Historical references
 
