@@ -53,7 +53,8 @@ class S3Backend:
                 "endpoint": self.config.get("endpoint"), "workspace": self.workspace,
                 "workspace_key_prefix": self.config.get("workspace_key_prefix", "env:")}
 
-    def initialize(self, root: Path, environ: dict[str, str], recovery: Path, tofu: str = "tofu") -> ProcessResult:
+    def initialize(self, root: Path, environ: dict[str, str], recovery: Path, tofu: str = "tofu",
+                   *, plugin_dir: Path | None = None) -> ProcessResult:
         # Native override semantics replace the caller root's backend declaration
         # only in the new task copy, using the explicitly supplied S3 selection.
         # No existing state or backend metadata is copied/migrated into this root.
@@ -62,6 +63,8 @@ class S3Backend:
         require(not (root / ".terraform/terraform.tfstate").exists() and not (root / "terraform.tfstate").exists(),
                 "state initialization requires a fresh task root; migration is not supported")
         write_text(declaration, json.dumps({"terraform": {"backend": {"s3": self.config}}}), secure=True)
+        mirror = plugin_dir if plugin_dir is not None else root / ".iaas-provider-mirror"
+        mirror.mkdir(parents=True, exist_ok=True, mode=0o700)
         environment = {**environ, "TF_WORKSPACE": self.workspace, "TF_IN_AUTOMATION": "1", "TF_INPUT": "0"}
-        return run_protected([tofu, "init", "-input=false", "-lockfile=readonly"], cwd=root,
+        return run_protected([tofu, "init", "-input=false", "-lockfile=readonly", "-get=false", f"-plugin-dir={mirror}"], cwd=root,
                              environ=environment, capture=recovery / "backend-init.raw")

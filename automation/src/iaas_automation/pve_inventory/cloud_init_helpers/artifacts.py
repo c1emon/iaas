@@ -63,7 +63,7 @@ def write_rendered_artifacts(snippets: list[CloudInitSnippet], tfvars_path: Path
     write_text(manifest_path(output_dir), json.dumps(manifest, indent=2, sort_keys=True) + "\n", secure=True)
 
 
-def load_rendered_artifacts(output_dir: Path, storage_id: str, tfvars_path: Path) -> list[CloudInitSnippet]:
+def load_rendered_artifacts(output_dir: Path, storage_id: str, tfvars_path: Path, *, allow_empty: bool = False) -> list[CloudInitSnippet]:
     validate_storage_id(storage_id)
     manifest_file = manifest_path(output_dir)
     if not manifest_file.exists():
@@ -82,7 +82,7 @@ def load_rendered_artifacts(output_dir: Path, storage_id: str, tfvars_path: Path
     validate_storage_id(manifest_storage_id)
     require(manifest_storage_id == storage_id, f"{manifest_file}: storage_id does not match --storage-id")
     snippets_data = payload.get("snippets")
-    require(isinstance(snippets_data, list) and snippets_data, f"{manifest_file}: snippets must be a non-empty list")
+    require(isinstance(snippets_data, list) and (allow_empty or bool(snippets_data)), f"{manifest_file}: snippets must be a non-empty list")
 
     snippets: list[CloudInitSnippet] = []
     for raw_entry in snippets_data:

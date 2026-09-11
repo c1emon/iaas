@@ -101,3 +101,31 @@ Inspect protected recovery materials before authorizing manual recovery.
 
 These execution primitives have software tests; launcher integration and real S3
 acceptance remain tracked separately in the change tasks.
+
+## Saved native plans
+
+The new execution layer prepares a native plan alongside `inputs.tfvars.json`,
+the declared root files, provider lockfile, rendered snippets and their manifest.
+The manifest binds the native plan through `plan_sha256`. Applying from another
+directory checks the selected root, workspace/backend, image digest and this
+binding before any SSH upload; it uses the saved inputs and does not render new
+password hashes or replan. Empty VM selections need no snippet upload. The legacy
+cloud-init upload interface retains its existing nonempty-artifact requirement.
+
+Root inputs are explicit: component `options.root` contains `id`, relative
+`directory`, and `files` mapping relative destinations to aliases in component
+`files`. Include `.terraform.lock.hcl`; exclude state and caches. Executable owner
+permission is preserved for caller scripts. `options.pve` declares `storage_id`,
+`ssh_host` and `ssh_user`. Plan/apply scope is the complete root ID.
+
+`prepare-dependencies` is a separate network operation. Its `dependencies.tar.gz`
+contains the caller-locked providers/modules. Supply it through the `dependencies`
+file alias for later plan preparation. Plan/apply initialize with downloads
+disabled and fail if a required dependency is absent. Saved companion artifacts
+include that archive when provided. Keep the entire plan directory private.
+
+Apply runs backend initialization, snippet upload, snippet verification, then native
+saved-plan apply. A failure stops following phases. Native stale-plan rejection
+can happen after snippets were overwritten; there is no automatic rollback or
+retry. The caller must serialize the complete workflow. Shared locks and immutable
+snippets remain deferred work.
