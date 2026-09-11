@@ -7,6 +7,16 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def test_ci_runs_native_opentofu_without_action_wrapper():
+    # Protected native subprocesses intentionally do not inherit the action's
+    # TOFU_CLI_PATH, output-file channels or other runner bootstrap environment.
+    for filename, job in (('offline-validation.yml', 'check'), ('runtime-release.yml', 'build')):
+        workflow = yaml.safe_load((ROOT / '.github/workflows' / filename).read_text())
+        setup = next(step for step in workflow['jobs'][job]['steps']
+                     if step.get('uses', '').startswith('opentofu/setup-opentofu@'))
+        assert setup['with']['tofu_wrapper'] is False
+
+
 def test_ci_uses_runtime_tools_and_explicit_collection_closure():
     local = yaml.safe_load((ROOT / 'automation/ansible/requirements.yml').read_text())
     runtime = yaml.safe_load((ROOT / 'automation/runtime/collections.yml').read_text())
