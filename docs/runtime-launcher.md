@@ -5,6 +5,13 @@ launcher binary and Docker CLI connected to its selected daemon. Python, Ansible
 OpenTofu and 1Password are not launcher host dependencies. Resolve credentials
 before invocation using the caller's existing secrets system.
 
+CI accepts only caller-supplied parameters, resolved credentials and protected
+files. It must not use a developer's local 1Password session, desktop integration
+or shell startup files. Local `op run` remains an optional caller-side preparation
+step. Release jobs receive their publication tokens from the CI platform; launcher
+asset upload uses noninteractive Bash and the explicitly injected `GH_TOKEN`, as
+described in [GitHub's CLI workflow guidance](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-github-cli).
+
 ## Install and select a runtime
 
 The release workflow attaches `iaas-linux-amd64`, `iaas-darwin-arm64` and `SHA256SUMS`.
@@ -180,6 +187,11 @@ daemon; if a locally loaded image lacks one, push/pull it through a caller-manag
 registry. Distribution to other machines must provide an ARM64-compatible tag or digest.
 
 Release publication requires [Docker API 1.49+ for platform-specific inspection](https://docs.docker.com/reference/cli/docker/image/inspect/).
+The image validation, build, publish and anonymous-consumption jobs install the
+same Docker CLI and Engine version, 29.5.2, with the containerd image store enabled.
+They retain explicit platform selection and set `DOCKER_HOST` so temporary
+authentication directories cannot switch publication or anonymous checks back to
+the runner's preinstalled daemon. Buildx continues to build each selected platform.
 The version tag (for example `v1.2.3`) points to a two-platform manifest;
 `v1.2.3-amd64` and `v1.2.3-arm64` retain the individual tested images. The workflow
 reserves six characters for these suffixes, limiting release tags to 122 characters.

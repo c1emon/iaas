@@ -27,10 +27,16 @@ The runtime SHALL support Linux amd64 and documented Apple Silicon local use wit
 #### Scenario: Publish one version for both architectures
 - **WHEN** a published Release triggers image distribution
 - **THEN** both native architectures SHALL be built and tested serially before the publication job is admitted
+- **AND** image CI jobs SHALL use the same pinned Docker CLI/Engine baseline supporting platform-specific image inspection, with consistent image storage and daemon selection across temporary authentication directories
 - **AND** publication SHALL load those tested artifacts without rebuilding, check their source labels and platform identities, and publish a version manifest containing exactly Linux AMD64 and ARM64
 - **AND** existing version and architecture tags SHALL NOT be overwritten; only the same tested artifacts may resume a partial or completed publication
 - **AND** anonymous consumption SHALL pull the shared manifest digest and execute the expected platform on both architectures
 - **AND** historical single-platform tags SHALL remain unchanged
+
+#### Scenario: Inject publication credentials in CI
+- **WHEN** CI publishes image or launcher assets
+- **THEN** publication credentials SHALL be explicitly supplied by the CI platform
+- **AND** publication SHALL run noninteractively without obtaining credentials from local 1Password or developer shell startup files
 
 #### Scenario: Run on Apple Silicon
 - **WHEN** a caller selects a supported Apple Silicon launcher and Linux amd64 container mode

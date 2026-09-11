@@ -92,6 +92,8 @@ K3s deploy/snapshot/upgrade 归为显式设施变更，保留其现有凭据、�
 
 设施和 S3 凭据由调用方分别注入，按操作 allowlist 传入；不传递整份宿主环境、OP token 或桌面会话。调用方环境值/凭据不进入 runtime repo 或镜像。最终 cloud-init 渲染会消费用户材料，属于受保护计划准备，不能混入无秘密 generate；上传/应用消费已保存字节，不再次取得密码以重新渲染。
 
+CI 只消费调用方传入的参数、已解析凭据和受保护文件，禁止使用开发者本地 1Password 会话、桌面集成或交互式 shell 启动文件获取凭据。本地外层 `op run` 仅是调用方的可选准备方式，不成为 CI 依赖。Release 发布凭据由 CI 平台显式注入；启动器附件上传使用非交互式 Bash 和 `GH_TOKEN`。
+
 ### 6. S3 状态与恢复生命周期
 
 新入口中所有访问 OpenTofu state 的操作只接入调用方声明的 S3 backend。配置由调用方 root/backend 配置及注入参数组成，选择同一 endpoint、region、bucket、实际 workspace key 和 workspace；同 root 不因本地/CI 生成不同 key。非默认 workspace 的 key prefix 也属于状态位置，必须一致。
@@ -127,6 +129,8 @@ S3 初始化不是所有在线操作的前置条件；独立 OPNsense/switch/K3s
 Linux amd64 为完整基线；镜像构建也支持显式 `RUNTIME_PLATFORM=linux/arm64`，两个架构的工具下载均固定校验值，CI 使用各架构原生 runner 串行构建与验证。Mac arm64 宿主安装原生启动器，可选择 arm64 镜像或显式 amd64 模拟。镜像报告实际架构，启动器按调用者选择校验；保存计划绑定运行架构，跨架构及缺少架构字段的旧计划需重新准备。provider 及真实设施能力按实际证据声明，不能静默模拟。Release 在两个架构串行构建与验证通过后，分别保存已测试镜像并核对来源和架构身份；发布任务只加载这些产物，先发布版本架构标签，再按不可变 digest 生成包含 amd64/arm64 的同一版本 manifest。已有标签不得覆盖，仅相同产物可重试或续发；完整重建导致身份变化时使用新版本。两个原生 runner 分别验证共享 manifest digest 的匿名拉取与能力查询。历史单架构标签不改写，Linux arm64 启动器产物不在本扩展内。
 
 测试分组复用路径、cloud-init artifacts、PVE lifecycle、K3s、容器 smoke 的现有 fixtures；新增仅覆盖新配置/选择语义、传输、恢复及保存计划关键正反例。公共 CI 不连接设施，独立准备阶段可下载锁定依赖。真实 Docker/Mac/DinD/S3 验证在确定可销毁环境及授权后进行，未完成不标为已验收；不执行真实设施 apply 来验证本设计。
+
+镜像验证、构建、发布和匿名消费 job 统一安装 Docker CLI/Engine 29.5.2 并启用 containerd image store，支持发布检查使用的 API 1.49+ `image inspect --platform`，不依赖 runner 预装版本。Buildx 与运行检查继续显式选择平台。通过 `DOCKER_HOST` 保持 daemon 选择，使临时 `DOCKER_CONFIG` 认证目录不会改变所用 Engine；构建与发布采用相同存储格式以保持 save/load 身份核对一致。
 
 ## Risks / Trade-offs
 

@@ -31,7 +31,7 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: sh automation/launcher/build.sh "$RUNNER_TEMP/iaas-launcher" "$RELEASE_TAG"
       - name: Attach launcher assets without replacing existing files
-        shell: zsh -li {0}
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
@@ -84,6 +84,12 @@ jobs:
           path: /tmp/iaas-build-cache
           key: iaas-runtime-${{ matrix.arch }}-${{ hashFiles('pyproject.toml', 'uv.lock', 'automation/runtime/Dockerfile', 'automation/runtime/collections.yml', 'automation/runtime/prune.py') }}
           restore-keys: iaas-runtime-${{ matrix.arch }}-
+      - name: Set up the release Docker baseline
+        uses: docker/setup-docker-action@77e84dbf09b47d1e29270283c22f16145aa85ca1 # v5
+        with:
+          version: v29.5.2
+          set-host: true
+          daemon-config: '{"features":{"containerd-snapshotter":true}}'
       - run: docker buildx create --use
       - name: Build versioned image
         run: |
@@ -126,6 +132,13 @@ jobs:
         with:
           pattern: tested-runtime-*
           path: tested-images
+      - name: Set up the release Docker baseline
+        uses: docker/setup-docker-action@77e84dbf09b47d1e29270283c22f16145aa85ca1 # v5
+        with:
+          version: v29.5.2
+          # Keep this daemon selected when publication replaces DOCKER_CONFIG.
+          set-host: true
+          daemon-config: '{"features":{"containerd-snapshotter":true}}'
       - name: Load and check tested image identity
         run: |
           for arch in amd64 arm64; do
@@ -154,6 +167,13 @@ jobs:
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     steps:
+      - name: Set up the release Docker baseline
+        uses: docker/setup-docker-action@77e84dbf09b47d1e29270283c22f16145aa85ca1 # v5
+        with:
+          version: v29.5.2
+          # Anonymous authentication isolation must not change the daemon.
+          set-host: true
+          daemon-config: '{"features":{"containerd-snapshotter":true}}'
       - name: Clean anonymous digest pull and invocation
         shell: bash
         env:

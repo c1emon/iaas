@@ -80,6 +80,12 @@ jobs:
           path: /tmp/iaas-build-cache
           key: iaas-runtime-${{ matrix.arch }}-${{ hashFiles('pyproject.toml', 'uv.lock', 'automation/runtime/Dockerfile', 'automation/runtime/collections.yml', 'automation/runtime/prune.py') }}
           restore-keys: iaas-runtime-${{ matrix.arch }}-
+      - name: Set up the release Docker baseline
+        uses: docker/setup-docker-action@77e84dbf09b47d1e29270283c22f16145aa85ca1 # v5
+        with:
+          version: v29.5.2
+          set-host: true
+          daemon-config: '{"features":{"containerd-snapshotter":true}}'
       - run: docker buildx create --use
       - name: Exercise build context after Python execution
         run: uv run --no-project python -m compileall -q automation/src

@@ -64,3 +64,10 @@ GitNexus 对已有 cloud-init artifact 调用的 impact 为 LOW；新入口尚�
 - 两个镜像的 Docker save/load 身份保持检查通过。本地真实执行验证 containerd 的 manifest 身份；经典 Docker config ID 分支由替身单测覆盖。发布脚本区分两种存储格式的身份，不将两者混作同一种摘要。
 - 33 项发布/架构/CI 定向测试通过，覆盖首次发布、续发、重复发布、旧单架构标签、内容冲突、平台错误、架构后缀的标签长度边界和 Registry 不可达；发布脚本 Pyright 为 0 errors，16 个 workflow shell 块语法检查与 OpenSpec strict 校验通过。
 - 未创建正式 GitHub Release、未推送 GHCR，也未宣称远程发布 workflow 已运行。临时 Registry 使用本机回环 HTTP，仅用于本地测试，正式 GHCR 流程仍使用 TLS 和临时认证目录。
+
+## CI 兼容性复核修正（2026-09-11）
+
+- 镜像验证、构建、发布及匿名消费 job 统一使用固定 SHA 的 `docker/setup-docker-action` 安装 Docker CLI/Engine 29.5.2，并启用 containerd image store，保留发布检查的 `--platform`。通过 `DOCKER_HOST` 保持 daemon 选择，避免临时认证目录使命令回到 runner 预装 Engine。
+- 启动器附件上传改用非交互式 Bash，继续由 CI 平台显式注入 `GH_TOKEN`。CI 禁止使用开发者本地 1Password 会话及 shell 启动文件获取凭据；调用方提供所需参数、已解析凭据及受保护文件。需求、设计、合同与使用指南同步该边界。
+- 35 项发布/架构/CI 定向测试通过，新增回归覆盖 Docker 基线一致性、认证目录切换后的 daemon 选择配置及 CI 凭据注入；28 个 workflow shell 块语法检查和 OpenSpec strict 校验通过。已核对固定 action 的输入及实现，并确认官方 Docker 29.5.2 的 AMD64/ARM64 下载包可用。
+- 此次为 CI 配置及合同修正，未重新构建镜像、触发远程 CI 或正式发布；前述本地 Docker 实测不等同于新 workflow 已在 GitHub runner 运行。

@@ -67,10 +67,16 @@ The launcher SHALL explicitly distinguish client-local Docker path sharing from 
 The launcher SHALL accept only the resolved credentials and protected files required by the selected operation, independently of the caller's secret provider.
 
 #### Scenario: Inject credentials for one operation
-- **WHEN** the caller uses outer op run or traditional Secrets
+- **WHEN** a local caller uses outer op run or a caller injects traditional Secrets
 - **THEN** the operation SHALL consume equivalent resolved values without shipping or invoking op
 - **AND** the container SHALL NOT receive a 1Password bootstrap token or unrelated host credentials
 - **AND** values SHALL NOT appear in command-line arguments, ordinary logs or public reports
+
+#### Scenario: Inject CI inputs without a developer session
+- **WHEN** CI invokes the launcher
+- **THEN** it SHALL consume only caller-supplied parameters, resolved credentials and protected files
+- **AND** it SHALL NOT obtain credentials from a developer's local 1Password session, desktop integration or interactive shell startup files
+- **AND** missing required credentials SHALL fail without falling back to local authentication
 
 #### Scenario: Prepare secret-bearing cloud-init
 - **WHEN** final cloud-init rendering requires guest user material
