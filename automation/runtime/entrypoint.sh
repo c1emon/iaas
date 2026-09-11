@@ -1,6 +1,17 @@
 #!/bin/sh
 set -eu
 
+case "${1:-}" in
+    capabilities)
+        exec python -m iaas_automation.runtime_execution capabilities
+        ;;
+    runtime)
+        shift
+        umask 077
+        exec python -m iaas_automation.runtime_execution "$@"
+        ;;
+esac
+
 if [ "$#" -eq 0 ] || [ "$1" = help ] || [ "$1" = --help ]; then
     exec make --no-print-directory -f /opt/iaas/Makefile help
 fi

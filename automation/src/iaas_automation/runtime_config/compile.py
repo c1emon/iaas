@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 import subprocess
 import sys
 import tempfile
@@ -74,7 +75,8 @@ def compile_documents(selected: SelectedConfig) -> dict[str, str]:
                     str(Path(sys.executable).parent / "ansible-playbook"),
                     "-i", "localhost,", "--skip-tags", "runtime-credentials",
                     "-e", f"@{variables}", str(playbook),
-                ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+                ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+                    env={**os.environ, "HOME": str(directory), "ANSIBLE_LOCAL_TEMP": str(directory / "ansible-tmp")})
                 require(result.returncode == 0, "switch configuration validation failed")
             return {"switch-config.yml": yaml.safe_dump(docs["config"], sort_keys=False)}
     except (ValidationError, KeyError, TypeError, ValueError):

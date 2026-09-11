@@ -86,6 +86,7 @@ class SelectedConfig:
     files: dict[str, Path]
     options: dict[str, Any]
     reader: SourceReader
+    file_paths: dict[str, Path] = field(default_factory=dict)
 
     def protect_outputs(self, implementation: Path, *outputs: Path) -> None:
         validate_paths(None, implementation, list(outputs), list(self.reader.sources))
@@ -160,6 +161,7 @@ def load_environment(
         documents[name] = resolve(reader.document(paths[name]))
     files = {}
     declared_files = _mapping(selected.get("files", {}), "component files")
+    file_paths = {name: _path(source, entry) for name, source in declared_files.items()}
     if file_names is not None:
         require(file_names <= declared_files.keys(), "required operation file is missing")
         declared_files = {name: source for name, source in declared_files.items() if name in file_names}
@@ -168,4 +170,4 @@ def load_environment(
         logical = _path(source, entry)
         files[name] = reader.locate(logical)
     options = resolve(_mapping(selected.get("options", {}), "component options"))
-    return SelectedConfig(cast(str, environment), component, scenario, documents, paths, files, options, reader)
+    return SelectedConfig(cast(str, environment), component, scenario, documents, paths, files, options, reader, file_paths)
