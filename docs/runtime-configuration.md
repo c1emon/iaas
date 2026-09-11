@@ -61,9 +61,11 @@ rewritten. Existing directory/file commands remain supported; migration is an
 explicit new entry pointing at existing documents, not an automatic conversion.
 
 The separate caller-owned runtime selection contains `interface_version: 1`, an
-explicit `image` release tag or digest, and `platform: linux/amd64`. Native arm64
-runtime support is not declared. `latest`, missing tags and unknown interfaces are
-rejected; Apple Silicon must explicitly select amd64 emulation. Backend locations
+explicit `image` release tag or digest, and `platform: linux/amd64` or
+`platform: linux/arm64`, matching the selected image. `latest`, missing tags and
+unknown interfaces are rejected; Apple Silicon can select a native ARM64 image
+or explicitly select AMD64 emulation. See the launcher guide for the ARM64 build
+and publication boundary. Backend locations
 and credentials belong to caller configuration, never these synthetic examples.
 
 See the [native launcher guide](runtime-launcher.md) for installation, local/DinD

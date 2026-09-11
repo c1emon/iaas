@@ -15,6 +15,7 @@ from iaas_automation.common.io import write_text
 from iaas_automation.pve_inventory.cloud_init_helpers.artifacts import load_rendered_artifacts, manifest_path
 from iaas_automation.runtime_config.compile import compile_documents
 from iaas_automation.runtime_config.loader import SelectedConfig
+from iaas_automation.runtime_config.selection import runtime_platform
 from .dependencies import restore_dependencies
 from .credentials import protected_file
 from .execution import Execution
@@ -39,7 +40,7 @@ def target_selection(selected: SelectedConfig, scope: str, image_digest: str) ->
     require(re.fullmatch(r"[A-Za-z0-9_.:\[\]-]+", target["ssh_host"])
             and re.fullmatch(r"[a-z_][a-z0-9_-]*", target["ssh_user"]), "invalid PVE SSH target")
     return {"environment": selected.environment, "scenario": selected.scenario, "scope": scope,
-            "root_id": root["id"], "image_digest": image_digest, "target": target}
+            "root_id": root["id"], "image_digest": image_digest, "runtime_platform": runtime_platform(), "target": target}
 
 
 def prepare_plan(selected: SelectedConfig, execution: Execution, backend: S3Backend,

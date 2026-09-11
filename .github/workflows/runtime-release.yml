@@ -38,9 +38,23 @@ jobs:
         run: gh release upload "$RELEASE_TAG" "$RUNNER_TEMP"/iaas-launcher/* --repo "$GITHUB_REPOSITORY"
 
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+            gitleaks_arch: x64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            gitleaks_arch: arm64
+    runs-on: ${{ matrix.runner }}
     env:
       RUNTIME_BUILD_CACHE_DIR: /tmp/iaas-build-cache
+      RUNTIME_PLATFORM: linux/${{ matrix.arch }}
+      RUNTIME_IMAGE: iaas-runtime:release-tested-${{ matrix.arch }}
+      GITLEAKS_ARCH: ${{ matrix.gitleaks_arch }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -60,7 +74,7 @@ jobs:
       - run: uv run ansible-galaxy collection install --no-deps -r automation/runtime/collections.yml -p automation/ansible/collections
       - name: Install checkout secret scanner
         run: |
-          curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.27.2/gitleaks_8.27.2_linux_x64.tar.gz -o /tmp/gitleaks.tar.gz
+          curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.27.2/gitleaks_8.27.2_linux_${GITLEAKS_ARCH}.tar.gz -o /tmp/gitleaks.tar.gz
           tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
           sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
       - run: make check ENVIRONMENT_DIR="$PWD/tests/fixtures/environment" OUTPUT_DIR="$RUNNER_TEMP/iaas-output" GENERATED_DIR="$PWD/tests/fixtures/environment/generated" PVE_DIR="$PWD/tests/fixtures/environment/opentofu"
@@ -68,24 +82,24 @@ jobs:
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: /tmp/iaas-build-cache
-          key: iaas-runtime-amd64-${{ hashFiles('pyproject.toml', 'uv.lock', 'automation/runtime/Dockerfile', 'automation/runtime/collections.yml', 'automation/runtime/prune.py') }}
-          restore-keys: iaas-runtime-amd64-
+          key: iaas-runtime-${{ matrix.arch }}-${{ hashFiles('pyproject.toml', 'uv.lock', 'automation/runtime/Dockerfile', 'automation/runtime/collections.yml', 'automation/runtime/prune.py') }}
+          restore-keys: iaas-runtime-${{ matrix.arch }}-
       - run: docker buildx create --use
       - name: Build versioned image
         run: |
           export OCI_SOURCE="$(jq -r .source release.json)"
           export OCI_REVISION="$(jq -r .revision release.json)"
           export OCI_VERSION="$(jq -r .tag release.json)"
-          make runtime-build RUNTIME_IMAGE=iaas-runtime:release-tested
-      - run: make runtime-tofu-check RUNTIME_IMAGE=iaas-runtime:release-tested
-      - run: uv run python automation/runtime/inspect_image.py --image iaas-runtime:release-tested
+          make runtime-build RUNTIME_IMAGE="$RUNTIME_IMAGE"
+      - run: make runtime-tofu-check RUNTIME_IMAGE="$RUNTIME_IMAGE"
+      - run: uv run python automation/runtime/inspect_image.py --image "$RUNTIME_IMAGE"
       - name: Save the tested image without rebuilding
         run: |
-          docker image inspect iaas-runtime:release-tested --format '{{.Id}}' > image-id.txt
-          docker save -o runtime-image.tar iaas-runtime:release-tested
+          docker image inspect "$RUNTIME_IMAGE" --format '{{.Id}}' > image-id.txt
+          docker save -o runtime-image.tar "$RUNTIME_IMAGE"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: tested-runtime
+          name: tested-runtime-${{ matrix.arch }}
           path: |
             runtime-image.tar
             image-id.txt
@@ -110,11 +124,17 @@ jobs:
           version: "0.12.9"
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: tested-runtime
+          pattern: tested-runtime-*
+          path: tested-images
       - name: Load and check tested image identity
         run: |
-          docker load -i runtime-image.tar
-          test "$(docker image inspect iaas-runtime:release-tested --format '{{.Id}}')" = "$(cat image-id.txt)"
+          for arch in amd64 arm64; do
+            artifact="tested-images/tested-runtime-$arch"
+            docker load -i "$artifact/runtime-image.tar"
+            test "$(docker image inspect "iaas-runtime:release-tested-$arch" --format '{{.Id}}')" = "$(cat "$artifact/image-id.txt")"
+          done
+          cmp tested-images/tested-runtime-amd64/release.json tested-images/tested-runtime-arm64/release.json
+          cp tested-images/tested-runtime-amd64/release.json release.json
       - name: Publish without overwriting an existing version
         id: publish
         env:
@@ -123,15 +143,27 @@ jobs:
 
   anonymous-consumption:
     needs: publish
-    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Clean anonymous digest pull and invocation
+        shell: bash
         env:
+          RUNTIME_PLATFORM: linux/${{ matrix.arch }}
           IMAGE_DIGEST: ${{ needs.publish.outputs.digest }}
         run: |
           export DOCKER_CONFIG="$(mktemp -d)"
           trap 'rm -rf "$DOCKER_CONFIG"' EXIT
-          if docker pull "$IMAGE_DIGEST" && docker run --rm --network none "$IMAGE_DIGEST"; then
+          if docker pull --platform "$RUNTIME_PLATFORM" "$IMAGE_DIGEST" &&
+             docker run --rm --platform "$RUNTIME_PLATFORM" --network none "$IMAGE_DIGEST" capabilities | jq -e --arg platform "$RUNTIME_PLATFORM" '.platforms == [$platform]'; then
             echo "Anonymous consumption succeeded: \`$IMAGE_DIGEST\`" >> "$GITHUB_STEP_SUMMARY"
           else
             echo 'Publication succeeded, but public consumption failed. Check package visibility; do not report distribution success.' >> "$GITHUB_STEP_SUMMARY"

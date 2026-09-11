@@ -121,8 +121,9 @@ def test_resolved_type_rejected_by_domain_without_value_leak(tmp_path):
 def test_runtime_selection_is_explicit():
     valid = {"interface_version": 1, "image": "example/iaas:v1.2.3", "platform": "linux/amd64"}
     assert RuntimeSelection.from_document(valid).image == valid["image"]
+    assert RuntimeSelection.from_document({**valid, "platform": "linux/arm64"}).platform == "linux/arm64"
     for changed in [{"image": "example/iaas"}, {"image": "example/iaas:latest"},
-                    {"interface_version": True}, {"platform": "linux/arm64"}]:
+                    {"interface_version": True}, {"platform": "linux/riscv64"}]:
         with pytest.raises(ValidationError):
             RuntimeSelection.from_document({**valid, **changed})
 

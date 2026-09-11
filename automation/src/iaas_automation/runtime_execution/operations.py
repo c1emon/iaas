@@ -7,6 +7,7 @@ import re
 from typing import Any, Mapping
 
 from iaas_automation.common.errors import require
+from iaas_automation.runtime_config.selection import runtime_platform
 from .state import PVE_ENV, S3_ENV
 
 
@@ -43,7 +44,7 @@ def operation_for(component: str, operation: str) -> Operation:
 
 
 def capabilities() -> dict[str, Any]:
-    return {"interface_version": 1, "schema_versions": [1], "platforms": ["linux/amd64"],
+    return {"interface_version": 1, "schema_versions": [1], "platforms": [runtime_platform()],
             "operations": {component: {name: asdict(value) for name, value in entries.items()}
                            for component, entries in OPERATIONS.items()}}
 

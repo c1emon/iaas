@@ -3,10 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import platform
 import re
 from typing import Any
 
 from iaas_automation.common.errors import require
+
+
+def runtime_platform() -> str:
+    architecture = {"x86_64": "amd64", "aarch64": "arm64", "arm64": "arm64"}.get(platform.machine())
+    require(architecture is not None, "unsupported runtime architecture")
+    return f"linux/{architecture}"
 
 
 @dataclass(frozen=True)
@@ -28,5 +35,6 @@ class RuntimeSelection:
             leaf = image.rsplit("/", 1)[-1]
             require(":" in leaf and leaf.rsplit(":", 1)[1] not in {"", "latest"},
                     "select an explicit release tag or digest; latest is unsupported")
-        require(document["platform"] == "linux/amd64", "unsupported runtime platform; explicitly select linux/amd64")
+        require(document["platform"] in ("linux/amd64", "linux/arm64"),
+                "unsupported runtime platform; explicitly select linux/amd64 or linux/arm64")
         return cls(image=image, platform=document["platform"])

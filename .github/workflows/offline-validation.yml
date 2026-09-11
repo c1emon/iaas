@@ -54,8 +54,18 @@ jobs:
       - run: make secret-scan
 
   runtime:
-    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     env:
+      RUNTIME_PLATFORM: linux/${{ matrix.arch }}
       RUNTIME_BUILD_CACHE_DIR: /tmp/iaas-build-cache
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -68,11 +78,18 @@ jobs:
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: /tmp/iaas-build-cache
-          key: iaas-runtime-amd64-${{ hashFiles('pyproject.toml', 'uv.lock', 'automation/runtime/Dockerfile', 'automation/runtime/collections.yml', 'automation/runtime/prune.py') }}
-          restore-keys: iaas-runtime-amd64-
+          key: iaas-runtime-${{ matrix.arch }}-${{ hashFiles('pyproject.toml', 'uv.lock', 'automation/runtime/Dockerfile', 'automation/runtime/collections.yml', 'automation/runtime/prune.py') }}
+          restore-keys: iaas-runtime-${{ matrix.arch }}-
       - run: docker buildx create --use
       - name: Exercise build context after Python execution
         run: uv run --no-project python -m compileall -q automation/src
       - run: make runtime-build
+      - name: Verify selected image and tool architecture
+        run: |
+          test "$(docker image inspect iaas-runtime:oci-release-test --format '{{.Os}}/{{.Architecture}}')" = "$RUNTIME_PLATFORM"
+          docker run --rm --network none iaas-runtime:oci-release-test capabilities | jq -e --arg platform "$RUNTIME_PLATFORM" '.platforms == [$platform]'
+          docker run --rm --network none --entrypoint uv iaas-runtime:oci-release-test --version
+          docker run --rm --network none --entrypoint tofu iaas-runtime:oci-release-test version
+          docker run --rm --network none --entrypoint packer iaas-runtime:oci-release-test version
       - run: make runtime-tofu-check
       - run: uv run python automation/runtime/inspect_image.py

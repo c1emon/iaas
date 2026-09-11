@@ -87,7 +87,7 @@ func run(args []string) error {
 	if options.Environment == "" || options.Output == "" {
 		return errors.New("run requires --environment and --output")
 	}
-	effects, err := capabilities.operation(options.Component, options.Operation)
+	effects, err := capabilities.operation(options.Component, options.Operation, configuration.Platform)
 	if err != nil {
 		return err
 	}

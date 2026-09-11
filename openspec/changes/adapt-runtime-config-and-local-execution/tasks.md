@@ -46,3 +46,11 @@
 - [x] 6.3 在明确授权的所选 S3 测试 bucket/prefix 上验证原生 state 读写、锁竞争及恢复出口。验证：使用不管理真实设施的合成 OpenTofu root，记录所选服务实际结果，不以对象上传成功代替锁验证。
 
 收尾记录：23 项任务完成。787 项 Python/Ansible 回归、7 组 Go 测试、类型/目标 lint/构建校验通过；本地 Linux VM、Apple Silicon、独立 DinD 及真实临时 Forgejo 作业完成代表性验证。Linux/amd64 运行时在 Apple Silicon 上显式模拟，不宣称 native amd64 硬件或真实设施资格。任务专属 Colima、容器、卷、bucket、Forgejo 仓库及临时目录已清理，原 default profile 未改变；构建产物保留在忽略的 `dist/launcher/`。详细需求分组、实际平台及限制见[验收记录](../../../docs/runtime-adaptation-validation.md)。
+
+## 7. 后续授权的多架构构建与发布扩展
+
+- [x] 7.1 支持显式 amd64/arm64 构建，按架构固定工具 checksum；启动器核对实际镜像架构，保存计划拒绝跨架构复用。验证：两个架构本地构建、shipped-image smoke、provider init/validate 与镜像层检查通过，arm64 原生执行，amd64 在 Apple Silicon 上模拟。
+- [x] 7.2 将 Release 改为两个架构串行构建验证、独立产物传递、同版本 manifest 发布和双架构匿名消费。验证：本地临时 Registry 真实发布、相同产物重试、两个架构匿名拉取运行及 save/load 身份保持通过；已有标签冲突拒绝由定向测试覆盖。
+- [x] 7.3 同步需求、proposal、design、spec、操作指南和验证记录。验证：33 项发布/架构/CI 定向测试、类型检查、workflow shell 语法及 OpenSpec strict 通过；区分本地验证与尚未执行的正式 GHCR/Release 发布。
+
+扩展收尾：基础阶段 23 项及新增 3 项任务完成。没有新增 Linux arm64 启动器产物或重做 arm64 DinD/S3/真实设施资格。临时 Registry 已删除，独立 `iaas-arm64` Colima 已停止并保留两个测试镜像与构建缓存；原 default profile 未改动。

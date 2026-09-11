@@ -52,8 +52,8 @@ func (r RuntimeConfig) validate() error {
 	if r.InterfaceVersion != 1 {
 		return errors.New("unsupported launcher interface version")
 	}
-	if r.Platform != "linux/amd64" {
-		return errors.New("unsupported platform; explicitly select linux/amd64 (including Apple Silicon emulation)")
+	if r.Platform != "linux/amd64" && r.Platform != "linux/arm64" {
+		return errors.New("unsupported platform; explicitly select linux/amd64 or linux/arm64")
 	}
 	if r.Image == "" || strings.ContainsAny(r.Image, " \n\t\r") || strings.HasPrefix(r.Image, "-") {
 		return errors.New("invalid image reference")
@@ -72,13 +72,13 @@ func (r RuntimeConfig) validate() error {
 	return nil
 }
 
-func (c Capabilities) operation(component, operation string) (Effects, error) {
+func (c Capabilities) operation(component, operation, selectedPlatform string) (Effects, error) {
 	if c.InterfaceVersion != 1 {
 		return Effects{}, errors.New("image and launcher interface versions are incompatible")
 	}
 	platform := false
 	for _, p := range c.Platforms {
-		platform = platform || p == "linux/amd64"
+		platform = platform || p == selectedPlatform
 	}
 	schema := false
 	for _, v := range c.SchemaVersions {

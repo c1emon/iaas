@@ -17,6 +17,21 @@ Runtime delivery SHALL include a separately installable versioned launcher and a
 ### Requirement: Explicit platform capability
 The runtime SHALL support Linux amd64 and documented Apple Silicon local use with explicit container-platform selection, and SHALL publish the evaluated scope of native Linux arm64 support.
 
+#### Scenario: Build a native ARM64 image
+- **WHEN** a caller selects `RUNTIME_PLATFORM=linux/arm64` for the image build
+- **THEN** the build SHALL use pinned ARM64 tools and their checksums, and CI SHALL build and check AMD64 and ARM64 serially
+- **AND** launcher admission SHALL match the requested platform against the running image architecture
+- **AND** saved plans SHALL bind that architecture and reject cross-architecture reuse before infrastructure writes
+- **AND** software build validation SHALL NOT imply real-facility qualification
+
+#### Scenario: Publish one version for both architectures
+- **WHEN** a published Release triggers image distribution
+- **THEN** both native architectures SHALL be built and tested serially before the publication job is admitted
+- **AND** publication SHALL load those tested artifacts without rebuilding, check their source labels and platform identities, and publish a version manifest containing exactly Linux AMD64 and ARM64
+- **AND** existing version and architecture tags SHALL NOT be overwritten; only the same tested artifacts may resume a partial or completed publication
+- **AND** anonymous consumption SHALL pull the shared manifest digest and execute the expected platform on both architectures
+- **AND** historical single-platform tags SHALL remain unchanged
+
 #### Scenario: Run on Apple Silicon
 - **WHEN** a caller selects a supported Apple Silicon launcher and Linux amd64 container mode
 - **THEN** documentation and startup checks SHALL identify the required container-engine emulation capability and operation limitations

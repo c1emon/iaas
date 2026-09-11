@@ -23,10 +23,14 @@ Keep a separate caller-owned `runtime.json`:
 ```
 
 Replace the example image with the chosen published tag or repository digest.
-`latest`, missing tags, unsupported interface/schema versions and native arm64
-images are rejected. `iaas prepare --runtime-config runtime.json` explicitly pulls
+Select `linux/arm64` for a native ARM64 image, or `linux/amd64` for an AMD64 image
+(Apple Silicon requires explicit emulation for the latter). `latest`, missing
+tags and unsupported interface/schema versions are rejected.
+`iaas prepare --runtime-config runtime.json` explicitly pulls
 the selected image. Normal operations never implicitly pull an image. Tags are
 resolved to a repository digest for execution and saved-plan compatibility.
+Saved plans also bind the runtime architecture; plans from another architecture
+or older plans without that field must be prepared again.
 Use `iaas capabilities --runtime-config runtime.json` to inspect operation effects.
 
 ## Select inputs and an operation
@@ -151,11 +155,45 @@ client also passed local-bind execution. These are explicit amd64 emulation
 results on an Apple Silicon host; native amd64 hardware and real facilities were
 not qualified. See the [validation record](runtime-adaptation-validation.md).
 
-Native Linux arm64 is not advertised by the current image contract:
+## Native ARM64 builds
 
-| Layer | Current assessment |
-| --- | --- |
-| Python / Ansible | No new architecture-specific domain logic; the complete dependency image is qualified only for the selected amd64 runtime |
-| uv / OpenTofu / Packer | Dockerfile download URLs, checksums and copied executable paths explicitly select x86_64/amd64; native arm64 needs a separate build selection |
-| PVE provider | Caller-locked bpg/proxmox 0.111.1 prepared and reused as linux_amd64 under emulation; linux_arm64 provider execution is unverified |
-| Launcher | Linux amd64 and Darwin arm64 deliverables; the runtime rejects linux/arm64 rather than silently selecting an incompatible image |
+Docker Buildx is required. Build one architecture at a time, using distinct tags
+and cache directories when retaining both architectures:
+
+```sh
+RUNTIME_PLATFORM=linux/arm64 make runtime-build RUNTIME_IMAGE=iaas-runtime:arm64
+make runtime-tofu-check RUNTIME_IMAGE=iaas-runtime:arm64
+uv run python automation/runtime/inspect_image.py --image iaas-runtime:arm64
+```
+
+For Colima, point `TMPDIR` at an existing shared host directory before running
+the smoke check; macOS's default `/var/folders` temporary directory may not be
+mounted into the VM.
+
+The default local build remains `linux/amd64`. PR/push and Release CI check both
+architectures serially using native runners and separate caches. A published
+Release builds and tests both images, transfers the tested artifacts without
+rebuilding, then publishes one version tag containing both architectures.
+Docker selects the matching image when pulling that tag; the launcher still
+requires explicit platform selection. The launcher requires a repository digest reported by the Docker
+daemon; if a locally loaded image lacks one, push/pull it through a caller-managed
+registry. Distribution to other machines must provide an ARM64-compatible tag or digest.
+
+Release publication requires [Docker API 1.49+ for platform-specific inspection](https://docs.docker.com/reference/cli/docker/image/inspect/).
+The version tag (for example `v1.2.3`) points to a two-platform manifest;
+`v1.2.3-amd64` and `v1.2.3-arm64` retain the individual tested images. The workflow
+reserves six characters for these suffixes, limiting release tags to 122 characters.
+It reports the shared manifest digest and verifies anonymous consumption on both
+architectures. Existing tags are never overwritten: retries must reuse the same
+tested artifacts. If only one architecture was pushed before failure, retry the
+publish job with those artifacts. A full rebuild that changes image identity
+requires a new release version. Historical single-architecture versions remain
+unchanged. See the [validation record](runtime-adaptation-validation.md) for
+local test results; workflow configuration does not mean a release has run.
+
+The existing Darwin ARM64 launcher can select the ARM64 container on Apple
+Silicon. Native Linux ARM64 launcher packaging is separate from image building.
+The runtime reports its actual architecture, and rejects a mismatch before an
+operation. Caller-supplied providers and dependency bundles must support that
+architecture. Host image architecture does not change PVE guest/template
+architecture or qualify real PVE, K3s, OPNsense or template builds.

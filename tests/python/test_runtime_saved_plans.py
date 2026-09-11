@@ -70,6 +70,11 @@ def test_prepare_and_apply_from_another_directory(setup_plan, tmp_path):
     selected, backend, tofu, execution = setup_plan
     prepare = execution("prepare")
     plan = prepare_plan(selected, prepare, backend, "complete-root", IMAGE, tofu)
+    metadata = json.loads((plan.parent / "summary.json").read_text())
+    wrong_platform = "linux/arm64" if metadata["runtime_platform"] == "linux/amd64" else "linux/amd64"
+    with pytest.raises(ValidationError, match="runtime mismatch"):
+        admit_plan(plan, plan.parent,
+                   {**target_selection(selected, "complete-root", IMAGE), "runtime_platform": wrong_platform}, backend)
     assert [phase["phase"] for phase in prepare.phases] == ["render-snippets", "backend-init", "plan", "review"]
     moved = tmp_path / "moved-companions"
     shutil.copytree(plan.parent, moved)

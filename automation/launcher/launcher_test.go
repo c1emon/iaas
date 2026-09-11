@@ -22,16 +22,27 @@ func TestSelectionAndOperationBoundary(t *testing.T) {
 		}
 	}
 	valid.Platform = "linux/arm64"
+	if err := valid.validate(); err != nil {
+		t.Fatal(err)
+	}
+	valid.Platform = "linux/riscv64"
 	if valid.validate() == nil {
 		t.Fatal("unqualified platform accepted")
 	}
 	caps := Capabilities{1, []int{1}, []string{"linux/amd64"}, map[string]map[string]Effects{"k3s": {"snapshot": {Network: true, InfrastructureWrite: true}}}}
-	effect, err := caps.operation("k3s", "snapshot")
+	effect, err := caps.operation("k3s", "snapshot", "linux/amd64")
 	if err != nil || !effect.InfrastructureWrite {
 		t.Fatal("snapshot must advertise remote writes")
 	}
-	if _, err := caps.operation("k3s", "destroy"); err == nil {
+	if _, err := caps.operation("k3s", "destroy", "linux/amd64"); err == nil {
 		t.Fatal("unlisted command accepted")
+	}
+	if _, err := caps.operation("k3s", "snapshot", "linux/arm64"); err == nil {
+		t.Fatal("image platform mismatch accepted")
+	}
+	caps.Platforms = []string{"linux/arm64"}
+	if _, err := caps.operation("k3s", "snapshot", "linux/arm64"); err != nil {
+		t.Fatal(err)
 	}
 }
 
