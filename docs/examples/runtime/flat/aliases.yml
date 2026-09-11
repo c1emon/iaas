@@ -1,0 +1,9 @@
+---
+opnsense_aliases:
+  - name: management_hosts
+    type: host
+    content:
+      $ref: facts.network.management
+    description: Synthetic management hosts
+    enabled: true
+    state: present

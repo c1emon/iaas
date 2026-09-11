@@ -1,0 +1,32 @@
+"""Small version/platform contract shared by runtime preparation and discovery."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import re
+from typing import Any
+
+from iaas_automation.common.errors import require
+
+
+@dataclass(frozen=True)
+class RuntimeSelection:
+    image: str
+    platform: str
+    interface_version: int = 1
+
+    @classmethod
+    def from_document(cls, document: dict[str, Any]) -> RuntimeSelection:
+        require(set(document) == {"interface_version", "image", "platform"}, "runtime selection needs interface_version, image and platform")
+        require(type(document["interface_version"]) is int and document["interface_version"] == 1,
+                "unsupported launcher interface version")
+        image = document["image"]
+        require(isinstance(image, str) and not any(c.isspace() for c in image), "invalid image reference")
+        if "@" in image:
+            require(re.fullmatch(r"[^@]+@sha256:[0-9a-f]{64}", image), "invalid image digest")
+        else:
+            leaf = image.rsplit("/", 1)[-1]
+            require(":" in leaf and leaf.rsplit(":", 1)[1] not in {"", "latest"},
+                    "select an explicit release tag or digest; latest is unsupported")
+        require(document["platform"] == "linux/amd64", "unsupported runtime platform; explicitly select linux/amd64")
+        return cls(image=image, platform=document["platform"])
