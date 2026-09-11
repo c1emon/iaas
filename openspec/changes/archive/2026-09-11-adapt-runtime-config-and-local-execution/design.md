@@ -1,6 +1,6 @@
 ## Context
 
-需求与范围见 [proposal](proposal.md) 和 [需求清单](../../../docs/iaas-runtime-adaptation-requirements.md)。规划创建于 `main`，实现位于 `feat/adapt-runtime-config-and-local-execution`；当前接口及实际验证边界见[启动器指南](../../../docs/runtime-launcher.md)和[验收记录](../../../docs/runtime-adaptation-validation.md)。
+需求与范围见 [proposal](proposal.md) 和 [需求清单](../../../../docs/iaas-runtime-adaptation-requirements.md)。规划创建于 `main`，实现位于 `feat/adapt-runtime-config-and-local-execution`；当前接口及实际验证边界见[启动器指南](../../../../docs/runtime-launcher.md)和[验收记录](../../../../docs/runtime-adaptation-validation.md)。
 
 创建设计时的源码基线（保留的旧入口仍遵守这些契约）：
 
@@ -120,7 +120,7 @@ S3 初始化不是所有在线操作的前置条件；独立 OPNsense/switch/K3s
 
 调用方单任务 CI 串行覆盖整个写入流程，本地变更避免与其他变更重叠；本地 check/generate/plan 可独立运行，plan 仍遵守 state 锁。无需实现 launcher 层共享锁。过期计划可能在上传并覆盖 snippets 后被拒绝，报告已完成前置步骤，不声称零副作用或自动回滚。任何 apply 失败都需调用方检查实际结果后重新规划授权；已知绕过 OpenTofu 的设备修改也应触发重新规划，原生 state 检查不等于实时设备漂移证明。
 
-不可变文件发布和覆盖全流程的锁是后期备选，见 [路线图](../../../docs/roadmap.md#deferred-pve-concurrency-protection-beyond-serial-execution)，不生成本轮实施任务。
+不可变文件发布和覆盖全流程的锁是后期备选，见 [路线图](../../../../docs/roadmap.md#deferred-pve-concurrency-protection-beyond-serial-execution)，不生成本轮实施任务。
 
 ### 8. 兼容、平台与最小验收
 

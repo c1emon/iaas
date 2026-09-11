@@ -1,7 +1,7 @@
 # IaaS Runtime 配置与本地执行适配需求清单
 
 日期：2026-09-11。
-状态：已在 [OpenSpec change：adapt-runtime-config-and-local-execution](../openspec/changes/adapt-runtime-config-and-local-execution/proposal.md) 的实现分支完成代码与本地合成验收；实际平台边界见[验收记录](runtime-adaptation-validation.md)。尚未发布新镜像或启动器。
+状态：已在 [OpenSpec change：adapt-runtime-config-and-local-execution](../openspec/changes/archive/2026-09-11-adapt-runtime-config-and-local-execution/proposal.md) 的实现分支完成代码与本地合成验收；实际平台边界见[验收记录](runtime-adaptation-validation.md)。尚未发布新镜像或启动器。
 归属：本文由 `iaas` 仓库维护，作为实现与验收依据，不作为 `infra-ops` 的长期实现计划。
 
 ## 目标与范围
@@ -58,7 +58,7 @@
 
 已实现的命令及组件差异见[启动器操作表](runtime-launcher.md#select-inputs-and-an-operation)；指定计划通过 `apply-saved-plan` 应用。
 镜像首次拉取需要网络；本清单中的断网执行指镜像准备完成后的纯检查和生成。
-首轮各组件必须支持的操作及既有独立入口边界，以 [设计中的组件支持表](../openspec/changes/adapt-runtime-config-and-local-execution/design.md#5-操作分级与凭据)为准；帮助和分组分发测试须覆盖该表，不能仅以“未支持的组合报错”替代组件支持承诺。
+首轮各组件必须支持的操作及既有独立入口边界，以 [设计中的组件支持表](../openspec/changes/archive/2026-09-11-adapt-runtime-config-and-local-execution/design.md#5-操作分级与凭据)为准；帮助和分组分发测试须覆盖该表，不能仅以“未支持的组合报错”替代组件支持承诺。
 
 ### 已确定能力：保存并应用指定计划
 

@@ -89,7 +89,7 @@ this roadmap consolidation.
 | OpenSpec archive cleanup | Several complete active changes should be verified and archived to reduce planning drift. |
 | Documentation cleanup | Keep `docs/README.md`, this roadmap, and historical labels aligned; avoid treating old proposal queues as current status. |
 | Service metadata and exposure details | Continue improving service metadata and generated docs before coupling DNS, reverse proxy, or firewall mutation. |
-| Runtime configuration/local execution adaptation, S3 state and saved-plan application | [Requirements input](iaas-runtime-adaptation-requirements.md) and [OpenSpec change](../openspec/changes/adapt-runtime-config-and-local-execution/proposal.md); planning artifacts prepared, implementation pending. Actual backend configuration and credentials remain caller-owned. |
+| Runtime configuration/local execution adaptation, S3 state and saved-plan application | [Requirements input](iaas-runtime-adaptation-requirements.md) and [archived OpenSpec change](../openspec/changes/archive/2026-09-11-adapt-runtime-config-and-local-execution/proposal.md); implementation and bounded local validation completed, including multi-architecture image delivery. Formal remote publication remains unexecuted. Actual backend configuration and credentials remain caller-owned. |
 
 ## Deferred / scale-triggered ideas
 

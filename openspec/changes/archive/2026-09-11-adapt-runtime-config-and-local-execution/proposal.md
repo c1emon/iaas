@@ -2,7 +2,7 @@
 
 调用方目前需要按运行时内部目录组织配置并手写容器命令，本地与 Forgejo DinD 的路径、输出和版本选择容易分叉。已确认的需求要求统一配置入口、独立组件操作、调用方管理的 S3 state，以及可保存并应用指定 OpenTofu 计划的完整失败处理。
 
-需求依据：[IaaS Runtime 配置与本地执行适配需求清单](../../../docs/iaas-runtime-adaptation-requirements.md)。已在实现分支完成代码及本地合成验收；范围与实际结果见[验收记录](../../../docs/runtime-adaptation-validation.md)。
+需求依据：[IaaS Runtime 配置与本地执行适配需求清单](../../../../docs/iaas-runtime-adaptation-requirements.md)。已在实现分支完成代码及本地合成验收；范围与实际结果见[验收记录](../../../../docs/runtime-adaptation-validation.md)。
 
 ## What Changes
 

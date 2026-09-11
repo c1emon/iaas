@@ -45,7 +45,7 @@
 - [x] 6.2 在明确授权的 Forgejo DinD 测试环境验证无共享宿主路径的输入传递、计划输出和恢复失败保留。验证：记录任务卷/daemon 生命周期与产物回收结果，不读取或清理其他任务资源。
 - [x] 6.3 在明确授权的所选 S3 测试 bucket/prefix 上验证原生 state 读写、锁竞争及恢复出口。验证：使用不管理真实设施的合成 OpenTofu root，记录所选服务实际结果，不以对象上传成功代替锁验证。
 
-收尾记录：23 项任务完成。787 项 Python/Ansible 回归、7 组 Go 测试、类型/目标 lint/构建校验通过；本地 Linux VM、Apple Silicon、独立 DinD 及真实临时 Forgejo 作业完成代表性验证。Linux/amd64 运行时在 Apple Silicon 上显式模拟，不宣称 native amd64 硬件或真实设施资格。任务专属 Colima、容器、卷、bucket、Forgejo 仓库及临时目录已清理，原 default profile 未改变；构建产物保留在忽略的 `dist/launcher/`。详细需求分组、实际平台及限制见[验收记录](../../../docs/runtime-adaptation-validation.md)。
+收尾记录：23 项任务完成。787 项 Python/Ansible 回归、7 组 Go 测试、类型/目标 lint/构建校验通过；本地 Linux VM、Apple Silicon、独立 DinD 及真实临时 Forgejo 作业完成代表性验证。Linux/amd64 运行时在 Apple Silicon 上显式模拟，不宣称 native amd64 硬件或真实设施资格。任务专属 Colima、容器、卷、bucket、Forgejo 仓库及临时目录已清理，原 default profile 未改变；构建产物保留在忽略的 `dist/launcher/`。详细需求分组、实际平台及限制见[验收记录](../../../../docs/runtime-adaptation-validation.md)。
 
 ## 7. 后续授权的多架构构建与发布扩展
 
