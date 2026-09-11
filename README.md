@@ -12,6 +12,7 @@ README、设计文档或历史 OpenSpec 记录拼接第二套操作步骤。
 ## 开始使用
 
 容器使用、已验证的版本 digest 和挂载方式见 [OCI runtime](docs/operations/06-oci-runtime.md)。
+版本化环境入口和本地/DinD 统一命令见[原生启动器指南](docs/runtime-launcher.md)。
 从源码运行时，在仓库根目录执行以下命令，并将绝对路径替换为调用方自己的目录：
 
 ```bash

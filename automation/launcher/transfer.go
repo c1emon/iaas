@@ -76,7 +76,7 @@ func (t *task) initialize() error {
 	}
 	script := "import os,sys\nfor p in ['/inputs','/inputs/files','/task']:\n os.makedirs(p,exist_ok=True); os.chown(p,int(sys.argv[1]),int(sys.argv[2])); os.chmod(p,0o700)"
 	seed := t.name + "-transfer"
-	_, err := t.docker.call("create", "--name", seed, "--platform", t.configuration.Platform,
+	_, err := t.docker.call("create", "--name", seed, "--pull", "never", "--platform", t.configuration.Platform,
 		"--network", "none", "--read-only", "--mount", "type=volume,src="+t.inputVolume+",dst=/inputs",
 		"--mount", "type=volume,src="+t.outputVolume+",dst=/task", "--entrypoint", "python", t.image,
 		"-c", script, strconv.Itoa(uid), strconv.Itoa(gid))

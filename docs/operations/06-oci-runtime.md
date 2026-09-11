@@ -1,5 +1,12 @@
 # OCI runtime
 
+The new [native launcher](../runtime-launcher.md) and
+[environment configuration](../runtime-configuration.md) are implemented on the
+runtime adaptation branch. They require an image exposing interface version 1
+through `capabilities`; the historical release below retains the legacy Make
+interface and is not a launcher-compatible release. Current implementation and
+local test boundaries are recorded in [validation](../runtime-adaptation-validation.md).
+
 This runtime packages reusable Python, Ansible and OpenTofu resources for
 Linux amd64. Image publication is not infrastructure deployment or Forgejo
 acceptance. The first publicly consumable prerelease is

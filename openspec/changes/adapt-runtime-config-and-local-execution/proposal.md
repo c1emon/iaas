@@ -2,7 +2,7 @@
 
 调用方目前需要按运行时内部目录组织配置并手写容器命令，本地与 Forgejo DinD 的路径、输出和版本选择容易分叉。已确认的需求要求统一配置入口、独立组件操作、调用方管理的 S3 state，以及可保存并应用指定 OpenTofu 计划的完整失败处理。
 
-需求依据：[IaaS Runtime 配置与本地执行适配需求清单](../../../docs/iaas-runtime-adaptation-requirements.md)。本文及其配套材料仅为设计，尚未实施。
+需求依据：[IaaS Runtime 配置与本地执行适配需求清单](../../../docs/iaas-runtime-adaptation-requirements.md)。已在实现分支完成代码及本地合成验收；范围与实际结果见[验收记录](../../../docs/runtime-adaptation-validation.md)。
 
 ## What Changes
 
@@ -31,6 +31,6 @@
 
 ## Impact
 
-预计涉及 `automation/runtime/`、`automation/src/iaas_automation/` 中新增的配置/分发适配及现有 paths/cloud-init 调用、Makefile、Ansible 参数传递、镜像与发布工作流、合成 fixtures、相关测试和操作手册。领域 schema、VM 资源地址、主机 helper 权限边界和基础设施所有权不因本变更改变。
+实现新增 `automation/launcher/`、Python 配置/执行适配、容器协议、保存计划及恢复路径，并更新发布工作流、测试与操作手册。复用现有 paths/cloud-init/Ansible 领域能力；原 Make 入口、VM 资源地址、主机 helper 权限边界和基础设施所有权保持原有契约。
 
-当前只创建本 change；不切换分支、不运行 apply、不修改调用方仓库、不配置 bucket、不发布镜像或启动器。实施前遵守实现分支规则。共享/真实环境验收需另行指定环境并授权，未完成时保持对应验收任务未完成。
+本轮已获实现分支和本地 Docker 测试授权，只使用任务专属 Colima、Forgejo/DinD 与 MinIO 合成环境。没有修改调用方真实配置或设施，没有发布镜像、Release 或启动器。共享环境、真实设施及 native amd64 硬件资格不由这些模拟结果替代。

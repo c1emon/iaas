@@ -277,6 +277,11 @@ op run --env-file "$PVE_ENV_TEMPLATE" -- \
 核对当前显式 tfvars，缺失或不匹配时不会连接 SSH。主机 helper 必须由 `pvesm`
 成功解析存储路径，不能再依赖猜测的 `/mnt/pve` 回退路径。
 
+以下 `make pve-apply` 描述保留的旧本地 state 流程。新的
+[`iaas run` 启动器](../runtime-launcher.md)使用调用方注入的 S3 backend、
+原生 S3 锁及 `prepare-plan` / `apply-saved-plan`，并保留写回失败的恢复材料。
+旧 state 的迁移必须另行审查，不随入口切换自动执行；S3 配置与 bucket 由调用方维护。
+
 `pve-apply` 在 apply 前后备份本地
 OpenTofu state 到`$OUTPUT_DIR/runtime/tofu-state-backups/`。state 位于
 `$PVE_DIR/terraform.tfstate`，是单操作者本地状态；不得

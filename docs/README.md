@@ -7,6 +7,9 @@
 ## 当前操作
 
 - [OCI 运行时与调用方契约](operations/06-oci-runtime.md)
+- [原生启动器：本地 Docker / DinD](runtime-launcher.md)
+- [环境配置与保存计划](runtime-configuration.md)
+- [Runtime 适配验收记录](runtime-adaptation-validation.md)
 
 - [准备与通用约定](operations/00-preparation-and-conventions.md)
 - [交换机](operations/01-switch.md)

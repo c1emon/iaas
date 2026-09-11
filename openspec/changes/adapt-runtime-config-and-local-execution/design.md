@@ -1,8 +1,8 @@
 ## Context
 
-需求与范围见 [proposal](proposal.md) 和 [需求清单](../../../docs/iaas-runtime-adaptation-requirements.md)。当前无其他 active change；规划创建于 `main`，现有需求文档与路线图改动保留。
+需求与范围见 [proposal](proposal.md) 和 [需求清单](../../../docs/iaas-runtime-adaptation-requirements.md)。规划创建于 `main`，实现位于 `feat/adapt-runtime-config-and-local-execution`；当前接口及实际验证边界见[启动器指南](../../../docs/runtime-launcher.md)和[验收记录](../../../docs/runtime-adaptation-validation.md)。
 
-当前源码事实：
+创建设计时的源码基线（保留的旧入口仍遵守这些契约）：
 
 | 当前入口 | 本设计的约束 |
 | --- | --- |
@@ -13,13 +13,13 @@
 | 镜像构建固定 Linux amd64；provider 初始化单独允许网络 | Mac 首轮显式 amd64 模拟，原生 arm64 按实际工具/provider 能力声明 |
 | 现行本地 state 备份 helper 只复制 root 下的文件 | 不把该 helper 成功当成 S3 备份，写回失败恢复走单独输出生命周期 |
 
-GitNexus 已用于查找 cloud-init 调用流程；索引落后两个提交，结论以本轮当前源码核对为准。新 change 路径无图节点，impact 为 UNKNOWN；已检查同名路径和文本引用，不据此推断实现风险。实施时须对实际修改符号重新做 impact。
+GitNexus 用于查找及复核 cloud-init 调用流程。新入口在缓存图中为 UNKNOWN，实施时结合当前源码调用与定向回归核对；已有 artifact loader 的 impact 为 LOW。各阶段提交前执行 graph change analysis，不以空调用集合替代验证。
 
 ## Goals / Non-Goals
 
 目标是把已确认的 35 条需求转成可实施的配置、调用和生命周期契约，保持领域逻辑及现有权限保护。最低运行依赖为一个安装好的启动器与 Docker CLI/可达 engine；设施工具链留在镜像内。
 
-不构建通用配置平台、动态插件系统、审批系统、跨机器执行锁、不可变 snippets 或垃圾回收。不开通或迁移实际 S3，不资格化真实 PVE/K3s，不默认承诺原生 arm64 完整能力，也不实施本变更。
+不构建通用配置平台、动态插件系统、审批系统、跨机器执行锁、不可变 snippets 或垃圾回收。不开通或迁移调用方真实 S3，不资格化真实 PVE/K3s，不承诺原生 arm64 完整能力；合成测试不提升为真实设施验收。
 
 ## Decisions
 

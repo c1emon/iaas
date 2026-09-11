@@ -66,7 +66,8 @@ runtime support is not declared. `latest`, missing tags and unknown interfaces a
 rejected; Apple Silicon must explicitly select amd64 emulation. Backend locations
 and credentials belong to caller configuration, never these synthetic examples.
 
-Launcher and online lifecycle instructions will be added with their implementation.
+See the [native launcher guide](runtime-launcher.md) for installation, local/DinD
+execution, component scopes, credentials and recovery.
 
 ## S3 and protected process results
 
@@ -99,8 +100,9 @@ recovery export retains the original storage and does not turn execution failure
 into success. No automatic state push, apply retry or force-unlock is performed.
 Inspect protected recovery materials before authorizing manual recovery.
 
-These execution primitives have software tests; launcher integration and real S3
-acceptance remain tracked separately in the change tasks.
+Software tests and local synthetic S3 tests cover this execution layer. Exact
+platform and CI acceptance boundaries remain recorded in the change tasks and
+launcher guide.
 
 ## Saved native plans
 

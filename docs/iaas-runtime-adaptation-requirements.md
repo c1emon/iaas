@@ -1,8 +1,8 @@
 # IaaS Runtime 配置与本地执行适配需求清单
 
 日期：2026-09-11。
-状态：需求已纳入 [OpenSpec change：adapt-runtime-config-and-local-execution](../openspec/changes/adapt-runtime-config-and-local-execution/proposal.md)；设计材料已生成，尚未实施。
-归属：本文由 `iaas` 仓库维护，作为后续设计输入，不作为 `infra-ops` 的长期实现计划。
+状态：已在 [OpenSpec change：adapt-runtime-config-and-local-execution](../openspec/changes/adapt-runtime-config-and-local-execution/proposal.md) 的实现分支完成代码与本地合成验收；实际平台边界见[验收记录](runtime-adaptation-validation.md)。尚未发布新镜像或启动器。
+归属：本文由 `iaas` 仓库维护，作为实现与验收依据，不作为 `infra-ops` 的长期实现计划。
 
 ## 目标与范围
 
@@ -10,8 +10,8 @@
 用户应能在本地完成不依赖实际环境的检查和生成，无需每次通过 CI。
 本地和 CI 消费相同的环境配置与运行时版本，在线操作保留明确的目标、凭据和授权边界。
 
-本清单仅针对 `iaas-runtime` 的改造与适配，作为后续设计和 OpenSpec change 的输入；
-不包含真实环境部署，也不代表具体目录和命令语法已经定稿。
+本清单仅针对 `iaas-runtime` 的改造与适配，不包含真实环境部署。
+具体配置及命令接口见[启动器指南](runtime-launcher.md)。
 
 ## 1. 环境配置接口
 
@@ -56,7 +56,7 @@
 | OPS-07 | 支持保存 OpenTofu 计划并应用调用方指定的计划文件 | 应用的是指定的原生计划文件，不重新规划或回退到按当前配置直接 apply；计划失效或不匹配时明确失败 |
 | OPS-08 | 当前阶段复用调用方已有的单任务串行 CI 执行约定 | 同一环境的完整变更流程（含 snippets 上传和 apply）串行执行；调用方避免本地变更与 CI 部署或其他本地变更重叠，运行时不宣称已提供跨入口的完整流程互斥 |
 
-命令可以采用 `check`、`generate`、`diagnose`、`plan`、`apply` 等概念，最终语法在设计阶段确定。
+已实现的命令及组件差异见[启动器操作表](runtime-launcher.md#select-inputs-and-an-operation)；指定计划通过 `apply-saved-plan` 应用。
 镜像首次拉取需要网络；本清单中的断网执行指镜像准备完成后的纯检查和生成。
 首轮各组件必须支持的操作及既有独立入口边界，以 [设计中的组件支持表](../openspec/changes/adapt-runtime-config-and-local-execution/design.md#5-操作分级与凭据)为准；帮助和分组分发测试须覆盖该表，不能仅以“未支持的组合报错”替代组件支持承诺。
 
