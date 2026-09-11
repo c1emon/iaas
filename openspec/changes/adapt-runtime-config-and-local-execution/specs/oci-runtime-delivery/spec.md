@@ -1,0 +1,52 @@
+## ADDED Requirements
+
+### Requirement: Launcher delivery and compatibility metadata
+Runtime delivery SHALL include a separately installable versioned launcher and a documented compatibility contract without adding host toolchains to ordinary runtime prerequisites.
+
+#### Scenario: Install or upgrade a launcher
+- **WHEN** a caller installs or explicitly upgrades the launcher
+- **THEN** project-owned instructions SHALL provide supported host artifacts, standard checksums, prerequisites and compatibility guidance
+- **AND** caller image/configuration selections SHALL NOT be silently changed
+- **AND** runtime execution SHALL NOT auto-update the launcher
+
+#### Scenario: Assemble the adapted image
+- **WHEN** the adapted runtime image is built
+- **THEN** it SHALL contain the new runtime parser/dispatcher and necessary compatibility metadata while preserving existing runtime-only content and dependency layering rules
+- **AND** real caller configuration, backend values, plans and credentials SHALL remain excluded
+
+### Requirement: Explicit platform capability
+The runtime SHALL support Linux amd64 and documented Apple Silicon local use with explicit container-platform selection, and SHALL publish the evaluated scope of native Linux arm64 support.
+
+#### Scenario: Run on Apple Silicon
+- **WHEN** a caller selects a supported Apple Silicon launcher and Linux amd64 container mode
+- **THEN** documentation and startup checks SHALL identify the required container-engine emulation capability and operation limitations
+- **AND** incompatible engine/platform combinations SHALL fail rather than silently selecting another platform
+
+#### Scenario: Evaluate native arm64
+- **WHEN** native Linux arm64 support is assessed
+- **THEN** the result SHALL identify supported and unsupported operations from actual tool/provider compatibility evidence
+- **AND** unsupported combinations SHALL be rejected or require an explicitly selected amd64 alternative
+- **AND** unexecuted platforms SHALL NOT be labeled validated
+
+### Requirement: Bounded runtime adaptation acceptance
+Acceptance SHALL use grouped representative workflows and distinguish software validation from actual platform/daemon/S3 service validation.
+
+#### Scenario: Run software checks
+- **WHEN** the adaptation is validated with synthetic inputs
+- **THEN** grouped checks SHALL cover offline operation, path/reference failures, component scope, version compatibility, permissions, saved plans and recovery retention
+- **AND** tests SHALL exercise phase failures without real infrastructure mutations or live credentials
+
+#### Scenario: Validate actual execution modes
+- **WHEN** local Docker, Apple Silicon, Forgejo DinD or a selected S3-compatible service is reported as accepted
+- **THEN** that execution mode SHALL have actual evidence from a separately identified and authorized bounded environment
+- **AND** mocks, another platform or simple S3 upload/download SHALL NOT substitute for the claimed mode's path/permission or native-lock behavior
+- **AND** absent evidence SHALL remain explicitly pending without triggering shared-environment access automatically
+
+### Requirement: Canonical adaptation guidance
+The IaaS repository SHALL own installation, operation, migration and troubleshooting guidance; callers SHALL own environment values, backend selection, credentials and authorization.
+
+#### Scenario: Adopt the new interface
+- **WHEN** a caller follows migration guidance
+- **THEN** it SHALL describe component configuration, runtime selection, local/DinD execution, S3 state and saved-plan/recovery outputs
+- **AND** it SHALL preserve existing explicit entrypoints or give clear versioned errors without rewriting sources or migrating state
+- **AND** it SHALL distinguish serial workflow assumptions and deferred concurrency alternatives from implemented guarantees
