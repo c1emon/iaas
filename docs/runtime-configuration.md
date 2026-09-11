@@ -67,3 +67,37 @@ rejected; Apple Silicon must explicitly select amd64 emulation. Backend location
 and credentials belong to caller configuration, never these synthetic examples.
 
 Launcher and online lifecycle instructions will be added with their implementation.
+
+## S3 and protected process results
+
+The state execution layer consumes a caller-supplied JSON file with `workspace`
+and `config` fields. `config` is native OpenTofu S3 backend configuration and must
+include `bucket`, `key`, `region`, and `use_lockfile: true`. A non-default workspace
+also requires an explicit `workspace_key_prefix`. Custom S3 `endpoints` and the
+service's necessary compatibility options remain caller-owned. Prepare the bucket
+with versioning before invocation. Credentials are injected separately through
+selected AWS environment variables or protected credential files.
+
+An S3 backend override is written only in a fresh task copy of the selected root.
+No caller source or existing state is rewritten. Existing local state/backend
+metadata is rejected for initialization rather than automatically migrated.
+Dependency files may already be prepared; init preserves the provider lockfile.
+This uses native [S3 locking](https://opentofu.org/docs/language/settings/backends/s3/)
+and [backend override semantics](https://opentofu.org/docs/language/files/override/).
+
+Each task has separate generated, diagnostics, plan, recovery and work directories.
+Raw tool stdout/stderr is captured privately before starting the child process;
+it is never forwarded directly to container/CI logs. Failure or cancellation
+preserves the real exit status. An emergency state dump, including one emitted
+when both S3 and local recovery-file writes fail, stays in protected capture.
+File capture uses mode 0600. If capture cannot be prepared, the operation does not
+start. If capture fails during execution, the stream is drained without public
+fallback and the summary reports recovery completeness as unconfirmed.
+
+The original `errored.tfstate` remains until result collection is complete. Failed
+recovery export retains the original storage and does not turn execution failure
+into success. No automatic state push, apply retry or force-unlock is performed.
+Inspect protected recovery materials before authorizing manual recovery.
+
+These execution primitives have software tests; launcher integration and real S3
+acceptance remain tracked separately in the change tasks.

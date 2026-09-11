@@ -22,7 +22,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         mapping = json.loads(args.input_map.read_text()) if args.input_map else None
-        selected = load_environment(args.environment, args.component, args.scenario, SourceReader(mapping))
+        selected = load_environment(args.environment, args.component, args.scenario, SourceReader(mapping), file_names=set())
         if args.operation == "discover":
             print(json.dumps({"status": "ready", "sources": sorted(map(str, selected.reader.logical_sources))}))
             return 0

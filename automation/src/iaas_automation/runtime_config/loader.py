@@ -94,6 +94,7 @@ class SelectedConfig:
 def load_environment(
     entry: Path, component: str, scenario: str | None = None,
     reader: SourceReader | None = None,
+    *, input_names: set[str] | None = None, file_names: set[str] | None = None,
 ) -> SelectedConfig:
     """Load one component; scenario mappings replace rather than merge defaults."""
     require(component in COMPONENTS, "unsupported component")
@@ -118,7 +119,10 @@ def load_environment(
     selected = _mapping(selected, "selected component")
     require(not selected.keys() - {"inputs", "files", "options"}, "unknown component field")
     inputs = _mapping(selected.get("inputs", {}), "component inputs")
-    require(bool(inputs), "selected component needs explicit inputs")
+    require(bool(inputs) or input_names == set(), "selected component needs explicit inputs")
+    if input_names is not None:
+        require(input_names <= inputs.keys(), "required operation input is missing")
+        inputs = {name: source for name, source in inputs.items() if name in input_names}
     facts = _mapping(config.get("facts", {}), "facts")
     fact_docs: dict[str, Any] = {}
 
@@ -155,7 +159,11 @@ def load_environment(
         paths[name] = _path(source, entry)
         documents[name] = resolve(reader.document(paths[name]))
     files = {}
-    for name, source in _mapping(selected.get("files", {}), "component files").items():
+    declared_files = _mapping(selected.get("files", {}), "component files")
+    if file_names is not None:
+        require(file_names <= declared_files.keys(), "required operation file is missing")
+        declared_files = {name: source for name, source in declared_files.items() if name in file_names}
+    for name, source in declared_files.items():
         require(NAME.fullmatch(name), "file name must be a logical name")
         logical = _path(source, entry)
         files[name] = reader.locate(logical)

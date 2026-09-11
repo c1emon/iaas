@@ -141,3 +141,14 @@ def test_switch_check_reuses_role_input_rejection(tmp_path):
     write(tmp_path / "switch.yml", {"switch_config_resources": {"vlans": [{"state": "deleted", "config": []}]}})
     with pytest.raises(ValidationError, match="domain validation"):
         compile_documents(load_environment(config, "switch"))
+
+
+def test_operation_input_closure_skips_unneeded_protected_files(tmp_path):
+    config = entry(tmp_path, components={"pve": {
+        "inputs": {"cluster": "missing-current-cluster.yml", "vms": "missing-current-vms.yml"},
+        "files": {"backend": "backend.json", "guest-secret": "unavailable-secret"},
+    }})
+    write(tmp_path / "backend.json", {"selected": "backend"})
+    selected = load_environment(config, "pve", input_names=set(), file_names={"backend"})
+    assert selected.documents == {}
+    assert set(selected.files) == {"backend"}
