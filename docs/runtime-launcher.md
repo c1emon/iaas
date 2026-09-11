@@ -36,6 +36,9 @@ tags and unsupported interface/schema versions are rejected.
 `iaas prepare --runtime-config runtime.json` explicitly pulls
 the selected image. Normal operations never implicitly pull an image. Tags are
 resolved to a repository digest for execution and saved-plan compatibility.
+When Docker reports digests from several repositories, the launcher prefers the
+requested repository; a local retag without its own digest association uses an
+existing repository digest.
 Saved plans also bind the runtime architecture; plans from another architecture
 or older plans without that field must be prepared again.
 Use `iaas capabilities --runtime-config runtime.json` to inspect operation effects.
@@ -96,6 +99,10 @@ putting secret values in command arguments, and never forwards `OP_*` bootstrap
 credentials. Standard AWS file environment channels are explicitly transferred
 and mapped, or supplied by `aws_credentials`, `aws_config`, `aws_ca` and
 `aws_web_identity` aliases. S3 configuration stays with the caller.
+An explicit AWS file alias takes precedence over its corresponding host file
+environment variable. Discovery does not request that overridden variable, so a
+stale host path is neither read nor uploaded. Foundation services with no health
+probe (`health_check: null`) retain their `SKIP` result without blocking others.
 
 ## Local Docker and DinD
 
@@ -128,7 +135,13 @@ iaas run --runtime-config runtime.json --environment environment.yml \
 ```
 
 Review the private `plan/review.txt` and select the native plan explicitly. Retain
-its complete companion directory. Upgrading the runtime invalidates saved plans
+its complete companion directory. `summary.json` records `companion_files` for
+the original declared root files (including helper scripts) and any supplied
+dependency archive. Admission checks their presence before backend initialization
+or SSH writes, using the saved list rather than current input declarations.
+Plans without this list must be prepared again; do not reconstruct the list from
+an incomplete directory. Existing plan, lockfile and snippet digest checks remain.
+Upgrading the runtime invalidates saved plans
 from another image digest; prepare a new plan explicitly. Changing the runtime
 selection or adding an environment entry does not migrate source files/state.
 

@@ -42,6 +42,17 @@ func (d Docker) resolveImage(reference string) (string, error) {
 	if strings.Contains(reference, "@sha256:") {
 		return reference, nil
 	}
+	// Prefer the requested repository when the same content was also pulled
+	// through a mirror. Cache insertion order must not change plan identity.
+	repository := reference
+	if colon := strings.LastIndex(repository, ":"); colon > strings.LastIndex(repository, "/") {
+		repository = repository[:colon]
+	}
+	for _, digest := range digests {
+		if strings.HasPrefix(digest, repository+"@sha256:") {
+			return digest, nil
+		}
+	}
 	if !strings.Contains(digests[0], "@sha256:") {
 		return "", errors.New("invalid Docker image digest metadata")
 	}

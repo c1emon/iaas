@@ -15,7 +15,7 @@ from iaas_automation.common.io import write_text
 from iaas_automation.runtime_config import InputRequired, SourceReader
 from iaas_automation.runtime_config.compile import compile_documents
 from .components import IMPLEMENTATION, run_component
-from .credentials import prepare_file_credentials
+from .credentials import AWS_FILE_VARIABLES, prepare_file_credentials
 from .dependencies import prepare_dependencies
 from .execution import Execution
 from .operations import capabilities, credential_names, operation_for, process_environment
@@ -53,6 +53,9 @@ def main(argv: list[str] | None = None) -> int:
         selected = load_operation(args.environment, args.component, args.operation, args.scenario, reader)
         render_names = rendering_credentials(selected, args.operation)
         allowed = credential_names(args.component, args.operation, render_names)
+        # Explicit aliases win over host file channels, before the launcher
+        # attempts to discover or transfer any stale host paths.
+        allowed -= {variable for alias, variable in AWS_FILE_VARIABLES.items() if alias in selected.files}
         if args.discover:
             print(json.dumps({"status": "ready", "credential_names": sorted(allowed), "effects": asdict(effects),
                               "sources": sorted(map(str, reader.logical_sources))}))
@@ -112,8 +115,31 @@ def main(argv: list[str] | None = None) -> int:
                 execution.outputs.summary({"status": "failed", "phases": phases, "retain_storage": retained})
             except OSError:
                 retained = True
-        # Only these literal, value-free scope errors are safe to surface.
+        # Only literal, value-free diagnostics are safe to surface. Never
+        # expose arbitrary ValidationError text from domain parsers.
         safe_reasons = {
+            "expected schema_version: 1; migrate the entry explicitly",
+            "unsupported component/operation combination",
+            "unknown scenario; no default fallback",
+            "unknown environment entry field",
+            "environment must be a logical name",
+            "unknown scenario component",
+            "unknown component field",
+            "selected component needs explicit inputs",
+            "required operation input is missing",
+            "required operation file is missing",
+            "declared input is not readable YAML",
+            "declared input must contain a mapping",
+            "declared input must be a readable regular file",
+            "file reference must be a nonempty path",
+            "$ref must occupy the entire node",
+            "$ref must name a shared fact",
+            "$ref must use facts.name.field",
+            "cyclic shared-fact reference",
+            "shared-fact source is not declared",
+            "shared-fact field is missing",
+            "saved companion file list is missing; prepare the plan again",
+            "saved companion file is missing or outside its bundle",
             "deployment scope: must explicitly select all declared nodes (whole cluster); partial scope is not allowed",
             "upgrade scope: must explicitly select all declared nodes (whole cluster); partial scope is not allowed",
             "PVE scope must explicitly select the complete declared root id",
@@ -123,6 +149,10 @@ def main(argv: list[str] | None = None) -> int:
             "OPNsense diagnostics requires exactly one target",
             "online operation requires explicit scope",
         }
+        safe_reasons |= {f"{field} {problem}" for field in (
+            "components", "scenarios", "selected scenario", "selected component",
+            "component inputs", "facts", "component files", "component options",
+        ) for problem in ("must be a mapping", "keys must be strings")}
         reason = str(exc) if str(exc) in safe_reasons else "selected operation failed validation, setup or execution"
         print(json.dumps({"status": "failed", "reason": reason,
                           "output": str(outputs.root) if outputs else None,

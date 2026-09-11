@@ -127,6 +127,29 @@ def load_environment(
     facts = _mapping(config.get("facts", {}), "facts")
     fact_docs: dict[str, Any] = {}
 
+    def lookup(value: dict[str, Any], trail: tuple[str, ...] = ()) -> Any:
+        # Follow aliases without expanding sibling fields of their targets.
+        require(set(value) == {"$ref"}, "$ref must occupy the entire node")
+        ref = value["$ref"]
+        require(isinstance(ref, str), "$ref must name a shared fact")
+        parts = ref.split(".")
+        require(len(parts) >= 3 and parts[0] == "facts" and all(parts), "$ref must use facts.name.field")
+        require(ref not in trail, "cyclic shared-fact reference")
+        name = parts[1]
+        require(name in facts, "shared-fact source is not declared")
+        if name not in fact_docs:
+            fact_docs[name] = reader.document(_path(facts[name], entry))
+        result = fact_docs[name]
+        for part in parts[2:]:
+            aliases = (*trail, ref)
+            while isinstance(result, dict) and "$ref" in result:
+                alias = result["$ref"]
+                result = lookup(result, aliases)
+                aliases = (*aliases, alias)
+            require(isinstance(result, dict) and part in result, "shared-fact field is missing")
+            result = result[part]
+        return result
+
     def resolve(value: Any, stack: tuple[str, ...] = ()) -> Any:
         if isinstance(value, list):
             return [resolve(item, stack) for item in value]
@@ -134,23 +157,9 @@ def load_environment(
             return value
         if "$ref" not in value:
             return {key: resolve(item, stack) for key, item in value.items()}
-        require(set(value) == {"$ref"}, "$ref must occupy the entire node")
+        result = lookup(value)
         ref = value["$ref"]
-        require(isinstance(ref, str), "$ref must name a shared fact")
-        parts = ref.split(".")
-        require(len(parts) >= 3 and parts[0] == "facts" and all(parts), "$ref must use facts.name.field")
         require(ref not in stack, "cyclic shared-fact reference")
-        name = parts[1]
-        require(name in facts, "shared-fact source is not declared")
-        if name not in fact_docs:
-            fact_docs[name] = reader.document(_path(facts[name], entry))
-        result = fact_docs[name]
-        for part in parts[2:]:
-            # Resolve aliases on the reachable path, not the whole fact file.
-            if isinstance(result, dict) and "$ref" in result:
-                result = resolve(result, (*stack, ref))
-            require(isinstance(result, dict) and part in result, "shared-fact field is missing")
-            result = result[part]
         return resolve(result, (*stack, ref))
 
     paths: dict[str, Path] = {}

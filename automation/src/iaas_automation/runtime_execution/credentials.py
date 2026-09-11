@@ -13,6 +13,10 @@ from iaas_automation.common.errors import require
 from iaas_automation.common.io import write_text
 
 
+AWS_FILE_VARIABLES = {"aws_credentials": "AWS_SHARED_CREDENTIALS_FILE", "aws_config": "AWS_SHARED_CONFIG_FILE",
+                      "aws_ca": "AWS_CA_BUNDLE", "aws_web_identity": "AWS_WEB_IDENTITY_TOKEN_FILE"}
+
+
 def protected_file(path: Path, *, secret: bool = True) -> None:
     info = path.stat()
     require(stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid(), "protected file must be owned by the execution user")
@@ -23,8 +27,7 @@ def protected_file(path: Path, *, secret: bool = True) -> None:
 def prepare_file_credentials(files: dict[str, Path], home: Path, environ: dict[str, str]) -> None:
     home.mkdir(parents=True, exist_ok=True, mode=0o700)
     environ["HOME"] = str(home)
-    for alias, variable in {"aws_credentials": "AWS_SHARED_CREDENTIALS_FILE", "aws_config": "AWS_SHARED_CONFIG_FILE",
-                            "aws_ca": "AWS_CA_BUNDLE", "aws_web_identity": "AWS_WEB_IDENTITY_TOKEN_FILE"}.items():
+    for alias, variable in AWS_FILE_VARIABLES.items():
         if alias in files:
             protected_file(files[alias], secret=alias != "aws_ca")
             environ[variable] = str(files[alias])

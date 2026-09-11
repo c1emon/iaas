@@ -14,6 +14,7 @@ import (
 
 type discovery struct {
 	Status          string   `json:"status"`
+	Reason          string   `json:"reason"`
 	Path            string   `json:"path"`
 	CredentialNames []string `json:"credential_names"`
 }
@@ -46,6 +47,11 @@ func (t *task) discover() (discovery, error) {
 	}
 	if response.Status == "input-required" {
 		return response, nil
+	}
+	if response.Status == "failed" && response.Reason != "" {
+		// The runtime's structured public reason excludes source values and
+		// native stderr. Docker's private diagnostics remain suppressed.
+		return response, errors.New(response.Reason)
 	}
 	if err != nil || response.Status != "ready" {
 		return response, errors.New("selected configuration could not be validated for this operation")

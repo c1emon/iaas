@@ -12,6 +12,7 @@ The runtime SHALL save a native OpenTofu plan with protected review content and 
 - **WHEN** current selected inputs pass validation and a plan is successfully prepared
 - **THEN** the retained artifacts SHALL contain the native plan, necessary input/root files, provider lock and exact prepared snippets with their existing manifest
 - **AND** a concise summary SHALL associate environment, root, backend/workspace, scenario, scope, input origin and image digest
+- **AND** that summary SHALL retain the original required companion file list, including declared root helper files and any supplied dependency archive
 - **AND** after successful native plan generation, the companion manifest SHALL record its `plan_sha256` alongside existing source/snippet digests and travel with those companion inputs
 - **AND** successful plan preparation SHALL NOT upload snippets to devices or imply deployment authorization
 
@@ -33,6 +34,12 @@ The saved-plan operation SHALL consume the caller-selected native plan and its e
 - **WHEN** target, runtime version, provider lock or required companion input is missing or inconsistent
 - **THEN** execution SHALL fail before snippets upload or other infrastructure writes
 - **AND** it SHALL NOT substitute another plan, current input or image
+
+#### Scenario: Reject missing original companion files
+- **WHEN** a file recorded in the saved companion list is absent or the saved plan lacks that list
+- **THEN** admission SHALL fail before backend initialization, snippets upload or other infrastructure writes
+- **AND** admission SHALL use the saved declaration rather than current configuration or a new directory listing
+- **AND** plans without the saved list SHALL require explicit replanning, without reconstructing or silently populating the list at apply time
 
 #### Scenario: Reject mixed plan and companion artifacts
 - **WHEN** a caller selects native plan A with the companion manifest and inputs from plan B, even with the same root, state, workspace and runtime

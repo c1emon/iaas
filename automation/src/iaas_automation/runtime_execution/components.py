@@ -14,6 +14,7 @@ from iaas_automation.common.errors import require
 from iaas_automation.common.io import write_text
 from iaas_automation.runtime_config import SelectedConfig
 from iaas_automation.runtime_config.compile import compile_documents
+from .credentials import protected_file
 from .execution import Execution
 
 
@@ -77,10 +78,11 @@ def run_component(selected: SelectedConfig, operation: str, scope: str, executio
         # Caller declares any CA dependency by its original logical path.
         inventory = selected.documents["inventory"]
         for service in inventory.get("foundation_services", []):
-            check = service.get("health_check", {})
+            check = service.get("health_check") or {}
             if check.get("ca_file"):
                 alias = selected.options.get("ca_files", {}).get(check["ca_file"])
                 require(alias in selected.files, "foundation CA file must be explicitly supplied")
+                protected_file(selected.files[alias], secret=False)
                 check["ca_file"] = str(selected.files[alias])
         inputs = _inputs(selected, execution)
         execution.run("health", [sys.executable, "-m", "iaas_automation.foundation_inventory.cli",

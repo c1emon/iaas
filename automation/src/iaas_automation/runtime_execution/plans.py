@@ -76,6 +76,9 @@ def prepare_plan(selected: SelectedConfig, execution: Execution, backend: S3Back
     write_text(manifest_file, json.dumps(manifest, indent=2) + "\n", secure=True)
     metadata.update(schema_version=1, backend=backend.identity(),
                     root_directory=str(root.relative_to(bundle)),
+                    companion_files=sorted(
+                        ["workspace/" + relative_path(name).as_posix() for name in selected.options["root"]["files"]]
+                        + (["dependencies.tar.gz"] if "dependencies" in selected.files else [])),
                     provider_lock_sha256=sha256(root / ".terraform.lock.hcl"),
                     input_origins=sorted(map(str, selected.reader.logical_sources)))
     write_text(bundle / "summary.json", json.dumps(metadata, indent=2) + "\n", secure=True)
@@ -95,6 +98,12 @@ def admit_plan(plan: Path, bundle: Path, expected: dict[str, Any], backend: S3Ba
     require(metadata.get("schema_version") == 1, "unsupported saved-plan metadata")
     require(all(metadata.get(key) == value for key, value in expected.items()), "saved plan target or runtime mismatch")
     require(metadata.get("backend") == backend.identity(), "saved plan backend/workspace mismatch")
+    files = metadata.get("companion_files")
+    require(isinstance(files, list) and bool(files), "saved companion file list is missing; prepare the plan again")
+    for name in files:
+        path = bundle.joinpath(*relative_path(name).parts)
+        require(path.resolve().is_relative_to(bundle.resolve()) and path.is_file(),
+                "saved companion file is missing or outside its bundle")
     root = bundle.joinpath(*relative_path(metadata["root_directory"]).parts)
     require(root.resolve().is_relative_to(bundle.resolve()), "saved root escapes companion directory")
     require(sha256(root / ".terraform.lock.hcl") == metadata.get("provider_lock_sha256"), "saved provider lock mismatch")

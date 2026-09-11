@@ -71,3 +71,12 @@ GitNexus 对已有 cloud-init artifact 调用的 impact 为 LOW；新入口尚�
 - 启动器附件上传改用非交互式 Bash，继续由 CI 平台显式注入 `GH_TOKEN`。CI 禁止使用开发者本地 1Password 会话及 shell 启动文件获取凭据；调用方提供所需参数、已解析凭据及受保护文件。需求、设计、合同与使用指南同步该边界。
 - 35 项发布/架构/CI 定向测试通过，新增回归覆盖 Docker 基线一致性、认证目录切换后的 daemon 选择配置及 CI 凭据注入；28 个 workflow shell 块语法检查和 OpenSpec strict 校验通过。已核对固定 action 的输入及实现，并确认官方 Docker 29.5.2 的 AMD64/ARM64 下载包可用。
 - 此次为 CI 配置及合同修正，未重新构建镜像、触发远程 CI 或正式发布；前述本地 Docker 实测不等同于新 workflow 已在 GitHub runner 运行。
+
+## 归档后缺陷复核与修正（2026-09-11）
+
+- 7 项报告均经源码与修复前失败回归确认：缺失 root helper 未拒绝、镜像仓库摘要受缓存顺序影响、显式 AWS 文件仍请求旧主机文件、事实别名过早展开无关字段、Foundation 空探针阻断其他服务、CA 缺少权限检查，以及安全配置错误被两层通用错误遮蔽。
+- 保存计划新增原始 `companion_files` 清单，涵盖声明的 root 文件及依赖归档；缺失文件或缺失清单在 backend 初始化、SSH 和 apply 前拒绝。不新增逐文件 hash，不从当前配置或残缺目录重建清单；旧计划需重新准备。正式保存计划规范及迁移说明已同步。
+- 镜像标签优先选择请求仓库已有的 RepoDigest，保留纯本地 retag 的既有摘要回退。AWS discovery 与凭据准备共用文件别名映射，显式别名排除对应主机变量，避免请求和传输被覆盖的旧文件。
+- 事实别名查找与最终对象展开分离；直接/中间/链式字段选择只读取选中依赖，仍拒绝实际循环并允许合法的标量回指。Foundation 保留 null 探针的 SKIP，CA 在 health 子进程之前复用非秘密受保护文件校验。运行时只公开值无关的配置诊断，启动器保留结构化 reason，原始解析器及 Docker stderr 仍被屏蔽。
+- `uv run pytest tests/python tests/ansible -q`：827 项通过，1 条已有 passlib/crypt 弃用提示。9 组 Go 测试、Linux amd64/Darwin arm64 启动器构建及 checksum 校验通过；修改的 Python 实现 Pyright 为 0 errors，保存计划 OpenSpec strict 与 diff 检查通过。
+- 原生 OpenTofu 合成计划额外验证：使用内置 `terraform_data` 和 helper，将 S3 初始化替换为隔离本地 backend；计划生成后删除 helper，应用在任何执行阶段开始前拒绝，未创建资源或 state。此验证不是 S3、SSH 或真实设施 apply 验收。本轮未重建运行镜像、运行远程 CI 或发布制品。

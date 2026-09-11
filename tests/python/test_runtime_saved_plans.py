@@ -13,6 +13,7 @@ from iaas_automation.runtime_config.compile import compile_documents
 from iaas_automation.runtime_execution.execution import Execution, OperationFailed
 from iaas_automation.runtime_execution.outputs import TaskOutputs
 from iaas_automation.runtime_execution.plans import admit_plan, apply_saved_plan, prepare_plan, target_selection
+from iaas_automation.runtime_execution.process import run_protected
 from iaas_automation.runtime_execution.state import S3Backend
 
 
@@ -135,3 +136,65 @@ def test_empty_vm_plan_skips_ssh_and_preserves_root_executable(setup_plan, tmp_p
     apply_saved_plan(plan, plan.parent, selected, apply, backend, "complete-root", IMAGE, tofu)
     assert [item["phase"] for item in apply.phases] == ["backend-init", "apply"]
     assert (apply.outputs.path("plan") / "selected/workspace/helper.sh").stat().st_mode & 0o100
+
+
+def test_missing_saved_helper_fails_before_any_execution(setup_plan, tmp_path):
+    selected, backend, tofu, execution = setup_plan
+    helper = tmp_path / "helper.sh"
+    helper.write_text("#!/bin/sh\nexit 0\n")
+    selected.files["helper"] = helper
+    selected.options["root"]["files"]["scripts/helper.sh"] = "helper"
+    plan = prepare_plan(selected, execution("prepare-helper"), backend, "complete-root", IMAGE, tofu)
+    (plan.parent / "workspace/scripts/helper.sh").unlink()
+    # Admission must use the saved declaration, not today's options.
+    selected.options["root"]["files"].pop("scripts/helper.sh")
+    apply = execution("apply-helper")
+    with pytest.raises(ValidationError, match="companion file"):
+        apply_saved_plan(plan, plan.parent, selected, apply, backend, "complete-root", IMAGE, tofu)
+    assert apply.phases == []
+
+
+def test_old_plan_without_file_inventory_requires_replanning(setup_plan):
+    selected, backend, tofu, execution = setup_plan
+    plan = prepare_plan(selected, execution("prepare"), backend, "complete-root", IMAGE, tofu)
+    summary = plan.parent / "summary.json"
+    metadata = json.loads(summary.read_text())
+    assert set(metadata.pop("companion_files")) == {"workspace/main.tf", "workspace/.terraform.lock.hcl"}
+    summary.write_text(json.dumps(metadata))
+    apply = execution("apply")
+    with pytest.raises(ValidationError, match="prepare the plan again"):
+        apply_saved_plan(plan, plan.parent, selected, apply, backend, "complete-root", IMAGE, tofu)
+    assert apply.phases == []
+
+
+@pytest.mark.skipif(shutil.which("tofu") is None, reason="native OpenTofu is not installed")
+def test_native_plan_missing_helper_is_rejected_before_resource_creation(setup_plan, tmp_path, monkeypatch):
+    selected, backend, _, execution = setup_plan
+    tofu = shutil.which("tofu")
+    helper = tmp_path / "helper.sh"
+    helper.write_text("#!/bin/sh\nexit 0\n")
+    selected.files["helper"] = helper
+    selected.options["root"]["files"]["helper.sh"] = "helper"
+    selected.files["main"].write_text('''resource "terraform_data" "helper" {
+  provisioner "local-exec" {
+    command = "sh ./helper.sh"
+  }
+}
+''')
+
+    def initialize_local(self, root, environ, recovery, executable, **kwargs):
+        # This test substitutes only S3 with an isolated local backend. The
+        # native built-in resource needs no downloads or facility credentials.
+        (root / "zz_iaas_backend_override.tf.json").write_text('{}')
+        return run_protected([executable, "init", "-backend=false", "-input=false"], cwd=root,
+                             environ=environ, capture=recovery / "backend-init.raw")
+
+    monkeypatch.setattr(S3Backend, "initialize", initialize_local)
+    plan = prepare_plan(selected, execution("native-plan"), backend, "complete-root", IMAGE, tofu)
+    assert plan.is_file()
+    (plan.parent / "workspace/helper.sh").unlink()
+    apply = execution("native-apply")
+    with pytest.raises(ValidationError, match="companion file"):
+        apply_saved_plan(plan, plan.parent, selected, apply, backend, "complete-root", IMAGE, tofu)
+    assert apply.phases == []
+    assert not list(tmp_path.rglob("terraform.tfstate"))

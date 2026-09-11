@@ -41,6 +41,11 @@ An entire reference node looks like `{ $ref: facts.network.management }`.
 The reference preserves the fact's type; the existing component validator checks
 the resolved document. Missing and cyclic reachable references fail. Independent
 policy fields remain independent even when their values happen to be equal.
+Selecting a field through an intermediate alias reads only that field's dependency
+closure, just like direct selection; unrelated sibling references are not expanded.
+Invalid schema versions, unknown scenarios and malformed references report safe
+field or error descriptions through the runtime and launcher. Source values and
+raw YAML/domain-parser exceptions remain excluded from public diagnostics.
 
 Two synthetic layouts are provided: [flat](examples/runtime/flat/environment.yml)
 and [facility-oriented](examples/runtime/facility/environment.yml). Both select the
