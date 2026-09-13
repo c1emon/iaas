@@ -50,10 +50,9 @@ def compile_documents(selected: SelectedConfig) -> dict[str, str]:
             from iaas_automation.k3s_automation.config import build_composed_model, render_review
             return {"k3s-review.yml": render_review(build_composed_model(docs["intent"], docs["inventory"]))}
         if component == "opnsense":
-            from iaas_automation.opnsense_validation import RESOURCE_FILES, validate_document
+            from iaas_automation.opnsense_validation import RESOURCE_FILES, validate_documents
             require(docs.keys() <= RESOURCE_FILES.keys(), "unsupported OPNsense input")
-            for resource, document in docs.items():
-                validate_document(resource, document)
+            validate_documents(docs)
             return {RESOURCE_FILES[name]: yaml.safe_dump(value, sort_keys=False) for name, value in docs.items()}
         if component == "switch":
             require(set(docs) == {"config"}, "switch requires a config input")
