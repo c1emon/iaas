@@ -39,7 +39,9 @@ def test_real_kubectl_times_out_on_an_incomplete_response():
             self.end_headers()
             self.wfile.write(b"o")
             self.wfile.flush()
-            stop.wait(22)
+            # Only teardown may finish the response. An unexpected EOF must not
+            # be mistaken for kubectl enforcing its own request timeout.
+            stop.wait()
 
         def log_message(self, *_):
             pass
@@ -54,10 +56,13 @@ def test_real_kubectl_times_out_on_an_incomplete_response():
         start = time.monotonic()
         result = subprocess.run(
             ["kubectl", "--kubeconfig=/dev/null", f"--server=http://127.0.0.1:{server.server_port}", *command],
-            text=True, capture_output=True, timeout=20,
+            # This is a test-process watchdog, not the request deadline. Allow
+            # startup and scheduling overhead on shared CI runners.
+            text=True, capture_output=True, timeout=45,
         )
-        assert result.returncode != 0
-        assert time.monotonic() - start < 20
+        assert result.returncode != 0, result.stdout + result.stderr
+        assert "context deadline exceeded" in result.stderr.lower() or "timeout" in result.stderr.lower(), result.stderr
+        assert time.monotonic() - start < 45
     finally:
         stop.set()
         server.shutdown()
