@@ -19,17 +19,22 @@ ANSIBLE = ROOT / "automation/ansible"
 ])
 def test_direct_ansible_destination_inversion(tmp_path, destination, invert, valid):
     source = yaml.safe_load((ANSIBLE / "playbooks/opnsense/manage-filter-rules.yml").read_text())[0]
-    check = next(task for task in source["tasks"] if task["name"].startswith("Assert deny rules"))
+    check = next(task for task in source["tasks"] if task["name"].startswith("Revalidate loaded rules"))
     play = tmp_path / "inversion.yml"
     play.write_text(yaml.safe_dump([{
         "hosts": "localhost", "gather_facts": False,
         "vars": {"opnsense_filter_rules": [{"scope": "test", "slug": "deny", "interface": ["opt8"],
+                  "state": "present", "enabled": True, "sequence": 100, "direction": "in",
+                  "quick": True, "ip_protocol": "inet", "protocol": "any", "source_net": "any",
                   "action": "block", "destination_net": destination, "destination_invert": invert}]},
         "tasks": [check],
     }]))
     result = subprocess.run(["uv", "run", "ansible-playbook", "-i", "localhost,", str(play)],
-                            cwd=ROOT, capture_output=True, text=True)
+                            cwd=ROOT, env=os.environ | {"ANSIBLE_CONFIG": str(ANSIBLE / "ansible.cfg")},
+                            capture_output=True, text=True)
     assert (result.returncode == 0) == valid, result.stdout + result.stderr
+    if not valid:
+        assert "deny rule must not include its own interface" in result.stdout + result.stderr
 
 
 @pytest.mark.parametrize("resource,key", [
