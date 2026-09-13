@@ -14,7 +14,7 @@ DHCP、物理接口、普通路由、系统升级或稳定 DNAT/端口转发。
 基础服务；该文件只是恢复元数据。健康探针通过 `make foundation-health` 是
 在线只读证据，不替代本章的 API 或防火墙规则审查。
 
-当前可管理范围是 API 连通、只读查询/导出/快照、手写别名、IP Alias VIP、PBR
+当前可管理范围是 API 连通、只读查询/导出/快照、调用方声明的别名、IP Alias VIP、PBR
 gateway 与 API-backed new filter rules。DHCPv4/v6、RA/PD、WAN/PPPoE、VLAN
 interfaces、CARP、Proxy ARP、Other VIP、静态路由、gateway groups、legacy
 firewall/management rules、默认防火墙策略、NAT/DNAT 和关键公网入口不在本仓库
@@ -251,3 +251,12 @@ PVE/VM/Registry/DNS 路径经过实际测试，以及未出现未解释的规则
 若管理通道、核心 DNS/路由、既有关键服务或回退路径异常，立即停止后续 PVE/
 VM/K3s 变更，保留 export 和变更记录，通过本地控制台恢复。不要批量删除
 规则、临时设为默认网关或以未审查的 raw API 请求绕过本工作流。
+
+
+### 调用方生成的标准声明与校验上下文
+
+Alias/Rules 可手写，也可由调用方从其维护的输入确定性生成；资源字段、稳定身份、显式状态与增量管理规则相同。设备导出必须经审查并转换为标准声明，不能直接用于部署。通过原有 `opnsense_alias_source` / `opnsense_filter_rule_source` 选择文件；省略对象不代表删除。Gateway/VIP 仍引用原基础源。
+
+规则文件可附带 `opnsense_filter_rule_context`，仅含 `interface_networks`（接口到 CIDR 列表）和 `aliases`（标准别名列表）。反向匹配只能有一个目标；反向 deny 的入口网络保护只接受静态覆盖证据，按 inet/inet6/inet46 分别检查。域名、URL Table 和未知外部成员本身不构成静态证据；未知外部引用仍按既有在线解析合同处理。上下文与所选别名声明冲突时拒绝，离线接受不证明现场事实有效。
+
+调用方可以通过 `python -m iaas_automation.opnsense_validation --vars-dir DIR` 校验标准文件集，或用 runtime_config 的 check/generate 入口。Ansible 加载后的复验也位于凭据访问前，不把字符串转换成整数或布尔。配置保存与激活仍是不同结果，不承诺跨资源事务；执行授权、阶段编排及恢复决策由调用方负责。

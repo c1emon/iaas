@@ -89,8 +89,19 @@ def test_deny_rule_destination_inversion(destination, invert, valid) -> None:
 def test_invalid_document_shape_fails_closed() -> None:
     with pytest.raises(ValidationError, match="must contain only opnsense_aliases"):
         validate_document("aliases", {"opnsense_aliases": [], "other": []})
+
     with pytest.raises(ValidationError, match="opnsense_aliases: must be a list"):
         validate_document("aliases", {"opnsense_aliases": {}})
+
+
+@pytest.mark.parametrize("field", ["source", "destination"])
+def test_native_inversion_requires_one_target(field):
+    document = _document("filter-rules")
+    document["opnsense_filter_rules"][0].update({
+        f"{field}_net": ["8.8.8.8", "1.1.1.1"], f"{field}_invert": True,
+    })
+    with pytest.raises(ValidationError, match="inversion requires a single target"):
+        validate_document("filter-rules", document)
 
 
 def test_cli_reports_expected_error_without_traceback_or_payload(tmp_path: Path) -> None:

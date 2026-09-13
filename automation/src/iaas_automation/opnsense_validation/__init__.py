@@ -230,7 +230,7 @@ FILTER_REQUIRED = {"scope", "slug", "state", "enabled", "sequence", "interface",
 FILTER_OPTIONAL = {"source_invert", "source_port", "destination_invert", "destination_port", "gateway", "log"}
 
 
-def _validate_filter_rule(record: dict[str, Any], path: str) -> tuple[str]:
+def _validate_filter_rule(record: dict[str, Any], path: str, context: dict | None = None) -> tuple[str]:
     if "description" in record:
         _error(f"{path}.description", "is generated from scope and slug")
     _shape(record, path, FILTER_REQUIRED, FILTER_OPTIONAL)
@@ -247,12 +247,17 @@ def _validate_filter_rule(record: dict[str, Any], path: str) -> tuple[str]:
         value = _string(record[field], f"{path}.{field}")
         if value not in allowed:
             _error(f"{path}.{field}", f"must be one of {', '.join(sorted(allowed))}")
-    _net_values(record["source_net"], f"{path}.source_net")
+    source = _net_values(record["source_net"], f"{path}.source_net")
     destination = _net_values(record["destination_net"], f"{path}.destination_net")
+    for values, field in ((source, "source"), (destination, "destination")):
+        if record.get(f"{field}_invert", False) and len(values) != 1:
+            _error(f"{path}.{field}_net", "inversion requires a single target")
     own_destinations = (set(interfaces) - set(destination) if record.get("destination_invert", False)
                         else set(interfaces) & set(destination))
     if record.get("destination_invert", False) and "any" in destination:
         own_destinations = set()
+    if own_destinations and record.get("destination_invert", False) and context:
+        own_destinations -= _excluded_interfaces(destination[0], own_destinations, context, record["ip_protocol"])
     if record["action"] in {"block", "reject"} and own_destinations:
         _error(f"{path}.destination_net", "deny rule must not include its own interface")
     for field in {"source_port", "destination_port"} & record.keys():
@@ -265,18 +270,73 @@ def _validate_filter_rule(record: dict[str, Any], path: str) -> tuple[str]:
 VALIDATORS = {"aliases": _validate_alias, "vips": _validate_vip, "gateways": _validate_gateway, "filter-rules": _validate_filter_rule}
 
 
+def _validate_rule_context(value: Any) -> dict:
+    context = _mapping(value, "opnsense_filter_rule_context")
+    _shape(context, "opnsense_filter_rule_context", {"interface_networks", "aliases"})
+    networks = _mapping(context["interface_networks"], "interface_networks")
+    for interface, values in networks.items():
+        _string(interface, "interface_networks key", pattern=INTERFACE)
+        values = _list(values, "interface_networks[]")
+        if not values:
+            _error("interface_networks[]", "must not be empty")
+        for cidr in values:
+            try:
+                ipaddress.ip_network(_string(cidr, "interface_networks[]"), strict=True)
+            except ValueError:
+                _error("interface_networks[]", "requires an aligned CIDR")
+    validate_document("aliases", {"opnsense_aliases": context["aliases"]})
+    return context
+
+
+def _excluded_interfaces(target: str, interfaces: set[str], context: dict, ip_protocol: str) -> set[str]:
+    """Prove static alias coverage; dynamic URL members supply no safety proof."""
+    aliases = {row["name"]: row for row in context["aliases"]
+               if row["state"] == "present" and row["enabled"]}
+    pending, seen, networks = [target], set(), []
+    while pending:
+        token = pending.pop()
+        if token in seen:
+            continue
+        seen.add(token)
+        try:
+            networks.append(ipaddress.ip_network(token, strict=False))
+        except ValueError:
+            alias = aliases.get(token)
+            if alias and alias["type"] in {"host", "network", "networkgroup"}:
+                pending.extend(alias["content"])
+    covered = []
+    for family in (4, 6):
+        covered.extend(ipaddress.collapse_addresses(net for net in networks if net.version == family))
+    result = set()
+    families = {"inet": {4}, "inet6": {6}, "inet46": {4, 6}}[ip_protocol]
+    for interface in interfaces:
+        values = context["interface_networks"].get(interface, [])
+        ingress = [ipaddress.ip_network(value) for value in values
+                   if ipaddress.ip_network(value).version in families]
+        if {net.version for net in ingress} == families and all(
+                any(net.version == other.version and net.subnet_of(other) for other in covered)
+                for net in ingress):
+            result.add(interface)
+    return result
+
+
 def validate_document(resource: str, document: Any) -> None:
     if resource not in VALIDATORS:
         _error("resource", f"unsupported resource {resource}")
     document = _mapping(document, resource)
     top_level = TOP_LEVEL[resource]
-    if set(document) != {top_level}:
+    extra = {"opnsense_filter_rule_context"} if resource == "filter-rules" else set()
+    if top_level not in document or set(document) - {top_level} - extra:
         _error(resource, f"must contain only {top_level}")
+    context = (_validate_rule_context(document["opnsense_filter_rule_context"])
+               if "opnsense_filter_rule_context" in document else None)
     records = _list(document[top_level], top_level)
     identities: set[tuple[str, ...]] = set()
     for index, value in enumerate(records):
         path = f"{top_level}[{index}]"
-        identity = VALIDATORS[resource](_mapping(value, path), path)
+        record = _mapping(value, path)
+        identity = (_validate_filter_rule(record, path, context) if resource == "filter-rules"
+                    else VALIDATORS[resource](record, path))
         if identity in identities:
             _error(path, f"duplicate managed identity {' / '.join(identity)}")
         identities.add(identity)
@@ -292,6 +352,21 @@ def validate_file(resource: str, path: Path) -> None:
     validate_document(resource, document)
 
 
+def validate_documents(documents: dict[str, Any]) -> None:
+    """Validate a selected resource set and any duplicated alias facts."""
+    for resource, document in documents.items():
+        validate_document(resource, document)
+    context = documents.get("filter-rules", {}).get("opnsense_filter_rule_context", {})
+    selected = {row["name"]: row for row in documents.get("aliases", {}).get("opnsense_aliases", [])}
+    for row in context.get("aliases", []):
+        if row["name"] in selected and row != selected[row["name"]]:
+            _error("opnsense_filter_rule_context.aliases", "conflicts with selected alias declaration")
+
+
 def validate_all(vars_dir: Path) -> None:
-    for resource, filename in RESOURCE_FILES.items():
-        validate_file(resource, vars_dir / filename)
+    try:
+        documents = {resource: yaml.safe_load((vars_dir / filename).read_text(encoding="utf-8"))
+                     for resource, filename in RESOURCE_FILES.items()}
+    except (OSError, yaml.YAMLError):
+        _error(str(vars_dir), "could not load YAML")
+    validate_documents(documents)

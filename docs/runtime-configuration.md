@@ -34,8 +34,13 @@ auxiliary file paths), and `options` (operation options). Required domain inputs
 | services | services, vms | service documentation |
 | foundation | inventory | recovery documentation |
 | k3s | intent, inventory | composed K3s review |
-| opnsense | one or more of aliases, vips, gateways, filter-rules | validated desired-state YAML |
+| opnsense | aliases, vips, gateways, filter-rules | validated standard desired-state YAML |
 | switch | config | validated collection-native configuration YAML |
+
+Caller-authored Alias/Rules files may be hand-written or deterministically generated.
+Both use the same standard fields, validation and source selection. High-level policy
+compilation and migration staging belong to the caller; iaas has no policy input mode.
+Gateway/VIP inputs continue to reference the original base source files.
 
 An entire reference node looks like `{ $ref: facts.network.management }`.
 The reference preserves the fact's type; the existing component validator checks
