@@ -1,0 +1,4 @@
+---
+# Reserved only. SNAT is deferred until the upstream 26.7 API fix is available.
+# Do not add this file to the current runtime environment inputs.
+opnsense_snat_rules: []

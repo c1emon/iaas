@@ -7,7 +7,7 @@
 ## 2. 统一约定与可选资源接入
 
 - [x] 2.1 建立两类 NAT 公共身份和生命周期辅助，三个资源独立 validator/分派，不建立万能 NAT 字段模型；以 DNAT/1:1 NAT/Groups 的最小合法/非法输入、NAT 间同名身份合法及类内冲突拒绝、未知字段与严格类型测试为依据。DNAT 对 present 精确匹配对象增加首个写入前只读模式核对，代表性测试 `nordr` 为真或无法判定时整批拒绝、正常规则可更新及 absent 仍可精确删除，不转换免转发例外模式。
-- [ ] 2.2 接入三个显式 resource/file key 和 runtime 离线 check/generate 选择，不新增 launcher apply；按 design 的三个直接 Ansible 入口与源路径变量接收生成文件，指定 inventory/limit，复用同一合同验证源文件和实际加载值，再做凭据预检。验证旧四文件目录不要求新增文件、未选择资源不被自动纳管、空表不清空对象，`snat` 选择明确拒绝，以有/无新增资源场景、生成文件交接和 extra-vars 非法值测试为依据，独立提交。
+- [x] 2.2 接入三个显式 resource/file key 和 runtime 离线 check/generate 选择，不新增 launcher apply；按 design 的三个直接 Ansible 入口与源路径变量接收生成文件，指定 inventory/limit，复用同一合同验证源文件和实际加载值，再做凭据预检。验证旧四文件目录不要求新增文件、未选择资源不被自动纳管、空表不清空对象，`snat` 选择明确拒绝，以有/无新增资源场景、生成文件交接和 extra-vars 非法值测试为依据，独立提交。
 
 ## 3. Source NAT 位置预留（功能延期）
 
@@ -30,6 +30,6 @@ SNAT 功能尚未实现，不计本轮验收。待上游修复 26.7 读取/稳�
 
 ## 7. 统一验收与交付
 
-- [ ] 7.1 针对本轮三类资源分组验证重复对账、absent、check mode 无写/无激活、逐项 reload=false、单资源成功一次激活、部分失败停止和强制重载恢复；确认省略可选字段映射为有效清除/默认值，以 DNAT local_port 清除、1:1 NAT 映射字段和 Groups description 移除后的重复幂等覆盖，不以 omit 保留旧值。共同逻辑复用测试，原生分歧用代表性例覆盖，不声称跨资源事务；SNAT 不计入验收。
-- [ ] 7.2 完成本轮固定 Collection 集成、runtime 场景及原有四类回归、相关 lint、strict OpenSpec 和 GitNexus 变更分析；记录软件/现场区别，未知结果不得以其他资源通过替代，SNAT 延期不作为失败的已完成资源或替代证据。
-- [ ] 7.3 更新两类 NAT、Groups 通用手册、标准文件示例和 infra-ops 交接说明；核对字段与入口一致、声明与全局模式边界、依赖限制和恢复步骤，保留 SNAT 四个命名及延期准入说明，不写本站参数/迁移批次，不自动发布或部署。
+- [x] 7.1 针对本轮三类资源分组验证重复对账、absent、check mode 无写/无激活、逐项 reload=false、单资源成功一次激活、部分失败停止和强制重载恢复；确认省略可选字段映射为有效清除/默认值，以 DNAT local_port 清除、1:1 NAT 映射字段和 Groups description 移除后的重复幂等覆盖，不以 omit 保留旧值。共同逻辑复用测试，原生分歧用代表性例覆盖，不声称跨资源事务；SNAT 不计入验收。
+- [x] 7.2 完成本轮固定 Collection 集成、runtime 场景及原有四类回归、相关 lint、strict OpenSpec 和 GitNexus 变更分析；记录软件/现场区别，未知结果不得以其他资源通过替代，SNAT 延期不作为失败的已完成资源或替代证据。
+- [x] 7.3 更新两类 NAT、Groups 通用手册、标准文件示例和 infra-ops 交接说明；核对字段与入口一致、声明与全局模式边界、依赖限制和恢复步骤，保留 SNAT 四个命名及延期准入说明，不写本站参数/迁移批次，不自动发布或部署。

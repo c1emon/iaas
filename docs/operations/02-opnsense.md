@@ -1,8 +1,9 @@
 # 2. OPNsense
 
-本章覆盖 OPNsense 的 API 接入、只读导出、别名、过滤规则、策略路由网关和
-IP Alias VIP。它在 PVE 与 VM 创建前定义网络边界，但仓库不自动管理 DNS、
-DHCP、物理接口、普通路由、系统升级或稳定 DNAT/端口转发。
+本章覆盖 OPNsense 的 API 接入、只读导出、别名、过滤规则、策略路由网关、
+IP Alias VIP，以及显式选择的 DNAT、1:1 NAT 和 Firewall 接口组。它在 PVE 与
+VM 创建前定义网络边界，但仓库不自动管理 DNS、DHCP、物理接口、普通路由、
+系统升级或站点策略组合。
 
 ## 2.1 准入与责任边界
 
@@ -15,10 +16,11 @@ DHCP、物理接口、普通路由、系统升级或稳定 DNAT/端口转发。
 在线只读证据，不替代本章的 API 或防火墙规则审查。
 
 当前可管理范围是 API 连通、只读查询/导出/快照、调用方声明的别名、IP Alias VIP、PBR
-gateway 与 API-backed new filter rules。DHCPv4/v6、RA/PD、WAN/PPPoE、VLAN
-interfaces、CARP、Proxy ARP、Other VIP、静态路由、gateway groups、legacy
-firewall/management rules、默认防火墙策略、NAT/DNAT 和关键公网入口不在本仓库
-管理范围。不要把“能导出”误解为“可回写/可管理”。
+gateway、API-backed new filter rules，以及本 change 定义的 DNAT、1:1 NAT、Groups。
+SNAT 保留命名占位但尚未实现。DHCPv4/v6、RA/PD、WAN/PPPoE、VLAN interfaces、
+CARP、Proxy ARP、Other VIP、静态路由、gateway groups、legacy firewall/management
+rules、默认防火墙策略和关键公网入口不在本仓库管理范围。不要把“能导出”误解为
+“可回写/可管理”；软件测试通过也不等于目标设备或数据面已验收。
 
 ## 2.2 配置文件与连接参数
 
@@ -26,7 +28,7 @@ firewall/management rules、默认防火墙策略、NAT/DNAT 和关键公网入�
 | --- | --- | --- |
 | `$ENVIRONMENT_DIR/ansible/inventory.yml` | `opnsense` 组、主机别名、API host/FQDN。 | 环境源文件。 |
 | `$ENVIRONMENT_DIR/ansible/group_vars/opnsense.yml` | `opnsense_api_url`、`opnsense_ssl_verify`、API key/secret 入口。 | Key/secret 仅用环境变量。 |
-| `$ENVIRONMENT_DIR/ansible/vars/opnsense/*.yml` | 声明式期望状态。 | 不从 export 复制回写。 |
+| `$ENVIRONMENT_DIR/ansible/vars/opnsense/*.yml` | 声明式期望状态，包括本章三类新增资源。 | 不从 export 复制回写。 |
 | `$OUTPUT_DIR/runtime/exports/opnsense/<inventory_hostname>/` | 按设备隔离的 API 导出。 | 本地观察产物，不是 apply 输入。 |
 
 | 变量 | 含义 | 约束 |
@@ -92,7 +94,7 @@ Check mode 使用读取到的配置生成计划，不写入临时成员，也不
 `false`，因为此工作流不得接管默认路由；`monitor*`、延迟/丢包阈值和 interval
 共同定义探测敏感度，不能把适用于实验链路的值直接套用于生产出口。
 
-仓库精确使用 `oxlorg.opnsense` `26.1.11`。该版本将 API 有时缺失的 `fargw`
+仓库使用下文固定 SHA 的 `oxlorg.opnsense`（候选版本号仍为 `26.1.11`）。它将 API 有时缺失的 `fargw`
 处理为可选的 `far_gw`；不得 patch 控制机上已安装的 collection。升级 collection
 前，先在隔离环境重新运行语法/离线校验，再确认这个兼容性仍存在。
 
@@ -103,12 +105,85 @@ Check mode 使用读取到的配置生成计划，不写入临时成员，也不
 模式。`bind`/`expand` 的含义以 OPNsense API 为准，变更前必须确认该接口和
 现有服务不会因 ARP/地址宣告变化失联。
 
-### DNAT：`vars/opnsense/dnat.yml`
+### 三类新增资源：DNAT、1:1 NAT 与接口组
 
-该文件当前仅保存审查草案，根键 `opnsense_dnat_rules` 必须是列表。
-`manage-dnat.yml` 会验证该形状后**故意失败**，不会执行 API 写入、创建、更新或
-删除 NAT/firewall 对象；原因是当前 collection 没有稳定的专用端口转发模块。
-不得将示例当作已实现自动化，若需要 DNAT 必须另行设计、审查和实施。
+三类资源均为可选输入；原有 aliases、vips、gateways、filter-rules 四文件的默认
+目录校验保持不变。未选中的资源不会被自动发现、读取或写入，空列表也不表示
+清空设备对象。标准声明示例见 [`docs/examples/opnsense-nat/`](../examples/opnsense-nat/)，
+其中使用文档保留地址，不能直接视为现场策略。
+
+| 资源 | 标准文件 / 根键 | 直接 Ansible playbook / 源变量 |
+| --- | --- | --- |
+| DNAT | `dnat.yml` / `opnsense_dnat_rules` | `playbooks/opnsense/manage-dnat.yml` / `opnsense_dnat_source` |
+| 1:1 NAT | `one-to-one-nat.yml` / `opnsense_one_to_one_nat_rules` | `playbooks/opnsense/manage-one-to-one-nat.yml` / `opnsense_one_to_one_nat_source` |
+| Firewall Groups | `interface-groups.yml` / `opnsense_interface_groups` | `playbooks/opnsense/manage-interface-groups.yml` / `opnsense_interface_group_source` |
+
+源变量默认读取 `$ENVIRONMENT_DIR/ansible/vars/opnsense/<标准文件>`，也可显式指向
+runtime `generate` 产物。每个直接 playbook 都必须先校验选定文件，再校验 Ansible
+实际加载的列表，最后才做凭据预检和 API 操作；`--check` 不执行 CRUD 或激活。
+对这三类新增资源，runtime 只提供 OPNsense 的 `check`/`generate`，不增加 launcher
+apply；生成文件不会自动调用设备 playbook。既有 `diagnose` 入口保留原有有界只读
+职责，见 2.5，不受新增资源 runtime 范围限制。
+
+SNAT 暂不属于可选资源，`snat.yml`、`opnsense_snat_rules`、`manage-snat.yml` 和
+`opnsense_snat_source` 仅保留给后续上游修复后的 change。当前选择 SNAT 必须失败，
+不访问凭据或设备，也不计入本轮验收。
+
+#### DNAT
+
+DNAT 使用 `scope` + `slug` 生成 `iaas:opnsense:dnat:<scope>:<slug>` 稳定身份；
+`present` 必须完整声明受支持字段，`absent` 只需身份和状态；`sequence` 为整数
+1–999999。`nat_reflection` 枚举为 `""`（继承设备现值）、`purenat`、`disable`，
+`associated_rule` 枚举为 `""`（手工过滤）、`pass`（NAT 直接放行）、`rule`
+（设备临时关联过滤规则），两者在 `present` 中都必须显式填写。省略可选字段会
+清除旧值并恢复合同默认：源/目的/翻译端口清除旧限制，`pool_opts`、`tag`、
+`tagged` 清空；反选和日志默认 `false`。`local_port` 接受
+单个端口、原生端口名或合法端口别名，不接受字面范围；省略它会清除旧翻译端口，
+恢复报文原目的端口。`nordr` 免转发例外不属于首版合同；凭据预检后、批次首个
+写入前，固定 Collection 只读检查匹配对象的 `nordr`（归一化字段
+`no_port_forward`），为真或无法判定时拒绝整批。
+
+`associated_rule=rule` 由 OPNsense 在 filter reload 时临时生成关联规则，没有独立
+UUID 或持久 filter 配置。切换关联模式、禁用或删除 DNAT 后，下一次原生 filter
+reload 会按新状态移除或重新生成它；不要将该规则再声明为独立 filter 对象。
+
+#### 1:1 NAT
+
+1:1 NAT 使用 `scope` + `slug` 生成 `iaas:opnsense:one-to-one-nat:<scope>:<slug>`；
+支持原生 `nat`/`binat`、单接口、IPv4 地址/网段和逐规则反射；`sequence` 为整数
+1–99999。`binat` 的字面内外
+网段必须等大，`nat` 不套用该限制；端口、NPTv6 和 DNAT 关联字段均被拒绝。它
+只管理声明对象，不推导 VIP、过滤规则或全局反射设置。
+
+#### Firewall Groups
+
+Groups 是 Firewall 接口组，不是账户组。身份为原生大小写敏感的 `name`；present
+要求成员、`gui_group` 和 sequence，absent 只需 name/state。不支持嵌套组；未声明的
+系统/VPN 组保持不变。filter-rules 的 `interface` 和
+`opnsense_filter_rule_context.interface_networks` 可引用合法的 mixed-case 组名，
+并保持原有 deny/inversion 保护；VIP/Gateway 的物理接口字段仍拒绝大写组名。
+`members` 必须填写设备原生配置接口 key（例如 `lan`、`opt1`）；设备端口名、
+界面显示名称和 GUI 标签不与这些 key 自动互换。组名首尾不能是数字，`sequence`
+为整数 0–9999。
+
+删除前会检查选定 filter/DNAT/1:1 NAT 声明中的存活引用；设备外部引用交由原生
+whereUsed 保护，合法外部组引用不要求离线闭合。成员不是地址授权事实，也不会自动
+生成 ACL。
+
+整体引用检查在离线 `check`/`generate` 中显式选定 Groups 与相关 filter-rules、DNAT
+或 1:1 NAT 时执行：选定的存活规则不能引用被选为 `absent` 的组，组成员不能是
+另一接口组。单资源 direct playbook 只验证传入的本资源列表；未随本次选择的
+其他资源引用交由设备原生 whereUsed/删除保护处理，不能据此推断离线闭合。
+
+每批 Groups 变更逐项禁止 reload，成功后只用固定 Collection 的
+`oxlorg.opnsense.raw` 调用固定 `POST firewall/group/reconfigure` 一次；不暴露任意
+endpoint/body，也不引入私有 API 客户端。该 reconfigure 会注册接口并重载共享过滤
+规则，不能当作只刷新组本身。
+
+固定 Collection 源为 Git SHA
+`1423500c29f88da9ba8147a23fc64006cf464159`；候选版本仍标为 `26.1.11`，DNAT
+模块标记为 unstable。SHA 固定只说明依赖可复现，不能替代目标设备 API、写入和
+连通性证据。
 
 ## 2.4 操作流程
 
@@ -117,6 +192,16 @@ Check mode 使用读取到的配置生成计划，不写入临时成员，也不
 ```bash
 make opnsense-validate
 ```
+
+三类新增资源必须显式选择。例如：
+
+```bash
+PYTHONPATH=automation/src uv run python -m iaas_automation.opnsense_validation \
+  --resource dnat --file "$ENVIRONMENT_DIR/ansible/vars/opnsense/dnat.yml"
+```
+
+`one-to-one-nat` 和 `interface-groups` 使用相同命令分别替换 resource 与文件路径。
+不传入的资源不会被校验或执行；`snat` 当前不是合法 resource。
 
 以下为调用方 `op run` 注入示例；传统 Secret 已注入同名变量时直接执行 `uv run`。
 调用方 group vars 负责将环境变量映射为 Ansible API 连接变量。
@@ -163,6 +248,18 @@ op run --env-file "$OPNSENSE_ENV_TEMPLATE" -- \
 # vips.yml
 op run --env-file "$OPNSENSE_ENV_TEMPLATE" -- \
   uv run ansible-playbook playbooks/opnsense/manage-vips.yml -i "$ENVIRONMENT_DIR/ansible/inventory.yml" --limit "$OPNSENSE_HOST"
+
+# dnat.yml
+op run --env-file "$OPNSENSE_ENV_TEMPLATE" -- \
+  uv run ansible-playbook playbooks/opnsense/manage-dnat.yml -i "$ENVIRONMENT_DIR/ansible/inventory.yml" --limit "$OPNSENSE_HOST"
+
+# one-to-one-nat.yml
+op run --env-file "$OPNSENSE_ENV_TEMPLATE" -- \
+  uv run ansible-playbook playbooks/opnsense/manage-one-to-one-nat.yml -i "$ENVIRONMENT_DIR/ansible/inventory.yml" --limit "$OPNSENSE_HOST"
+
+# interface-groups.yml
+op run --env-file "$OPNSENSE_ENV_TEMPLATE" -- \
+  uv run ansible-playbook playbooks/opnsense/manage-interface-groups.yml -i "$ENVIRONMENT_DIR/ansible/inventory.yml" --limit "$OPNSENSE_HOST"
 ```
 
 一次只变更一种资源类别，并在每次变更后使用 readonly/export 复核。尤其不得
@@ -170,8 +267,9 @@ op run --env-file "$OPNSENSE_ENV_TEMPLATE" -- \
 同一规则集不得无迁移计划地混用手工与 Ansible 所有权；alias 类型变更也不得
 由自动 delete/recreate 猜测完成，必须以明确变更单处理。
 
-四个 managed playbook 默认仅在配置发生变化后激活固定资源 target，普通 no-op
-不 reload；`--check` 始终不激活。模块内自动 reload 已显式关闭。若 CRUD 批次失败，
+每个 managed playbook 默认仅在配置发生变化后激活固定资源 target，普通 no-op
+不 reload；`--check` 始终不激活。模块内自动 reload 已显式关闭。DNAT 和 1:1 NAT
+在整批 CRUD 成功后各自激活一次；Groups 使用上节限定的 raw reconfigure。若 CRUD 批次失败，
 之前的项目可能已保存，但本次不会继续 reload，也不自动回滚。若最后 reload 失败，
 输出明确区分保存与激活；检查设备后，可用同一 playbook、输入和目标重试，并附加
 `-e '{"opnsense_force_reload": true}'`。此选项允许配置已无差异时再次激活。
@@ -183,8 +281,10 @@ loss_interval 仅声明整数；工作流不增加 Collection 未声明的范围
 凭据访问和写入前校验。deny rule 的管理接口保护会同时考虑 destination_net 与
 destination_invert；排除自身接口的反选与包含自身接口不是同一种规则。
 
-不要把 `manage-dnat.yml` 加入变更链：它的预期结果是校验输入后失败，以防把
-未实现的 DNAT 误认为已被管理。
+不要把上述直接 playbook 接入 launcher apply：runtime 对新增 DNAT、1:1 NAT、Groups
+只负责 check/generate，既有 diagnose 仍按 2.5 提供只读诊断；
+直接 Ansible 调用仍须由调用方显式授权、编排和限 host。DNAT/1:1 NAT/Groups
+分别记录软件校验、设备写入和数据面验证结果。
 
 ## 2.5 有界只读诊断
 
@@ -244,9 +344,10 @@ API 连接/read timeout 分别为 5/15 秒，每个响应最多 2 MiB、一次�
 
 ## 2.6 验收与停止
 
-验收至少包括：API 连通、目标对象身份与顺序正确、管理路径保持可达、所需的
-PVE/VM/Registry/DNS 路径经过实际测试，以及未出现未解释的规则阴影或网关
-监控告警。API 调用返回成功不等于数据面一定可用。
+验收至少包括：API 连通、目标对象身份与顺序正确、管理路径保持可达、DNAT/1:1
+NAT/Groups 的保存与激活结果可区分、所需的 PVE/VM/Registry/DNS 路径经过实际测试，
+以及未出现未解释的规则阴影或网关监控告警。API 调用返回成功不等于数据面一定可用；
+离线测试、check/generate 或受保护的只读响应都不能单独宣称设备写入和现场资格完成。
 
 若管理通道、核心 DNS/路由、既有关键服务或回退路径异常，立即停止后续 PVE/
 VM/K3s 变更，保留 export 和变更记录，通过本地控制台恢复。不要批量删除
@@ -255,8 +356,8 @@ VM/K3s 变更，保留 export 和变更记录，通过本地控制台恢复。�
 
 ### 调用方生成的标准声明与校验上下文
 
-Alias/Rules 可手写，也可由调用方从其维护的输入确定性生成；资源字段、稳定身份、显式状态与增量管理规则相同。设备导出必须经审查并转换为标准声明，不能直接用于部署。通过原有 `opnsense_alias_source` / `opnsense_filter_rule_source` 选择文件；省略对象不代表删除。Gateway/VIP 仍引用原基础源。
+Alias/Rules 可手写，也可由调用方从其维护的输入确定性生成；资源字段、稳定身份、显式状态与增量管理规则相同。设备导出必须经审查并转换为标准声明，不能直接用于部署。通过原有 `opnsense_alias_source` / `opnsense_filter_rule_source` 选择文件；省略对象不代表删除。Gateway/VIP 仍引用原基础源。DNAT、1:1 NAT 和 Groups 通过各自 source 变量选择标准文件；SNAT 的四个命名仍是未实现占位。
 
 规则文件可附带 `opnsense_filter_rule_context`，仅含 `interface_networks`（接口到 CIDR 列表）和 `aliases`（标准别名列表）。反向匹配只能有一个目标；反向 deny 的入口网络保护只接受静态覆盖证据，按 inet/inet6/inet46 分别检查。域名、URL Table 和未知外部成员本身不构成静态证据；未知外部引用仍按既有在线解析合同处理。上下文与所选别名声明冲突时拒绝，离线接受不证明现场事实有效。
 
-调用方可以通过 `python -m iaas_automation.opnsense_validation --vars-dir DIR` 校验标准文件集，或用 runtime_config 的 check/generate 入口。Ansible 加载后的复验也位于凭据访问前，不把字符串转换成整数或布尔。配置保存与激活仍是不同结果，不承诺跨资源事务；执行授权、阶段编排及恢复决策由调用方负责。
+调用方可以通过 `PYTHONPATH=automation/src uv run python -m iaas_automation.opnsense_validation --vars-dir DIR` 校验原有四文件集，或用 `--resource dnat|one-to-one-nat|interface-groups --file FILE` 显式校验新增资源，再用 runtime_config 的 check/generate 入口生成文件。Ansible 加载后的复验也位于凭据访问前，不把字符串转换成整数或布尔。配置保存与激活仍是不同结果，不承诺跨资源事务；有引用时通常先处理 Groups/别名，再处理引用它们的 NAT/过滤规则，删除则反向进行。执行授权、阶段编排及恢复决策由调用方负责。

@@ -40,6 +40,16 @@ runtime 注册三个显式资源，旧目录验证仍只读取原四文件；SNA
 
 Groups 提供者测试覆盖 description 移除后实际清空及重复幂等、nogroup 反向转换、增删改与 check mode；批次激活、部分失败与恢复使用上述 18 项分组软件测试。
 
+## 统一软件验收与交接
+
+范围调整后的所有任务完成；SNAT 仅完成位置预留，功能不计入完成项。三个显式资源的 runtime check/generate、旧四文件默认、未选择文件不加载、非法 SNAT 选择及加载后 extra-vars 校验均有定向覆盖。标准文档示例经真实 runtime check/generate 通过，只生成三个选定文件；临时生成目录已清理。
+
+最终分组结果：209 项相关 Python/Ansible 回归和 18 项批次执行测试通过，共 227 项；新增入口的 Ansible 语法检查、production profile ansible-lint（9 个文件，零警告/失败）、范围内 yamllint、opnsense_validation 与过滤插件 pyright（零错误）通过。strict OpenSpec 及提交前 GitNexus detect-changes 按阶段执行。GitNexus 的全流程枚举存在预算截断，YAML 动态调用及测试夹具不能仅依赖图覆盖；结合实际 Ansible 执行和文本路径复核，不把零 affected processes 当作无影响证明。
+
+通用操作手册与标准示例记录源文件交接、整体引用校验范围、强制重载恢复、共享规则重载副作用、固定依赖及 unstable 限制。infra-ops 负责设备目标、站点声明、引用迁移顺序、执行窗口与数据面验收；本轮未修改 infra-ops、未进行设备写入、未构建或发布 OCI 镜像。
+
+## 历史准入与原始阻塞记录
+
 以下为范围调整前的准入及阻塞历史，用于保留延期原因；其中“暂停”“尚未实现”和旧依赖状态均为当时结论。
 
 ## 实施准入（2026-09-14）

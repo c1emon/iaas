@@ -1,8 +1,8 @@
 ## Context
 
-动机见 [proposal.md](proposal.md)。本次范围为两类 NAT（DNAT、1:1 NAT）和 Firewall 接口组，共三类资源；以下 DNAT 细节与新增其他资源章节共同构成设计。现有 `manage-dnat.yml` 只验证列表形状后停止；通用 validator 支持 aliases/vips/gateways/filter-rules 四类。当前固定和项目内实际安装的 Collection 均为 26.1.11，没有 nat_destination。上游 2026-07-15 合入 PR #430，模块仍标为 unstable。SNAT 仅保留在本设计的延期章节，不注册为本轮资源。
+动机见 [proposal.md](proposal.md)。本次范围为两类 NAT（DNAT、1:1 NAT）和 Firewall 接口组，共三类资源；以下 DNAT 细节与新增其他资源章节共同构成设计。实施前 `manage-dnat.yml` 只验证列表形状后停止，通用 validator 支持 aliases/vips/gateways/filter-rules 四类，依赖的发布版 Collection 26.1.11 没有 nat_destination。本轮固定到上游 DNAT PR #430 的完整提交；候选自身仍标记 26.1.11，DNAT 模块仍为 unstable。当前实现与验证结果见 [implementation.md](implementation.md)。SNAT 仅保留在本设计的延期章节，不注册为本轮资源。
 
-上游模块使用 firewall/d_nat 的 get/add_rule/set_rule/del_rule，字段映射对应 OPNsense 26.7 DNat 模型，包括反向 disabled、嵌套 source/destination、natreflection 和 pass。当前只有源码核对，没有新模块的现场读写证据。GitNexus 对 validate_document 的 upstream 分析涉及 13 个对象、9 条流程，评级 CRITICAL，索引落后 HEAD 一次提交；此为共享入口风险提示，实施前须刷新并重做分析。
+上游模块使用 firewall/d_nat 的 get/add_rule/set_rule/del_rule，字段映射对应 OPNsense 26.7 DNat 模型，包括反向 disabled、嵌套 source/destination、natreflection 和 pass。验收采用提供者软件测试与原生源码核对，没有新模块的现场读写证据。设计时 GitNexus 对 validate_document 的 upstream 分析涉及 13 个对象、9 条流程，评级 CRITICAL；共享入口影响与实施前的索引刷新结果记录在 implementation.md。
 
 ## Goals / Non-Goals
 
@@ -65,7 +65,7 @@ present 是对本合同支持字段的完整声明：省略可选字段须复位
 
 #### 2.2 SNAT 延期设计与命名预留
 
-SNAT 后续仍预留 `snat.yml`、`opnsense_snat_rules`、`manage-snat.yml`、`opnsense_snat_source` 和 `nat_source` 命名。本轮不注册 `snat` 资源、不勾选 SNAT 任务、不加载或执行 SNAT，以下内容只作为上游修复后的后续设计，不计入本轮三资源/两类 NAT 验收。
+SNAT 后续仍预留 `snat.yml`、`opnsense_snat_rules`、`manage-snat.yml`、`opnsense_snat_source` 和 `nat_source` 命名。本轮只完成位置预留，不注册 `snat` 资源、不加载或执行 SNAT 功能，以下内容只作为上游修复后的后续设计，不计入本轮三资源/两类 NAT 验收。
 
 后续 present 计划要求单个 `interface`、`ip_protocol`、`protocol`、`source_net`、`destination_net`、`target`；可选 `source_port` / `destination_port`、`target_port`、`static_port`、反选与日志。`target_port` 采用提供者实际的整数端口 1–65535，不能沿用 DNAT 的字符串/别名合同；启用 static_port 时拒绝同时指定 target_port。源/目的端口只支持固定提供者和 API 实际共同支持的字面端口/范围，不承诺文档未支持的端口别名。
 
@@ -79,7 +79,7 @@ present 要求单个 `interface`、`type`（binat/nat）、`external`、`source_
 
 #### 2.4 Groups 合同
 
-这里是 Firewall 接口组，不是账户组。身份为实际组 `name`，沿用提供者/原生名字规则（最长 15 字符、字母数字下划线且不能以数字结尾）；不加 NAT 的 scope/slug、enabled 或自定义 UUID。present 要求非空且不重复的 `members`、显式 bool `gui_group`、整数 sequence 0–9999；description 为可选说明，不作为身份。absent 只需 name/state。
+这里是 Firewall 接口组，不是账户组。身份为实际组 `name`，沿用提供者/原生名字规则（最长 15 字符、字母数字下划线且不能以数字开头或结尾）；不加 NAT 的 scope/slug、enabled 或自定义 UUID。present 要求非空且不重复的 `members`、显式 bool `gui_group`、整数 sequence 0–9999；description 为可选说明，不作为身份。absent 只需 name/state。
 
 组名保持原生大小写，不自动转小写。现有 filter-rules.interface 与 context.interface_networks 的物理接口正则只接受小写，须作最小兼容：在原生支持组引用的位置接受合法组名（包括 `Internal`），对上下文中的同名键保留大小写；VIP/Gateway 等物理接口字段的约束不因此放宽。选定组声明参与已知引用检查，未选定合法组引用保持外部未解析状态。组成员不自动变成 context 中的网段事实，也不作为放宽既有 deny/反选保护的证据；所需静态网段由调用方显式提供并沿用原有覆盖校验。
 
