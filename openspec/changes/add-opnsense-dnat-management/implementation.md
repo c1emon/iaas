@@ -32,6 +32,14 @@ runtime 注册三个显式资源，旧目录验证仍只读取原四文件；SNA
 
 三资源批次软件测试共 18 passed，覆盖两项变化一次激活、第二项失败后不执行第三项及激活、无差异强制恢复、check mode、空表和激活失败提示。测试保留产品 playbook 的 read/preflight/init/include_tasks/activation，替换提供者 I/O；不代表设备激活验收。
 
+## Groups 直接执行与引用检查阶段
+
+新增 name 身份的独立入口，成员采用原生接口 key（如 lan/opt1），不转换 GUI 标签或端口名。只处理声明组，拒绝选定及现场已知嵌套组；不改名、清空未声明组或自动迁移规则。Groups 与所选 filter-rules/DNAT/1:1 NAT 的接口引用整体校验，待删除组仍被存活声明引用时离线拒绝，合法外部引用允许。Internal 大小写贯通过滤规则及上下文的真实加载校验，旧 VIP/Gateway 约束和 deny/反选保护不变。
+
+设备未选定引用保留原生 GroupController::delItemAction 的 whereUsed 保护；已核对源码在存在引用时抛出 UserException，不执行 delBase。软件测试覆盖选定删除冲突和提供者失败时停止批次，未声称现场删除保护实测。组修改逐项 reload=false，批次末仅固定 raw POST firewall/group/reconfigure 一次；响应非 ok 失败，check mode 跳过激活。该原生操作注册接口并重载共享过滤规则，手册明确调用方须审查其他待应用配置。
+
+Groups 提供者测试覆盖 description 移除后实际清空及重复幂等、nogroup 反向转换、增删改与 check mode；批次激活、部分失败与恢复使用上述 18 项分组软件测试。
+
 以下为范围调整前的准入及阻塞历史，用于保留延期原因；其中“暂停”“尚未实现”和旧依赖状态均为当时结论。
 
 ## 实施准入（2026-09-14）

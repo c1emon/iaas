@@ -1,0 +1,10 @@
+---
+- name: Create, update, or remove one admitted interface group  # noqa: args[module]
+  oxlorg.opnsense.rule_interface_group: "{{ interface_group_item | opnsense_resource_arguments('interface-groups') }}"
+  register: opnsense_interface_group_item_apply
+  no_log: true
+
+- name: Accumulate saved interface group changes
+  ansible.builtin.set_fact:
+    opnsense_interface_group_apply:
+      changed: "{{ opnsense_interface_group_apply.changed or opnsense_interface_group_item_apply.changed }}"

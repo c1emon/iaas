@@ -1,0 +1,89 @@
+---
+- name: Additively manage OPNsense firewall interface groups
+  hosts: opnsense
+  gather_facts: false
+  connection: local
+
+  module_defaults:
+    group/oxlorg.opnsense.all:
+      firewall: "{{ opnsense_api_host }}"
+      api_key: "{{ opnsense_api_key }}"
+      api_secret: "{{ opnsense_api_secret }}"
+      ssl_verify: "{{ opnsense_ssl_verify }}"
+
+  vars:
+    opnsense_interface_group_source: >-
+      {{ lookup('ansible.builtin.env', 'ENVIRONMENT_DIR', default=undef()) }}/ansible/vars/opnsense/interface-groups.yml
+    managed_resource: interface-groups
+    managed_resource_key: opnsense_interface_groups
+    managed_source_var: "{{ opnsense_interface_group_source }}"
+
+  tasks:
+    - name: Admit and load the selected interface group source
+      ansible.builtin.import_tasks: tasks/admit-managed-resource.yml
+
+    - name: Run OPNsense API credential preflight
+      ansible.builtin.import_tasks: tasks/api-credential-preflight.yml
+
+    - name: Read existing interface groups before any write  # noqa: args[module]
+      oxlorg.opnsense.list:
+        target: rule_interface_group
+      register: opnsense_interface_group_live
+      changed_when: false
+      no_log: true
+
+    - name: Preflight all declared interface group identities and members
+      ansible.builtin.assert:
+        that:
+          - >-
+            opnsense_interface_groups
+            | opnsense_resource_preflight(opnsense_interface_group_live.data, 'interface-groups')
+
+    - name: Initialize interface group saved-configuration change state
+      ansible.builtin.set_fact:
+        opnsense_interface_group_apply:
+          changed: false
+
+    - name: Reconcile admitted interface groups in declaration order
+      block:
+        - name: Apply one interface group at a time
+          ansible.builtin.include_tasks: tasks/manage-interface-group-item.yml
+          loop: "{{ opnsense_interface_groups }}"
+          loop_control:
+            loop_var: interface_group_item
+            label: "{{ interface_group_item.name }}"
+      rescue:
+        - name: Report partial interface group reconciliation
+          ansible.builtin.fail:
+            msg: >-
+              OPNsense interface group reconciliation failed. Some configuration may
+              have been saved; later groups and activation were not attempted.
+              A referenced group cannot be deleted; no dependent rules were removed.
+              Correct the cause and rerun this target; use opnsense_force_reload=true
+              as a JSON/YAML boolean for activation recovery. No rollback was performed.
+
+    - name: Reconfigure saved interface groups after changes or explicit recovery
+      when:
+        - not ansible_check_mode
+        - opnsense_interface_group_apply.changed or opnsense_force_reload | default(false)
+      block:
+        - name: Register interfaces and reload the shared filter ruleset  # noqa: args[module]
+          oxlorg.opnsense.raw:
+            module: firewall
+            controller: group
+            command: reconfigure
+            action: post
+          register: opnsense_interface_group_activation
+          failed_when: opnsense_interface_group_activation.response.status | default('failed') != 'ok'
+          no_log: true
+        - name: Report interface group activation success
+          ansible.builtin.debug:
+            msg: "OPNsense interface groups: reconciliation succeeded; activation succeeded (shared filter reload)"
+      rescue:
+        - name: Report saved interface groups and failed activation
+          ansible.builtin.fail:
+            msg: >-
+              OPNsense interface groups: reconciliation succeeded but activation failed;
+              saved configuration may differ from active configuration. Correct the
+              cause and rerun with opnsense_force_reload=true as a JSON/YAML boolean.
+              No rollback was performed.

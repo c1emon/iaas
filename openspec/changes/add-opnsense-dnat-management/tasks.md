@@ -25,8 +25,8 @@ SNAT 功能尚未实现，不计本轮验收。待上游修复 26.7 读取/稳�
 
 ## 6. Firewall Groups（独立阶段）
 
-- [ ] 6.1 实现 name 身份、成员和独立 group 入口；测试固定 API 接受的成员标识、gui_group 反向字段、组序号、空/重复成员/嵌套组拒绝，确保未声明系统/VPN 组保持，形成 Groups 阶段提交。
-- [ ] 6.2 接入选定声明引用校验与原生删除保护；为现有 filter-rules.interface/context.interface_networks 作最小组名兼容，验证 Internal 声明→过滤引用→上下文→实际加载校验保持大小写，VIP/Gateway 物理接口及既有 deny/反选保护不放宽。验证被引用组删除拒绝、合法外部引用不强制闭合、改名不隐式重写规则；组变更成功后只用固定 Collection `raw` 以固定路径 `firewall/group/reconfigure` 做一次受限 reconfigure，不级联删除、推导 ACL 或引入私有客户端，并记录共享重载副作用。
+- [x] 6.1 实现 name 身份、成员和独立 group 入口；测试固定 API 接受的成员标识、gui_group 反向字段、组序号、空/重复成员/嵌套组拒绝，确保未声明系统/VPN 组保持，形成 Groups 阶段提交。
+- [x] 6.2 接入选定声明引用校验与原生删除保护；为现有 filter-rules.interface/context.interface_networks 作最小组名兼容，验证 Internal 声明→过滤引用→上下文→实际加载校验保持大小写，VIP/Gateway 物理接口及既有 deny/反选保护不放宽。验证被引用组删除拒绝、合法外部引用不强制闭合、改名不隐式重写规则；组变更成功后只用固定 Collection `raw` 以固定路径 `firewall/group/reconfigure` 做一次受限 reconfigure，不级联删除、推导 ACL 或引入私有客户端，并记录共享重载副作用。
 
 ## 7. 统一验收与交付
 
