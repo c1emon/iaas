@@ -1,0 +1,13 @@
+---
+opnsense_one_to_one_nat_rules:
+  - scope: example
+    slug: web
+    state: present
+    enabled: true
+    sequence: 100
+    interface: wan
+    type: binat
+    external: 198.51.100.10
+    source_net: 192.0.2.10
+    destination_net: any
+    nat_reflection: disable

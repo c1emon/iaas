@@ -11,17 +11,26 @@ from iaas_automation.common.errors import ValidationError
 from .aliases import ALIAS_NAME, validate_frequency, validate_local, validate_url
 
 
-RESOURCE_FILES = {
+DEFAULT_RESOURCE_FILES = {
     "aliases": "aliases.yml",
     "vips": "vips.yml",
     "gateways": "gateways.yml",
     "filter-rules": "filter-rules.yml",
+}
+RESOURCE_FILES = {
+    **DEFAULT_RESOURCE_FILES,
+    "dnat": "dnat.yml",
+    "one-to-one-nat": "one-to-one-nat.yml",
+    "interface-groups": "interface-groups.yml",
 }
 TOP_LEVEL = {
     "aliases": "opnsense_aliases",
     "vips": "opnsense_vips",
     "gateways": "opnsense_gateways",
     "filter-rules": "opnsense_filter_rules",
+    "dnat": "opnsense_dnat_rules",
+    "one-to-one-nat": "opnsense_one_to_one_nat_rules",
+    "interface-groups": "opnsense_interface_groups",
 }
 IDENTIFIER = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]*$")
 INTERFACE = re.compile(r"^[a-z][a-z0-9_]*$")
@@ -55,6 +64,15 @@ def _string(value: Any, path: str, *, pattern: re.Pattern[str] | None = None) ->
 def _boolean(value: Any, path: str) -> bool:
     if type(value) is not bool:
         _error(path, "must be a boolean")
+    return value
+
+
+def _rule_interface(value: Any, path: str) -> str:
+    from .interface_groups import GROUP_NAME
+
+    value = _string(value, path)
+    if not INTERFACE.fullmatch(value) and not GROUP_NAME.fullmatch(value):
+        _error(path, "must be a physical interface key or valid interface group name")
     return value
 
 
@@ -242,7 +260,7 @@ def _validate_filter_rule(record: dict[str, Any], path: str, context: dict | Non
     _integer(record["sequence"], f"{path}.sequence", minimum=1, maximum=99999)
     interfaces = _list(record["interface"], f"{path}.interface")
     for index, interface in enumerate(interfaces):
-        _string(interface, f"{path}.interface[{index}]", pattern=INTERFACE)
+        _rule_interface(interface, f"{path}.interface[{index}]")
     for field, allowed in {"direction": {"in", "out"}, "action": {"pass", "block", "reject"}, "ip_protocol": {"inet", "inet6", "inet46"}, "protocol": {"any", "TCP", "UDP", "TCP/UDP", "ICMP", "ICMPv6"}}.items():
         value = _string(record[field], f"{path}.{field}")
         if value not in allowed:
@@ -267,7 +285,13 @@ def _validate_filter_rule(record: dict[str, Any], path: str, context: dict | Non
     return (f"iaas:opnsense:filter:{scope}:{slug}",)
 
 
-VALIDATORS = {"aliases": _validate_alias, "vips": _validate_vip, "gateways": _validate_gateway, "filter-rules": _validate_filter_rule}
+from .dnat import validate_dnat
+from .one_to_one import validate_one_to_one
+from .interface_groups import validate_interface_group
+
+VALIDATORS = {"aliases": _validate_alias, "vips": _validate_vip, "gateways": _validate_gateway,
+              "filter-rules": _validate_filter_rule, "dnat": validate_dnat,
+              "one-to-one-nat": validate_one_to_one, "interface-groups": validate_interface_group}
 
 
 def _validate_rule_context(value: Any) -> dict:
@@ -275,7 +299,7 @@ def _validate_rule_context(value: Any) -> dict:
     _shape(context, "opnsense_filter_rule_context", {"interface_networks", "aliases"})
     networks = _mapping(context["interface_networks"], "interface_networks")
     for interface, values in networks.items():
-        _string(interface, "interface_networks key", pattern=INTERFACE)
+        _rule_interface(interface, "interface_networks key")
         values = _list(values, "interface_networks[]")
         if not values:
             _error("interface_networks[]", "must not be empty")
@@ -361,12 +385,35 @@ def validate_documents(documents: dict[str, Any]) -> None:
     for row in context.get("aliases", []):
         if row["name"] in selected and row != selected[row["name"]]:
             _error("opnsense_filter_rule_context.aliases", "conflicts with selected alias declaration")
+    groups = {row["name"]: row for row in documents.get("interface-groups", {}).get("opnsense_interface_groups", [])}
+    for name, group in groups.items():
+        if group['state'] == 'present' and set(group['members']) & groups.keys():
+            _error(name, 'nested interface groups are not supported')
+    for resource in ('filter-rules', 'dnat', 'one-to-one-nat'):
+        for row in documents.get(resource, {}).get(TOP_LEVEL[resource], []):
+            if row['state'] != 'present':
+                continue
+            interfaces = row['interface'] if isinstance(row['interface'], list) else [row['interface']]
+            for interface in interfaces:
+                if interface in groups and groups[interface]['state'] == 'absent':
+                    _error(resource + '.interface', 'references an interface group selected for deletion')
+            if resource == 'filter-rules':
+                continue
+            for field in ('source_net', 'destination_net', 'target', 'external',
+                          'source_port', 'destination_port', 'local_port'):
+                alias = selected.get(row.get(field))
+                if alias is None:
+                    continue
+                if alias['state'] == 'absent':
+                    _error(resource + '.' + field, 'references an alias selected for deletion')
+                if (field.endswith('port')) != (alias['type'] == 'port'):
+                    _error(resource + '.' + field, 'selected alias has an incompatible type')
 
 
 def validate_all(vars_dir: Path) -> None:
     try:
         documents = {resource: yaml.safe_load((vars_dir / filename).read_text(encoding="utf-8"))
-                     for resource, filename in RESOURCE_FILES.items()}
+                     for resource, filename in DEFAULT_RESOURCE_FILES.items()}
     except (OSError, yaml.YAMLError):
         _error(str(vars_dir), "could not load YAML")
     validate_documents(documents)
