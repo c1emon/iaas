@@ -152,8 +152,13 @@ def test_supported_mutation_playbooks_validate_before_credentials_and_mutation(
     assert "check_mode: false" in source[: source.index("ansible.builtin.include_vars:")]
 
 
-def test_dnat_placeholder_resolves_relocated_source_and_fails_closed(tmp_path: Path) -> None:
+def test_dnat_source_override_is_rejected_before_credentials(tmp_path: Path) -> None:
     playbook_path = ROOT / "automation/ansible/playbooks/opnsense/manage-dnat.yml"
+    invalid_source = tmp_path / "generated-dnat.yml"
+    invalid_source.write_text(
+        "opnsense_dnat_rules:\n  - scope: invalid scope\n    slug: web\n    state: present\n",
+        encoding="utf-8",
+    )
 
     result = subprocess.run(
         [
@@ -165,6 +170,8 @@ def test_dnat_placeholder_resolves_relocated_source_and_fails_closed(tmp_path: P
             "--limit",
             "firewall-a",
             str(playbook_path),
+            "-e",
+            f"opnsense_dnat_source={invalid_source}",
         ],
         cwd=ROOT,
         capture_output=True,
@@ -178,5 +185,6 @@ def test_dnat_placeholder_resolves_relocated_source_and_fails_closed(tmp_path: P
     )
     assert result.returncode != 0
     output = result.stdout + result.stderr
-    assert "Stop because OPNsense DNAT management is not implemented" in output
-    assert "the selected environment ansible/vars/opnsense/dnat.yml" in output
+    assert "opnsense validation failed" in output
+    assert "Run OPNsense API credential preflight" not in output
+    assert "OPNSENSE_API_KEY" not in output

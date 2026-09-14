@@ -6,6 +6,7 @@ import subprocess
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
+LIFECYCLE = ROOT / 'tests/fixtures/opnsense-nat/provider_lifecycle.py'
 
 
 @pytest.mark.parametrize('resource', ['nat_destination', 'nat_one_to_one', 'rule_interface_group'])
@@ -55,4 +56,22 @@ print('check mode predicted creation without writes')
                             capture_output=True, text=True,
                             env=os.environ | {'TEST_NAT_PROVIDER': resource,
                                               'PYTHONPATH': str(ROOT / 'automation/ansible/collections')})
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize('resource', ['nat_destination', 'nat_one_to_one', 'rule_interface_group'])
+def test_candidate_lifecycle_uses_real_module_and_fixture_arguments(resource):
+    result = subprocess.run(
+        ['uv', 'run', 'python', str(LIFECYCLE)],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        env=os.environ | {
+            'TEST_NAT_PROVIDER': resource,
+            'PYTHONPATH': os.pathsep.join([
+                str(ROOT / 'automation/src'),
+                str(ROOT / 'automation/ansible/collections'),
+            ]),
+        },
+    )
     assert result.returncode == 0, result.stdout + result.stderr

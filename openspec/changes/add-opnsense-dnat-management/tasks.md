@@ -9,13 +9,15 @@
 - [x] 2.1 建立两类 NAT 公共身份和生命周期辅助，三个资源独立 validator/分派，不建立万能 NAT 字段模型；以 DNAT/1:1 NAT/Groups 的最小合法/非法输入、NAT 间同名身份合法及类内冲突拒绝、未知字段与严格类型测试为依据。DNAT 对 present 精确匹配对象增加首个写入前只读模式核对，代表性测试 `nordr` 为真或无法判定时整批拒绝、正常规则可更新及 absent 仍可精确删除，不转换免转发例外模式。
 - [ ] 2.2 接入三个显式 resource/file key 和 runtime 离线 check/generate 选择，不新增 launcher apply；按 design 的三个直接 Ansible 入口与源路径变量接收生成文件，指定 inventory/limit，复用同一合同验证源文件和实际加载值，再做凭据预检。验证旧四文件目录不要求新增文件、未选择资源不被自动纳管、空表不清空对象，`snat` 选择明确拒绝，以有/无新增资源场景、生成文件交接和 extra-vars 非法值测试为依据，独立提交。
 
-## 3. Source NAT（延期阶段，不计本轮验收）
+## 3. Source NAT 位置预留（功能延期）
 
-- [ ] 3.1 等上游修复 26.7 读取/稳定身份兼容后，恢复 `snat.yml` / `opnsense_snat_rules` / `manage-snat.yml` / `opnsense_snat_source` 的独立 change；测试字面端口/范围、整数 target_port、static_port 冲突、no_nat 明确拒绝、地址族和外部引用，确认不切换出站 NAT 模式、不操作自动规则。本任务保持未完成，不属于本轮三资源交付。
+- [x] 3.1 按用户要求保留 `snat.yml` / `opnsense_snat_rules` / `manage-snat.yml` / `opnsense_snat_source` 位置和延期设计。占位入口普通执行及 check mode 明确提示未实现，不读取源文件、凭据或设备；不注册为当前可用资源。
+
+SNAT 功能尚未实现，不计本轮验收。待上游修复 26.7 读取/稳定身份兼容后，以独立 change 恢复设计第 2.2 节的字段与生命周期实现；届时验证 target_port/static_port、no_nat、地址族及出站模式边界。
 
 ## 4. Destination NAT（独立阶段）
 
-- [ ] 4.1 替换 DNAT placeholder，接入独立参数和增删改/启停；测试 nat_reflection、associated_rule、大小写/disabled 转换、关联模式切换及删除、local_port 字面范围拒绝、no_port_forward 拒绝、重复身份处理，形成 DNAT 阶段提交，不添加站点 WAN-only 校验。
+- [x] 4.1 替换 DNAT placeholder，接入独立参数和增删改/启停；测试 nat_reflection、associated_rule、大小写/disabled 转换、关联模式切换及删除、local_port 字面范围拒绝、no_port_forward 拒绝、重复身份处理，形成 DNAT 阶段提交，不添加站点 WAN-only 校验。
 
 ## 5. One-to-one NAT（独立阶段）
 
