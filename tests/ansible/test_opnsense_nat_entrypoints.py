@@ -55,3 +55,29 @@ def test_actual_filter_guard_accepts_group_context_and_preserves_safety(tmp_path
                             cwd=ROOT, capture_output=True, text=True,
                             env=os.environ | {'ANSIBLE_CONFIG': str(ANSIBLE / 'ansible.cfg')})
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize('loaded_override', [False, True])
+def test_nested_groups_fail_before_credentials_in_direct_entrypoint(tmp_path, loaded_override):
+    inner = dict(name='Inner', state='present', members=['lan'], gui_group=True, sequence=0)
+    outer = dict(inner, name='Outer', members=['Inner'])
+    source = tmp_path / 'groups.yml'
+    source.write_text(yaml.safe_dump({'opnsense_interface_groups':
+                                     [inner] if loaded_override else [inner, outer]}))
+    values = {'opnsense_interface_group_source': str(source)}
+    if loaded_override:
+        values['opnsense_interface_groups'] = [inner, outer]
+    overrides = tmp_path / 'overrides.yml'
+    overrides.write_text(yaml.safe_dump(values))
+    result = subprocess.run([
+        'uv', 'run', 'ansible-playbook', '-i', 'opnsense,', '--limit', 'opnsense',
+        str(ANSIBLE / 'playbooks/opnsense/manage-interface-groups.yml'),
+        '--check', '-e', f'@{overrides}',
+    ], cwd=ROOT, capture_output=True, text=True,
+        env=os.environ | {'ANSIBLE_CONFIG': str(ANSIBLE / 'ansible.cfg')})
+    output = result.stdout + result.stderr
+    assert result.returncode != 0
+    assert 'nested interface groups' in output
+    assert 'Verify the selected OPNsense provider' not in output
+    assert 'Assert OPNsense API credentials are provided by environment' not in output
+    assert 'Read existing interface groups' not in output

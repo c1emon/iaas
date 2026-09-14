@@ -1,6 +1,7 @@
 import pytest
 
 from iaas_automation.common.errors import ValidationError
+from iaas_automation.opnsense_validation import validate_document
 from iaas_automation.opnsense_validation.interface_groups import validate_interface_group
 
 
@@ -55,3 +56,13 @@ def test_foreign_fields_and_description_type_are_rejected():
         validate_interface_group(valid_record(enabled=True), "groups[0]")
     with pytest.raises(ValidationError, match="description"):
         validate_interface_group(valid_record(description=False), "groups[0]")
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_single_document_rejects_nested_groups_in_either_order(reverse):
+    records = [valid_record(name="Inner", members=["lan"]),
+               valid_record(name="Outer", members=["Inner"])]
+    if reverse:
+        records.reverse()
+    with pytest.raises(ValidationError, match="nested interface groups"):
+        validate_document("interface-groups", {"opnsense_interface_groups": records})

@@ -157,3 +157,26 @@ def test_input_is_not_mutated() -> None:
     original = deepcopy(record)
     validate_dnat(record, "opnsense_dnat_rules[0]")
     assert record == original
+
+
+@pytest.mark.parametrize("source,destination,target", [
+    ("192.0.2.0/24", "2001:db8::1", "TARGET_ALIAS"),
+    ("2001:db8::/64", "192.0.2.1", "TARGET_ALIAS"),
+    ("192.0.2.1", "any", "2001:db8::10"),
+    ("any", "2001:db8::1", "192.0.2.10"),
+])
+def test_inet46_rejects_conflicting_positive_literal_families(source, destination, target):
+    with pytest.raises(ValidationError, match="address family"):
+        validate_dnat(_present(ip_protocol="inet46", source_net=source,
+                               destination_net=destination, target=target), "dnat[0]")
+
+
+@pytest.mark.parametrize("overrides", [
+    dict(source_net="192.0.2.0/24", destination_net="198.51.100.1", target="192.0.2.10"),
+    dict(source_net="2001:db8::/64", destination_net="2001:db8:1::1", target="2001:db8:2::10"),
+    dict(source_net="SOURCE_ALIAS", destination_net="wanip", target="TARGET_ALIAS"),
+    dict(source_net="2001:db8::/64", source_invert=True, destination_net="198.51.100.1"),
+    dict(source_net="192.0.2.0/24", destination_net="2001:db8::1", destination_invert=True),
+])
+def test_inet46_preserves_same_family_unresolved_and_inverted_inputs(overrides):
+    validate_dnat(_present(ip_protocol="inet46", **overrides), "dnat[0]")

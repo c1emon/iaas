@@ -187,6 +187,17 @@ def validate_dnat(record: dict[str, Any], path: str) -> tuple[str]:
     _family_check(destination_version, ip_protocol, f"{path}.destination_net")
     _family_check(target_version, ip_protocol, f"{path}.target")
 
+    for field in {"source_invert", "destination_invert", "log"} & record.keys():
+        _boolean(record[field], f"{path}.{field}")
+    # Only positive literal matches constrain the packet family.  An inverted
+    # address excludes a set; aliases and interface tokens remain unresolved.
+    families = {target_version} - {None}
+    for field, version in (("source", source_version), ("destination", destination_version)):
+        if version is not None and not record.get(f"{field}_invert", False):
+            families.add(version)
+    if len(families) > 1:
+        _error(path, "address family conflicts between positive literal matches and target")
+
     if "source_port" in record:
         _port(record["source_port"], f"{path}.source_port", allow_range=True)
     if "destination_port" in record:
@@ -197,8 +208,6 @@ def validate_dnat(record: dict[str, Any], path: str) -> tuple[str]:
         if protocol_lower not in PORT_PROTOCOLS:
             _error(f"{path}.protocol", "ports require tcp, udp or tcp/udp")
 
-    for field in {"source_invert", "destination_invert", "log"} & record.keys():
-        _boolean(record[field], f"{path}.{field}")
     if "pool_opts" in record:
         _choice(record["pool_opts"], f"{path}.pool_opts", POOL_OPTIONS)
     if "nat_reflection" in record:

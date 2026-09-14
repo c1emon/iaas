@@ -37,6 +37,10 @@ Groups SHALL use manage-interface-groups.yml with caller inventory and explicit 
 - **WHEN** runtime generate emits a selected interface-groups file
 - **THEN** no group write occurs until the caller explicitly invokes the corresponding Ansible playbook
 
+#### Scenario: Direct input contains newly declared nested groups
+- **WHEN** the selected group file or actual loaded list declares Inner with member lan and Outer with member Inner in either order
+- **THEN** shared single-document validation rejects the nested reference before provider or credential access, even when neither group exists on the appliance
+
 ### Requirement: Reference-safe group lifecycle
 The system SHALL reject deletion when selected surviving rules reference the group and SHALL respect appliance-side reference protection for references outside selected inputs. It SHALL NOT cascade-delete rules, implicitly rename groups or rewrite appliance-wide references. Legal external group references SHALL remain distinct from locally verified membership facts and SHALL NOT require a complete appliance graph.
 

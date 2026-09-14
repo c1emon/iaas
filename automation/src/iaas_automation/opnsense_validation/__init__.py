@@ -366,6 +366,11 @@ def validate_document(resource: str, document: Any) -> None:
         identities.add(identity)
     if resource == 'aliases':
         validate_local(records)
+    if resource == 'interface-groups':
+        groups = {row['name'] for row in records}
+        for index, group in enumerate(records):
+            if group['state'] == 'present' and set(group['members']) & groups:
+                _error(f'{top_level}[{index}].members', 'nested interface groups are not supported')
 
 
 def validate_file(resource: str, path: Path) -> None:
@@ -386,9 +391,6 @@ def validate_documents(documents: dict[str, Any]) -> None:
         if row["name"] in selected and row != selected[row["name"]]:
             _error("opnsense_filter_rule_context.aliases", "conflicts with selected alias declaration")
     groups = {row["name"]: row for row in documents.get("interface-groups", {}).get("opnsense_interface_groups", [])}
-    for name, group in groups.items():
-        if group['state'] == 'present' and set(group['members']) & groups.keys():
-            _error(name, 'nested interface groups are not supported')
     for resource in ('filter-rules', 'dnat', 'one-to-one-nat'):
         for row in documents.get(resource, {}).get(TOP_LEVEL[resource], []):
             if row['state'] != 'present':

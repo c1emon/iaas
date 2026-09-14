@@ -30,6 +30,10 @@ The system SHALL support present/absent, enabled state, sequence, interfaces, IP
 - **WHEN** the appliance contains rules absent from the selected declaration
 - **THEN** they remain untouched, regardless of similar ports, targets or names
 
+#### Scenario: Dual-stack declaration has conflicting literal families
+- **WHEN** an inet46 declaration contains conflicting address families among non-inverted literal source/destination matches and its literal translation target
+- **THEN** offline and actual-loaded-input validation reject it before credentials; inverted matches and unresolved aliases are not treated as positive literal family constraints
+
 ### Requirement: Native translation-port constraints
 Source and destination matching ports SHALL support the verified native ranges and port aliases. local_port SHALL accept a single numeric port, a native well-known port name or a valid port alias, and SHALL reject literal ranges unsupported by the native local-port field. Omitting local_port SHALL clear a prior translated port and preserve the packet's original destination port, not the previously saved translation setting.
 
