@@ -1,0 +1,19 @@
+---
+- name: Reserved OPNsense Source NAT management entrypoint
+  hosts: opnsense
+  gather_facts: false
+  connection: local
+
+  vars:
+    opnsense_snat_source: >-
+      {{ lookup('ansible.builtin.env', 'ENVIRONMENT_DIR', default=undef()) }}/ansible/vars/opnsense/snat.yml
+
+  tasks:
+    - name: Stop while Source NAT provider support is deferred
+      ansible.builtin.fail:
+        msg: >-
+          Source NAT management is reserved but not implemented. The pinned
+          provider's SNAT read API is incompatible with OPNsense 26.7
+          (O-X-L/ansible-opnsense issue 446). The future source is snat.yml,
+          with opnsense_snat_rules and source override opnsense_snat_source.
+          No source data, credentials or device state are read or changed.

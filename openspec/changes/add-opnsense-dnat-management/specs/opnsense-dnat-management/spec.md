@@ -38,7 +38,7 @@ Source and destination matching ports SHALL support the verified native ranges a
 - **THEN** offline validation rejects it even if the provider documentation describes generic port ranges
 
 ### Requirement: Native options do not imply site policy
-The system SHALL require present declarations to explicitly select per-rule reflection and associated-filter mode, including explicit inheritance/manual values. It SHALL NOT change global reflection settings, synthesize site SNAT or policy routing, infer WAN-only intent, or embed caller-specific addresses. Generic valid any-destination and NAT-pass use cases SHALL remain available. Device-associated filter objects SHALL remain owned by the DNAT association rather than independently duplicated by this workflow.
+The system SHALL require present declarations to explicitly select per-rule reflection and associated-filter mode, including explicit inheritance/manual values. It SHALL NOT change global reflection settings, synthesize site SNAT or policy routing, infer WAN-only intent, or embed caller-specific addresses. Generic valid any-destination and NAT-pass use cases SHALL remain available. With `associated_rule=rule`, the native filter rule is generated temporarily by the appliance on filter reload and has no independent UUID or persistent filter configuration; it remains owned by the DNAT association rather than independently duplicated by this workflow.
 
 #### Scenario: Caller selects inherited reflection
 - **WHEN** nat_reflection is an explicit empty string
@@ -49,8 +49,8 @@ The system SHALL require present declarations to explicitly select per-rule refl
 - **THEN** DNAT management does not create an independent allow rule; caller-owned filter declarations determine authorization
 
 #### Scenario: Association changes or DNAT is removed
-- **WHEN** the caller changes associated-filter mode or deletes its DNAT
-- **THEN** behavior follows the verified native association lifecycle and does not leave a separately iaas-created duplicate allow rule
+- **WHEN** the caller changes associated-filter mode, disables the DNAT, or deletes it
+- **THEN** the next native filter reload removes or regenerates the temporary associated rule according to the new mode, with no separately editable or iaas-created persistent filter object left behind
 
 ### Requirement: Controlled batch activation and failure reporting
 The system SHALL save each declared change without per-item reload, activate once after successful changed reconciliation, and never activate in check mode. CRUD failure SHALL stop activation and report possible partial saved changes. Activation failure SHALL distinguish saved and running state, without claiming rollback. An explicit validated boolean force-reload option SHALL support activation recovery after an unchanged rerun.

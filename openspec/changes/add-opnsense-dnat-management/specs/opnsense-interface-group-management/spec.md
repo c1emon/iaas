@@ -49,7 +49,7 @@ The system SHALL reject deletion when selected surviving rules reference the gro
 - **THEN** deletion fails clearly without removing that rule or bypassing the native guard
 
 ### Requirement: Group activation and access policy boundaries
-The system SHALL validate the whole selected group batch and actual Ansible-loaded values before credentials, suppress per-item reload and use the verified group reconfigure path after successful changes. Check mode SHALL not mutate or reconfigure. Partial-save and activation failures SHALL be distinguished with explicit force-reload recovery. Reconfigure's shared filter reload effects SHALL be documented. Group membership SHALL NOT be interpreted as permission to access destinations or bypass interface ACL ordering.
+The system SHALL validate the whole selected group batch and actual Ansible-loaded values before credentials, suppress per-item reload and use the fixed Collection's `oxlorg.opnsense.raw` module with the fixed POST path `firewall/group/reconfigure` once after successful changes. Check mode SHALL not mutate or reconfigure. Partial-save and activation failures SHALL be distinguished with explicit force-reload recovery. Arbitrary API paths/bodies and private API clients SHALL NOT be exposed or introduced. Reconfigure's shared filter reload effects SHALL be documented. Group membership SHALL NOT be interpreted as permission to access destinations or bypass interface ACL ordering.
 
 #### Scenario: Membership affects existing policy
 - **WHEN** a caller changes membership of a group referenced by rules
@@ -58,3 +58,7 @@ The system SHALL validate the whole selected group batch and actual Ansible-load
 #### Scenario: Group reconfigure fails
 - **WHEN** changes were saved but group reconfigure fails
 - **THEN** the result reports saved/running divergence and no automatic rollback
+
+#### Scenario: Group reconfigure uses the fixed raw path
+- **WHEN** a selected group batch has changes and is not running in check mode
+- **THEN** the workflow invokes the fixed Collection raw module once with `firewall/group/reconfigure`, while arbitrary endpoints and private clients remain unavailable

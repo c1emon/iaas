@@ -45,7 +45,10 @@ WORKDIR /opt/iaas
 COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev --group runtime --no-install-project --python /usr/local/bin/python3.12
 COPY automation/runtime/collections.yml /tmp/collections.yml
-RUN .venv/bin/ansible-galaxy collection install --no-deps -r /tmp/collections.yml -p /opt/iaas/automation/ansible/collections
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+ && .venv/bin/ansible-galaxy collection install --no-deps -r /tmp/collections.yml -p /opt/iaas/automation/ansible/collections \
+ && apt-get purge -y --auto-remove git \
+ && rm -rf /var/lib/apt/lists/*
 COPY automation/runtime/prune.py /tmp/prune.py
 RUN python /tmp/prune.py
 

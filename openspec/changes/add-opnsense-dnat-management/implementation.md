@@ -1,5 +1,17 @@
 # 实施记录
 
+## 当前范围调整（2026-09-14）
+
+用户明确要求 SNAT 暂缓、保留位置，待上游修复后再做。本轮继续 DNAT、1:1 NAT、Groups；下文四资源统一阻塞结论是范围调整前的历史记录，不再以 SNAT 阻断剩余三资源。
+
+预留 `manage-snat.yml`、`snat.yml`、`opnsense_snat_rules` 和源路径变量 `opnsense_snat_source`。占位入口在读取源文件、凭据和设备之前明确失败，不注册可用 SNAT validator/runtime resource，不改变旧四文件目录校验。普通执行和 check mode 均已验证明确提示未实现，changed=0；两份新增 YAML 的 yamllint 通过。这里完成的是位置预留，SNAT 功能仍延期。
+
+剩余三资源已完成读取路径源码审查：DNAT 使用 `DNat.rule`、1:1 使用 `filter.onetoone.rule`、Groups 使用 `group.ifgroupentry`；1:1 没有 SNAT 的 getAction 覆盖。DNAT 的 associated_rule=rule 在 filter reload 时临时生成关联规则，没有独立持久 UUID；切换、禁用、删除后在下次 apply 消失。依据为 26.7 的各控制器、ApiMutableModelControllerBase、filter.lib.inc 和 ForwardRule.php，未进行设备验证。
+
+依赖阶段：开发与 OCI 的 Collection 清单均固定 Git 源 `1423500c29f88da9ba8147a23fc64006cf464159`，本地实际安装成功。OCI 安装时使用 Git，随后卸载，不在运行时下载或升级。候选自身仍标记版本 26.1.11，DNAT 为 unstable，不能用版本字符串代替源码 SHA。67 项既有 CI/OPNsense 校验、上下文、提供者及恢复测试通过；新增三项真实模块 check mode 创建预测测试通过，外部会话替换为无写测试替身。未构建或发布镜像，不宣称现场通过。
+
+以下为范围调整前的准入及阻塞历史，用于保留延期原因。
+
 ## 实施准入（2026-09-14）
 
 - 用户已明确授权持续实施和阶段提交。开始时位于 `add-opnsense-dnat-management`，HEAD 为 `c2ba443`，工作树干净；未创建或切换分支。
