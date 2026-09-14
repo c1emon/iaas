@@ -1,0 +1,10 @@
+---
+- name: Create, update, or remove one admitted DNAT rule  # noqa: args[module]
+  oxlorg.opnsense.nat_destination: "{{ dnat_item | opnsense_resource_arguments('dnat') }}"
+  register: opnsense_dnat_item_apply
+  no_log: true
+
+- name: Accumulate saved DNAT changes
+  ansible.builtin.set_fact:
+    opnsense_dnat_apply:
+      changed: "{{ opnsense_dnat_apply.changed or opnsense_dnat_item_apply.changed }}"

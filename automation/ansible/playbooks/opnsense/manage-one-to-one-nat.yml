@@ -1,0 +1,82 @@
+---
+- name: Additively manage OPNsense one-to-one NAT rules
+  hosts: opnsense
+  gather_facts: false
+  connection: local
+
+  module_defaults:
+    group/oxlorg.opnsense.all:
+      firewall: "{{ opnsense_api_host }}"
+      api_key: "{{ opnsense_api_key }}"
+      api_secret: "{{ opnsense_api_secret }}"
+      ssl_verify: "{{ opnsense_ssl_verify }}"
+
+  vars:
+    opnsense_one_to_one_nat_source: >-
+      {{ lookup('ansible.builtin.env', 'ENVIRONMENT_DIR', default=undef()) }}/ansible/vars/opnsense/one-to-one-nat.yml
+    managed_resource: one-to-one-nat
+    managed_resource_key: opnsense_one_to_one_nat_rules
+    managed_source_var: "{{ opnsense_one_to_one_nat_source }}"
+
+  tasks:
+    - name: Admit and load the selected one-to-one NAT source
+      ansible.builtin.import_tasks: tasks/admit-managed-resource.yml
+
+    - name: Run OPNsense API credential preflight
+      ansible.builtin.import_tasks: tasks/api-credential-preflight.yml
+
+    - name: Read existing one-to-one NAT definitions before any write  # noqa: args[module]
+      oxlorg.opnsense.list:
+        target: nat_one_to_one
+      register: opnsense_one_to_one_nat_live
+      changed_when: false
+      no_log: true
+
+    - name: Preflight all declared one-to-one NAT identities
+      ansible.builtin.assert:
+        that:
+          - >-
+            opnsense_one_to_one_nat_rules
+            | opnsense_resource_preflight(opnsense_one_to_one_nat_live.data, 'one-to-one-nat')
+
+    - name: Initialize one-to-one NAT saved-configuration change state
+      ansible.builtin.set_fact:
+        opnsense_one_to_one_nat_apply:
+          changed: false
+
+    - name: Reconcile admitted one-to-one NAT rules in declaration order
+      block:
+        - name: Apply one one-to-one NAT rule at a time
+          ansible.builtin.include_tasks: tasks/manage-one-to-one-nat-item.yml
+          loop: "{{ opnsense_one_to_one_nat_rules }}"
+          loop_control:
+            loop_var: one_to_one_nat_item
+            label: "{{ one_to_one_nat_item.scope }}:{{ one_to_one_nat_item.slug }}"
+      rescue:
+        - name: Report partial one-to-one NAT reconciliation
+          ansible.builtin.fail:
+            msg: >-
+              OPNsense one-to-one NAT reconciliation failed. Some configuration may
+              have been saved; later rules and activation were not attempted.
+              No rollback was performed. Correct the cause and rerun this target;
+              use opnsense_force_reload=true as a JSON/YAML boolean for activation recovery.
+
+    - name: Activate saved one-to-one NAT after changes or explicit recovery
+      when:
+        - not ansible_check_mode
+        - opnsense_one_to_one_nat_apply.changed or opnsense_force_reload | default(false)
+      block:
+        - name: Apply the saved one-to-one NAT configuration  # noqa: args[module]
+          oxlorg.opnsense.reload:
+            target: nat_one_to_one
+        - name: Report one-to-one NAT activation success
+          ansible.builtin.debug:
+            msg: "OPNsense one-to-one NAT: reconciliation succeeded; activation succeeded"
+      rescue:
+        - name: Report saved one-to-one NAT configuration and failed activation
+          ansible.builtin.fail:
+            msg: >-
+              OPNsense one-to-one NAT: reconciliation succeeded but activation failed;
+              saved configuration may differ from active configuration. Correct the
+              cause and rerun with opnsense_force_reload=true as a JSON/YAML boolean.
+              No rollback was performed.

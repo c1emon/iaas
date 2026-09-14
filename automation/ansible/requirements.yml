@@ -1,7 +1,8 @@
 ---
 collections:
-  - name: oxlorg.opnsense
-    version: "26.1.11"
+  - name: https://github.com/O-X-L/ansible-opnsense.git
+    type: git
+    version: "1423500c29f88da9ba8147a23fc64006cf464159"
   - name: community.general
     version: "13.4.0"
   - name: community.library_inventory_filtering_v1

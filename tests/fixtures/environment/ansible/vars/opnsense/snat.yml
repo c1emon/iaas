@@ -1,0 +1,4 @@
+---
+# Reserved for a future upstream-compatible SNAT implementation.
+# This file is not selected by default or registered as a supported resource.
+opnsense_snat_rules: []

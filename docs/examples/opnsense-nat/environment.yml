@@ -1,0 +1,9 @@
+---
+schema_version: 1
+environment: synthetic-opnsense-nat
+components:
+  opnsense:
+    inputs:
+      dnat: dnat.yml
+      one-to-one-nat: one-to-one-nat.yml
+      interface-groups: interface-groups.yml

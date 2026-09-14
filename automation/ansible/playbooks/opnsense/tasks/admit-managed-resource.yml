@@ -1,0 +1,51 @@
+---
+- name: Validate explicit activation recovery option before credential access
+  ansible.builtin.assert:
+    that:
+      - opnsense_force_reload | default(false) is boolean
+    fail_msg: opnsense_force_reload must be a YAML or JSON boolean
+  changed_when: false
+
+- name: Validate the selected OPNsense resource source offline
+  ansible.builtin.command:
+    argv:
+      - uv
+      - run
+      - --no-sync
+      - --directory
+      - "{{ playbook_dir }}/../../../.."
+      - python
+      - -m
+      - iaas_automation.opnsense_validation
+      - --resource
+      - "{{ managed_resource }}"
+      - --file
+      - "{{ managed_source_var }}"
+  args:
+    chdir: "{{ playbook_dir }}/../../../.."
+  environment:
+    PYTHONPATH: "{{ playbook_dir }}/../../../src"
+  changed_when: false
+  check_mode: false
+
+- name: Load the selected OPNsense resource source
+  ansible.builtin.include_vars:
+    file: "{{ managed_source_var }}"
+
+- name: Revalidate the actual loaded OPNsense resource
+  ansible.builtin.assert:
+    that:
+      - lookup('ansible.builtin.vars', managed_resource_key) | opnsense_resource_admission(managed_resource)
+    fail_msg: >-
+      The loaded {{ managed_resource }} input failed the same resource
+      admission checks used by offline validation.
+
+- name: Verify the selected OPNsense provider is ready locally
+  ansible.builtin.assert:
+    that:
+      - managed_resource | opnsense_provider_readiness
+    fail_msg: >-
+      The selected OPNsense provider is unavailable or has an unexpected
+      version. Reinstall the locked collection from
+      automation/ansible/requirements.yml before retrying.
+  changed_when: false

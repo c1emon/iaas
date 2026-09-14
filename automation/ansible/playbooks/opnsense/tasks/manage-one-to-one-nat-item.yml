@@ -1,0 +1,10 @@
+---
+- name: Create, update, or remove one admitted one-to-one NAT rule  # noqa: args[module]
+  oxlorg.opnsense.nat_one_to_one: "{{ one_to_one_nat_item | opnsense_resource_arguments('one-to-one-nat') }}"
+  register: opnsense_one_to_one_nat_item_apply
+  no_log: true
+
+- name: Accumulate saved one-to-one NAT changes
+  ansible.builtin.set_fact:
+    opnsense_one_to_one_nat_apply:
+      changed: "{{ opnsense_one_to_one_nat_apply.changed or opnsense_one_to_one_nat_item_apply.changed }}"

@@ -1,0 +1,8 @@
+---
+opnsense_interface_groups:
+  - name: Internal
+    state: present
+    members: [lan, opt1]
+    gui_group: true
+    sequence: 10
+    description: Synthetic internal interfaces

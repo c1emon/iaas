@@ -1,0 +1,17 @@
+---
+opnsense_dnat_rules:
+  - scope: example
+    slug: web
+    state: present
+    enabled: true
+    sequence: 100
+    interface: [wan]
+    ip_protocol: inet
+    protocol: TCP
+    source_net: any
+    destination_net: wanip
+    destination_port: "443"
+    target: 192.0.2.10
+    local_port: "8443"
+    nat_reflection: ""
+    associated_rule: rule

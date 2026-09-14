@@ -1,34 +1,90 @@
 ---
-- name: Placeholder for OPNsense DNAT management
+- name: Additively manage OPNsense destination NAT rules
   hosts: opnsense
   gather_facts: false
   connection: local
 
+  module_defaults:
+    group/oxlorg.opnsense.all:
+      firewall: "{{ opnsense_api_host }}"
+      api_key: "{{ opnsense_api_key }}"
+      api_secret: "{{ opnsense_api_secret }}"
+      ssl_verify: "{{ opnsense_ssl_verify }}"
+
   vars:
     opnsense_dnat_source: >-
       {{ lookup('ansible.builtin.env', 'ENVIRONMENT_DIR', default=undef()) }}/ansible/vars/opnsense/dnat.yml
+    managed_resource: dnat
+    managed_resource_key: opnsense_dnat_rules
+    managed_source_var: "{{ opnsense_dnat_source }}"
 
   tasks:
-    - name: Load desired OPNsense DNAT placeholder data
-      ansible.builtin.include_vars:
-        file: "{{ opnsense_dnat_source }}"
+    - name: Admit and load the selected OPNsense DNAT source
+      ansible.builtin.import_tasks: tasks/admit-managed-resource.yml
 
-    - name: Assert desired DNAT placeholder data is a sequence
+    # Credentials are inherited through the Collection's all -> system action group.
+    - name: Run OPNsense API credential preflight
+      ansible.builtin.import_tasks: tasks/api-credential-preflight.yml
+
+    - name: Read existing OPNsense destination NAT definitions before any write  # noqa: args[module]
+      oxlorg.opnsense.list:
+        target: nat_destination
+      register: opnsense_dnat_live
+      changed_when: false
+      no_log: true
+
+    - name: Preflight the complete DNAT batch against the live configuration
       ansible.builtin.assert:
         that:
-          - opnsense_dnat_rules is defined
-          - opnsense_dnat_rules is sequence
-          - opnsense_dnat_rules is not string
+          - >-
+            lookup('ansible.builtin.vars', managed_resource_key)
+            | opnsense_resource_preflight(opnsense_dnat_live.data, managed_resource)
         fail_msg: >-
-          opnsense_dnat_rules must be defined as a YAML sequence in
-          the selected environment ansible/vars/opnsense/dnat.yml.
+          OPNsense DNAT preflight rejected the selected batch because a managed
+          identity is duplicated or an existing matching rule has an unsupported
+          no_port_forward mode.
 
-    - name: Stop because OPNsense DNAT management is not implemented
-      ansible.builtin.fail:
-        msg: >-
-          OPNsense DNAT management is intentionally not implemented yet. The
-          oxlorg.opnsense collection used by this repository does not currently
-          provide a stable dedicated Destination NAT / port-forward module, so
-          this placeholder performs no API writes. Keep desired DNAT notes in
-          the selected environment ansible/vars/opnsense/dnat.yml for review only, or create a separate reviewed
-          change if a raw API workaround or native module support is introduced.
+    - name: Initialize DNAT saved-configuration change state
+      ansible.builtin.set_fact:
+        opnsense_dnat_apply:
+          changed: false
+
+    - name: Reconcile admitted DNAT rules in declaration order
+      block:
+        - name: Apply one DNAT rule at a time
+          ansible.builtin.include_tasks: tasks/manage-dnat-item.yml
+          loop: "{{ opnsense_dnat_rules }}"
+          loop_control:
+            loop_var: dnat_item
+            label: "{{ dnat_item.scope }}:{{ dnat_item.slug }}"
+          when: opnsense_dnat_rules | length > 0
+      rescue:
+        - name: Report partial DNAT reconciliation
+          ansible.builtin.fail:
+            msg: >-
+              OPNsense DNAT reconciliation failed. Some configuration may have
+              been saved; later rules and activation were not attempted. No
+              rollback was performed. Review and correct the cause, then rerun
+              this target; use opnsense_force_reload=true as a JSON/YAML boolean
+              when activation recovery is required.
+
+    - name: Reload OPNsense destination NAT after DNAT changes  # noqa: args[module]
+      when:
+        - not ansible_check_mode
+        - (opnsense_dnat_apply | default({})).changed or opnsense_force_reload | default(false)
+      block:
+        - name: Activate saved destination NAT configuration  # noqa: args[module]
+          oxlorg.opnsense.reload:
+            target: nat_destination
+        - name: Report DNAT activation success
+          ansible.builtin.debug:
+            msg: "OPNsense DNAT: reconciliation succeeded; activation succeeded"
+      rescue:
+        - name: Report saved DNAT configuration and failed activation
+          ansible.builtin.fail:
+            msg: >-
+              OPNsense DNAT: reconciliation succeeded but activation failed;
+              saved configuration may differ from active configuration. Review
+              the appliance, then retry the same target with
+              opnsense_force_reload=true as a JSON/YAML boolean. No rollback was
+              performed.
