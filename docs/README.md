@@ -10,10 +10,12 @@
 - [原生启动器：本地 Docker / DinD](runtime-launcher.md)
 - [环境配置与保存计划](runtime-configuration.md)
 - [Runtime 适配验收记录](runtime-adaptation-validation.md)
+- [OPNsense 工作流软件验收与消费前提](../openspec/changes/add-opnsense-config-workflow/acceptance.md)
 
 - [准备与通用约定](operations/00-preparation-and-conventions.md)
 - [交换机](operations/01-switch.md)
-- [OPNsense](operations/02-opnsense.md)
+- [OPNsense：资源管理与 read / plan / apply / verify 工作流](operations/02-opnsense.md)
+- [OPNsense 工作流合成合同示例](examples/opnsense-workflow/README.md)
 - [PVE](operations/03-pve.md)
 - [VM Bootstrap](operations/04-vm-bootstrap.md)
 - [K3s](operations/05-k3s.md)

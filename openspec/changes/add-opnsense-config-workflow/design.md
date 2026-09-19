@@ -1,8 +1,12 @@
 ## Context
 
-动机和两仓边界见 [proposal.md](proposal.md)。当前 `operations.py` 仅注册 OPNsense check/generate/diagnose；diagnose 仅接受 Alias、规则日志和连接状态，不是完整配置读取器。已有七类管理 playbook 提供声明校验、模块适配和批次激活，但并不提供统一的候选、跨资源执行与恢复结果。
+实施状态：本设计已完成软件实现，四个操作已注册。当前能力限制和验证范围见
+[验收与交接](acceptance.md)；下文开头保留实施前背景，操作步骤以
+[OPNsense 手册](../../../docs/operations/02-opnsense.md) 为准。
 
-当前 NAT/DNAT/Groups 规范及 `docs/operations/02-opnsense.md` 明确禁止 launcher apply；本 change 的 delta 显式替换这些限制，旧直接调用方式仍可使用。既有资源 schema、地址族、身份、默认值、additive ownership 和提供者兼容准入保持有效。
+动机和两仓边界见 [proposal.md](proposal.md)。实施前 `operations.py` 仅注册 OPNsense check/generate/diagnose；diagnose 仅接受 Alias、规则日志和连接状态，不是完整配置读取器。实施前已有七类管理 playbook 提供声明校验、模块适配和批次激活，但并不提供统一的候选、跨资源执行与恢复结果。
+
+实施前 NAT/DNAT/Groups 规范及 `docs/operations/02-opnsense.md` 明确禁止 launcher apply；本 change 的 delta 显式替换这些限制，旧直接调用方式仍可使用。既有资源 schema、地址族、身份、默认值、additive ownership 和提供者兼容准入保持有效。
 
 2026-09-19 图分析：`validate_documents` 的 upstream 为 CRITICAL，直接调用方为 `validate_all` 和 `compile_documents`，涉及 12 个对象、8 条流程。索引提交 `52e905c` 与当前 `e336d2b` 文件树相同；此结果仅用于设计定位，实施前应刷新并重新分析实际修改。Markdown 节点 impact 为 UNKNOWN，已通过现有规范和源码交叉核对，未以零调用推断无影响。
 

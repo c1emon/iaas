@@ -16,7 +16,7 @@ VM 创建前定义网络边界，但仓库不自动管理 DNS、DHCP、物理接
 在线只读证据，不替代本章的 API 或防火墙规则审查。
 
 当前可管理范围是 API 连通、只读查询/导出/快照、调用方声明的别名、IP Alias VIP、PBR
-gateway、API-backed new filter rules，以及本 change 定义的 DNAT、1:1 NAT、Groups。
+gateway、API-backed new filter rules，以及 DNAT、1:1 NAT、Groups。
 SNAT 保留命名占位但尚未实现。DHCPv4/v6、RA/PD、WAN/PPPoE、VLAN interfaces、
 CARP、Proxy ARP、Other VIP、静态路由、gateway groups、legacy firewall/management
 rules、默认防火墙策略和关键公网入口不在本仓库管理范围。不要把“能导出”误解为
@@ -28,7 +28,7 @@ rules、默认防火墙策略和关键公网入口不在本仓库管理范围。
 | --- | --- | --- |
 | `$ENVIRONMENT_DIR/ansible/inventory.yml` | `opnsense` 组、主机别名、API host/FQDN。 | 环境源文件。 |
 | `$ENVIRONMENT_DIR/ansible/group_vars/opnsense.yml` | `opnsense_api_url`、`opnsense_ssl_verify`、API key/secret 入口。 | Key/secret 仅用环境变量。 |
-| `$ENVIRONMENT_DIR/ansible/vars/opnsense/*.yml` | 声明式期望状态，包括本章三类新增资源。 | 不从 export 复制回写。 |
+| `$ENVIRONMENT_DIR/ansible/vars/opnsense/*.yml` | 声明式期望状态，覆盖本章七类标准资源。 | 不从 export 复制回写。 |
 | `$OUTPUT_DIR/runtime/exports/opnsense/<inventory_hostname>/` | 按设备隔离的 API 导出。 | 本地观察产物，不是 apply 输入。 |
 
 | 变量 | 含义 | 约束 |
@@ -294,6 +294,31 @@ Runtime 的 OPNsense 入口是 `read`、`plan`、`apply` 和 `verify`。它们�
 `request.selection` 选择本次候选的执行集合；未选中的已声明文件仍属于候选上下文。
 未知 input 名称、未声明的选择身份和不完整的请求会在准备凭据前拒绝。
 
+该工作流已在本实现分支完成软件验证；使用前必须选择包含这四个操作的匹配
+launcher/runtime 版本和实际镜像 digest，不能据此推断既有已发布镜像已经支持。
+工作流 inventory 必须自包含：将 `opnsense_api_host` 和 `opnsense_ssl_verify` 写在
+所选主机或其组的内联 vars 中，不会自动加载相邻 `group_vars`。API 凭据由调用方
+注入环境变量，不写入 inventory 或候选。
+
+| 操作 | 输入 | 副作用 | 相对新 output 目录的主要结果 |
+| --- | --- | --- | --- |
+| `read` | inventory、request | 在线只读 | `diagnostics/result.json` |
+| `plan` | inventory、request、显式 desired inputs | 在线只读 | `plan/candidate.json`、`plan/candidate.sha256`、`plan/result.json` |
+| `apply` | inventory、candidate、绑定的 options | 可能保存配置并激活 | `recovery/result.json`、`recovery/recovery.json` |
+| `verify` | inventory、candidate | 在线只读 | `diagnostics/result.json` |
+
+`read` 不需要 desired inputs；其 `selection: {aliases: all}` 表示读取全部可观察
+Alias。在 plan 中，同样的选择表示声明文件中的全部 Alias，不意味着接管设备上的
+其他对象。明确身份选择的形式为 `aliases: [[NAME]]`；空列表不选对象。
+已有对象必须在 request 的 `managed` 或 `adopt` 中显式列出本次选择的身份，
+未选中对象保持不变。删除用标准声明的 `state: absent`，不以“从文件移除”代替。
+
+普通 no-change 不保存、不 reload。要恢复激活，须在新 request 的
+`activation_recovery` 中列出所选身份并重新 plan；它仍受漂移和共享激活准入约束。
+apply 的 `check_mode: true` 只执行准入及材料准备，不保存或激活，但仍需在线读取
+和有效的调用方检查结论。以上操作不使用 OpenTofu/S3 state。
+
+
 ```yaml
 components:
   opnsense:
@@ -324,6 +349,25 @@ desired inputs。apply 的 options 必须包含 `candidate_sha256`、`execution_
 `--execution-id` 与新 output 目录 basename 相同，并核对 runtime discovery 的
 回显。调用方负责生成新的执行身份并维持整个保存/激活窗口的串行化；这些字段
 不是分布式锁或跨主机防重放注册表。软件合同校验不等于设备写入或数据面验收。
+
+结果中的 save、activation、configuration 和 active 分别表示不同阶段。
+`accepted`/`unconfirmed` 不能当作激活成功；Groups、Gateway、动态 Alias 的原生
+`ok` 缺乏充分完成证据时会停止依赖阶段。Filter/NAT/VIP 可依据同步 configd 成功
+确认激活；其他活动核对仍按实际支持记录。`completed_with_unverified` 表示仍有
+活动项未验证，所有结果的业务验收保持 `not_performed`。
+
+显式恢复按以下步骤执行：
+
+1. 检查失败执行的私有 result/recovery，核清部分保存和后态；不整批重试旧 apply。
+2. 新环境入口的 `files` 指定 inventory、request、recovery，移除 desired inputs；
+   request 选择本次恢复身份，并显式声明需要的 managed/adopt。
+3. 执行 plan，审查新的反向候选及 SHA-256；原结果未知、后续漂移或
+   `manual_required` 均会拒绝自动恢复，须先人工核清。
+4. 使用新 execution_id、全新 output 目录和新的共享激活检查结论执行 apply，
+   再核对配置、可支持的活动项和调用方业务路径。没有自动回滚。
+
+完整的合成文件见 [request/candidate/result/recovery 示例](../examples/opnsense-workflow/README.md)。
+它们包含虚构目标和 runtime digest，不可直接用于现场执行。
 
 能力限制、软件证据和消费前提见 [交接说明](../../openspec/changes/add-opnsense-config-workflow/acceptance.md)。
 

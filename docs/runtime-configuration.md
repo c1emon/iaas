@@ -87,7 +87,8 @@ The OPNsense configuration workflow uses four operations: `read`, `plan`, `apply
 and `verify`. Its files are explicit aliases. `inventory` is always required;
 `request` is required by `read` and `plan`; `candidate` is required by `apply` and
 `verify`; `recovery` is optional for `plan` and is mutually exclusive with desired
-resource inputs. A request is always the source of the execution selection.
+resource inputs. For read/plan, the request supplies the selection; apply/verify use only the
+selection embedded in the candidate. A separate request is not loaded.
 
 ```yaml
 components:
@@ -113,7 +114,11 @@ the stable identities defined by the resource validators. `selection: {aliases: 
 all records from the declared aliases file (and all observed aliases for read). An explicit list selects identities
 such as `[SYNTHETIC_WEB]` for an alias or
 `[iaas:opnsense:dnat:synthetic:web]` for DNAT. Unknown resources and undeclared
-identities are rejected.
+identities are rejected by plan. Read selects observed identities without desired
+inputs. Existing selected objects require explicit `managed` or `adopt` identity
+lists; both are subsets of the execution selection. `activation_recovery` uses
+the same identity-list format and explicitly selects no-change activation in a
+new candidate. Empty lists select nothing; omitted records do not imply deletion.
 
 `read`, `plan` and `verify` require an empty `options` mapping. `apply` requires
 `candidate_sha256`, `execution_id` and `activation_check`, and may additionally set
