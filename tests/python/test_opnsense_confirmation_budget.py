@@ -114,3 +114,24 @@ def test_custom_transport_without_budget_support_is_unknown() -> None:
     result = complete_action(stage, {"status": "processing", "action_id": "a-1"}, Device(), lambda: None)
     assert result["status"] == "unknown"
     assert result["reason"] == "bounded_reader_unavailable"
+
+
+def test_smaller_request_budget_applies_to_boundary_reads() -> None:
+    clock = Clock()
+    session = Session(Response([b"{}"], []))
+    client = transport(session)
+
+    class Device:
+        transport = client
+
+        def observe_confirmation(self, stage, action_id, *, timeout):
+            return {'status': 'confirmed', 'complete': True, 'fresh': True, 'action_id': action_id}
+
+    stage = {'confirmation': {'wait': {
+        'deadline_seconds': 5, 'max_attempts': 1, 'request_timeout_seconds': 1, 'interval_seconds': 0,
+    }}}
+    result = complete_action(stage, {'status': 'processing', 'action_id': 'a-1'}, Device(),
+                             lambda: client._request('GET', 'firewall/alias/get'),
+                             clock=clock.now, sleep=lambda _: None)
+    assert result['status'] == 'confirmed'
+    assert session.calls[0][2]['timeout'].total == 1

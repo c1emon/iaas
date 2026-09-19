@@ -228,13 +228,13 @@ def load_candidate(path: Path, reviewed: str | None = None) -> tuple[dict, str]:
     staged = set()
     for stage in stages:
         shape(stage, {'resource', 'mode', 'identities', 'confirmation', 'content_actions'})
-        from .confirmation import WAIT_POLICY, content_actions, disposition
+        from .confirmation import content_actions, validate_wait
         confirmation = stage['confirmation']
         shape(confirmation, {'rule', 'required_evidence', 'supplementary_checks', 'capability',
                              'basis', 'gaps', 'wait', 'content_actions'})
         expected_actions = content_actions(stage, differences)
         require(stage['content_actions'] == confirmation['content_actions'] == expected_actions
-                and confirmation['wait'] == WAIT_POLICY
+                and validate_wait(confirmation['wait']) == confirmation['wait']
                 and confirmation['rule'] == 'opnsense-native-' + stage['resource'] + '-v2'
                 and confirmation['required_evidence'] == ['activation_completion'] + (
                     ['source_processing', 'content_loading'] if expected_actions else [])

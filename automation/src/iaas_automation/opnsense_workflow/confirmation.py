@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import math
 import ipaddress
 import time
 
@@ -10,6 +11,17 @@ from iaas_automation.common.errors import require
 WAIT_POLICY = {'deadline_seconds': 60, 'max_attempts': 30, 'interval_seconds': 2, 'request_timeout_seconds': 15}
 SYNC_RESOURCES = {'filter-rules', 'dnat', 'one-to-one-nat', 'vips'}
 SOURCE_FIELDS = ('type', 'content', 'updatefreq_days', 'interface', 'counters')
+
+
+def validate_wait(value: dict) -> dict:
+    require(isinstance(value, dict) and set(value) == set(WAIT_POLICY), 'invalid confirmation wait policy')
+    for field, maximum in WAIT_POLICY.items():
+        number = value[field]
+        require(type(number) in {int, float} and math.isfinite(number)
+                and (number >= 0 if field == 'interval_seconds' else number > 0) and number <= maximum,
+                'confirmation wait exceeds fixed limits')
+    require(type(value['max_attempts']) is int, 'confirmation attempts must be an integer')
+    return deepcopy(value)
 
 
 def dynamic_alias(record: dict) -> bool:
@@ -72,7 +84,7 @@ def stage_contract(stage: dict, differences: list[dict], observation: dict) -> d
             'capability': 'available' if not gaps else 'unsupported' if any(
                 gap['status'] == 'unsupported' for gap in gaps) else 'unknown',
             'basis': capabilities.get('basis', 'unavailable'), 'gaps': gaps,
-            'wait': deepcopy(WAIT_POLICY), 'content_actions': actions}
+            'wait': validate_wait(capabilities.get('wait', WAIT_POLICY)), 'content_actions': actions}
 
 
 def bind_stages(stages: list[dict], differences: list[dict], observations: dict) -> list[dict]:
@@ -119,12 +131,14 @@ def action_results(stage: dict, activation: dict) -> list[dict]:
 
 def complete_action(stage: dict, activation: dict, reader, boundary, *,
                     clock=time.monotonic, sleep=time.sleep) -> dict:
-    """Observe only an explicitly processing, identified action; never resubmit it."""
-    if activation.get('status') != 'processing':
+    """Observe an identified unfinished action through a fixed read; never resubmit it."""
+    if activation.get('status') not in {'processing', 'accepted', 'unconfirmed'}:
         return activation
     observe = getattr(reader, 'observe_confirmation', None)
     action_id = activation.get('action_id')
     if not callable(observe) or not isinstance(action_id, str) or not action_id:
+        if activation.get('status') != 'processing':
+            return activation
         return {**activation, 'status': 'unknown', 'reason': 'correlated_completion_observation_unavailable'}
     from .reader import observation_budget
     from .waiting import WaitPolicy, wait_for_confirmation
@@ -136,7 +150,8 @@ def complete_action(stage: dict, activation: dict, reader, boundary, *,
         if not isinstance(transport, FixedCollectionTransport):
             return {**activation, 'status': 'unknown', 'reason': 'bounded_reader_unavailable'}
 
-    with observation_budget(policy.deadline_seconds, clock=clock) as budget:
+    with observation_budget(policy.deadline_seconds, clock=clock,
+                            request_timeout_seconds=policy.request_timeout_seconds) as budget:
         def read(timeout: float) -> dict:
             boundary()
             remaining = budget.remaining()

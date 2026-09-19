@@ -27,6 +27,7 @@ from urllib3.util import Timeout
 from iaas_automation.opnsense_diagnostics.schema import ALIAS_NAME
 from iaas_automation.opnsense_validation import TOP_LEVEL, validate_document
 from iaas_automation.common.errors import ValidationError
+from .gateway_checks import check_gateway_current
 
 
 MAX_PAGE_ROWS = 1000
@@ -80,6 +81,7 @@ class ObservationBudget:
 
     deadline: float
     clock: Callable[[], float] = time.monotonic
+    request_timeout_seconds: float = 15.0
 
     def remaining(self) -> float:
         return max(0.0, self.deadline - self.clock())
@@ -97,12 +99,16 @@ _OBSERVATION_BUDGET: ContextVar[ObservationBudget | None] = ContextVar(
 
 
 @contextmanager
-def observation_budget(seconds: float, *, clock: Callable[[], float] = time.monotonic) -> Iterator[ObservationBudget]:
+def observation_budget(seconds: float, *, clock: Callable[[], float] = time.monotonic,
+                       request_timeout_seconds: float = 15.0) -> Iterator[ObservationBudget]:
     """Install one cooperative read deadline for nested fixed-transport calls."""
 
     if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or seconds <= 0:
         raise ValueError("observation budget must be greater than zero")
-    budget = ObservationBudget(clock() + float(seconds), clock)
+    if (isinstance(request_timeout_seconds, bool) or not isinstance(request_timeout_seconds, (int, float))
+            or not 0 < request_timeout_seconds <= 15):
+        raise ValueError("request timeout must be within the fixed limit")
+    budget = ObservationBudget(clock() + float(seconds), clock, float(request_timeout_seconds))
     token = _OBSERVATION_BUDGET.set(budget)
     try:
         yield budget
@@ -171,7 +177,7 @@ class FixedCollectionTransport:
         if budget is not None and budget.remaining() <= 0:
             raise _HttpFailure("failed", "observation_deadline_exhausted")
         try:
-            remaining = None if budget is None else budget.remaining()
+            remaining = None if budget is None else min(budget.remaining(), budget.request_timeout_seconds)
             if remaining is not None and remaining <= 0:
                 raise _HttpFailure("failed", "observation_deadline_exhausted")
             request_timeout = (5, 15) if remaining is None else Timeout(
@@ -317,6 +323,7 @@ class FixedCollectionTransport:
                 "activation_completion": "available" if supported else "unknown" if version != "26.7.3" else "unsupported",
                 "source_processing": "unsupported", "content_loading": "unsupported",
                 "basis": "OPNsense 26.7.3 / fixed Collection 1423500c29f88da9ba8147a23fc64006cf464159",
+                "device_version": "26.7.3" if version == "26.7.3" else None,
                 "reason": "device_version_unqualified" if version != "26.7.3" else
                           "synchronous_configd_return" if supported else "native_action_completion_unavailable",
             }
@@ -344,6 +351,10 @@ class FixedCollectionTransport:
         context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Use the restricted diagnostics alias-table read when it can prove activity."""
+        if resource == "gateways":
+            return self._gateway_active_observation(identity, desired, context)
+        if resource == "interface-groups":
+            return self._group_current_observation(identity, desired, context)
         if resource != "aliases" or len(identity) != 1 or not isinstance(identity[0], str) \
                 or not ALIAS_NAME.fullmatch(identity[0]):
             return {"status": "unsupported", "reason": "active_observation_unavailable",
@@ -351,12 +362,10 @@ class FixedCollectionTransport:
         alias = identity[0]
         alias_type = desired.get("type") if isinstance(desired, dict) else None
         state = desired.get("state") if isinstance(desired, dict) else None
-        if state != "present":
-            return {"status": "unsupported", "reason": "absent_alias_active_proof_unavailable",
-                    "coverage": "saved_configuration_only"}
-        if desired.get("enabled") is not True:
-            return {"status": "unsupported", "reason": "disabled_alias_active_proof_unavailable",
-                    "coverage": "saved_configuration_only"}
+        if state != "present" or desired.get("enabled") is not True:
+            return self._retired_alias_observation(alias)
+        if alias_type == "port":
+            return self._port_alias_observation(desired)
         try:
             response = self._request("POST", f"firewall/alias_util/list/{alias}",
                                      {"rowCount": MAX_PAGE_ROWS, "current": 1})
@@ -409,6 +418,276 @@ class FixedCollectionTransport:
         if observed == expected:
             return {"status": "verified", "reason": None, "coverage": coverage}
         return {"status": "failed", "reason": "alias_table_membership_mismatch", "coverage": coverage}
+
+    def _port_alias_observation(self, desired: dict[str, Any]) -> dict[str, Any]:
+        from .pf_rules import PF_STATISTICS_RULES_PATH, check_port_alias_active
+        if self.confirmation_capabilities()["aliases"]["device_version"] != "26.7.3":
+            return {"status": "unsupported", "reason": "device_version_unqualified"}
+        consumers = []
+        try:
+            for resource in ("filter-rules", "dnat", "one-to-one-nat"):
+                rows = self.list(COLLECTION_TARGETS[resource])
+                if not isinstance(rows, list) or len(rows) > MAX_PAGE_ROWS * MAX_PAGES:
+                    return {"status": "incomplete", "reason": "port_consumer_configuration_incomplete"}
+                for row in rows:
+                    if not isinstance(row, dict):
+                        return {"status": "incomplete", "reason": "port_consumer_configuration_malformed"}
+                    config = _flatten_provider_row(row, resource)
+                    config["resource"] = resource
+                    consumers.append(config)
+            snapshot = self._request("GET", PF_STATISTICS_RULES_PATH)
+        except _HttpFailure as error:
+            return {"status": "unknown", "reason": error.reason, "coverage": "loaded_port_rules"}
+        return check_port_alias_active(desired, snapshot, consumers)
+
+    def _gateway_active_observation(
+        self,
+        identity: list[str],
+        desired: dict[str, Any],
+        context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Observe one gateway through the fixed 26.7.3 native read paths.
+
+        ``search_gateway`` is fetched directly so its runtime fields are
+        retained.  Pagination is bounded and must be complete before the
+        selected row can be associated.  A route table is requested only for
+        an explicit monitor-host route expectation whose live configuration
+        says that such a route is required.
+        """
+        coverage: dict[str, Any] = {
+            "scope": "gateway_current",
+            "source": "OPNsense 26.7.3",
+            "gateway_status": {"pages": 0, "rows": 0, "total": None, "complete": False},
+            "routes": "not_requested",
+        }
+        try:
+            firmware = self._request("GET", "core/firmware/status")
+        except _HttpFailure as error:
+            return {"status": error.status, "reason": error.reason, "coverage": coverage}
+        product = firmware.get("product") if isinstance(firmware, dict) else None
+        version = product.get("product_version") if isinstance(product, dict) else None
+        coverage["device_version"] = version
+        if not isinstance(version, str) or not version:
+            return {"status": "unknown", "reason": "device_version_unavailable", "coverage": coverage}
+        if version != "26.7.3":
+            return {"status": "unsupported", "reason": "device_version_unqualified", "coverage": coverage}
+
+        if (not isinstance(identity, list) or len(identity) != 2
+                or any(not isinstance(value, str) or not value for value in identity)
+                or not isinstance(desired, dict)):
+            return {"status": "unsupported", "reason": "gateway_identity_unavailable", "coverage": coverage}
+        if desired.get("name") != identity[0] or desired.get("gateway") != identity[1]:
+            return {"status": "unsupported", "reason": "gateway_identity_mismatch", "coverage": coverage}
+
+        rows: list[dict[str, Any]] = []
+        total: int | None = None
+        try:
+            for page in range(1, MAX_PAGES + 1):
+                response = self._request("POST", "routing/settings/search_gateway",
+                                         {"current": page, "rowCount": MAX_PAGE_ROWS})
+                if (not isinstance(response, dict)
+                        or response.get("current") != page
+                        or type(response.get("rowCount")) is not int
+                        or response["rowCount"] < 0
+                        or type(response.get("total")) is not int
+                        or response["total"] < 0
+                        or not isinstance(response.get("rows"), list)
+                        or len(response["rows"]) > response["rowCount"]
+                        or any(not isinstance(row, dict) for row in response["rows"])):
+                    return {"status": "unknown", "reason": "malformed_gateway_page", "coverage": coverage}
+                page_total = response["total"]
+                if total is None:
+                    total = page_total
+                elif page_total != total:
+                    return {"status": "unknown", "reason": "gateway_status_total_changed", "coverage": coverage}
+                rows.extend(deepcopy(response["rows"]))
+                coverage["gateway_status"].update({"pages": page, "rows": len(rows), "total": total})
+                if total == len(rows):
+                    coverage["gateway_status"]["complete"] = True
+                    break
+            if not coverage["gateway_status"]["complete"]:
+                reason = ("gateway_configuration_bound_exceeded"
+                          if (total is not None and total > MAX_PAGE_ROWS * MAX_PAGES)
+                          else "gateway_configuration_incomplete")
+                return {"status": "unknown", "reason": reason, "coverage": coverage}
+
+            selected_rows = [row for row in rows if row.get("name") == identity[0]]
+            selected_live = selected_rows[0] if len(selected_rows) == 1 else None
+
+            # Gateway active evidence is collected here from fixed native read
+            # paths.  Caller context cannot replace the PF consumer proof.
+            from .pf_consumers import check_gateway_active
+            from .pf_rules import PF_STATISTICS_RULES_PATH
+
+            consumers_raw = self.list("rule")
+            if (not isinstance(consumers_raw, list)
+                    or len(consumers_raw) > MAX_PAGE_ROWS * MAX_PAGES
+                    or any(not isinstance(row, dict) for row in consumers_raw)):
+                return {"status": "unknown", "reason": "filter_consumer_configuration_incomplete",
+                        "coverage": coverage}
+            consumers = []
+            for row in consumers_raw:
+                consumer = _flatten_provider_row(row, "filter-rules")
+                consumer["resource"] = "filter-rules"
+                consumers.append(consumer)
+            pf_snapshot = self._request("GET", PF_STATISTICS_RULES_PATH)
+            physical = selected_live.get("if") if isinstance(selected_live, dict) else None
+            gateway_for_pf = deepcopy(desired)
+            gateway_for_pf["physical_interfaces"] = [physical] if isinstance(physical, str) and physical else None
+            consumer_observation = check_gateway_active(gateway_for_pf, pf_snapshot, consumers)
+
+            route_expectation = None
+            monitor = desired.get("monitor")
+            if (isinstance(monitor, str) and monitor.strip()
+                    and desired.get("monitor_disable") is False
+                    and desired.get("monitor_noroute") is False
+                    and monitor.strip() != desired.get("gateway")):
+                try:
+                    monitor_address = ipaddress.ip_address(monitor.strip())
+                    destination = f"{monitor_address}/{monitor_address.max_prefixlen}"
+                except ValueError:
+                    destination = monitor.strip()
+                route_expectation = {"purpose": "monitor_host", "destination": destination}
+            live_routes: Any = None
+            explicit_monitor_route = (isinstance(route_expectation, dict)
+                                      and route_expectation.get("purpose") == "monitor_host")
+            native_false = {False, 0, "0", "false", "False", "no", "No"}
+            route_required = (isinstance(selected_live, dict)
+                              and selected_live.get("monitor_disable") in native_false
+                              and selected_live.get("monitor_noroute") in native_false)
+            if explicit_monitor_route and route_required:
+                live_routes = self._request("GET", "diagnostics/interface/get_routes")
+                coverage["routes"] = "requested"
+                if not isinstance(live_routes, list):
+                    return {"status": "unknown", "reason": "malformed_live_routes", "coverage": coverage}
+            elif explicit_monitor_route:
+                coverage["routes"] = "not_required_by_configuration"
+
+            status_page = {"current": 1, "rowCount": max(MAX_PAGE_ROWS, len(rows)),
+                           "total": len(rows), "rows": rows}
+            result = check_gateway_current(
+                desired, live_routes, status_page, consumer_observation,
+                route_expectation=route_expectation,
+            )
+            result["coverage"] = coverage
+            return result
+        except _HttpFailure as error:
+            return {"status": error.status, "reason": error.reason, "coverage": coverage}
+
+    def _retired_alias_observation(self, alias: str) -> dict[str, Any]:
+        """Record retirement observations without inventing a cleanup guarantee."""
+        coverage: dict[str, Any] = {"scope": "alias_retirement", "table": "unknown",
+                                    "consumers": "unobserved", "pf_states": "not_touched"}
+        try:
+            tables = self._request("GET", "firewall/alias_util/aliases")
+            if not isinstance(tables, list) or any(not isinstance(name, str) or not name for name in tables):
+                return {"status": "unknown", "reason": "table_enumeration_unavailable", "coverage": coverage}
+            coverage["table"] = "absent" if alias not in tables else "residual"
+            if alias in tables:
+                response = self._request("POST", f"firewall/alias_util/list/{alias}",
+                                         {"rowCount": MAX_PAGE_ROWS, "current": 1})
+                if not isinstance(response, dict) or not isinstance(response.get("rows"), list):
+                    return {"status": "unknown", "reason": "table_members_unavailable", "coverage": coverage}
+                rows = response["rows"]
+                if type(response.get("total")) is not int or response["total"] != len(rows) or len(rows) > MAX_PAGE_ROWS:
+                    return {"status": "incomplete", "reason": "table_members_incomplete", "coverage": coverage}
+                if any(not isinstance(row, dict) or not isinstance(row.get("ip"), str) for row in rows):
+                    return {"status": "incomplete", "reason": "table_members_malformed", "coverage": coverage}
+                coverage["observed_rows"] = len(rows)
+                # listAction maps backend null/error to an empty recordset.  An
+                # empty response alone cannot prove an empty native PF table.
+                coverage["table"] = "residual_nonempty" if rows else "empty_or_unreadable"
+        except _HttpFailure as error:
+            return {"status": "unknown", "reason": error.reason, "coverage": coverage}
+        return {"status": "unsupported", "reason": "native_retirement_and_consumers_unconfirmed",
+                "coverage": coverage}
+
+    def _group_current_observation(
+        self,
+        identity: list[str],
+        desired: dict[str, Any],
+        context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Check saved group members against current ifconfig membership.
+
+        The version gate, interface reads, complete filter/NAT consumer reads,
+        and loaded PF snapshot are all fixed.  ``context`` never substitutes
+        for these observations; operation completion remains a separate
+        unknown fact.
+        """
+        from .group_checks import check_interface_group_current
+        from .pf_consumers import check_interface_group_active
+        from .pf_rules import PF_STATISTICS_RULES_PATH
+
+        if (len(identity) != 1 or not isinstance(identity[0], str) or not identity[0]
+                or not isinstance(desired, dict)):
+            return {"status": "unknown", "reason": "malformed_interface_group_identity"}
+        if desired.get("name") not in (None, identity[0]):
+            return {"status": "unknown", "reason": "interface_group_identity_mismatch"}
+        if desired.get("name") is None:
+            desired = {**desired, "name": identity[0]}
+
+        try:
+            version_response = self._request("GET", "core/firmware/status")
+        except _HttpFailure as error:
+            return self._group_observation_failure(error)
+        product = version_response.get("product") if isinstance(version_response, dict) else None
+        version = product.get("product_version") if isinstance(product, dict) else None
+        if not isinstance(version, str) or not version:
+            return {"status": "unknown", "reason": "device_version_unavailable"}
+        if version != "26.7.3":
+            return {"status": "unsupported", "reason": "device_version_unqualified",
+                    "device_version": version}
+
+        try:
+            overview = self._request("GET", "interfaces/overview/interfaces_info")
+            ifconfig = self._request("GET", "diagnostics/interface/get_interface_config")
+        except _HttpFailure as error:
+            return self._group_observation_failure(error)
+
+        result = check_interface_group_current(desired, overview, ifconfig)
+        if result.get("status") != "verified":
+            result["device_version"] = version
+            return result
+
+        expected = result.get("expected")
+        physical_members = expected.get("physical_members") if isinstance(expected, dict) else None
+        if not isinstance(physical_members, list) or any(not isinstance(item, str) for item in physical_members):
+            result["device_version"] = version
+            return result
+        try:
+            consumers = []
+            for resource in ("filter-rules", "dnat", "one-to-one-nat"):
+                rows = self.list(COLLECTION_TARGETS[resource])
+                if (not isinstance(rows, list) or len(rows) > MAX_PAGE_ROWS * MAX_PAGES
+                        or any(not isinstance(row, dict) for row in rows)):
+                    consumer = {"status": "incomplete", "reason": "malformed_consumer_configuration"}
+                    break
+                for row in rows:
+                    consumer_row = _flatten_provider_row(row, resource)
+                    consumer_row["resource"] = resource
+                    consumers.append(consumer_row)
+            else:
+                snapshot = self._request("GET", PF_STATISTICS_RULES_PATH)
+                consumer = check_interface_group_active(
+                    {"name": identity[0], "members": physical_members},
+                    snapshot,
+                    consumers,
+                )
+        except UnsupportedRead as error:
+            consumer = {"status": "unsupported", "reason": str(error)}
+        except _HttpFailure as error:
+            consumer = {"status": "unsupported" if error.status == "unsupported" else "unknown",
+                        "reason": error.reason}
+        result = check_interface_group_current(desired, overview, ifconfig, consumer)
+        result["device_version"] = version
+        return result
+
+    @staticmethod
+    def _group_observation_failure(error: _HttpFailure) -> dict[str, Any]:
+        if error.status == "unsupported":
+            return {"status": "unsupported", "reason": error.reason}
+        return {"status": "unknown", "reason": error.reason}
 
     @staticmethod
     def _static_members(desired: dict[str, Any]) -> tuple[set[str], str, str | None]:
@@ -483,7 +762,7 @@ class FixedCollectionTransport:
             record = selected.get(name, live.get(name))
             if not isinstance(record, dict):
                 return "incomplete", "networkgroup_dependency_unavailable"
-            if record.get("state", "present") != "present" or record.get("enabled", True) is not True:
+            if record.get("state", "present") != "present" or record.get("enabled") is not True:
                 return "incomplete", "networkgroup_dependency_unavailable"
             kind = record.get("type")
             if kind in {"urltable", "urljson", "dynipv6host", "port"}:
@@ -1215,6 +1494,8 @@ class Reader:
             if resource not in SUPPORTED_RESOURCES:
                 raise ReaderError(f"unsupported OPNsense resource: {resource}")
         observations = {resource: self._read_one(resource) for resource in resources}
+        if not observations:
+            return observations
         probe = getattr(self.transport, "confirmation_capabilities", None)
         try:
             capabilities = probe() if callable(probe) else {}

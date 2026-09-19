@@ -175,3 +175,29 @@ def test_correlated_wait_is_read_only_and_stops_on_conflict():
     result = complete_action(stage, {'status': 'processing', 'action_id': 'native-1'}, device, conflict)
     assert result['status'] == 'unknown' and len(observed) == 1
     assert device.calls == []
+
+
+def test_smaller_capability_budget_is_reviewed_and_rechecked(tmp_path):
+    from iaas_automation.opnsense_workflow.confirmation import WAIT_POLICY
+
+    class Limited(Appliance):
+        deadline = 10
+
+        def read(self, resources):
+            observations = super().read(resources)
+            for row in observations.values():
+                row['confirmation_capability']['wait'] = {**WAIT_POLICY, 'deadline_seconds': self.deadline}
+            return observations
+
+    device = Limited()
+    cand = candidate(device, documents(aliases=[alias()]))
+    path = tmp_path / 'candidate.json'
+    reviewed = save(path, cand)
+    assert load_candidate(path, reviewed)[0]['stages'][0]['confirmation']['wait']['deadline_seconds'] == 10
+    device.deadline = 5
+    assert execute(tmp_path, device, cand)['status'] == 'failed'
+    assert device.calls == []
+    cand['stages'][0]['confirmation']['wait']['deadline_seconds'] = 61
+    save(path, cand)
+    with pytest.raises(ValidationError, match='limits'):
+        load_candidate(path)

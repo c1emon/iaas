@@ -498,6 +498,8 @@ def test_disabled_alias_old_pf_table_does_not_confirm_active_state():
 
         def _request(self, method, path, payload=None):
             self.calls += 1
+            if path == "firewall/alias_util/aliases":
+                return ["NETS"]
             return {"rows": [{"ip": "192.0.2.10"}], "total": 1}
 
     desired = {
@@ -509,5 +511,6 @@ def test_disabled_alias_old_pf_table_does_not_confirm_active_state():
     )
     result = diagnostics.active_check("aliases", ["NETS"], desired)
     assert result["status"] == "unsupported"
-    assert result["reason"] == "disabled_alias_active_proof_unavailable"
-    assert diagnostics.calls == 0
+    assert result["reason"] == "native_retirement_and_consumers_unconfirmed"
+    assert result["coverage"]["table"] == "residual_nonempty"
+    assert diagnostics.calls == 2
