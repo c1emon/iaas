@@ -136,6 +136,9 @@ def valid_state(state: dict[str, dict | None], interfaces: set[str]) -> None:
             category, name = ref.split(':', 1)
             if category in {'aliases', 'interface-groups'} and name in interfaces:
                 continue
+            if category == 'aliases' and name.endswith('ip') and name[:-2] in interfaces and ref not in labels:
+                # Native NetworkAliasField exposes <interface>ip for addresses.
+                continue
             require(ref in labels, 'missing dependency or unselected reference transition')
             dependency = state[labels[ref]]
             config = dependency.get('configuration') if dependency else None

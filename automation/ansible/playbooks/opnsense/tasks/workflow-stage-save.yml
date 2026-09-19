@@ -1,0 +1,237 @@
+---
+- name: Initialize the independent workflow save result
+  ansible.builtin.set_fact:
+    opnsense_workflow_changed: false
+    opnsense_workflow_save_result:
+      status: not_attempted
+      attempted: false
+      changed: false
+
+- name: Save the selected workflow records with provider reload disabled
+  block:
+    - name: Save aliases through the fixed alias batch provider
+      oxlorg.opnsense.alias_multi:
+        aliases: "{{ lookup('ansible.builtin.vars', opnsense_workflow_key) }}"
+        reload: false
+        multi_control:
+          fail_verify: true
+      register: opnsense_workflow_alias_save
+      no_log: true
+      when:
+        - opnsense_workflow_resource == 'aliases'
+        - lookup('ansible.builtin.vars', opnsense_workflow_key) | length > 0
+
+    - name: Save IP Alias VIPs through the fixed provider
+      oxlorg.opnsense.interface_vip:
+        description: "{{ item.description }}"
+        interface: "{{ item.interface }}"
+        address: "{{ item.address }}"
+        bind: "{{ item.bind }}"
+        expand: "{{ item.expand }}"
+        mode: ipalias
+        state: "{{ item.state }}"
+        reload: false
+      loop: "{{ lookup('ansible.builtin.vars', opnsense_workflow_key) }}"
+      loop_control:
+        label: "{{ item.interface }} {{ item.address }} {{ item.description }}"
+      register: opnsense_workflow_vip_save
+      no_log: true
+      when:
+        - opnsense_workflow_resource == 'vips'
+        - lookup('ansible.builtin.vars', opnsense_workflow_key) | length > 0
+
+    - name: Save PBR gateways through the fixed provider
+      oxlorg.opnsense.gateway:
+        name: "{{ item.name }}"
+        interface: "{{ item.interface }}"
+        ip_protocol: "{{ item.ip_protocol }}"
+        gateway: "{{ item.gateway }}"
+        default_gw: "{{ item.default_gw }}"
+        far_gw: "{{ item.far_gw }}"
+        monitor_disable: "{{ item.monitor_disable }}"
+        monitor_noroute: "{{ item.monitor_noroute }}"
+        monitor: "{{ item.monitor }}"
+        force_down: "{{ item.force_down }}"
+        latency_low: "{{ item.latency_low }}"
+        latency_high: "{{ item.latency_high }}"
+        loss_low: "{{ item.loss_low }}"
+        loss_high: "{{ item.loss_high }}"
+        interval: "{{ item.interval }}"
+        time_period: "{{ item.time_period }}"
+        loss_interval: "{{ item.loss_interval }}"
+        data_length: "{{ item.data_length }}"
+        priority: "{{ item.priority }}"
+        weight: "{{ item.weight }}"
+        description: "{{ item.description }}"
+        state: "{{ item.state }}"
+        reload: false
+      loop: "{{ lookup('ansible.builtin.vars', opnsense_workflow_key) }}"
+      loop_control:
+        label: "{{ item.name }} {{ item.gateway }} {{ item.state }}"
+      register: opnsense_workflow_gateway_save
+      no_log: true
+      when:
+        - opnsense_workflow_resource == 'gateways'
+        - lookup('ansible.builtin.vars', opnsense_workflow_key) | length > 0
+
+    - name: Build fixed provider filter-rule records
+      ansible.builtin.set_fact:
+        opnsense_workflow_filter_rules: >-
+          {{
+            (opnsense_workflow_filter_rules | default([]))
+            + [
+              item
+              | combine({
+                  'description': 'iaas:opnsense:filter:' ~ item.scope ~ ':' ~ item.slug,
+                  'source_invert': item.source_invert | default(false),
+                  'source_net': (
+                    item.source_net | join(',')
+                    if item.source_net is sequence and item.source_net is not string
+                    else item.source_net
+                  ),
+                  'source_port': (
+                    item.source_port | join(',')
+                    if item.source_port is defined
+                    and item.source_port is sequence
+                    and item.source_port is not string
+                    else item.source_port | default('')
+                  ),
+                  'destination_invert': item.destination_invert | default(false),
+                  'destination_net': (
+                    item.destination_net | join(',')
+                    if item.destination_net is sequence and item.destination_net is not string
+                    else item.destination_net
+                  ),
+                  'destination_port': (
+                    item.destination_port | join(',')
+                    if item.destination_port is defined
+                    and item.destination_port is sequence
+                    and item.destination_port is not string
+                    else item.destination_port | default('')
+                  )
+                })
+              | dict2items
+              | rejectattr('key', 'in', ['scope', 'slug'])
+              | list
+              | items2dict
+            ]
+          }}
+      loop: "{{ lookup('ansible.builtin.vars', opnsense_workflow_key) }}"
+      loop_control:
+        label: "{{ item.scope }}:{{ item.slug }}"
+      when:
+        - opnsense_workflow_resource == 'filter-rules'
+        - lookup('ansible.builtin.vars', opnsense_workflow_key) | length > 0
+
+    - name: Save filter rules through the fixed batch provider
+      oxlorg.opnsense.rule_multi:
+        rules: "{{ opnsense_workflow_filter_rules }}"
+        match_fields:
+          - description
+        reload: false
+        multi_control:
+          output_info: true
+          fail_verify: true
+      register: opnsense_workflow_filter_save
+      no_log: true
+      when:
+        - opnsense_workflow_resource == 'filter-rules'
+        - opnsense_workflow_filter_rules | default([]) | length > 0
+
+    - name: Save DNAT rules through the existing argument mapping  # noqa args[module]
+      oxlorg.opnsense.nat_destination: "{{ item | opnsense_resource_arguments('dnat') }}"
+      loop: "{{ lookup('ansible.builtin.vars', opnsense_workflow_key) }}"
+      loop_control:
+        label: "{{ item.scope }}:{{ item.slug }}"
+      register: opnsense_workflow_dnat_save
+      no_log: true
+      when:
+        - opnsense_workflow_resource == 'dnat'
+        - lookup('ansible.builtin.vars', opnsense_workflow_key) | length > 0
+
+    - name: Save one-to-one NAT rules through the existing argument mapping  # noqa args[module]
+      oxlorg.opnsense.nat_one_to_one: "{{ item | opnsense_resource_arguments('one-to-one-nat') }}"
+      loop: "{{ lookup('ansible.builtin.vars', opnsense_workflow_key) }}"
+      loop_control:
+        label: "{{ item.scope }}:{{ item.slug }}"
+      register: opnsense_workflow_one_to_one_save
+      no_log: true
+      when:
+        - opnsense_workflow_resource == 'one-to-one-nat'
+        - lookup('ansible.builtin.vars', opnsense_workflow_key) | length > 0
+
+    - name: Save interface groups through the existing argument mapping  # noqa args[module]
+      oxlorg.opnsense.rule_interface_group: "{{ item | opnsense_resource_arguments('interface-groups') }}"
+      loop: "{{ lookup('ansible.builtin.vars', opnsense_workflow_key) }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: opnsense_workflow_group_save
+      no_log: true
+      when:
+        - opnsense_workflow_resource == 'interface-groups'
+        - lookup('ansible.builtin.vars', opnsense_workflow_key) | length > 0
+
+    - name: Collect the provider saved-change result
+      ansible.builtin.set_fact:
+        opnsense_workflow_changed: >-
+          {{
+            (opnsense_workflow_alias_save.changed | default(false))
+            or (opnsense_workflow_vip_save.results | default([])
+                | selectattr('changed', 'equalto', true) | list | length > 0)
+            or (opnsense_workflow_gateway_save.results | default([])
+                | selectattr('changed', 'equalto', true) | list | length > 0)
+            or (opnsense_workflow_filter_save.changed | default(false))
+            or (opnsense_workflow_dnat_save.results | default([])
+                | selectattr('changed', 'equalto', true) | list | length > 0)
+            or (opnsense_workflow_one_to_one_save.results | default([])
+                | selectattr('changed', 'equalto', true) | list | length > 0)
+            or (opnsense_workflow_group_save.results | default([])
+                | selectattr('changed', 'equalto', true) | list | length > 0)
+          }}
+  rescue:
+    - name: Record a failed save stage without attempting activation
+      ansible.builtin.set_fact:
+        opnsense_workflow_save_result:
+          status: failed
+          attempted: true
+          changed: "{{ opnsense_workflow_changed | default(false) }}"
+          save: {status: failed}
+          configuration: {status: unknown}
+          activation: {status: not_attempted}
+          active_check: {status: not_attempted}
+    - name: Persist the protected failed save-stage facts
+      ansible.builtin.copy:
+        content: "{{ opnsense_workflow_save_result | to_json }}"
+        dest: "{{ opnsense_workflow_result_path }}"
+        mode: '0600'
+      no_log: true
+    - name: Stop after a failed workflow save stage
+      ansible.builtin.fail:
+        msg: >-
+          OPNsense workflow save failed after a possible partial save; activation
+          and later dependent stages were not attempted. No retry or rollback was performed.
+
+- name: Record an accepted workflow save stage
+  ansible.builtin.set_fact:
+    opnsense_workflow_save_result:
+      status: >-
+        {{ 'accepted' if lookup('ansible.builtin.vars', opnsense_workflow_key) | length > 0 else 'not_attempted' }}
+      attempted: "{{ lookup('ansible.builtin.vars', opnsense_workflow_key) | length > 0 }}"
+      changed: "{{ opnsense_workflow_changed }}"
+      save:
+        status: >-
+          {{ 'accepted' if lookup('ansible.builtin.vars', opnsense_workflow_key) | length > 0 else 'not_attempted' }}
+      configuration: {status: not_attempted}
+      activation: {status: not_attempted}
+      active_check: {status: not_attempted}
+
+- name: Return the independent workflow save result
+  ansible.builtin.debug:
+    msg: "{{ opnsense_workflow_save_result }}"
+
+- name: Persist the protected save-stage facts
+  ansible.builtin.copy:
+    content: "{{ opnsense_workflow_save_result | to_json }}"
+    dest: "{{ opnsense_workflow_result_path }}"
+    mode: '0600'
+  no_log: true

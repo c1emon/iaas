@@ -1,12 +1,14 @@
 import json
+import hashlib
 from pathlib import Path
 
 import yaml
 
 from iaas_automation.runtime_execution.__main__ import main
 from iaas_automation.runtime_execution.execution import Execution
+from iaas_automation.runtime_execution.operations import operation_for
 from iaas_automation.runtime_execution.selection import load_operation
-from iaas_automation.runtime_config import SourceReader
+from iaas_automation.runtime_config import InputRequired, SourceReader
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -17,6 +19,23 @@ def config(tmp_path, component, inputs, files=None):
     entry.write_text(yaml.safe_dump({"schema_version": 1, "environment": "synthetic",
                                     "components": {component: {"inputs": inputs, "files": files or {}}}}))
     return entry
+
+
+def candidate_file(path):
+    value = {
+        "schema_version": 1,
+        "kind": "opnsense-candidate",
+        "target": {"host": "firewall", "endpoint": "https://192.0.2.1", "ssl_verify": True},
+        "runtime": {"image_digest": "sha256:" + "1" * 64, "platform": "linux/amd64", "interface_version": 1},
+        "provider": "oxlorg.opnsense@1423500c29f88da9ba8147a23fc64006cf464159",
+        "source": {},
+        "request": {"schema_version": 1, "selection": {}},
+        "documents": {}, "selected": [], "coverage": {}, "before": {},
+        "differences": [], "stages": [],
+    }
+    encoded = json.dumps(value, sort_keys=True, indent=2) + "\n"
+    path.write_text(encoded)
+    return hashlib.sha256(encoded.encode()).hexdigest()
 
 
 def test_offline_dispatch_and_unsupported_operation(tmp_path, capsys):
@@ -65,6 +84,122 @@ def test_selected_online_file_closure_does_not_read_current_saved_plan_inputs(tm
         (tmp_path / name).write_text("synthetic")
     selected = load_operation(entry, "pve", "apply-saved-plan", None, SourceReader())
     assert not selected.documents and set(selected.files) == {"backend", "ssh_key", "known_hosts"}
+
+
+def test_opnsense_workflow_file_and_effect_selection(tmp_path):
+    entry = config(tmp_path, "opnsense",
+                   {"aliases": "aliases.yml", "dnat": "dnat.yml"},
+                   {"inventory": "inventory.yml", "request": "request.yml",
+                    "candidate": "candidate.json"})
+    (tmp_path / "inventory.yml").write_text("all: {}\n")
+    (tmp_path / "request.yml").write_text(
+        "schema_version: 1\nselection: {aliases: all, dnat: all}\n")
+    candidate_sha256 = candidate_file(tmp_path / "candidate.json")
+    (tmp_path / "aliases.yml").write_text("opnsense_aliases: []\n")
+    (tmp_path / "dnat.yml").write_text("opnsense_dnat_rules: []\n")
+    document = yaml.safe_load(entry.read_text())
+    document["components"]["opnsense"]["options"] = {}
+    entry.write_text(yaml.safe_dump(document))
+
+    read = load_operation(entry, "opnsense", "read", None, SourceReader())
+    assert not read.documents and set(read.files) == {"inventory", "request"}
+    plan = load_operation(entry, "opnsense", "plan", None, SourceReader())
+    assert set(plan.documents) == {"aliases", "dnat"}
+    assert set(plan.files) == {"inventory", "request"}
+    selected = load_operation(entry, "opnsense", "verify", None, SourceReader())
+    assert not selected.documents and set(selected.files) == {"inventory", "candidate"}
+    document["components"]["opnsense"]["options"] = {
+        "candidate_sha256": candidate_sha256,
+        "execution_id": "run-42",
+        "activation_check": {
+            "target": {"host": "firewall"}, "candidate_sha256": candidate_sha256,
+            "execution_id": "run-42", "checked_no_pending": True, "serialized": True,
+        },
+    }
+    entry.write_text(yaml.safe_dump(document))
+    selected = load_operation(entry, "opnsense", "apply", None, SourceReader())
+    assert not selected.documents and set(selected.files) == {"inventory", "candidate"}
+    document["components"]["opnsense"]["options"]["check_mode"] = True
+    entry.write_text(yaml.safe_dump(document))
+    selected = load_operation(entry, "opnsense", "apply", None, SourceReader())
+    assert selected.options["check_mode"] is True
+
+    assert operation_for("opnsense", "read").state is False
+    assert operation_for("opnsense", "plan").infrastructure_write is False
+    assert operation_for("opnsense", "apply").infrastructure_write is True
+    assert operation_for("opnsense", "verify").infrastructure_write is False
+
+
+def test_opnsense_recovery_plan_selects_recovery_without_desired_inputs(tmp_path):
+    entry = config(tmp_path, "opnsense", {},
+                   {"inventory": "inventory.yml", "request": "request.yml", "recovery": "recovery.json"})
+    (tmp_path / "inventory.yml").write_text("all: {}\n")
+    (tmp_path / "request.yml").write_text("schema_version: 1\nselection: {}\n")
+    (tmp_path / "recovery.json").write_text("{}\n")
+    selected = load_operation(entry, "opnsense", "plan", None, SourceReader())
+    assert not selected.documents and set(selected.files) == {"inventory", "request", "recovery"}
+
+
+def test_opnsense_plan_discovers_complete_candidate_context(tmp_path):
+    entry = config(tmp_path, "opnsense",
+                   {"aliases": "aliases.yml", "dnat": "not-selected.yml"},
+                   {"inventory": "inventory.yml", "request": "request.yml"})
+    (tmp_path / "inventory.yml").write_text("all: {}\n")
+    (tmp_path / "request.yml").write_text("schema_version: 1\nselection: {aliases: all}\n")
+    (tmp_path / "aliases.yml").write_text("opnsense_aliases: []\n")
+    try:
+        load_operation(entry, "opnsense", "plan", None, SourceReader())
+    except InputRequired as error:
+        assert error.path.name == "not-selected.yml"
+    except Exception as error:
+        assert "readable regular file" in str(error)
+    else:
+        raise AssertionError("plan must discover every declared candidate input")
+
+
+def test_launcher_execution_id_is_checked_during_discovery(tmp_path, capsys):
+    entry = tmp_path / "environment.yml"
+    entry.write_text(yaml.safe_dump({
+        "schema_version": 1,
+        "environment": "synthetic",
+        "components": {"opnsense": {
+            "inputs": {},
+            "files": {"inventory": "inventory.yml", "candidate": "candidate.json"},
+            "options": {
+                "candidate_sha256": "a" * 64,
+                "execution_id": "run-42",
+                "activation_check": {
+                    "target": {"host": "firewall"}, "candidate_sha256": "a" * 64,
+                    "execution_id": "run-42", "checked_no_pending": True, "serialized": True,
+                },
+            },
+        }},
+    }))
+    (tmp_path / "inventory.yml").write_text("all: {}\n")
+    candidate_sha256 = candidate_file(tmp_path / "candidate.json")
+    document = yaml.safe_load(entry.read_text())
+    document["components"]["opnsense"]["options"]["candidate_sha256"] = candidate_sha256
+    document["components"]["opnsense"]["options"]["activation_check"]["candidate_sha256"] = candidate_sha256
+    entry.write_text(yaml.safe_dump(document))
+    args = ["--environment", str(entry), "--component", "opnsense", "--operation", "apply", "--discover"]
+    assert main([*args, "--execution-id", "wrong"]) == 2
+    assert "wrong" not in capsys.readouterr().out
+    assert main([*args, "--execution-id", "run-42"]) == 0
+    assert json.loads(capsys.readouterr().out)["execution_id"] == "run-42"
+
+
+def test_opnsense_request_is_validated_before_credentials(tmp_path, monkeypatch, capsys):
+    entry = config(tmp_path, "opnsense", {}, {"inventory": "inventory.yml", "request": "request.yml"})
+    (tmp_path / "inventory.yml").write_text("all: {}\n")
+    (tmp_path / "request.yml").write_text("schema_version: 1\nselection: {snat: all}\n")
+    import iaas_automation.runtime_execution.__main__ as dispatch
+    monkeypatch.setattr(dispatch, "prepare_file_credentials", lambda *args: (_ for _ in ()).throw(
+        AssertionError("credentials must not be prepared for an invalid request")))
+    output = tmp_path / "result"
+    assert main(["--environment", str(entry), "--component", "opnsense", "--operation", "read",
+                 "--scope", "firewall", "--output", str(output)]) == 2
+    assert not output.exists()
+    assert "snat" not in capsys.readouterr().out
 
 
 def test_setup_failure_reports_created_output_and_redacts_exception(tmp_path, monkeypatch, capsys):

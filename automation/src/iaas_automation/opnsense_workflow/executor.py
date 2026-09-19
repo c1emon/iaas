@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from iaas_automation.common.errors import ValidationError, require
-from iaas_automation.opnsense_validation import TOP_LEVEL
+from iaas_automation.opnsense_validation import TOP_LEVEL, validate_document
 from .contracts import VERSION, key, save, selected_records, selection_keys, selectors, shape
 from .planning import interfaces_from, overlay, plan, relevant, semantic, valid_state
 
@@ -72,10 +72,18 @@ def recovery_document(candidate: dict, digest: str, execution_id: str, current: 
     entries = []
     for marker in sorted(affected):
         item, old = selected[marker], current[marker]
+        recoverable = old.get('recovery', 'manual_required') if old else 'expressible'
+        if old and recoverable == 'expressible':
+            try:
+                validate_document(item['resource'], {TOP_LEVEL[item['resource']]: [old['configuration']]})
+            except (ValueError, TypeError, KeyError):
+                # Observing a live rule does not supply the declaration safety
+                # context needed to recreate it. Preserve the value, but require review.
+                recoverable = 'manual_required'
         entries.append({'resource': item['resource'], 'identity': item['identity'],
                         'before': old.get('configuration') if old else None,
                         'before_absent': old is None,
-                        'recovery': old.get('recovery', 'manual_required') if old else 'expressible',
+                        'recovery': recoverable,
                         'desired': deepcopy(item['desired']), 'attempted': False,
                         'after_status': 'unknown', 'after': None})
     return {'schema_version': VERSION, 'kind': 'opnsense-recovery', 'target': candidate['target'],

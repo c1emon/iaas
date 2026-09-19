@@ -50,3 +50,21 @@ exit 2
 		t.Fatalf("discovery did not preserve the safe configuration diagnostic: %v", err)
 	}
 }
+
+func TestDiscoveryRejectsDifferentExecutionID(t *testing.T) {
+	directory := t.TempDir()
+	script := `#!/bin/sh
+echo '{"status":"ready","credential_names":[],"execution_id":"other"}'
+`
+	if err := os.WriteFile(filepath.Join(directory, "docker"), []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", directory+string(os.PathListSeparator)+os.Getenv("PATH"))
+	work := task{options: Options{Engine: "local", ExecutionID: "expected"}, directory: filepath.Join(directory, "task"), mapping: map[string]string{}}
+	if err := work.initialize(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := work.discover(); err == nil || !strings.Contains(err.Error(), "identity") {
+		t.Fatalf("different runtime identity was accepted: %v", err)
+	}
+}

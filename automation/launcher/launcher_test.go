@@ -46,6 +46,32 @@ func TestSelectionAndOperationBoundary(t *testing.T) {
 	}
 }
 
+func TestExecutionIDBindsApplyToFreshOutputIdentity(t *testing.T) {
+	valid := Options{Component: "opnsense", Operation: "apply", Output: "/tmp/execution-42", ExecutionID: "execution-42"}
+	if err := validateExecutionID(valid); err != nil {
+		t.Fatal(err)
+	}
+	for _, invalid := range []Options{
+		{Component: "opnsense", Operation: "apply", Output: "/tmp/result"},
+		{Component: "opnsense", Operation: "apply", Output: "/tmp/other", ExecutionID: "execution-42"},
+		{Component: "opnsense", Operation: "apply", Output: "/tmp/bad/id", ExecutionID: "bad/id"},
+		{Component: "pve", Operation: "plan", Output: "/tmp/execution-42", ExecutionID: "execution-42"},
+	} {
+		if err := validateExecutionID(invalid); err == nil {
+			t.Fatalf("accepted invalid execution identity: %#v", invalid)
+		}
+	}
+}
+
+func TestRuntimeArgsCarriesExecutionIDToDiscoveryAndRun(t *testing.T) {
+	work := task{options: Options{Environment: "/inputs/environment.yml", Component: "opnsense",
+		Operation: "apply", ExecutionID: "execution-42"}, image: "example/iaas@sha256:" + strings.Repeat("a", 64)}
+	args := strings.Join(work.runtimeArgs(), " ")
+	if !strings.Contains(args, "--execution-id execution-42") {
+		t.Fatalf("runtime args did not carry execution identity: %s", args)
+	}
+}
+
 func TestExplicitInputAndPortableArtifacts(t *testing.T) {
 	directory := t.TempDir()
 	input := filepath.Join(directory, "caller, files")

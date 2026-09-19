@@ -61,9 +61,14 @@ def _inventory_scope(inventory: dict[str, Any], group: str, scope: str) -> None:
     require(set(selected) <= members, "scope includes hosts outside the selected component")
 
 
-def run_component(selected: SelectedConfig, operation: str, scope: str, execution: Execution) -> None:
+def run_component(selected: SelectedConfig, operation: str, scope: str, execution: Execution,
+                  *, image_digest: str = '') -> None:
     component = selected.component
     require(bool(scope), "online operations require explicit scope")
+    if component == 'opnsense' and operation in {'read', 'plan', 'apply', 'verify'}:
+        from iaas_automation.opnsense_workflow.runtime import run
+        run(selected, operation, scope, execution, image_digest)
+        return
     if component in {"pve", "foundation", "k3s"}:
         generated = compile_documents(selected)
         inputs = _inputs(selected, execution)

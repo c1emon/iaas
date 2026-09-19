@@ -25,7 +25,13 @@ MUTATE = Operation(network=True, infrastructure_write=True)
 PLAN = Operation(network=True, state=True)
 APPLY = Operation(network=True, state=True, infrastructure_write=True)
 OPERATIONS = {
-    "opnsense": {"check": OFFLINE, "generate": OFFLINE, "diagnose": DIAGNOSE},
+    "opnsense": {"check": OFFLINE, "generate": OFFLINE, "diagnose": DIAGNOSE,
+                  # The configuration workflow talks to the appliance but
+                  # owns no OpenTofu/S3 state.  A plan is therefore an online
+                  # read with private local output, while apply is the only
+                  # operation in this group that can mutate infrastructure.
+                  "read": DIAGNOSE, "plan": DIAGNOSE, "apply": MUTATE,
+                  "verify": DIAGNOSE},
     "switch": {"check": OFFLINE, "generate": OFFLINE, "diagnose": DIAGNOSE},
     "pve": {"check": OFFLINE, "generate": OFFLINE, "preflight": DIAGNOSE,
             "health": DIAGNOSE, "prepare-dependencies": DIAGNOSE,

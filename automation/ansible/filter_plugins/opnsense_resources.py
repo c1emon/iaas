@@ -35,8 +35,11 @@ def _plain(value: Any) -> Any:
     return value
 
 
-def opnsense_resource_admission(records, resource):
-    validate_document(resource, {TOP_LEVEL[resource]: _plain(records)})
+def opnsense_resource_admission(records, resource, context=None):
+    document = {TOP_LEVEL[resource]: _plain(records)}
+    if context is not None:
+        document['opnsense_filter_rule_context'] = _plain(context)
+    validate_document(resource, document)
     return True
 
 

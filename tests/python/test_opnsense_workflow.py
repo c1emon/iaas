@@ -95,6 +95,15 @@ def test_fixed_candidate_and_digest(tmp_path):
         load_candidate(path, reviewed)
 
 
+def test_live_rule_without_recreation_context_is_manual_recovery():
+    from iaas_automation.opnsense_workflow.executor import recovery_document
+    device = Appliance(filter_rules=[rule('192.0.2.0/24', action='block', protocol='any', destination_invert=True)])
+    cand = candidate(device, documents(filter_rules=[rule('192.0.2.10')]))
+    recovery = recovery_document(cand, 'a' * 64, 'execution-1', cand['before'])
+    assert recovery['entries'][0]['before']['action'] == 'block'
+    assert recovery['entries'][0]['recovery'] == 'manual_required'
+
+
 @pytest.mark.parametrize('bad', [
     {'schema_version': 1}, {'schema_version': 1, 'selection': {'snat': 'all'}},
     {'schema_version': 1, 'selection': {}, 'site_policy': {}},
@@ -121,6 +130,31 @@ def test_existing_identity_needs_adoption():
         candidate(device, docs, managed={})
     cand = candidate(device, docs, managed={}, adopt={'aliases': [['A']]})
     assert cand['differences'][0]['adopted'] is True
+
+
+def test_native_interface_address_token_requires_observed_interface(tmp_path):
+    device = Appliance()
+    cand = candidate(device, documents(filter_rules=[rule('wanip')]))
+    assert execute(tmp_path, device, cand)['status'] == 'completed_with_unverified'
+    with pytest.raises(ValidationError, match='missing dependency'):
+        candidate(Appliance(), documents(filter_rules=[rule('missingip')]))
+
+
+@pytest.mark.parametrize('resource', list(TOP_LEVEL))
+def test_seven_resource_semantic_updates_preserve_other_objects(tmp_path, resource):
+    from test_opnsense_workflow_reader import FakeCollection, reader, ROWS
+    observed = reader(FakeCollection()).read(list(ROWS))
+    actual = {name: [obj['configuration'] for obj in value['objects']] for name, value in observed.items()}
+    device = Appliance(**actual)
+    changed = deepcopy(actual[resource][0])
+    if resource in {'filter-rules', 'dnat', 'one-to-one-nat'}:
+        changed['sequence'] += 1
+    else:
+        changed['description'] = 'reviewed update'
+    cand = candidate(device, {resource: {TOP_LEVEL[resource]: [changed]}})
+    assert cand['differences'][0]['action'] == 'update'
+    assert execute(tmp_path, device, cand)['status'] == 'completed_with_unverified'
+    assert all(device.resources[name] == rows for name, rows in actual.items() if name != resource)
 
 
 def test_create_switch_retire_and_reverse_reference_rejection(tmp_path):
