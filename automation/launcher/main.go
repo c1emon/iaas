@@ -7,13 +7,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 )
 
 var version = "development"
 
+var executionIDPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,128}$`)
+
 type Options struct {
 	Environment, RuntimeConfig, Engine, Component, Operation, Scenario, Scope string
-	Output, Plan, Companions                                                  string
+	Output, Plan, Companions, ExecutionID                                     string
 }
 
 func main() {
@@ -29,7 +32,7 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "help" {
-		fmt.Println("iaas run --runtime-config runtime.json --environment environment.yml --engine local|dind --component NAME --operation NAME --output NEW_DIRECTORY [--scope NAME] [--scenario NAME] [--plan FILE --companions DIRECTORY]")
+		fmt.Println("iaas run --runtime-config runtime.json --environment environment.yml --engine local|dind --component NAME --operation NAME --output NEW_DIRECTORY [--scope NAME] [--scenario NAME] [--execution-id ID] [--plan FILE --companions DIRECTORY]")
 		fmt.Println("iaas prepare --runtime-config runtime.json   # explicit image download")
 		fmt.Println("iaas capabilities --runtime-config runtime.json")
 		return nil
@@ -54,6 +57,7 @@ func run(args []string) error {
 	flags.StringVar(&options.Output, "output", "", "new output directory")
 	flags.StringVar(&options.Plan, "plan", "", "selected native plan file")
 	flags.StringVar(&options.Companions, "companions", "", "saved-plan companion directory")
+	flags.StringVar(&options.ExecutionID, "execution-id", "", "caller-owned execution identity")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -108,7 +112,29 @@ func run(args []string) error {
 	if options.Operation == "apply-saved-plan" && (options.Plan == "" || options.Companions == "") {
 		return errors.New("saved apply requires --plan and --companions")
 	}
+	if err := validateExecutionID(options); err != nil {
+		return err
+	}
 	fmt.Printf("Operation %s/%s: network=%t state=%t infrastructure_write=%t\n", options.Component, options.Operation,
 		effects.Network, effects.State, effects.InfrastructureWrite)
 	return execute(options, configuration, image, effects, docker)
+}
+
+func validateExecutionID(options Options) error {
+	if options.ExecutionID == "" {
+		if options.Component == "opnsense" && options.Operation == "apply" {
+			return errors.New("OPNsense apply requires --execution-id")
+		}
+		return nil
+	}
+	if !executionIDPattern.MatchString(options.ExecutionID) {
+		return errors.New("execution-id must be a bounded identifier")
+	}
+	if options.Component != "opnsense" || options.Operation != "apply" {
+		return errors.New("execution-id is only supported for OPNsense apply")
+	}
+	if filepath.Base(options.Output) != options.ExecutionID {
+		return errors.New("output directory basename must equal execution-id")
+	}
+	return nil
 }

@@ -34,7 +34,7 @@ auxiliary file paths), and `options` (operation options). Required domain inputs
 | services | services, vms | service documentation |
 | foundation | inventory | recovery documentation |
 | k3s | intent, inventory | composed K3s review |
-| opnsense | aliases, vips, gateways, filter-rules | validated standard desired-state YAML |
+| opnsense | aliases, vips, gateways, filter-rules, dnat, one-to-one-nat, interface-groups | validated standard desired-state YAML |
 | switch | config | validated collection-native configuration YAML |
 
 Caller-authored Alias/Rules files may be hand-written or deterministically generated.
@@ -80,6 +80,55 @@ and credentials belong to caller configuration, never these synthetic examples.
 
 See the [native launcher guide](runtime-launcher.md) for installation, local/DinD
 execution, component scopes, credentials and recovery.
+
+## OPNsense workflow selection
+
+The OPNsense configuration workflow uses four operations: `read`, `plan`, `apply`
+and `verify`. Its files are explicit aliases. `inventory` is always required;
+`request` is required by `read` and `plan`; `candidate` is required by `apply` and
+`verify`; `recovery` is optional for `plan` and is mutually exclusive with desired
+resource inputs. For read/plan, the request supplies the selection; apply/verify use only the
+selection embedded in the candidate. A separate request is not loaded.
+
+```yaml
+components:
+  opnsense:
+    inputs:
+      aliases: opnsense/aliases.yml
+      dnat: opnsense/dnat.yml
+    files:
+      inventory: opnsense/inventory.yml
+      request: opnsense/request.yml
+```
+
+The plan loader validates and loads every explicitly declared standard resource
+input, including inputs that the request does not select. This keeps the candidate
+context complete while `request.selection` controls the managed execution set.
+Unknown input names fail before credentials are prepared. `read` loads only the
+request and `apply`/`verify` load only the candidate; they do not load desired
+resource inputs. A recovery plan loads `request` and `recovery` and no desired
+inputs.
+
+The request has `schema_version: 1` and a `selection` mapping whose identities are
+the stable identities defined by the resource validators. `selection: {aliases: all}` selects
+all records from the declared aliases file (and all observed aliases for read). An explicit list selects identities
+such as `[SYNTHETIC_WEB]` for an alias or
+`[iaas:opnsense:dnat:synthetic:web]` for DNAT. Unknown resources and undeclared
+identities are rejected by plan. Read selects observed identities without desired
+inputs. Existing selected objects require explicit `managed` or `adopt` identity
+lists; both are subsets of the execution selection. `activation_recovery` uses
+the same identity-list format and explicitly selects no-change activation in a
+new candidate. Empty lists select nothing; omitted records do not imply deletion.
+
+`read`, `plan` and `verify` require an empty `options` mapping. `apply` requires
+`candidate_sha256`, `execution_id` and `activation_check`, and may additionally set
+the boolean `check_mode`. The digest is a lowercase SHA-256 of the candidate bytes;
+the execution ID is a bounded token. The activation check contains the target
+connection identity, the same candidate digest and execution ID, plus
+`checked_no_pending: true` and `serialized: true`. The
+launcher also binds the execution ID to the new output directory basename and
+checks the runtime discovery response. The caller must choose a fresh execution ID
+and maintain serialization through activation; this is not a distributed lock or replay registry.
 
 ## S3 and protected process results
 

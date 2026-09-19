@@ -1,0 +1,138 @@
+{
+  "activation_admission": {
+    "automated": {
+      "status": "unknown"
+    },
+    "caller": {
+      "candidate_sha256": "bf97b9ddd8843cc435ff9e7ac4d4d7d66e333ebacb0fb588196fdf3af02ab7a5",
+      "checked_no_pending": true,
+      "execution_id": "synthetic-example",
+      "serialized": true,
+      "target": {
+        "endpoint": "https://192.0.2.1",
+        "host": "firewall",
+        "ssl_verify": true
+      }
+    }
+  },
+  "business_acceptance": "not_performed",
+  "candidate_sha256": "bf97b9ddd8843cc435ff9e7ac4d4d7d66e333ebacb0fb588196fdf3af02ab7a5",
+  "execution_id": "synthetic-example",
+  "kind": "opnsense-result",
+  "operation": "apply",
+  "recovery_file": "recovery.json",
+  "runtime": {
+    "image_digest": "registry.invalid/runtime@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "interface_version": 1,
+    "platform": "linux/arm64"
+  },
+  "schema_version": 1,
+  "selected": [
+    {
+      "identity": [
+        "SYNTHETIC_WEB"
+      ],
+      "resource": "aliases"
+    },
+    {
+      "identity": [
+        "iaas:opnsense:dnat:synthetic:web"
+      ],
+      "resource": "dnat"
+    }
+  ],
+  "stages": [
+    {
+      "activation": "confirmed",
+      "activation_detail": {
+        "status": "confirmed"
+      },
+      "active": [
+        {
+          "active": {
+            "coverage": "saved configuration only",
+            "status": "unsupported"
+          },
+          "configuration": "verified",
+          "identity": [
+            "SYNTHETIC_WEB"
+          ],
+          "resource": "aliases"
+        }
+      ],
+      "attempted": true,
+      "configuration": "verified",
+      "identities": [
+        [
+          "SYNTHETIC_WEB"
+        ]
+      ],
+      "mode": "save",
+      "resource": "aliases",
+      "save": "saved"
+    },
+    {
+      "activation": "confirmed",
+      "activation_detail": {
+        "status": "confirmed"
+      },
+      "active": [
+        {
+          "active": {
+            "coverage": "saved configuration only",
+            "status": "unsupported"
+          },
+          "configuration": "verified",
+          "identity": [
+            "iaas:opnsense:dnat:synthetic:web"
+          ],
+          "resource": "dnat"
+        }
+      ],
+      "attempted": true,
+      "configuration": "verified",
+      "identities": [
+        [
+          "iaas:opnsense:dnat:synthetic:web"
+        ]
+      ],
+      "mode": "save",
+      "resource": "dnat",
+      "save": "saved"
+    }
+  ],
+  "status": "completed_with_unverified",
+  "target": {
+    "endpoint": "https://192.0.2.1",
+    "host": "firewall",
+    "ssl_verify": true
+  },
+  "verification": {
+    "business_acceptance": "not_performed",
+    "objects": [
+      {
+        "active": {
+          "coverage": "saved configuration only",
+          "status": "unsupported"
+        },
+        "configuration": "verified",
+        "identity": [
+          "SYNTHETIC_WEB"
+        ],
+        "resource": "aliases"
+      },
+      {
+        "active": {
+          "coverage": "saved configuration only",
+          "status": "unsupported"
+        },
+        "configuration": "verified",
+        "identity": [
+          "iaas:opnsense:dnat:synthetic:web"
+        ],
+        "resource": "dnat"
+      }
+    ],
+    "status": "completed_with_unverified"
+  }
+}

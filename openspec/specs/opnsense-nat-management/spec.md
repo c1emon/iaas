@@ -6,7 +6,7 @@ Define consistent management of destination and one-to-one NAT while preserving 
 ## Requirements
 
 ### Requirement: Unified lifecycle with independent resources
-The system SHALL expose independent dnat and one-to-one-nat resource selections, files and validators with common identity, admission and lifecycle conventions. It SHALL NOT accept fields belonging only to another NAT type or infer resource type from a mixed universal record. Existing four-resource callers SHALL remain valid without new files. `snat`, `snat.yml`, `opnsense_snat_rules`, `manage-snat.yml` and `opnsense_snat_source` SHALL remain unregistered deferred names until a later upstream compatibility change.
+The system SHALL expose independent dnat and one-to-one-nat resource selections, files and validators with common identity, admission and lifecycle conventions. It SHALL NOT accept fields belonging only to another NAT type or infer resource type from a mixed universal record. Existing four-resource callers SHALL remain valid without new files. `snat`, `snat.yml`, `opnsense_snat_rules`, `manage-snat.yml` and `opnsense_snat_source` SHALL remain unregistered deferred names until a later upstream compatibility change. The explicit online configuration workflow SHALL be permitted to read necessary references in unselected resources without enrolling them as desired inputs or mutations.
 
 #### Scenario: Resource-specific field is misplaced
 - **WHEN** a one-to-one record includes a DNAT associated_rule or destination port
@@ -14,7 +14,8 @@ The system SHALL expose independent dnat and one-to-one-nat resource selections,
 
 #### Scenario: Resource not selected
 - **WHEN** a caller has not selected a NAT resource
-- **THEN** that resource is not required, discovered or managed
+- **THEN** its desired file is not required or automatically discovered and its objects are not managed
+- **AND** only necessary read-only dependency checks in an explicit online configuration workflow may inspect relevant unselected live NAT references
 
 ### Requirement: Stable identity and additive ownership
 Each active NAT resource SHALL derive its unique description from its type, scope and slug as iaas:opnsense:<type>:<scope>:<slug>. Present SHALL create/update/enable/disable its object, absent SHALL delete only its exact object, and omission SHALL preserve appliance objects. Ambiguous live matches and duplicate identities within a type SHALL fail. No site addresses, ownership inference or namespace-wide cleanup SHALL be embedded.
@@ -28,7 +29,7 @@ Each active NAT resource SHALL derive its unique description from its type, scop
 - **THEN** deletion does not require former target/port fields and does not affect an undeclared object
 
 ### Requirement: Per-resource activation and honest recovery
-NAT CRUD SHALL suppress per-item reload. A successful changed single-resource batch SHALL activate once using its verified native target; check mode SHALL never activate. CRUD failure SHALL stop activation and report possibly saved partial changes. Activation failure SHALL distinguish saved/running state. An explicit strict boolean force-reload option SHALL permit unchanged recovery. Cross-resource atomicity, automatically chosen deployment order and isolated appliance-wide reload effects SHALL NOT be claimed.
+NAT CRUD SHALL suppress per-item reload. A successful changed single-resource batch SHALL activate once using its verified native target; check mode SHALL never activate. CRUD failure SHALL stop activation and report possibly saved partial changes. Activation failure SHALL distinguish saved/running state. An explicit strict boolean force-reload option SHALL permit unchanged recovery in direct execution. The generic configuration workflow SHALL be permitted to order explicitly selected resource stages by supported references, with each actual stage satisfying activation dependencies and shared reload admission. It SHALL NOT choose site migration stages, add unselected mutations or claim cross-resource atomicity or isolated appliance-wide reload effects.
 
 #### Scenario: A later resource batch fails
 - **WHEN** the caller's earlier batch succeeded but a later batch fails
@@ -37,6 +38,11 @@ NAT CRUD SHALL suppress per-item reload. A successful changed single-resource ba
 #### Scenario: Read-only check mode
 - **WHEN** a resource runs in check mode
 - **THEN** it performs no CRUD or activation, including when force reload is requested
+
+#### Scenario: Generic reference ordering
+- **WHEN** a reviewed configuration candidate explicitly selects prerequisite creation, NAT reference changes and prerequisite retirement
+- **THEN** the workflow orders those resource stages while leaving business migration sequencing to the caller
+- **AND** it refuses missing necessary selections instead of extending the write set
 
 ### Requirement: Complete declarations for managed optional fields
 Present records SHALL fully declare the supported managed fields. Omitted optional fields SHALL reset to their documented defaults or clear values rather than preserve stale configuration through provider omission. Optional port constraints, translation ports and tags SHALL clear; optional inversion and logging flags SHALL default false. Unmanaged native fields and undeclared objects SHALL remain untouched. Adapters SHALL verify the fixed provider's effective clear encoding.
@@ -53,11 +59,16 @@ The initial present contract SHALL manage ordinary DNAT with native `nordr=false
 - **THEN** the resource batch fails before any write without changing the exemption into ordinary port forwarding
 
 ### Requirement: Offline generation and explicit Ansible execution
-Runtime integration SHALL add only optional check/generate inputs; it SHALL NOT introduce an OPNsense launcher apply operation. Device writes SHALL use the respective manage-dnat.yml or manage-one-to-one-nat.yml playbook with caller inventory and explicit target limit. Source variables SHALL default to the selected environment's standard files and accept explicit generated-file paths. Each playbook SHALL validate the selected file and revalidate the actual loaded list before credential preflight. SNAT's reserved manage-snat.yml/opnsense_snat_source names SHALL remain unavailable in this change.
+Runtime integration SHALL retain optional offline check/generate inputs and SHALL support the explicit OPNsense configuration workflow for reviewed online plan/apply/verify and resource reads. Device writes SHALL reuse the respective manage-dnat.yml or manage-one-to-one-nat.yml resource implementation, with an exact target selected by the launcher or caller inventory and explicit limit for direct Ansible invocation. Source variables SHALL default to the selected environment's standard files for direct execution and accept explicit generated-file paths. Each execution SHALL validate the selected file and revalidate the actual loaded list before credential preflight. Generation SHALL NOT trigger device execution. SNAT's reserved manage-snat.yml/opnsense_snat_source names SHALL remain unavailable.
 
 #### Scenario: Generated resource is handed to a playbook
 - **WHEN** the caller selects a generated NAT file through the resource's source variable
 - **THEN** the playbook validates and loads that file and validates any precedence-adjusted list before credentials; generation alone performs no device operation
+
+#### Scenario: Reviewed NAT candidate is applied through the launcher
+- **WHEN** the caller explicitly invokes configuration workflow apply with selected NAT identities
+- **THEN** the workflow performs candidate and live-state admission and reuses the resource implementation only for those selected identities
+- **AND** direct Ansible source selection remains available without introducing native OpenTofu plan semantics
 
 ### Requirement: Generic resources do not own shared modes or site composition
 The system SHALL NOT change global reflection settings or outbound NAT automatic/hybrid/manual mode, synthesize a site hairpin configuration, create a proxy policy or manage nginx/DNS. Callers SHALL explicitly supply the standard resources and arrange their deployment. Fixed provider loading and representative compatibility/regression tests SHALL precede software support claims; runtime execution SHALL NOT fetch dependencies.

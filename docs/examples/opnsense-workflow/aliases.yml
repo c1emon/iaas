@@ -1,0 +1,7 @@
+opnsense_aliases:
+  - name: SYNTHETIC_WEB
+    type: host
+    content: [192.0.2.10]
+    description: Synthetic workflow target
+    enabled: true
+    state: present

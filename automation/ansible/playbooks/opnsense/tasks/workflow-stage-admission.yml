@@ -1,0 +1,72 @@
+---
+- name: Require a selected workflow source for the save stage
+  ansible.builtin.assert:
+    that:
+      - opnsense_workflow_source is defined
+      - opnsense_workflow_source | length > 0
+      - opnsense_workflow_result_path is defined
+      - opnsense_workflow_result_path | length > 0
+    fail_msg: workflow save stage requires a standard resource source file.
+  changed_when: false
+
+- name: Validate selected workflow records locally
+  ansible.builtin.command:
+    argv:
+      - uv
+      - run
+      - --no-sync
+      - --directory
+      - "{{ playbook_dir }}/../../../.."
+      - python
+      - -m
+      - iaas_automation.opnsense_validation
+      - --resource
+      - "{{ opnsense_workflow_resource }}"
+      - --file
+      - "{{ opnsense_workflow_source }}"
+  args:
+    chdir: "{{ playbook_dir }}/../../../.."
+  environment:
+    PYTHONPATH: "{{ playbook_dir }}/../../../src"
+  changed_when: false
+  check_mode: false
+
+- name: Load the selected workflow source
+  ansible.builtin.include_vars:
+    file: "{{ opnsense_workflow_source }}"
+
+- name: Resolve the actual loaded workflow list
+  ansible.builtin.set_fact:
+    opnsense_workflow_key: >-
+      {{ {
+        'aliases': 'opnsense_aliases',
+        'vips': 'opnsense_vips',
+        'gateways': 'opnsense_gateways',
+        'filter-rules': 'opnsense_filter_rules',
+        'dnat': 'opnsense_dnat_rules',
+        'one-to-one-nat': 'opnsense_one_to_one_nat_rules',
+        'interface-groups': 'opnsense_interface_groups'
+      }[opnsense_workflow_resource] }}
+
+- name: Revalidate the actual loaded workflow list before credentials
+  ansible.builtin.assert:
+    that:
+      - lookup('ansible.builtin.vars', opnsense_workflow_key) is sequence
+      - lookup('ansible.builtin.vars', opnsense_workflow_key) is not string
+      - >-
+        lookup('ansible.builtin.vars', opnsense_workflow_key) |
+        opnsense_resource_admission(opnsense_workflow_resource,
+        opnsense_filter_rule_context | default(none))
+    fail_msg: the loaded workflow resource failed its standard admission checks.
+  changed_when: false
+
+- name: Verify the fixed provider for resources with dedicated readiness checks
+  ansible.builtin.assert:
+    that:
+      - opnsense_workflow_resource | opnsense_provider_readiness
+    fail_msg: the selected fixed OPNsense provider is unavailable or not pinned.
+  when: opnsense_workflow_resource in ['dnat', 'one-to-one-nat', 'interface-groups']
+  changed_when: false
+
+- name: Run OPNsense API credential preflight after all local checks
+  ansible.builtin.import_tasks: api-credential-preflight.yml

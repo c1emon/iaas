@@ -17,6 +17,7 @@ type discovery struct {
 	Reason          string   `json:"reason"`
 	Path            string   `json:"path"`
 	CredentialNames []string `json:"credential_names"`
+	ExecutionID     string   `json:"execution_id"`
 }
 
 func (t *task) runtimeArgs() []string {
@@ -27,6 +28,9 @@ func (t *task) runtimeArgs() []string {
 	}
 	if t.options.Scope != "" {
 		args = append(args, "--scope", t.options.Scope)
+	}
+	if t.options.ExecutionID != "" {
+		args = append(args, "--execution-id", t.options.ExecutionID)
 	}
 	return args
 }
@@ -47,6 +51,9 @@ func (t *task) discover() (discovery, error) {
 	}
 	if response.Status == "input-required" {
 		return response, nil
+	}
+	if t.options.ExecutionID != "" && response.ExecutionID != t.options.ExecutionID {
+		return response, errors.New("runtime execution identity is not bound to this launcher task")
 	}
 	if response.Status == "failed" && response.Reason != "" {
 		// The runtime's structured public reason excludes source values and

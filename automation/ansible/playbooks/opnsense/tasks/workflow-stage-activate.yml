@@ -1,0 +1,65 @@
+---
+- name: Select the fixed activation target
+  ansible.builtin.set_fact:
+    opnsense_workflow_activation_target:
+      module: "{{ opnsense_workflow_activation_targets[opnsense_workflow_resource].module }}"
+      controller: "{{ opnsense_workflow_activation_targets[opnsense_workflow_resource].controller }}"
+      command: "{{ opnsense_workflow_activation_targets[opnsense_workflow_resource].command }}"
+
+- name: Run the fixed activation target without implicit retry
+  block:
+    - name: Activate the selected OPNsense resource  # noqa args[module]
+      oxlorg.opnsense.raw:  # noqa: args[module]
+        module: "{{ opnsense_workflow_activation_target.module }}"
+        controller: "{{ opnsense_workflow_activation_target.controller }}"
+        command: "{{ opnsense_workflow_activation_target.command }}"
+        action: post
+      register: opnsense_workflow_activation_call
+      failed_when: >-
+        (opnsense_workflow_activation_call.response.status | default('failed')
+        | string | lower) != 'ok'
+      no_log: true
+
+    - name: Record fixed activation completion evidence
+      ansible.builtin.set_fact:
+        opnsense_workflow_activation_result:
+          status: >-
+            {{ 'confirmed' if opnsense_workflow_resource in
+            ['vips', 'filter-rules', 'dnat', 'one-to-one-nat'] else 'unconfirmed' }}
+          target: "{{ opnsense_workflow_resource }}"
+          response: "{{ opnsense_workflow_activation_call.response | default({}) }}"
+          evidence: >-
+            {{ 'synchronous configd completion response'
+            if opnsense_workflow_resource in ['vips', 'filter-rules', 'dnat', 'one-to-one-nat']
+            else 'controller response only; active state was not independently checked' }}
+          active_check:
+            status: not_attempted
+  rescue:
+    - name: Record the failed activation independently of saved configuration
+      ansible.builtin.set_fact:
+        opnsense_workflow_activation_result:
+          status: failed
+          target: "{{ opnsense_workflow_resource }}"
+          active_check: {status: unknown}
+    - name: Persist the protected failed activation facts
+      ansible.builtin.copy:
+        content: "{{ opnsense_workflow_activation_result | to_json }}"
+        dest: "{{ opnsense_workflow_result_path }}"
+        mode: '0600'
+      no_log: true
+    - name: Stop after activation failure
+      ansible.builtin.fail:
+        msg: >-
+          OPNsense workflow activation failed after the provider accepted the
+          saved configuration. Active state is not confirmed; no retry or rollback was performed.
+
+- name: Return the independent workflow activation result
+  ansible.builtin.debug:
+    msg: "{{ opnsense_workflow_activation_result }}"
+
+- name: Persist the protected activation-stage facts
+  ansible.builtin.copy:
+    content: "{{ opnsense_workflow_activation_result | to_json }}"
+    dest: "{{ opnsense_workflow_result_path }}"
+    mode: '0600'
+  no_log: true

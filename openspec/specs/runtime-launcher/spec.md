@@ -46,9 +46,19 @@ Help and results SHALL distinguish offline checks, generation, dependency prepar
 
 #### Scenario: Expose the first-release component operations
 - **WHEN** the launcher publishes its supported component operations
-- **THEN** it SHALL provide selected-input offline checks and supported non-sensitive generation, OPNsense diagnostics, switch readonly facts, PVE preflight/health and saved-plan preparation/application, services/foundation generation/checks and foundation health, and existing K3s preflight/verify/deploy/snapshot/upgrade
+- **THEN** it SHALL provide selected-input offline checks and supported non-sensitive generation, OPNsense diagnostics and explicit configuration read/plan/apply/verify, switch readonly facts, PVE preflight/health and saved-plan preparation/application, services/foundation generation/checks and foundation health, and existing K3s preflight/verify/deploy/snapshot/upgrade
 - **AND** PVE dependency preparation SHALL remain explicit, K3s snapshot SHALL be classified as a remote write, and existing operation prerequisites SHALL remain enforced
-- **AND** the design's first-release support table SHALL be reflected in help and representative dispatch tests without arbitrary command passthrough
+- **AND** help and representative dispatch tests SHALL reflect supported operations without arbitrary command passthrough
+
+#### Scenario: OPNsense online plan is not a native state plan
+- **WHEN** a caller invokes OPNsense read, plan or verify for one exact target
+- **THEN** it SHALL be classified as online read-only with private local outputs and no device writes or state-backend access
+- **AND** it SHALL NOT require S3 configuration, OpenTofu locking or a native saved plan
+
+#### Scenario: Apply a selected OPNsense candidate
+- **WHEN** a caller invokes OPNsense apply
+- **THEN** it SHALL be classified as an infrastructure write, require the explicit compatible reviewed candidate and execute the same business contract on local Docker and DinD
+- **AND** operation-specific file and credential selection SHALL exclude unrelated inputs and OP_* bootstrap credentials
 
 ### Requirement: Local and daemon filesystem separation
 The launcher SHALL explicitly distinguish client-local Docker path sharing from DinD file transfer and SHALL preserve declared input relationships and protected-file restrictions in both modes.

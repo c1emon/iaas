@@ -61,7 +61,7 @@ network access and forward no credentials. Online operations require `--scope`:
 
 | Component | Operations | Online scope |
 | --- | --- | --- |
-| OPNsense | check, generate, diagnose | One inventory host |
+| OPNsense | check, generate, diagnose, read, plan, apply, verify | One inventory host |
 | switch | check, generate, diagnose (read-only facts) | Explicit comma-separated inventory hosts |
 | PVE | check, generate, preflight, health, prepare-dependencies, plan / prepare-plan, apply-saved-plan | Cluster name for diagnostics; complete root ID for dependency/state operations |
 | services | check, generate | — |
@@ -90,6 +90,35 @@ Online component `files` aliases are explicit:
   `SWITCH_SSH_USER`, `SWITCH_SSH_PASSWORD`, `SWITCH_SSH_PORT` environment channels.
 - Foundation health: CA files are explicit aliases, associated with their
   inventory paths through `options.ca_files`.
+
+- OPNsense workflow: `read` uses `inventory` and `request`; `plan` uses
+  `inventory`, `request` and every explicitly declared standard resource input;
+  `apply` and `verify` use `inventory` and `candidate`. A recovery plan uses
+  `inventory`, `request` and `recovery`, with no desired inputs. The request
+  controls the execution selection while the plan candidate retains the complete
+  declared context. API credentials use `OPNSENSE_API_KEY` and
+  `OPNSENSE_API_SECRET`.
+
+```sh
+iaas run --runtime-config runtime.json \
+  --environment docs/examples/opnsense-workflow/environment.yml \
+  --engine local --component opnsense --operation plan \
+  --scope firewall --output ./opnsense-plan
+
+iaas run --runtime-config runtime.json \
+  --environment apply-environment.yml \
+  --engine local --component opnsense --operation apply \
+  --scope firewall --execution-id fw-apply-001 --output ./fw-apply-001
+```
+
+The apply environment must carry the candidate file and options bound to the same
+candidate bytes. Its options require `candidate_sha256`, `execution_id` and
+`activation_check`, with optional boolean `check_mode`; the activation check repeats
+the candidate digest and execution ID and records the target connection identity,
+`checked_no_pending: true` and `serialized: true`. The launcher passes the execution ID to discovery and runtime,
+requires it for OPNsense apply, and requires the output directory basename to match.
+These checks bind the workflow; they do not establish device data-plane success or
+production acceptance.
 
 Adjacent undeclared `group_vars`, files and secrets directories are not uploaded.
 Secret files must be nonempty, owned by the execution user and inaccessible to

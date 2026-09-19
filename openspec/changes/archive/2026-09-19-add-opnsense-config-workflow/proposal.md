@@ -1,5 +1,9 @@
 # OPNsense 通用配置工作流
 
+当前状态：已获授权，在 `add-opnsense-config-workflow` 实现分支完成 19 项软件实施任务。
+验收范围及能力限制见 [acceptance.md](acceptance.md)，任务状态见 [tasks.md](tasks.md)。
+已于 2026-09-19 归档并同步主规格；尚未合并、发布或执行调用方接入与现场业务验收。
+
 ## Why
 
 调用方已有标准资源声明，但日常应用仍需自行编写容器命令、读取 playbook 和增量切片，缺少统一的现场差异、指定候选执行及部分失败结果。需要在现有 launcher/runtime 中补齐通用配置工作流，让调用方保留策略与部署决策，复用 iaas 的资源合同和执行能力。
@@ -33,4 +37,4 @@
 - 实施涉及 `automation/launcher/`、`automation/src/iaas_automation/runtime_execution/`、OPNsense 校验/读取适配、`automation/ansible/playbooks/opnsense/`、相关测试和上游通用手册。复用固定 Collection，不在运行时安装依赖，不复制 API 执行器到调用方。
 - iaas 只管理标准资源和通用执行结果。策略编译、首次接管决定、业务迁移阶段、部署基线及 `--previous`、所有权元数据和现场业务验收全部由调用方维护；不增加本站配置、策略专用 schema 或默认目标。
 - 不包含 SNAT、DHCP、RA、WAN/VLAN、普通路由等新资源、全设备接管、分布式锁、工作流 DSL、跨设备事务、S3 state 或原生 OpenTofu plan 语义。
-- 本次仅创建规划文档，实施任务均未执行；不切换实现分支、不发布、不迁移调用方版本或访问设备。开始实施前按仓库规则确认实现分支与工作树。
+- 实施分支已按用户授权创建并完成软件验证；未发布、未迁移调用方版本、未访问设备。设计复核历史保留在 review.md，不代表当前实现或现场资格。

@@ -7,6 +7,7 @@ from dataclasses import asdict
 import json
 import os
 from pathlib import Path
+import re
 import sys
 from typing import cast
 
@@ -40,6 +41,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--input-map", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--image-digest", default="")
+    parser.add_argument("--execution-id", default="")
     parser.add_argument("--plan", type=Path)
     parser.add_argument("--companions", type=Path)
     parser.add_argument("--discover", action="store_true")
@@ -51,6 +53,14 @@ def main(argv: list[str] | None = None) -> int:
         mapping = json.loads(args.input_map.read_text()) if args.input_map else None
         reader = SourceReader(mapping)
         selected = load_operation(args.environment, args.component, args.operation, args.scenario, reader)
+        if args.component == 'opnsense' and args.operation == 'apply':
+            require(bool(args.execution_id), 'OPNsense apply requires --execution-id')
+            require(re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", args.execution_id) is not None,
+                    "execution-id must be a bounded identifier")
+            require(selected.options.get("execution_id") == args.execution_id,
+                    "execution identity does not match selected options")
+        else:
+            require(not args.execution_id, 'execution identity is only supported for OPNsense apply')
         render_names = rendering_credentials(selected, args.operation)
         allowed = credential_names(args.component, args.operation, render_names)
         # Explicit aliases win over host file channels, before the launcher
@@ -58,7 +68,8 @@ def main(argv: list[str] | None = None) -> int:
         allowed -= {variable for alias, variable in AWS_FILE_VARIABLES.items() if alias in selected.files}
         if args.discover:
             print(json.dumps({"status": "ready", "credential_names": sorted(allowed), "effects": asdict(effects),
-                              "sources": sorted(map(str, reader.logical_sources))}))
+                              "sources": sorted(map(str, reader.logical_sources)),
+                              "execution_id": args.execution_id or None}))
             return 0
         require(args.output is not None, "operation requires an explicit output directory")
         require(not effects.network or bool(args.scope), "online operation requires explicit scope")
@@ -93,7 +104,7 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 prepare_plan(selected, execution, backend, args.scope, args.image_digest)
         else:
-            run_component(selected, args.operation, args.scope, execution)
+            run_component(selected, args.operation, args.scope, execution, image_digest=args.image_digest)
         print(json.dumps({"status": "success", "output": str(outputs.root), "effects": asdict(effects),
                           "phases": [{"phase": item["phase"], "exit_code": item.get("exit_code")} for item in execution.phases]}))
         return 0
