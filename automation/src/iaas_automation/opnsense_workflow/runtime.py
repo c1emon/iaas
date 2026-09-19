@@ -12,7 +12,7 @@ import yaml
 from iaas_automation.common.errors import require
 from iaas_automation.runtime_config.selection import runtime_platform
 from iaas_automation.runtime_execution.execution import OperationFailed
-from .contracts import VERSION, load_candidate, request, save, selected_records, selectors
+from .contracts import RESULT_VERSION, load_candidate, request, save, selected_records, selectors
 from .executor import apply, reverse_documents, verify
 from .planning import coverage, plan
 
@@ -106,7 +106,7 @@ def run(selected, operation: str, scope: str, execution, image_digest: str) -> N
         require(candidate['target'] == target and candidate['runtime'] == runtime, 'candidate target or runtime mismatch')
         if operation == 'apply':
             require(isinstance(selected.options.get('candidate_sha256'), str), 'apply needs a reviewed candidate digest')
-    base = {'schema_version': VERSION, 'kind': 'opnsense-result', 'operation': operation, 'target': target,
+    base = {'schema_version': RESULT_VERSION, 'kind': 'opnsense-result', 'operation': operation, 'target': target,
             'runtime': runtime, 'candidate_sha256': candidate_digest, 'status': 'running', 'business_acceptance': 'not_performed'}
     save(directory / 'result.json', base)
     reader = Reader(target, execution.environ)

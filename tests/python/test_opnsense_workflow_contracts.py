@@ -80,3 +80,33 @@ def test_recovery_rejects_invalid_standard_declaration_and_unattempted_entry(tmp
     with pytest.raises(ValidationError, match="reconciled|attempted"):
         reverse_documents(recovery, {"schema_version": 1, "selection": {"aliases": "all"}},
                           {"aliases": {"status": "complete", "objects": []}}, TARGET)
+
+
+def test_workflow_versions_leave_request_and_launcher_unchanged(tmp_path):
+    value, path, reviewed = _saved_candidate(tmp_path)
+    assert value['schema_version'] == 2
+    assert value['request']['schema_version'] == 1
+    assert value['runtime']['interface_version'] == 1
+    assert load_candidate(path, reviewed)[0] == value
+    value['schema_version'] = 1
+    reviewed = save(path, value)
+    with pytest.raises(ValidationError, match='re-plan'):
+        load_candidate(path, reviewed)
+    with pytest.raises(ValidationError, match='re-plan'):
+        load_candidate(path)  # standalone verify uses the same loader
+
+
+@pytest.mark.parametrize('version', [1, 2])
+def test_legacy_recovery_uses_configuration_not_activation_proof(tmp_path, version):
+    recovery = _saved_recovery(tmp_path)
+    assert recovery['schema_version'] == 2
+    assert json.loads((tmp_path / 'result.json').read_text())['schema_version'] == 2
+    recovery['schema_version'] = version
+    recovery['stages'][0]['activation'] = 'confirmed'
+    observed = Appliance(aliases=[alias()]).read(['aliases'])
+    req = {'schema_version': 1, 'selection': {'aliases': 'all'}}
+    reversed_docs = reverse_documents(recovery, req, observed, TARGET)
+    assert reversed_docs['aliases']['opnsense_aliases'][0]['state'] == 'absent'
+    recovery['entries'][0].update(after_status='unknown', after=None)
+    with pytest.raises(ValidationError, match='reconciled'):
+        reverse_documents(recovery, req, observed, TARGET)

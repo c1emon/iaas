@@ -6,7 +6,7 @@ import ipaddress
 from typing import Any, cast
 
 from iaas_automation.common.errors import ValidationError, require
-from .contracts import PROVIDER, VERSION, identity, key, request, selected_records, selection_keys
+from .contracts import PROVIDER, CANDIDATE_VERSION, identity, key, request, selected_records, selection_keys
 
 CONSUMERS = {'filter-rules', 'dnat', 'one-to-one-nat'}
 
@@ -242,7 +242,7 @@ def plan(documents: dict, req: dict, observations: dict, target: dict, runtime: 
                             'adopted': marker in adopted,
                             'recovery': old.get('recovery', 'manual_required') if old else 'expressible'})
     stages = stages_for(selected, before, differences, interfaces_from(observations), recovery)
-    return {'schema_version': VERSION, 'kind': 'opnsense-candidate', 'provider': PROVIDER,
+    return {'schema_version': CANDIDATE_VERSION, 'kind': 'opnsense-candidate', 'provider': PROVIDER,
             'target': target, 'runtime': runtime, 'source': source, 'request': req,
             'documents': deepcopy(documents), 'selected': selected, 'coverage': sorted(observations),
             'before': before, 'differences': differences, 'stages': stages}

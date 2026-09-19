@@ -7,7 +7,7 @@ from typing import Any
 
 from iaas_automation.common.errors import ValidationError, require
 from iaas_automation.opnsense_validation import TOP_LEVEL, validate_document
-from .contracts import VERSION, key, save, selected_records, selection_keys, selectors, shape, validate_coverage
+from .contracts import RECOVERY_VERSION, RESULT_VERSION, key, save, selected_records, selection_keys, selectors, shape, validate_coverage
 from .planning import interfaces_from, objects, overlay, plan, relevant, semantic, valid_state
 
 
@@ -93,7 +93,7 @@ def recovery_document(candidate: dict, digest: str, execution_id: str, current: 
                         'recovery': recoverable,
                         'desired': deepcopy(item['desired']), 'attempted': False,
                         'after_status': 'unknown', 'after': None})
-    return {'schema_version': VERSION, 'kind': 'opnsense-recovery', 'target': candidate['target'],
+    return {'schema_version': RECOVERY_VERSION, 'kind': 'opnsense-recovery', 'target': candidate['target'],
             'runtime': candidate['runtime'], 'candidate_sha256': digest, 'execution_id': execution_id,
             'entries': entries, 'stages': []}
 
@@ -116,7 +116,7 @@ def readback(recovery: dict, candidate: dict, reader: Any) -> None:
 
 def apply(candidate: dict, digest: str, reader: Any, writer: Any, execution_id: str,
           conclusion: dict, output: Path, *, check_mode: bool = False) -> dict:
-    result = {'schema_version': VERSION, 'kind': 'opnsense-result', 'operation': 'apply',
+    result = {'schema_version': RESULT_VERSION, 'kind': 'opnsense-result', 'operation': 'apply',
               'target': candidate['target'], 'runtime': candidate['runtime'], 'candidate_sha256': digest,
               'execution_id': execution_id, 'selected': [{'resource': item['resource'], 'identity': item['identity']}
                                                        for item in candidate['selected']],
@@ -216,7 +216,7 @@ def reverse_documents(recovery: dict, req: dict, observations: dict, target: dic
     from .contracts import RESOURCES, identity
 
     shape(recovery, {'schema_version', 'kind', 'target', 'runtime', 'candidate_sha256', 'execution_id', 'entries', 'stages'})
-    require(recovery['schema_version'] == VERSION and recovery['kind'] == 'opnsense-recovery'
+    require(type(recovery['schema_version']) is int and recovery['schema_version'] in {1, RECOVERY_VERSION} and recovery['kind'] == 'opnsense-recovery'
             and isinstance(recovery['target'], dict) and recovery['target'] == target,
             'incompatible recovery target or format')
     require(isinstance(recovery['runtime'], dict)

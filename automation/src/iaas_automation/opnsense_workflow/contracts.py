@@ -15,7 +15,10 @@ from iaas_automation.opnsense_validation import TOP_LEVEL, VALIDATORS, validate_
 from iaas_automation.opnsense_validation.aliases import ALIAS_NAME
 from iaas_automation.opnsense_validation.interface_groups import GROUP_NAME
 
-VERSION = 1
+REQUEST_VERSION = 1
+CANDIDATE_VERSION = 2
+RESULT_VERSION = 2
+RECOVERY_VERSION = 2
 RESOURCES = tuple(TOP_LEVEL)
 PROVIDER = "oxlorg.opnsense@1423500c29f88da9ba8147a23fc64006cf464159"
 
@@ -74,7 +77,7 @@ def selectors(value: Any, *, allow_all: bool = True) -> dict:
 
 def request(value: Any) -> dict:
     shape(value, {"schema_version", "selection"}, {"managed", "adopt", "activation_recovery"})
-    require(type(value['schema_version']) is int and value['schema_version'] == VERSION,
+    require(type(value['schema_version']) is int and value['schema_version'] == REQUEST_VERSION,
             "unsupported workflow request version")
     selectors(value['selection'])
     for field in ('managed', 'adopt', 'activation_recovery'):
@@ -129,8 +132,8 @@ def load_candidate(path: Path, reviewed: str | None = None) -> tuple[dict, str]:
     value = json.loads(data)
     shape(value, {'schema_version', 'kind', 'target', 'runtime', 'provider', 'source', 'request',
                   'documents', 'selected', 'coverage', 'before', 'differences', 'stages'})
-    require(value['schema_version'] == VERSION and value['kind'] == 'opnsense-candidate'
-            and value['provider'] == PROVIDER, "incompatible workflow candidate")
+    require(type(value['schema_version']) is int and value['schema_version'] == CANDIDATE_VERSION and value['kind'] == 'opnsense-candidate'
+            and value['provider'] == PROVIDER, "incompatible workflow candidate; re-plan with this runtime")
     req = request(value['request'])
     expected = selected_records(value['documents'], req['selection'])
     require(value['selected'] == expected, "candidate selection does not match its declarations")
