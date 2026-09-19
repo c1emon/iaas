@@ -2,7 +2,7 @@
 
 实施状态：本设计已完成软件实现，四个操作已注册。当前能力限制和验证范围见
 [验收与交接](acceptance.md)；下文开头保留实施前背景，操作步骤以
-[OPNsense 手册](../../../docs/operations/02-opnsense.md) 为准。
+[OPNsense 手册](../../../../docs/operations/02-opnsense.md) 为准。
 
 动机和两仓边界见 [proposal.md](proposal.md)。实施前 `operations.py` 仅注册 OPNsense check/generate/diagnose；diagnose 仅接受 Alias、规则日志和连接状态，不是完整配置读取器。实施前已有七类管理 playbook 提供声明校验、模块适配和批次激活，但并不提供统一的候选、跨资源执行与恢复结果。
 

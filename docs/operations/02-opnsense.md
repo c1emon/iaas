@@ -372,7 +372,7 @@ desired inputs。apply 的 options 必须包含 `candidate_sha256`、`execution_
 完整的合成文件见 [request/candidate/result/recovery 示例](../examples/opnsense-workflow/README.md)。
 它们包含虚构目标和 runtime digest，不可直接用于现场执行。
 
-能力限制、软件证据和消费前提见 [交接说明](../../openspec/changes/add-opnsense-config-workflow/acceptance.md)。
+能力限制、软件证据和消费前提见 [交接说明](../../openspec/changes/archive/2026-09-19-add-opnsense-config-workflow/acceptance.md)。
 
 ## 2.6 有界只读诊断
 

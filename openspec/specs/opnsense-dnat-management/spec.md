@@ -6,15 +6,21 @@ Provide reusable, explicitly selected destination NAT management from caller-own
 ## Requirements
 
 ### Requirement: Explicit optional DNAT resource
-The system SHALL support `dnat.yml` with an `opnsense_dnat_rules` list through an explicit DNAT validation and execution selection. Existing callers using only the four previously supported resources SHALL remain valid without a DNAT file. Unselected DNAT SHALL NOT trigger credential access, API reads or writes.
+The system SHALL support `dnat.yml` with an `opnsense_dnat_rules` list through an explicit DNAT validation and execution selection. Existing callers using only the four previously supported resources SHALL remain valid without a DNAT file. Unselected DNAT SHALL NOT trigger desired-file loading, credential access or writes merely because it exists. Only an explicitly invoked online configuration workflow SHALL be permitted to read necessary unselected DNAT references for its selected resource operation; such reads SHALL NOT authorize DNAT mutation.
 
 #### Scenario: Existing caller omits DNAT
-- **WHEN** an existing four-resource environment is checked or executed without selecting DNAT
+- **WHEN** an existing four-resource environment is checked or executed without selecting DNAT or invoking the new online configuration workflow
 - **THEN** its existing input contract remains valid and no DNAT operation occurs
 
 #### Scenario: Caller selects DNAT
 - **WHEN** a caller selects a standard DNAT file
-- **THEN** check/generate validates that file offline and only an explicit direct manage-dnat.yml Ansible invocation can enter credentialed DNAT execution; launcher apply is not added
+- **THEN** check/generate validates that file offline and only explicit direct manage-dnat.yml invocation or the formal online configuration workflow enters credentialed DNAT operations
+- **AND** generation alone never writes or activates DNAT
+
+#### Scenario: Unselected DNAT references a selected Alias deletion
+- **WHEN** the explicit online workflow checks whether an Alias selected for deletion has a surviving DNAT reference
+- **THEN** the necessary DNAT reference may be read and can block the deletion
+- **AND** no DNAT declaration is implicitly added to the write set
 
 ### Requirement: Generic DNAT declaration and ownership
 The system SHALL support present/absent, enabled state, sequence, interfaces, IP family, protocol, source/destination matching and ports, translation target/port, pool options, logging, tags, per-rule reflection and associated-filter mode. It SHALL use scope/slug-derived `iaas:opnsense:dnat:<scope>:<slug>` identity, reject duplicate identities and ambiguous live matches, and preserve undeclared objects. DNAT SHALL NOT accept independent description/uuid/match_fields overrides or no_port_forward in this initial contract.

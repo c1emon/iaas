@@ -2,7 +2,7 @@
 
 当前状态：已获授权，在 `add-opnsense-config-workflow` 实现分支完成 19 项软件实施任务。
 验收范围及能力限制见 [acceptance.md](acceptance.md)，任务状态见 [tasks.md](tasks.md)。
-尚未合并、发布或执行调用方接入与现场业务验收。
+已于 2026-09-19 归档并同步主规格；尚未合并、发布或执行调用方接入与现场业务验收。
 
 ## Why
 

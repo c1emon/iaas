@@ -75,10 +75,10 @@ unsupported。配置正确但活动项未覆盖时可为 completed_with_unverifi
 候选 SHA-256 和新的 execution_id。output basename 与 execution_id 一致；这不是
 分布式锁、跨主机重放服务或调用方策略引擎。不会传递 OP_* 引导凭据，也不依赖 S3。
 
-手册：[OPNsense](../../../docs/operations/02-opnsense.md)、
-[runtime 配置](../../../docs/runtime-configuration.md)、
-[launcher](../../../docs/runtime-launcher.md)。
-[合成示例](../../../docs/examples/opnsense-workflow/README.md) 包含 request、candidate、
+手册：[OPNsense](../../../../docs/operations/02-opnsense.md)、
+[runtime 配置](../../../../docs/runtime-configuration.md)、
+[launcher](../../../../docs/runtime-launcher.md)。
+[合成示例](../../../../docs/examples/opnsense-workflow/README.md) 包含 request、candidate、
 result、recovery 和新的反向 candidate；肯定状态只来自测试替身。
 
 ## 后续阶段
