@@ -30,7 +30,7 @@ def candidate_file(path):
         "provider": "oxlorg.opnsense@1423500c29f88da9ba8147a23fc64006cf464159",
         "source": {},
         "request": {"schema_version": 1, "selection": {}},
-        "documents": {}, "selected": [], "coverage": {}, "before": {},
+        "documents": {}, "selected": [], "coverage": [], "before": {},
         "differences": [], "stages": [],
     }
     encoded = json.dumps(value, sort_keys=True, indent=2) + "\n"

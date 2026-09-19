@@ -16,6 +16,7 @@ import json
 from pathlib import Path
 import sys
 from typing import Any, Protocol
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -69,6 +70,19 @@ class _AnsibleProvider:
         self._stage_number = 0
         if not isinstance(self.target.get("host"), str) or not isinstance(self.target.get("endpoint"), str):
             raise WriterError("workflow writer needs a resolved target host and endpoint")
+        try:
+            endpoint = urlsplit(self.target["endpoint"])
+            endpoint_port = endpoint.port
+        except (TypeError, ValueError):
+            raise WriterError("workflow writer needs a valid HTTPS API endpoint") from None
+        if (endpoint.scheme != "https" or not endpoint.hostname
+                or endpoint.username is not None or endpoint.password is not None
+                or endpoint.path not in {"", "/"} or endpoint.query or endpoint.fragment):
+            raise WriterError("workflow writer requires an HTTPS host-only API endpoint")
+        if endpoint_port is not None and not 1 <= endpoint_port <= 65535:
+            raise WriterError("workflow writer requires an API port between 1 and 65535")
+        self._collection_host = endpoint.hostname
+        self._collection_port = 443 if endpoint_port is None else endpoint_port
 
     def _run(self, action: str, resource: str, records: Sequence[Mapping[str, Any]] | None = None,
              context: Mapping[str, Any] | None = None) -> dict[str, Any]:
@@ -90,7 +104,10 @@ class _AnsibleProvider:
         values: dict[str, Any] = {
             "opnsense_workflow_resource": resource,
             "opnsense_workflow_action": action,
-            "opnsense_api_host": self.target["endpoint"],
+            # The Collection expects a bare IP/DNS host and constructs its own
+            # HTTPS base URL. Keep the validated endpoint port explicit.
+            "opnsense_api_host": self._collection_host,
+            "opnsense_api_port": self._collection_port,
             "opnsense_ssl_verify": self.target.get("ssl_verify", True),
             # Credentials remain in the protected execution environment and
             # are resolved by Ansible at runtime, never written to this file.

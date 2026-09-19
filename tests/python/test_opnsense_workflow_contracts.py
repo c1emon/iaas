@@ -45,6 +45,15 @@ def test_candidate_rejects_stage_added_to_noop(tmp_path):
         load_candidate(path, reviewed)
 
 
+@pytest.mark.parametrize('coverage', [[], ['aliases'], ['snat']])
+def test_candidate_rejects_incomplete_or_unknown_read_coverage(tmp_path, coverage):
+    value, path, _ = _saved_candidate(tmp_path)
+    value['coverage'] = coverage
+    reviewed = save(path, value)
+    with pytest.raises(ValidationError, match='coverage'):
+        load_candidate(path, reviewed)
+
+
 def test_recovery_rejects_unknown_resource_and_duplicate_identity(tmp_path):
     recovery = _saved_recovery(tmp_path)
     recovery["entries"].append({**deepcopy(recovery["entries"][0]), "resource": "snat"})

@@ -7,8 +7,8 @@ from typing import Any
 
 from iaas_automation.common.errors import ValidationError, require
 from iaas_automation.opnsense_validation import TOP_LEVEL, validate_document
-from .contracts import VERSION, key, save, selected_records, selection_keys, selectors, shape
-from .planning import interfaces_from, overlay, plan, relevant, semantic, valid_state
+from .contracts import VERSION, key, save, selected_records, selection_keys, selectors, shape, validate_coverage
+from .planning import interfaces_from, objects, overlay, plan, relevant, semantic, valid_state
 
 
 def fingerprint(state: dict) -> dict:
@@ -21,8 +21,15 @@ def fingerprint(state: dict) -> dict:
 
 
 def checked_live(candidate: dict, reader: Any, expected: dict) -> tuple[dict, dict]:
-    observations = reader.read(candidate['coverage'])
+    required = validate_coverage(candidate['selected'], candidate['coverage'])
+    observations = reader.read(required)
     current = relevant(observations, candidate['selected'])
+    # Reference switches can shrink the current dependency closure. Keep every
+    # previously observed identity under drift checks through this execution,
+    # while relevant() still discovers new dependencies and reverse references.
+    live = objects(observations)
+    for marker in expected:
+        current.setdefault(marker, live.get(marker))
     require(fingerprint(current) == fingerprint(expected), 'related configuration drift; review a new candidate')
     return observations, current
 
@@ -180,9 +187,7 @@ def apply(candidate: dict, digest: str, reader: Any, writer: Any, execution_id: 
             require(outcome['activation'] == 'confirmed', 'activation failed or unconfirmed; dependent stages stopped')
             require(checks['status'] != 'failed', 'post-activation verification failed')
             # Refresh only our selected post-state; unrelated drift is still compared at the next boundary.
-            expected = stage_state
-            observed = relevant(reader.read(candidate['coverage']), candidate['selected'])
-            require(fingerprint(observed) == fingerprint(expected), 'stage-external configuration changed')
+            _, observed = checked_live(candidate, reader, stage_state)
             expected = observed
             readback(recovery, candidate, reader)
             save(output / 'recovery.json', recovery)

@@ -257,6 +257,14 @@ class FixedCollectionTransport:
             return {"status": "unsupported", "reason": "active_observation_unavailable",
                     "coverage": "saved_configuration_only"}
         alias = identity[0]
+        alias_type = desired.get("type") if isinstance(desired, dict) else None
+        state = desired.get("state") if isinstance(desired, dict) else None
+        if state != "present":
+            return {"status": "unsupported", "reason": "absent_alias_active_proof_unavailable",
+                    "coverage": "saved_configuration_only"}
+        if desired.get("enabled") is not True:
+            return {"status": "unsupported", "reason": "disabled_alias_active_proof_unavailable",
+                    "coverage": "saved_configuration_only"}
         try:
             response = self._request("POST", f"firewall/alias_util/list/{alias}",
                                      {"rowCount": MAX_PAGE_ROWS, "current": 1})
@@ -274,11 +282,6 @@ class FixedCollectionTransport:
             return {"status": "incomplete", "reason": "malformed_alias_table", "coverage": "alias_table"}
         coverage = {"scope": "alias_table", "rows": len(rows), "total": total,
                     "membership_observed": True}
-        alias_type = desired.get("type") if isinstance(desired, dict) else None
-        state = desired.get("state") if isinstance(desired, dict) else None
-        if state != "present":
-            return {"status": "unsupported", "reason": "absent_alias_active_proof_unavailable",
-                    "coverage": coverage}
         if alias_type in {"urltable", "urljson", "dynipv6host"}:
             return {"status": "unsupported", "reason": "dynamic_alias_membership_not_refresh_proof",
                     "coverage": coverage}

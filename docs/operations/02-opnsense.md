@@ -298,7 +298,9 @@ Runtime 的 OPNsense 入口是 `read`、`plan`、`apply` 和 `verify`。它们�
 launcher/runtime 版本和实际镜像 digest，不能据此推断既有已发布镜像已经支持。
 工作流 inventory 必须自包含：将 `opnsense_api_host` 和 `opnsense_ssl_verify` 写在
 所选主机或其组的内联 vars 中，不会自动加载相邻 `group_vars`。API 凭据由调用方
-注入环境变量，不写入 inventory 或候选。
+注入环境变量，不写入 inventory 或候选。apply 使用固定 Collection 的 HTTPS
+通道；endpoint 可带显式端口（包括 IPv6 地址），会映射为裸主机与 api_port。
+HTTP endpoint 可用于只读适配，但不能用于 apply，也不会被静默改为 HTTPS。
 
 | 操作 | 输入 | 副作用 | 相对新 output 目录的主要结果 |
 | --- | --- | --- | --- |
@@ -351,6 +353,7 @@ desired inputs。apply 的 options 必须包含 `candidate_sha256`、`execution_
 不是分布式锁或跨主机防重放注册表。软件合同校验不等于设备写入或数据面验收。
 
 结果中的 save、activation、configuration 和 active 分别表示不同阶段。
+禁用或 absent Alias 的旧 PF 表不能证明激活成功，活动核对保留 unsupported。
 `accepted`/`unconfirmed` 不能当作激活成功；Groups、Gateway、动态 Alias 的原生
 `ok` 缺乏充分完成证据时会停止依赖阶段。Filter/NAT/VIP 可依据同步 configd 成功
 确认激活；其他活动核对仍按实际支持记录。`completed_with_unverified` 表示仍有

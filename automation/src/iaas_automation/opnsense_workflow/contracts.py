@@ -110,6 +110,16 @@ def save(path: Path, document: dict) -> str:
     return digest(data.encode())
 
 
+def validate_coverage(selected: list[dict], supplied: Any) -> list[str]:
+    from .planning import coverage
+    require(isinstance(supplied, list)
+            and all(isinstance(name, str) and name in RESOURCES for name in supplied)
+            and len(supplied) == len(set(supplied))
+            and set(coverage(selected)) <= set(supplied),
+            'candidate coverage does not contain required supported reads')
+    return supplied
+
+
 def load_candidate(path: Path, reviewed: str | None = None) -> tuple[dict, str]:
     data = path.read_bytes()
     actual_digest = digest(data)
@@ -124,6 +134,7 @@ def load_candidate(path: Path, reviewed: str | None = None) -> tuple[dict, str]:
     req = request(value['request'])
     expected = selected_records(value['documents'], req['selection'])
     require(value['selected'] == expected, "candidate selection does not match its declarations")
+    validate_coverage(expected, value['coverage'])
     chosen_by_key = {key(item['resource'], item['identity']): item for item in expected}
     chosen = {key(item['resource'], item['identity']) for item in expected}
     for field in ('managed', 'adopt', 'activation_recovery'):

@@ -282,6 +282,63 @@ def test_external_reference_change_after_save_stops_before_activation(tmp_path):
     assert device.calls == [('save', 'aliases')]
 
 
+def test_missing_read_coverage_cannot_overwrite_occupied_identity(tmp_path):
+    cand = candidate(Appliance(), documents(aliases=[alias()]))
+    cand['coverage'] = []
+    device = Appliance(aliases=[alias(content=['203.0.113.0/24'])])
+    result = execute(tmp_path, device, cand)
+    assert result['status'] == 'failed'
+    assert not device.calls
+    assert device.resources['aliases'][0]['content'] == ['203.0.113.0/24']
+    assert not (tmp_path / 'recovery.json').exists()
+
+
+@pytest.mark.parametrize('remove', [False, True])
+def test_rule_reference_removal_keeps_original_dependency_in_drift_scope(tmp_path, remove):
+    device = Appliance(aliases=[alias('A'), alias('B')], filter_rules=[rule('A')])
+    desired = rule('A', state='absent') if remove else rule('B')
+    cand = candidate(device, documents(filter_rules=[desired]))
+    result = execute(tmp_path, device, cand)
+    assert result['status'] == 'completed_with_unverified'
+    assert device.calls == [('save', 'filter-rules'), ('activate', 'filter-rules')]
+    assert device.resources['aliases'] == [alias('A'), alias('B')]
+
+
+def test_old_dependency_drift_after_reference_switch_still_stops_activation(tmp_path):
+    device = Appliance(aliases=[alias('A'), alias('B')], filter_rules=[rule('A')])
+    cand = candidate(device, documents(filter_rules=[rule('B')]))
+    original = device.save
+
+    def external_edit(resource, records):
+        result = original(resource, records)
+        device.resources['aliases'][0]['content'] = ['203.0.113.0/24']
+        return result
+
+    device.save = external_edit
+    assert execute(tmp_path, device, cand)['status'] == 'failed'
+    assert device.calls == [('save', 'filter-rules')]
+
+
+def test_disabled_alias_old_table_cannot_confirm_activation(tmp_path):
+    from iaas_automation.opnsense_workflow.reader import FixedCollectionTransport
+
+    class OldTable(FixedCollectionTransport):
+        def __init__(self):
+            pass
+
+        def _request(self, *args, **kwargs):
+            return {'rows': [{'ip': '192.0.2.0/24'}], 'total': 1}
+
+    device = Appliance(aliases=[alias()])
+    device.activation = 'unconfirmed'
+    device.active_check = OldTable().active_check
+    cand = candidate(device, documents(aliases=[alias(enabled=False)]))
+    result = execute(tmp_path, device, cand)
+    assert result['status'] == 'failed'
+    assert result['stages'][0]['configuration'] == 'verified'
+    assert result['stages'][0]['activation'] == 'unconfirmed'
+
+
 def test_recovery_unknown_and_manual_required_refused(tmp_path):
     device = Appliance()
     cand = candidate(device, documents(aliases=[alias()]))

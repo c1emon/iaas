@@ -62,7 +62,7 @@ filter/NAT 的 alias、interface-group、gateway 引用以稳定标签输出；�
   总体结果为 `completed_with_unverified`。固定提供者没有通用 pending-change
   证明，apply 必须使用绑定本次目标、候选摘要和 execution_id 的调用方检查结论。
 
-active_check 只对 host/network Alias 使用固定 diagnostics
+active_check 只对显式 enabled=true 的 host/network Alias 使用固定 diagnostics
 `firewall/alias_util/list/<alias>` 的完整 PF table 成员集合与期望 CIDR 做精确比较；
 截断、空表删除证明、port/networkgroup 以及 URL/DNS/dynamic Alias 均返回
 `unsupported`/`incomplete`，不会把“接口可读”升级成活动已验证。其他六类保留

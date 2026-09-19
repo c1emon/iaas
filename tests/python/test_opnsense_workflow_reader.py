@@ -294,3 +294,26 @@ def test_fixed_alias_active_check_requires_complete_static_membership_match():
     assert Diagnostics({"rows": [{"ip": "192.0.2.10"}], "total": 1}).active_check(
         "aliases", ["NETS"], dynamic
     )["status"] == "unsupported"
+
+
+def test_disabled_alias_old_pf_table_does_not_confirm_active_state():
+    class Diagnostics(FixedCollectionTransport):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.calls = 0
+
+        def _request(self, method, path, payload=None):
+            self.calls += 1
+            return {"rows": [{"ip": "192.0.2.10"}], "total": 1}
+
+    desired = {
+        "name": "NETS", "type": "host", "content": ["192.0.2.10"],
+        "state": "present", "enabled": False,
+    }
+    diagnostics = Diagnostics(
+        {"host": "fw", "endpoint": "https://fw.example", "ssl_verify": True}, {}
+    )
+    result = diagnostics.active_check("aliases", ["NETS"], desired)
+    assert result["status"] == "unsupported"
+    assert result["reason"] == "disabled_alias_active_proof_unavailable"
+    assert diagnostics.calls == 0

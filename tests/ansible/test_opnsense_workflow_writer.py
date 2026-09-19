@@ -141,14 +141,25 @@ def test_runtime_writer_reads_protected_stage_facts(tmp_path) -> None:
 
         def run(self, phase, command, cwd):
             variables = Path(command[command.index("-e") + 1][1:]).read_text()
-            result_path = json.loads(variables)["opnsense_workflow_result_path"]
+            values = json.loads(variables)
+            assert values["opnsense_api_host"] == "2001:db8::1"
+            assert values["opnsense_api_port"] == 8443
+            result_path = values["opnsense_workflow_result_path"]
             Path(result_path).write_text(json.dumps({"status": "accepted", "changed": True}))
 
     record = _record("tests/fixtures/opnsense-nat/dnat.yml", "opnsense_dnat_rules")
-    result = Writer(Execution(), {"host": "fw", "endpoint": "https://fw.example", "ssl_verify": True}).save("dnat", [record])
+    result = Writer(Execution(), {"host": "fw", "endpoint": "https://[2001:db8::1]:8443", "ssl_verify": True}).save("dnat", [record])
 
     assert result["status"] == "saved"
     assert result["changed"] is True
+
+
+def test_runtime_writer_rejects_http_collection_endpoint() -> None:
+    with pytest.raises(WriterError, match="HTTPS"):
+        Writer(object(), {"host": "fw", "endpoint": "http://fw.example:8443", "ssl_verify": True})
+
+    with pytest.raises(WriterError, match="port"):
+        Writer(object(), {"host": "fw", "endpoint": "https://fw.example:0", "ssl_verify": True})
 
 
 def test_runtime_writer_does_not_reuse_a_previous_stage_fact(tmp_path) -> None:

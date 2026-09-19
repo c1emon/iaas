@@ -36,6 +36,25 @@
   图流程抽取报告自身预算裁剪；detect-changes 的结果无 partial/truncated，
   软件测试用于实际消费路径，未据“图中没有”推断代码不可达。
 
+## 最终复核修正
+
+2026-09-19 的三路只读复核发现 4 项 P1；此前测试通过不覆盖这些缺陷。
+本轮针对发现修正并重新复核：
+
+- Writer 将 HTTPS endpoint 拆成 Collection 的裸主机和显式 api_port，保留
+  自定义端口与 IPv6；不支持的 HTTP 写入在调用提供者前拒绝。
+- candidate coverage 必须包含所选对象及必要依赖类别，只接受七类受支持资源，
+  加载候选和 apply 写前均校验；空范围不能绕过身份占用及漂移检查。
+- 静态 Alias 只有明确 enabled=true 时才可用完整 PF 表成员补充活动确认；
+  disabled/absent 保留 unsupported，旧表不能将未确认激活提升为成功。
+- 阶段漂移检查保留原先相关对象，并发现新引用。A→B 切换不因旧依赖退出当前
+  引用集合而误报；旧依赖被外部修改仍停止执行，激活后也使用相同检查。
+
+本轮联合回归 153 passed，pyright 0 errors；workflow-stage 的 Ansible syntax
+check 和 lint 通过，lint 为 0 failure / 0 warning。strict OpenSpec、文档链接、
+既有候选示例合同检查通过。两路独立只读复核分别覆盖核心与提供者补丁，
+旧复现均关闭，修复范围内未发现剩余 P1/P2。真实设备、发布及消费接入边界未改变。
+
 ## 能力与接入前提
 
 固定 Collection 与原生返回值边界见 [能力说明](capability-notes.md)。
