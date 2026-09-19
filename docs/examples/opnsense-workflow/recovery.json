@@ -1,5 +1,5 @@
 {
-  "candidate_sha256": "bf97b9ddd8843cc435ff9e7ac4d4d7d66e333ebacb0fb588196fdf3af02ab7a5",
+  "candidate_sha256": "d2934a3b41ca5df928207f5f9715484f5e3717ecc76b2c0962cf6827d4674d88",
   "entries": [
     {
       "after": {
@@ -89,7 +89,7 @@
     "interface_version": 1,
     "platform": "linux/arm64"
   },
-  "schema_version": 1,
+  "schema_version": 2,
   "stages": [
     {
       "activation": "confirmed",
@@ -111,6 +111,27 @@
       ],
       "attempted": true,
       "configuration": "verified",
+      "confirmation": {
+        "basis": "synthetic action completion",
+        "capability": "available",
+        "content_actions": [],
+        "gaps": [],
+        "required_evidence": [
+          "activation_completion"
+        ],
+        "rule": "opnsense-native-aliases-v2",
+        "supplementary_checks": [
+          "current_active_state"
+        ],
+        "wait": {
+          "deadline_seconds": 60,
+          "interval_seconds": 2,
+          "max_attempts": 30,
+          "request_timeout_seconds": 15
+        }
+      },
+      "content_actions": [],
+      "content_update": [],
       "identities": [
         [
           "SYNTHETIC_WEB"
@@ -140,6 +161,27 @@
       ],
       "attempted": true,
       "configuration": "verified",
+      "confirmation": {
+        "basis": "synthetic action completion",
+        "capability": "available",
+        "content_actions": [],
+        "gaps": [],
+        "required_evidence": [
+          "activation_completion"
+        ],
+        "rule": "opnsense-native-dnat-v2",
+        "supplementary_checks": [
+          "current_active_state"
+        ],
+        "wait": {
+          "deadline_seconds": 60,
+          "interval_seconds": 2,
+          "max_attempts": 30,
+          "request_timeout_seconds": 15
+        }
+      },
+      "content_actions": [],
+      "content_update": [],
       "identities": [
         [
           "iaas:opnsense:dnat:synthetic:web"

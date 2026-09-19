@@ -19,15 +19,27 @@ PYTHONPATH=automation/src uv run python -m iaas_automation.runtime_execution \
 `candidate.json` 生成后，调用方应保存其 SHA-256，并以同一个候选、目标和执行
 身份进入 apply。apply 的 `execution_id` 必须同时作为 output 目录 basename。
 
+迁移时保留 request v1 和 launcher `interface_version` v1；新运行时生成的
+`candidate`、`result` 和 `recovery` 是 workflow schema v2。旧材料不会由 apply/verify
+静默升级，必须重新 plan。实际消费前先通过只读版本闸门确认 OPNsense 26.7.3；版本
+无法确认或不匹配时，待执行阶段在首写前阻塞。即使版本匹配，Alias、Gateway 和
+Firewall Group 仍缺少必要完成证据。静态 Alias 的活动成员匹配只说明当前状态，
+不能提升 activation；`verify` 只
+检查当前状态，也不追认历史动作。动态内容只按设备原生处理/加载语义执行；没有
+来源、有效期和所有权证据的缓存不得复用。
+
 
 本目录还提供实际合同生成的合成材料：
 
 - [candidate.json](candidate.json)：固定声明、选择、目标、虚构 runtime digest、现场空集合与阶段。
+- [blocked-candidate.json](blocked-candidate.json)：按当前源码能力边界生成的阻塞示例，Alias 缺少动作完成证据，整批零写入。
 - [result.json](result.json)：测试替身确认保存/激活，活动态不支持，结果为 `completed_with_unverified`。
 - [recovery.json](recovery.json)：写前不存在标记和测试替身的可确认后态。
 - [recovery-request.yml](recovery-request.yml) 与 [reverse-candidate.json](reverse-candidate.json)：
   从上述 recovery 生成新的删除候选；没有执行回滚。
 
+成功示例使用能返回动作完成证据的合成适配器，超出了当前真实 Alias API 的能力，
+用于演示编排和恢复合同；真实支持边界见 blocked 示例。
 这些 JSON 来自离线测试替身，不可当作设备执行证据或直接用于真实 apply。
 真实恢复需在环境的 `files` 指定 inventory、request、recovery，移除 desired inputs；
 运行 plan 得到新候选后重新审查，再以新的执行身份及激活检查结论 apply。

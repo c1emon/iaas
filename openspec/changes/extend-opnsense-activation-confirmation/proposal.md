@@ -1,6 +1,6 @@
 # OPNsense 激活确认补充能力
 
-状态：规划，尚未实施。需求来源：infra-ops `docs/decisions/opnsense-workflow-requirements.md` §3.1（2026-09-20 修订，AC-01–AC-10）。本 change 自包含通用要求，不依赖该仓库或站点目录存在。
+状态：已分阶段实施公共合同与只读观察；必要原生完成证据仍有缺口，尚未完成全部任务，不归档。实际范围见 [acceptance.md](acceptance.md) 和 [tasks.md](tasks.md)。需求来源：infra-ops `docs/decisions/opnsense-workflow-requirements.md` §3.1（2026-09-20 修订，AC-01–AC-10）。本 change 自包含通用要求，不依赖该仓库或站点目录存在。
 
 ## Why
 

@@ -1,4 +1,10 @@
 {
+  "admission": {
+    "gaps": [],
+    "guidance": null,
+    "recovery": "not_required",
+    "status": "ready"
+  },
   "before": {
     "[\"aliases\",\"SYNTHETIC_WEB\"]": null,
     "[\"dnat\",\"iaas:opnsense:dnat:synthetic:web\"]": null
@@ -123,7 +129,7 @@
     "interface_version": 1,
     "platform": "linux/arm64"
   },
-  "schema_version": 1,
+  "schema_version": 2,
   "selected": [
     {
       "desired": {
@@ -168,11 +174,31 @@
     }
   ],
   "source": {
-    "evidence": "synthetic test double; no device contacted",
-    "inputs": []
+    "inputs": [],
+    "note": "synthetic adapter; not appliance support evidence"
   },
   "stages": [
     {
+      "confirmation": {
+        "basis": "synthetic action completion",
+        "capability": "available",
+        "content_actions": [],
+        "gaps": [],
+        "required_evidence": [
+          "activation_completion"
+        ],
+        "rule": "opnsense-native-aliases-v2",
+        "supplementary_checks": [
+          "current_active_state"
+        ],
+        "wait": {
+          "deadline_seconds": 60,
+          "interval_seconds": 2,
+          "max_attempts": 30,
+          "request_timeout_seconds": 15
+        }
+      },
+      "content_actions": [],
       "identities": [
         [
           "SYNTHETIC_WEB"
@@ -182,6 +208,26 @@
       "resource": "aliases"
     },
     {
+      "confirmation": {
+        "basis": "synthetic action completion",
+        "capability": "available",
+        "content_actions": [],
+        "gaps": [],
+        "required_evidence": [
+          "activation_completion"
+        ],
+        "rule": "opnsense-native-dnat-v2",
+        "supplementary_checks": [
+          "current_active_state"
+        ],
+        "wait": {
+          "deadline_seconds": 60,
+          "interval_seconds": 2,
+          "max_attempts": 30,
+          "request_timeout_seconds": 15
+        }
+      },
+      "content_actions": [],
       "identities": [
         [
           "iaas:opnsense:dnat:synthetic:web"

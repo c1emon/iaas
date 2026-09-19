@@ -4,7 +4,7 @@
       "status": "unknown"
     },
     "caller": {
-      "candidate_sha256": "bf97b9ddd8843cc435ff9e7ac4d4d7d66e333ebacb0fb588196fdf3af02ab7a5",
+      "candidate_sha256": "d2934a3b41ca5df928207f5f9715484f5e3717ecc76b2c0962cf6827d4674d88",
       "checked_no_pending": true,
       "execution_id": "synthetic-example",
       "serialized": true,
@@ -16,7 +16,7 @@
     }
   },
   "business_acceptance": "not_performed",
-  "candidate_sha256": "bf97b9ddd8843cc435ff9e7ac4d4d7d66e333ebacb0fb588196fdf3af02ab7a5",
+  "candidate_sha256": "d2934a3b41ca5df928207f5f9715484f5e3717ecc76b2c0962cf6827d4674d88",
   "execution_id": "synthetic-example",
   "kind": "opnsense-result",
   "operation": "apply",
@@ -26,7 +26,7 @@
     "interface_version": 1,
     "platform": "linux/arm64"
   },
-  "schema_version": 1,
+  "schema_version": 2,
   "selected": [
     {
       "identity": [
@@ -62,6 +62,27 @@
       ],
       "attempted": true,
       "configuration": "verified",
+      "confirmation": {
+        "basis": "synthetic action completion",
+        "capability": "available",
+        "content_actions": [],
+        "gaps": [],
+        "required_evidence": [
+          "activation_completion"
+        ],
+        "rule": "opnsense-native-aliases-v2",
+        "supplementary_checks": [
+          "current_active_state"
+        ],
+        "wait": {
+          "deadline_seconds": 60,
+          "interval_seconds": 2,
+          "max_attempts": 30,
+          "request_timeout_seconds": 15
+        }
+      },
+      "content_actions": [],
+      "content_update": [],
       "identities": [
         [
           "SYNTHETIC_WEB"
@@ -91,6 +112,27 @@
       ],
       "attempted": true,
       "configuration": "verified",
+      "confirmation": {
+        "basis": "synthetic action completion",
+        "capability": "available",
+        "content_actions": [],
+        "gaps": [],
+        "required_evidence": [
+          "activation_completion"
+        ],
+        "rule": "opnsense-native-dnat-v2",
+        "supplementary_checks": [
+          "current_active_state"
+        ],
+        "wait": {
+          "deadline_seconds": 60,
+          "interval_seconds": 2,
+          "max_attempts": 30,
+          "request_timeout_seconds": 15
+        }
+      },
+      "content_actions": [],
+      "content_update": [],
       "identities": [
         [
           "iaas:opnsense:dnat:synthetic:web"
@@ -109,6 +151,10 @@
   },
   "verification": {
     "business_acceptance": "not_performed",
+    "historical_actions": {
+      "activation": "not_provided",
+      "content_update": "not_provided"
+    },
     "objects": [
       {
         "active": {
@@ -133,6 +179,7 @@
         "resource": "dnat"
       }
     ],
+    "scope": "current_state",
     "status": "completed_with_unverified"
   }
 }

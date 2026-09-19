@@ -294,8 +294,22 @@ Runtime 的 OPNsense 入口是 `read`、`plan`、`apply` 和 `verify`。它们�
 `request.selection` 选择本次候选的执行集合；未选中的已声明文件仍属于候选上下文。
 未知 input 名称、未声明的选择身份和不完整的请求会在准备凭据前拒绝。
 
-该工作流已在本实现分支完成软件验证；使用前必须选择包含这四个操作的匹配
-launcher/runtime 版本和实际镜像 digest，不能据此推断既有已发布镜像已经支持。
+本次确认合同只升级候选和结果材料：`candidate`、`result`、`recovery` 使用
+workflow schema v2；`request` 继续使用 v1，launcher 的 `interface_version` 也继续
+使用 v1。旧 v1 候选在 apply/verify 中被拒绝，须重新 plan。v1 恢复材料仍可受限读取，
+仅用于显式选择且后态已核清的配置逆向计划，不继承旧激活结论。request 和 launcher
+不因材料版本升级而自动迁移。
+
+本工作流将 OPNsense 26.7.3 作为确认能力的只读版本闸门。调用方必须先用固定只读
+版本观察确认目标版本；版本缺失、读取失败或不是 26.7.3 时，所有待执行阶段均在
+首写前停止。即使版本匹配，Alias、Gateway 和 Firewall Group 仍因动作完成证据缺口
+保持 blocked。普通 no-change 不创建动作要求。能力结论以
+[只读能力核对](../../openspec/changes/extend-opnsense-activation-confirmation/capability-notes.md)
+为准；其中固定 Collection 的源码事实不能跨版本推断为现场支持资格。
+
+既有基线工作流已在本实现分支完成软件验证；本次确认扩展仍受上述版本和能力闸门
+约束。使用前必须选择包含这四个操作的匹配 launcher/runtime 版本和实际镜像
+digest，不能据此推断既有已发布镜像已经支持。
 工作流 inventory 必须自包含：将 `opnsense_api_host` 和 `opnsense_ssl_verify` 写在
 所选主机或其组的内联 vars 中，不会自动加载相邻 `group_vars`。API 凭据由调用方
 注入环境变量，不写入 inventory 或候选。apply 使用固定 Collection 的 HTTPS
@@ -319,6 +333,21 @@ Alias。在 plan 中，同样的选择表示声明文件中的全部 Alias，不
 `activation_recovery` 中列出所选身份并重新 plan；它仍受漂移和共享激活准入约束。
 apply 的 `check_mode: true` 只执行准入及材料准备，不保存或激活，但仍需在线读取
 和有效的调用方检查结论。以上操作不使用 OpenTofu/S3 state。
+
+确认范围按当前能力边界处理：
+
+本次 Alias、Gateway 和 Firewall Group 的必要确认资源任务尚未全部完成；即使配置
+读取成功，缺少对应能力合同或必要现场事实仍会在首写前 blocked。以下规则用于说明
+当前状态与迁移边界，不能作为资源任务已完成或设备已验收的声明。
+
+| 资源或事实 | 当前规则 |
+| --- | --- |
+| Alias 当前活动成员 | 静态 host/network/networkgroup 只有在完整 PF 表、IPv4/IPv6 地址语义和必要依赖均可读时才比较；当前成员匹配只是 current-state 观察，不提升本次 activation。 |
+| port Alias | 从固定 API 消费者配置和 PF 规则原文按原生 UUID 关联，比较协议、源/目标端口及范围。无法解析或读取不完整不算成功；不创建验证规则。此检查不证明本次 reload 完成。 |
+| Gateway / Firewall Group | 当前观察按用途核对路由、监控配置、内核组成员及相关已加载规则；保存的配置与运行观察分别呈现。不要求默认路由或 ping，不创建消费者。原生 reconfigure 丢弃必要子动作返回值，受影响写入仍在首写前 blocked。 |
+| `verify` | 只汇总本次读取到的当前状态；没有历史 activation/content-update 完成证据时不追认、不改写原 apply 结果。 |
+| 动态 Alias | 只使用设备原生内容处理和加载语义；执行机不自行解析来源，也不新增强制刷新路径。 |
+| 缓存 | 没有来源、有效期和所有权等足够证据时禁止复用缓存，返回明确能力缺口；activation_recovery 无法补足证据时给出 manual_required 和另行授权的配置逆向恢复指引。 |
 
 
 ```yaml
@@ -352,12 +381,13 @@ desired inputs。apply 的 options 必须包含 `candidate_sha256`、`execution_
 回显。调用方负责生成新的执行身份并维持整个保存/激活窗口的串行化；这些字段
 不是分布式锁或跨主机防重放注册表。软件合同校验不等于设备写入或数据面验收。
 
-结果中的 save、activation、configuration 和 active 分别表示不同阶段。
+结果中的 save、activation、configuration、content_update 和 active 分别记录不同事实。
 禁用或 absent Alias 的旧 PF 表不能证明激活成功，活动核对保留 unsupported。
-`accepted`/`unconfirmed` 不能当作激活成功；Groups、Gateway、动态 Alias 的原生
-`ok` 缺乏充分完成证据时会停止依赖阶段。Filter/NAT/VIP 可依据同步 configd 成功
-确认激活；其他活动核对仍按实际支持记录。`completed_with_unverified` 表示仍有
-活动项未验证，所有结果的业务验收保持 `not_performed`。
+任何通用 active 观察都不能把 `accepted`/`unconfirmed` 提升为 activation 成功；
+Groups、Gateway、动态 Alias 的原生 `ok` 缺乏充分完成证据时会停止依赖阶段。
+Filter/NAT/VIP 可依据同步 configd 成功确认激活；其他活动核对仍按实际支持记录。
+`completed_with_unverified` 表示仍有活动项未验证，所有结果的业务验收保持
+`not_performed`。
 
 显式恢复按以下步骤执行：
 
