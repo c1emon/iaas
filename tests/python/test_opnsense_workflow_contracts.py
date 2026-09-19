@@ -39,7 +39,7 @@ def test_candidate_rejects_management_scope_outside_selected_execution(tmp_path)
 
 def test_candidate_rejects_stage_added_to_noop(tmp_path):
     value, path, _ = _saved_candidate(tmp_path, device=Appliance(aliases=[alias()]))
-    value["stages"] = [{"resource": "aliases", "mode": "save", "identities": [["A"]]}]
+    value["stages"] = candidate(Appliance(), documents(aliases=[alias()]))["stages"]
     reviewed = save(path, value)
     with pytest.raises(ValidationError, match="stage"):
         load_candidate(path, reviewed)
@@ -89,6 +89,10 @@ def test_workflow_versions_leave_request_and_launcher_unchanged(tmp_path):
     assert value['runtime']['interface_version'] == 1
     assert load_candidate(path, reviewed)[0] == value
     value['schema_version'] = 1
+    value.pop('admission')
+    for stage in value['stages']:
+        stage.pop('confirmation')
+        stage.pop('content_actions')
     reviewed = save(path, value)
     with pytest.raises(ValidationError, match='re-plan'):
         load_candidate(path, reviewed)

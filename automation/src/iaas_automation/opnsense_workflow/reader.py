@@ -10,15 +10,19 @@ into an arbitrary API or command runner.
 from __future__ import annotations
 
 from copy import deepcopy
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from decimal import Decimal
 import ipaddress
 import json
 import re
-from typing import Any, Protocol
+import time
+from typing import Any, Callable, Iterator, Protocol
 from urllib.parse import urlsplit
 
 import requests
+from urllib3.util import Timeout
 
 from iaas_automation.opnsense_diagnostics.schema import ALIAS_NAME
 from iaas_automation.opnsense_validation import TOP_LEVEL, validate_document
@@ -70,6 +74,48 @@ class _HttpFailure(RuntimeError):
         self.reason = reason
 
 
+@dataclass(frozen=True)
+class ObservationBudget:
+    """Monotonic deadline shared by all reads in one confirmation boundary."""
+
+    deadline: float
+    clock: Callable[[], float] = time.monotonic
+
+    def remaining(self) -> float:
+        return max(0.0, self.deadline - self.clock())
+
+    def timeout(self, requested: float | None = None) -> float:
+        remaining = self.remaining()
+        if remaining <= 0:
+            raise TimeoutError("observation deadline exhausted")
+        return remaining if requested is None else min(requested, remaining)
+
+
+_OBSERVATION_BUDGET: ContextVar[ObservationBudget | None] = ContextVar(
+    "iaas_opnsense_observation_budget", default=None
+)
+
+
+@contextmanager
+def observation_budget(seconds: float, *, clock: Callable[[], float] = time.monotonic) -> Iterator[ObservationBudget]:
+    """Install one cooperative read deadline for nested fixed-transport calls."""
+
+    if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or seconds <= 0:
+        raise ValueError("observation budget must be greater than zero")
+    budget = ObservationBudget(clock() + float(seconds), clock)
+    token = _OBSERVATION_BUDGET.set(budget)
+    try:
+        yield budget
+    finally:
+        _OBSERVATION_BUDGET.reset(token)
+
+
+def current_observation_budget() -> ObservationBudget | None:
+    """Return the current cooperative budget for a fixed transport call."""
+
+    return _OBSERVATION_BUDGET.get()
+
+
 class ReadTransport(Protocol):
     """The read-only part of the fixed Collection client.
 
@@ -116,12 +162,21 @@ class FixedCollectionTransport:
 
     def _request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
         if not (path.startswith("firewall/") or path.startswith("interfaces/")
-                or path.startswith("routing/") or path.startswith("diagnostics/")):
+                or path.startswith("routing/") or path.startswith("diagnostics/")
+                or (method == "GET" and path == "core/firmware/status")):
             raise UnsupportedRead("fixed_collection_path_rejected")
         if "OPNSENSE_API_KEY" not in self._credential_names or "OPNSENSE_API_SECRET" not in self._credential_names:
             raise UnsupportedRead("OPNSENSE_API_credentials_missing")
+        budget = current_observation_budget()
+        if budget is not None and budget.remaining() <= 0:
+            raise _HttpFailure("failed", "observation_deadline_exhausted")
         try:
-            kwargs = {"verify": self.target["ssl_verify"], "timeout": (5, 15), "allow_redirects": False,
+            remaining = None if budget is None else budget.remaining()
+            if remaining is not None and remaining <= 0:
+                raise _HttpFailure("failed", "observation_deadline_exhausted")
+            request_timeout = (5, 15) if remaining is None else Timeout(
+                total=remaining, connect=min(5.0, remaining), read=min(15.0, remaining))
+            kwargs = {"verify": self.target["ssl_verify"], "timeout": request_timeout, "allow_redirects": False,
                       "stream": True}
             if method == "POST":
                 kwargs["json"] = payload or {}
@@ -130,6 +185,11 @@ class FixedCollectionTransport:
             raise _HttpFailure("failed", "timeout") from error
         except requests.RequestException as error:
             raise _HttpFailure("failed", "transport_failure") from error
+        if budget is not None and budget.remaining() <= 0:
+            close = getattr(response, "close", None)
+            if callable(close):
+                close()
+            raise _HttpFailure("failed", "observation_deadline_exhausted")
         if response.status_code in (404, 405, 501):
             raise _HttpFailure("unsupported", "endpoint_unavailable")
         if response.status_code == 401:
@@ -142,12 +202,16 @@ class FixedCollectionTransport:
         try:
             chunks = response.iter_content(8192) if callable(getattr(response, "iter_content", None)) else [response.content]
             for chunk in chunks:
+                if budget is not None and budget.remaining() <= 0:
+                    raise _HttpFailure("failed", "observation_deadline_exhausted")
                 if not isinstance(chunk, (bytes, bytearray)):
                     raise _HttpFailure("failed", "malformed_response_body")
                 body.extend(chunk)
                 self._used += len(chunk)
                 if len(body) > MAX_RESPONSE_BYTES or self._used > MAX_TOTAL_BYTES:
                     raise _HttpFailure("unsupported", "response_bound_exceeded")
+            if budget is not None and budget.remaining() <= 0:
+                raise _HttpFailure("failed", "observation_deadline_exhausted")
             return json.loads(bytes(body), parse_constant=lambda _: (_ for _ in ()).throw(ValueError("invalid_json")))
         except _HttpFailure:
             raise
@@ -237,6 +301,27 @@ class FixedCollectionTransport:
         response = self._request("GET", f"{module}/{controller}/get")
         return [self._provider_row(row) for row in self._entries(response, response_path)]
 
+    def confirmation_capabilities(self) -> dict[str, Any]:
+        """Fixed source-audited profile; a controller ack is not completion."""
+        from .confirmation import SYNC_RESOURCES
+        try:
+            response = self._request("GET", "core/firmware/status")
+            product = response.get("product", {}) if isinstance(response, dict) else {}
+            version = product.get("product_version") if isinstance(product, dict) else None
+        except (UnsupportedRead, _HttpFailure):
+            version = None
+        profiles = {}
+        for resource in SUPPORTED_RESOURCES:
+            supported = version == "26.7.3" and resource in SYNC_RESOURCES
+            profiles[resource] = {
+                "activation_completion": "available" if supported else "unknown" if version != "26.7.3" else "unsupported",
+                "source_processing": "unsupported", "content_loading": "unsupported",
+                "basis": "OPNsense 26.7.3 / fixed Collection 1423500c29f88da9ba8147a23fc64006cf464159",
+                "reason": "device_version_unqualified" if version != "26.7.3" else
+                          "synchronous_configd_return" if supported else "native_action_completion_unavailable",
+            }
+        return profiles
+
     def interfaces(self) -> list[str]:
         """Group member choices expose logical interface keys, excluding groups.
 
@@ -250,7 +335,14 @@ class FixedCollectionTransport:
             raise _HttpFailure('failed', 'malformed_interface_choices')
         return sorted(choices)
 
-    def active_check(self, resource: str, identity: list[str], desired: dict[str, Any]) -> dict[str, Any]:
+    def active_check(
+        self,
+        resource: str,
+        identity: list[str],
+        desired: dict[str, Any],
+        *,
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Use the restricted diagnostics alias-table read when it can prove activity."""
         if resource != "aliases" or len(identity) != 1 or not isinstance(identity[0], str) \
                 or not ALIAS_NAME.fullmatch(identity[0]):
@@ -285,38 +377,237 @@ class FixedCollectionTransport:
         if alias_type in {"urltable", "urljson", "dynipv6host"}:
             return {"status": "unsupported", "reason": "dynamic_alias_membership_not_refresh_proof",
                     "coverage": coverage}
-        if alias_type not in {"host", "network"}:
+        if alias_type == "networkgroup":
+            expected, dependency_status, dependency_reason, dependency_coverage = self._networkgroup_members(
+                alias, desired, context
+            )
+            coverage["dependency"] = dependency_coverage
+            if dependency_status != "verified":
+                return {"status": dependency_status, "reason": dependency_reason,
+                        "coverage": coverage}
+        elif alias_type in {"host", "network"}:
+            expected, dependency_status, dependency_reason = self._static_members(desired)
+            coverage["dependency"] = {"scope": "selected_definition", "status": dependency_status}
+            if dependency_status != "verified":
+                return {"status": dependency_status, "reason": dependency_reason,
+                        "coverage": coverage}
+        else:
             return {"status": "unsupported", "reason": "alias_type_active_proof_unavailable",
                     "coverage": coverage}
-        expected_values = desired.get("content") if isinstance(desired, dict) else None
-        if not isinstance(expected_values, list) or not expected_values:
-            return {"status": "unsupported", "reason": "static_alias_membership_unavailable",
-                    "coverage": coverage}
-        observed_values: set[str] = set()
+        observed_values: list[str] = []
         for row in rows:
             if not isinstance(row, dict) or not isinstance(row.get("ip"), str):
-                return {"status": "unsupported", "reason": "alias_table_membership_unavailable",
+                return {"status": "incomplete", "reason": "malformed_alias_table",
                         "coverage": coverage}
-            try:
-                observed_values.add(str(ipaddress.ip_network(row["ip"], strict=False)))
-            except ValueError:
-                return {"status": "unsupported", "reason": "malformed_alias_table_entry",
-                        "coverage": coverage}
-        expected: set[str] = set()
-        for value in expected_values:
-            if not isinstance(value, str):
-                return {"status": "unsupported", "reason": "static_alias_membership_unavailable",
-                        "coverage": coverage}
-            try:
-                expected.add(str(ipaddress.ip_network(value, strict=False)))
-            except ValueError:
-                return {"status": "unsupported", "reason": "static_alias_membership_unavailable",
-                        "coverage": coverage}
+            observed_values.append(row["ip"])
+        observed, observed_status = self._canonical_networks(observed_values)
+        if observed_status != "verified":
+            return {"status": "incomplete", "reason": "malformed_alias_table_entry",
+                    "coverage": coverage}
         coverage["expected"] = len(expected)
-        coverage["matched"] = len(observed_values & expected)
-        if observed_values == expected:
+        coverage["matched"] = len(observed & expected)
+        if observed == expected:
             return {"status": "verified", "reason": None, "coverage": coverage}
         return {"status": "failed", "reason": "alias_table_membership_mismatch", "coverage": coverage}
+
+    @staticmethod
+    def _static_members(desired: dict[str, Any]) -> tuple[set[str], str, str | None]:
+        expected_values = desired.get("content") if isinstance(desired, dict) else None
+        if not isinstance(expected_values, list) or not expected_values:
+            return set(), "unsupported", "static_alias_membership_unavailable"
+        expected_values = [value for value in expected_values if isinstance(value, str)]
+        if len(expected_values) != len(desired.get("content", [])):
+            return set(), "unsupported", "static_alias_membership_unavailable"
+        expected, status = FixedCollectionTransport._canonical_networks(expected_values)
+        if status != "verified":
+            return set(), "unsupported", "static_alias_membership_unavailable"
+        return expected, "verified", None
+
+    @staticmethod
+    def _canonical_networks(values: list[str]) -> tuple[set[str], str]:
+        parsed: dict[int, list[Any]] = {4: [], 6: []}
+        for value in values:
+            try:
+                network = ipaddress.ip_network(value, strict=False)
+            except ValueError:
+                return set(), "failed"
+            parsed[network.version].append(network)
+        return {str(network) for version in (4, 6) for network in ipaddress.collapse_addresses(parsed[version])}, "verified"
+
+    @staticmethod
+    def _is_network_literal(value: str) -> bool:
+        try:
+            ipaddress.ip_network(value, strict=False)
+        except ValueError:
+            return False
+        return True
+
+    def _networkgroup_members(
+        self,
+        alias: str,
+        desired: dict[str, Any],
+        context: dict[str, Any] | None,
+    ) -> tuple[set[str], str, str | None, dict[str, Any]]:
+        """Resolve a static group from selected transitions and live dependencies.
+
+        The selected declaration wins only for selected aliases.  Every other
+        member is read from the appliance (or from an explicitly supplied live
+        observation).  Dynamic, missing, malformed, and incomplete members
+        never become an empty set, because that could turn an unreadable group
+        into a false active confirmation.
+        """
+        content = desired.get("content") if isinstance(desired, dict) else None
+        literal_only = isinstance(content, list) and bool(content) and all(
+            isinstance(value, str) and self._is_network_literal(value) for value in content
+        )
+        selected, live, live_status = self._networkgroup_definitions(context, require_live=not literal_only)
+        selected[alias] = deepcopy(desired)
+        dependency_coverage = {
+            "scope": "selected_transitions_and_live_dependencies",
+            "selected": sorted(selected),
+            "live": sorted(live),
+            "live_status": live_status,
+        }
+        if live_status not in {"complete", "not_required"}:
+            return set(), "incomplete", "networkgroup_dependency_incomplete", dependency_coverage
+
+        expected: set[str] = set()
+        visiting: set[str] = set()
+        visited: set[str] = set()
+
+        def resolve(name: str) -> tuple[str, str | None]:
+            if name in visited:
+                return "verified", None
+            if name in visiting:
+                return "incomplete", "networkgroup_dependency_cycle"
+            record = selected.get(name, live.get(name))
+            if not isinstance(record, dict):
+                return "incomplete", "networkgroup_dependency_unavailable"
+            if record.get("state", "present") != "present" or record.get("enabled", True) is not True:
+                return "incomplete", "networkgroup_dependency_unavailable"
+            kind = record.get("type")
+            if kind in {"urltable", "urljson", "dynipv6host", "port"}:
+                return "unsupported", "dynamic_networkgroup_member"
+            if kind not in {"host", "network", "networkgroup"}:
+                return "unsupported", "networkgroup_member_type_unavailable"
+            values = record.get("content")
+            if not isinstance(values, list) or not values:
+                return "incomplete", "networkgroup_dependency_incomplete"
+            if any(not isinstance(value, str) or not value for value in values):
+                return "incomplete", "networkgroup_dependency_incomplete"
+            visiting.add(name)
+            for value in values:
+                try:
+                    expected.add(str(ipaddress.ip_network(value, strict=False)))
+                    continue
+                except ValueError:
+                    pass
+                if not ALIAS_NAME.fullmatch(value):
+                    visiting.discard(name)
+                    return "incomplete", "networkgroup_dependency_unavailable"
+                status, reason = resolve(value)
+                if status != "verified":
+                    visiting.discard(name)
+                    return status, reason
+            visiting.discard(name)
+            visited.add(name)
+            return "verified", None
+
+        status, reason = resolve(alias)
+        if status != "verified":
+            return set(), status, reason, dependency_coverage
+        canonical, canonical_status = self._canonical_networks(list(expected))
+        if canonical_status != "verified":
+            return set(), "incomplete", "networkgroup_dependency_incomplete", dependency_coverage
+        dependency_coverage["members"] = len(canonical)
+        return canonical, "verified", None, dependency_coverage
+
+    def _networkgroup_definitions(
+        self, context: dict[str, Any] | None, *, require_live: bool = True
+    ) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]], str]:
+        """Read the narrow, internal context contract used by group checks."""
+        selected: dict[str, dict[str, Any]] = {}
+        live: dict[str, dict[str, Any]] = {}
+        if isinstance(context, dict):
+            allowed = {"selected", "live_aliases", "observations"}
+            if set(context) - allowed or {"live_aliases", "observations"} <= set(context):
+                return selected, live, "incomplete"
+            if "selected" in context:
+                value = context["selected"]
+                if not isinstance(value, list):
+                    return selected, live, "incomplete"
+                for item in value:
+                    if (not isinstance(item, dict) or item.get("resource") != "aliases"
+                            or not isinstance(item.get("identity"), list)
+                            or len(item["identity"]) != 1 or not isinstance(item["identity"][0], str)
+                            or not isinstance(item.get("desired"), dict)):
+                        return selected, live, "incomplete"
+                    name = item["identity"][0]
+                    if name in selected:
+                        return selected, live, "incomplete"
+                    record = deepcopy(item["desired"])
+                    declared_name = record.get("name")
+                    if declared_name is not None and declared_name != name:
+                        return selected, live, "incomplete"
+                    record["name"] = name
+                    selected[name] = record
+            if not require_live:
+                return selected, live, "not_required"
+            if "live_aliases" in context:
+                value = context["live_aliases"]
+                if not isinstance(value, list):
+                    return selected, live, "incomplete"
+                for record in value:
+                    if not isinstance(record, dict) or not isinstance(record.get("name"), str) \
+                            or not record["name"] or record["name"] in live:
+                        return selected, live, "incomplete"
+                    live[record["name"]] = deepcopy(record)
+                return selected, live, "complete"
+            if "observations" in context:
+                observations = context["observations"]
+                aliases = observations.get("aliases") if isinstance(observations, dict) else None
+                if not isinstance(aliases, dict) or aliases.get("status") != "complete":
+                    return selected, live, "incomplete"
+                objects = aliases.get("objects")
+                if not isinstance(objects, list):
+                    return selected, live, "incomplete"
+                for item in objects:
+                    if (not isinstance(item, dict) or item.get("resource") not in {None, "aliases"}
+                            or not isinstance(item.get("identity"), list)
+                            or len(item["identity"]) != 1 or not isinstance(item["identity"][0], str)
+                            or not isinstance(item.get("configuration"), dict)):
+                        return selected, live, "incomplete"
+                    name = item["identity"][0]
+                    if name in live:
+                        return selected, live, "incomplete"
+                    record = deepcopy(item["configuration"])
+                    declared_name = record.get("name")
+                    if declared_name is not None and declared_name != name:
+                        return selected, live, "incomplete"
+                    record["name"] = name
+                    live[name] = record
+                return selected, live, "complete"
+            if any(key in context for key in ("live", "observed", "aliases", "selected_aliases")):
+                return selected, live, "incomplete"
+        if not require_live:
+            return selected, live, "not_required"
+        try:
+            rows = self.list("alias")
+        except (UnsupportedRead, _HttpFailure, TypeError, ValueError):
+            return selected, live, "unavailable"
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+            return selected, live, "malformed"
+        for row in rows:
+            flat = _flatten_provider_row(self._provider_row(row), "aliases")
+            if "content" in flat:
+                flat["content"] = _as_list(flat["content"])
+            if "enabled" in flat:
+                flat["enabled"] = _coerce_bool(flat["enabled"])
+            name = flat.get("name")
+            if not isinstance(name, str) or not name or name in live:
+                return selected, live, "incomplete"
+            live[name] = flat
+        return selected, live, "complete"
 
 
 class ReaderError(ValueError):
@@ -923,7 +1214,17 @@ class Reader:
         for resource in resources:
             if resource not in SUPPORTED_RESOURCES:
                 raise ReaderError(f"unsupported OPNsense resource: {resource}")
-        return {resource: self._read_one(resource) for resource in resources}
+        observations = {resource: self._read_one(resource) for resource in resources}
+        probe = getattr(self.transport, "confirmation_capabilities", None)
+        try:
+            capabilities = probe() if callable(probe) else {}
+            if not isinstance(capabilities, dict):
+                capabilities = {}
+        except Exception:
+            capabilities = {}
+        for resource, observation in observations.items():
+            observation["confirmation_capability"] = capabilities.get(resource, {})
+        return observations
 
     def _read_one(self, resource: str) -> dict[str, Any]:
         target = COLLECTION_TARGETS[resource]
@@ -992,13 +1293,23 @@ class Reader:
         if callable(close):
             close()
 
-    def active_check(self, resource: str, identity: list[str], desired: dict[str, Any]) -> dict[str, Any]:
+    def active_check(
+        self,
+        resource: str,
+        identity: list[str],
+        desired: dict[str, Any],
+        *,
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         method = getattr(self.transport, "active_check", None)
         if not callable(method):
             return {"status": "unsupported", "reason": "active_observation_unavailable",
                     "coverage": "saved_configuration_only"}
         try:
-            result = method(resource, identity, desired)
+            if context is None:
+                result = method(resource, identity, desired)
+            else:
+                result = method(resource, identity, desired, context=context)
         except _HttpFailure as error:
             return {"status": error.status, "reason": error.reason,
                     "coverage": "active_observation_unavailable"}

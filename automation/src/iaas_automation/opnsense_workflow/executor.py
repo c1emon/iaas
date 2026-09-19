@@ -67,9 +67,15 @@ def verify(candidate: dict, reader: Any, *, identities: set[str] | None = None) 
                   if hasattr(reader, 'active_check') else {'status': 'unsupported', 'coverage': 'saved configuration only'})
         results.append({'resource': item['resource'], 'identity': item['identity'],
                         'configuration': config, 'active': active})
-    failed = any(item['configuration'] != 'verified' or item['active']['status'] not in {'verified', 'unsupported'} for item in results)
-    unverified = any(item['active']['status'] != 'verified' for item in results)
+    failed = any(item['configuration'] != 'verified'
+                 or item['active']['status'] not in {'verified', 'unsupported', 'not_applicable'}
+                 or (item['active']['status'] == 'unsupported' and item['active'].get('required', False))
+                 or (item['active']['status'] == 'not_applicable' and not item['active'].get('reason'))
+                 for item in results)
+    unverified = any(item['active']['status'] == 'unsupported' for item in results)
     return {'status': 'failed' if failed else 'completed_with_unverified' if unverified else 'fully_verified', 'objects': results,
+            'scope': 'current_state',
+            'historical_actions': {'activation': 'not_provided', 'content_update': 'not_provided'},
             'business_acceptance': 'not_performed'}
 
 
@@ -126,6 +132,8 @@ def apply(candidate: dict, digest: str, reader: Any, writer: Any, execution_id: 
     recovery = None
     try:
         observations, current = checked_live(candidate, reader, candidate['before'])
+        from .confirmation import recheck
+        recheck(candidate, observations)
         # Recheck declaration and effective state locally, without changing the fixed stages.
         selected_records(candidate['documents'], candidate['request']['selection'])
         effective = deepcopy(current)
@@ -143,6 +151,7 @@ def apply(candidate: dict, digest: str, reader: Any, writer: Any, execution_id: 
         expected = current
         for stage in candidate['stages']:
             observations, _ = checked_live(candidate, reader, expected)
+            recheck(candidate, observations)
             activation_admission(reader, candidate, digest, execution_id, conclusion)
             markers = {key(stage['resource'], ident) for ident in stage['identities']}
             items = [item for item in candidate['selected'] if key(item['resource'], item['identity']) in markers]
@@ -151,7 +160,8 @@ def apply(candidate: dict, digest: str, reader: Any, writer: Any, execution_id: 
                 stage_state = overlay(stage_state, item)
             valid_state(stage_state, interfaces_from(observations))
             outcome = {**deepcopy(stage), 'attempted': True, 'save': 'not_attempted',
-                       'activation': 'not_attempted', 'configuration': 'not_attempted', 'active': 'not_attempted'}
+                       'activation': 'not_attempted', 'configuration': 'not_attempted', 'active': 'not_attempted',
+                       'content_update': [{**action, 'status': 'not_attempted'} for action in stage['content_actions']]}
             result['stages'].append(outcome)
             recovery['stages'].append(outcome)
             for entry in recovery['entries']:
@@ -177,14 +187,21 @@ def apply(candidate: dict, digest: str, reader: Any, writer: Any, execution_id: 
             activation_admission(reader, candidate, digest, execution_id, conclusion)
             outcome['activation'] = 'unknown'
             activation = writer.activate(stage['resource'])
+            from .confirmation import action_results, complete_action
+
+            def boundary():
+                checked_live(candidate, reader, stage_state)
+                activation_admission(reader, candidate, digest, execution_id, conclusion)
+
+            activation = complete_action(stage, activation, reader, boundary)
             outcome['activation'] = activation['status']
             outcome['activation_detail'] = activation
+            outcome['content_update'] = action_results(stage, activation)
             checks = verify(candidate, reader, identities=markers)
             outcome['active'] = checks['objects']
-            if outcome['activation'] in {'accepted', 'unconfirmed'} and checks['objects'] and all(
-                    row['active']['status'] == 'verified' for row in checks['objects']):
-                outcome['activation'] = 'confirmed'
             require(outcome['activation'] == 'confirmed', 'activation failed or unconfirmed; dependent stages stopped')
+            require(all(row['status'] == 'confirmed' for row in outcome['content_update']),
+                    'content processing failed or unknown; manual handling or reviewed recovery required')
             require(checks['status'] != 'failed', 'post-activation verification failed')
             # Refresh only our selected post-state; unrelated drift is still compared at the next boundary.
             _, observed = checked_live(candidate, reader, stage_state)
@@ -280,7 +297,7 @@ def reverse_documents(recovery: dict, req: dict, observations: dict, target: dic
     staged = set()
     for stage in recovery['stages']:
         shape(stage, {'resource', 'mode', 'identities', 'attempted', 'save', 'activation',
-                      'configuration', 'active'}, {'activation_detail'})
+                      'configuration', 'active'}, {'activation_detail', 'confirmation', 'content_actions', 'content_update'})
         require(stage['mode'] in {'save', 'activation_recovery'}
                 and type(stage['attempted']) is bool and stage['attempted'],
                 'malformed recovery stage')

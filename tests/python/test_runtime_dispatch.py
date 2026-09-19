@@ -23,7 +23,7 @@ def config(tmp_path, component, inputs, files=None):
 
 def candidate_file(path):
     value = {
-        "schema_version": 1,
+        "schema_version": 2,
         "kind": "opnsense-candidate",
         "target": {"host": "firewall", "endpoint": "https://192.0.2.1", "ssl_verify": True},
         "runtime": {"image_digest": "sha256:" + "1" * 64, "platform": "linux/amd64", "interface_version": 1},
@@ -32,6 +32,7 @@ def candidate_file(path):
         "request": {"schema_version": 1, "selection": {}},
         "documents": {}, "selected": [], "coverage": [], "before": {},
         "differences": [], "stages": [],
+        "admission": {"status": "ready", "gaps": [], "recovery": "not_required", "guidance": None},
     }
     encoded = json.dumps(value, sort_keys=True, indent=2) + "\n"
     path.write_text(encoded)

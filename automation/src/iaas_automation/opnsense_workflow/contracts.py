@@ -130,8 +130,11 @@ def load_candidate(path: Path, reviewed: str | None = None) -> tuple[dict, str]:
         require(isinstance(reviewed, str) and re.fullmatch('[0-9a-f]{64}', reviewed)
                 and actual_digest == reviewed, "reviewed candidate digest mismatch")
     value = json.loads(data)
+    require(isinstance(value, dict) and type(value.get('schema_version')) is int
+            and value['schema_version'] == CANDIDATE_VERSION,
+            'incompatible workflow candidate; re-plan with this runtime')
     shape(value, {'schema_version', 'kind', 'target', 'runtime', 'provider', 'source', 'request',
-                  'documents', 'selected', 'coverage', 'before', 'differences', 'stages'})
+                  'documents', 'selected', 'coverage', 'before', 'differences', 'stages', 'admission'})
     require(type(value['schema_version']) is int and value['schema_version'] == CANDIDATE_VERSION and value['kind'] == 'opnsense-candidate'
             and value['provider'] == PROVIDER, "incompatible workflow candidate; re-plan with this runtime")
     req = request(value['request'])
@@ -224,7 +227,22 @@ def load_candidate(path: Path, reviewed: str | None = None) -> tuple[dict, str]:
     require(isinstance(stages, list), "malformed candidate stages")
     staged = set()
     for stage in stages:
-        shape(stage, {'resource', 'mode', 'identities'})
+        shape(stage, {'resource', 'mode', 'identities', 'confirmation', 'content_actions'})
+        from .confirmation import WAIT_POLICY, content_actions, disposition
+        confirmation = stage['confirmation']
+        shape(confirmation, {'rule', 'required_evidence', 'supplementary_checks', 'capability',
+                             'basis', 'gaps', 'wait', 'content_actions'})
+        expected_actions = content_actions(stage, differences)
+        require(stage['content_actions'] == confirmation['content_actions'] == expected_actions
+                and confirmation['wait'] == WAIT_POLICY
+                and confirmation['rule'] == 'opnsense-native-' + stage['resource'] + '-v2'
+                and confirmation['required_evidence'] == ['activation_completion'] + (
+                    ['source_processing', 'content_loading'] if expected_actions else [])
+                and confirmation['supplementary_checks'] == ['current_active_state']
+                and confirmation['capability'] in {'available', 'unsupported', 'unknown'}
+                and isinstance(confirmation['gaps'], list)
+                and (confirmation['capability'] == 'available') == (not confirmation['gaps']),
+                'invalid candidate stage confirmation contract')
         require(stage['mode'] in {'save', 'activation_recovery'} and bool(stage['identities']), 'invalid candidate stage')
         selectors({stage['resource']: stage['identities']}, allow_all=False)
         entries = {key(stage['resource'], ident) for ident in stage['identities']}
@@ -238,4 +256,6 @@ def load_candidate(path: Path, reviewed: str | None = None) -> tuple[dict, str]:
         staged.update(entries)
     expected_stages = changed | activation_recovery
     require(staged == expected_stages, 'candidate stages do not match captured differences')
+    from .confirmation import disposition
+    require(value['admission'] == disposition(stages), 'invalid candidate admission summary')
     return value, actual_digest

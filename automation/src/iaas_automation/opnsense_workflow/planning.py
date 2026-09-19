@@ -242,7 +242,9 @@ def plan(documents: dict, req: dict, observations: dict, target: dict, runtime: 
                             'adopted': marker in adopted,
                             'recovery': old.get('recovery', 'manual_required') if old else 'expressible'})
     stages = stages_for(selected, before, differences, interfaces_from(observations), recovery)
+    from .confirmation import bind_stages, disposition
+    stages = bind_stages(stages, differences, observations)
     return {'schema_version': CANDIDATE_VERSION, 'kind': 'opnsense-candidate', 'provider': PROVIDER,
             'target': target, 'runtime': runtime, 'source': source, 'request': req,
             'documents': deepcopy(documents), 'selected': selected, 'coverage': sorted(observations),
-            'before': before, 'differences': differences, 'stages': stages}
+            'before': before, 'differences': differences, 'stages': stages, 'admission': disposition(stages)}
