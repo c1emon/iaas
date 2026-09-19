@@ -65,7 +65,8 @@ Apply SHALL report persistence, activation completion, saved-configuration verif
 - **WHEN** a newly reviewed candidate explicitly requests activation recovery for unchanged saved configuration
 - **THEN** the selected fixed target can activate only after drift, necessary confirmation capability and shared activation admission succeeds
 - **AND** ordinary no-change candidates and read-only operations do not activate
-- **AND** activation recovery does not add forced downloading or DNS resolution; unmet content prerequisites require a reported gap and a newly reviewed plan
+- **AND** activation recovery does not add independent forced downloading or DNS resolution; any native content-processing effects of the fixed activation are disclosed and bound to the new candidate
+- **AND** where that native activation cannot satisfy necessary content conditions with sufficient evidence, planning returns a blocked result with manual-action or explicitly reviewed configuration-reversal guidance rather than a generic re-planning loop
 
 #### Scenario: Successful content update leaves equal members
 - **WHEN** a required content update has valid completion and loading evidence and the resulting members equal the previous members
@@ -78,7 +79,7 @@ Apply SHALL report persistence, activation completion, saved-configuration verif
 - **AND** the match cannot promote activation or refresh completion or allow dependent stages to continue
 
 ### Requirement: Independent configuration and supported active verification
-Verify and apply's post-write verification SHALL compare selected saved configuration with the candidate, including explicit absence, and perform supported resource-specific active checks with stated coverage. Unsupported supplementary checks SHALL be recorded as unverified, not passed; checks with no applicable consumer SHALL explicitly report that condition without inventing verification. A required failed or unknown check SHALL return nonzero and prevent dependent progression. Successful required checks with unsupported supplementary checks SHALL be distinguishable from fully verified completion. Verify SHALL use the same resource checking semantics while distinguishing current-state observations from unavailable historical action-completion evidence; a post-state observation alone SHALL NOT establish success of a previous command. Verification SHALL NOT perform mutation, trigger downloads or DNS resolution, refresh tables, flush PF states or claim business connectivity acceptance.
+Verify and apply's post-write verification SHALL compare selected saved configuration with the candidate, including explicit absence, and perform supported resource-specific current-state checks with stated coverage. Configuration mismatch, failed, unknown or incomplete applicable current-state checks, and unsupported required current-state checks SHALL yield failed status and a nonzero exit code. If required current-state checks succeed and only supplementary checks are unsupported, standalone verify SHALL return completed_with_unverified with exit code zero and explicit uncovered scope. If all applicable current-state checks succeed, standalone verify SHALL return fully_verified with exit code zero, scoped only to current-state verification. A check SHALL be not_applicable only when native semantics and complete relevant observations establish that it does not apply; such checks SHALL be excluded from pass, failure and unverified counts without being marked verified. Missing permission, incomplete reads and inability to determine consumer presence SHALL NOT establish non-applicability. Historical command-completion evidence SHALL NOT be a required input or check for standalone verify and its absence SHALL NOT fail or downgrade the current-state aggregate; it SHALL remain separately reported as unavailable. These standalone aggregation rules SHALL NOT waive apply's required action-completion evidence, revise an earlier apply result or advance caller deployment records. Verification SHALL NOT perform mutation, trigger downloads or DNS resolution, refresh tables, flush PF states or claim business connectivity acceptance.
 
 #### Scenario: Deletion is verified
 - **WHEN** the candidate explicitly deletes an object
@@ -93,7 +94,24 @@ Verify and apply's post-write verification SHALL compare selected saved configur
 #### Scenario: Independent verification observes matching members
 - **WHEN** standalone verify observes the desired configuration and current members but has no completion evidence for an earlier reload or content update
 - **THEN** it reports the current matches and the unavailable historical completion evidence separately
+- **AND** it returns exit code zero with fully_verified for fully covered current-state checks, or completed_with_unverified when only supplementary current-state checks are unsupported
 - **AND** it neither claims the earlier command succeeded nor submits a new command to make that claim
+- **AND** an earlier failed or unknown apply remains unchanged
+
+#### Scenario: A consumer check is demonstrably inapplicable
+- **WHEN** complete relevant observations establish no applicable consumer under the resource's native semantics and all other applicable current-state checks pass
+- **THEN** standalone verify records that consumer check as not_applicable with its reason and returns fully_verified for the current-state scope with exit code zero
+- **AND** that check is not counted as passed or unverified, and apply still requires its own necessary action-completion evidence
+
+#### Scenario: Consumer absence cannot be established
+- **WHEN** determining whether a required consumer check applies fails or returns incomplete observations
+- **THEN** the condition remains failed, unknown or incomplete and verification returns failed with a nonzero exit code
+- **AND** the workflow does not use not_applicable to bypass that observation failure
+
+#### Scenario: Current-state success cannot rescue an unconfirmed apply
+- **WHEN** current-state checks all pass but a necessary action in the current apply remains failed, unknown or unconfirmed
+- **THEN** apply returns failure with a nonzero exit code and stops dependent progression
+- **AND** standalone verify's current-state aggregation does not override the missing action evidence
 
 ## ADDED Requirements
 
@@ -179,6 +197,23 @@ The workflow SHALL NOT introduce an independent forced-refresh operation for unc
 - **WHEN** a dynamic Alias changes only a non-content description field
 - **THEN** the workflow checks the saved field and any actually executed activation without imposing a forced download, DNS resolution or member change
 - **AND** a current content match is reported separately from activation completion
+
+#### Scenario: Native activation can recover saved source processing
+- **WHEN** source B was saved but processing B failed, the caller has reconciled post-state and any potentially running prior action, and explicitly plans activation recovery
+- **THEN** a new candidate can select the fixed native activation only if its admitted semantics can perform the missing source processing and the necessary completion and loading evidence can be obtained
+- **AND** the candidate records source B, those native effects and confirmation conditions before execution, without an independent forced-refresh action or an apply-time addition
+- **AND** execution still requires normal drift, capability and shared-activation admission; matching old contents alone cannot confirm it
+
+#### Scenario: Re-planning cannot repair content through native activation
+- **WHEN** source B is already saved but processing B failed and the admitted native activation cannot repair or confirm the required content state
+- **THEN** an activation-recovery plan returns a nonzero blocked result and manual_required disposition with the specific missing facts
+- **AND** guidance identifies separately authorized manual handling or explicitly selected configuration reversal using reconciled, expressible recovery material under ordinary admission, without promising either has already succeeded
+- **AND** it does not merely request another identical plan, invent a configuration difference, automatically toggle enablement or source, or add a forced-refresh operation
+
+#### Scenario: Ordinary no-change does not resolve historical failure
+- **WHEN** configuration matches after an earlier content-processing failure and the caller makes an ordinary no-change plan without selecting activation recovery
+- **THEN** the plan adds no recovery actions and cannot reclassify the historical execution as successful
+- **AND** the caller retains responsibility for reconciling the prior failed or unknown execution and deployment baseline
 
 ### Requirement: Purpose-sensitive Gateway and interface group confirmation
 PBR Gateway confirmation SHALL derive required runtime observations from the changed fields and actual use, including applicable interface/next-hop state, relevant routes, loaded PBR consumers and enabled monitoring configuration. It SHALL NOT require default-route ownership, forced monitoring, a successful ping or a newly created consumer. A saved gateway list entry alone SHALL NOT prove application. Interface group confirmation SHALL distinguish saved configuration, registration with correct membership and filter reload completion; where related loaded rules exist, it SHALL check their interface matching semantics. Absence of consumers SHALL be reported without inventing verification or adding rules. Necessary unobservable facts SHALL follow the same pre-write capability admission as other resources, without an automatic SSH, plugin, patch or privilege fallback.
