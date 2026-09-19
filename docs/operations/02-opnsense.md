@@ -123,7 +123,7 @@ runtime `generate` 产物。每个直接 playbook 都必须先校验选定文件
 实际加载的列表，最后才做凭据预检和 API 操作；`--check` 不执行 CRUD 或激活。
 对这三类新增资源，runtime 只提供 OPNsense 的 `check`/`generate`，不增加 launcher
 apply；生成文件不会自动调用设备 playbook。既有 `diagnose` 入口保留原有有界只读
-职责，见 2.5，不受新增资源 runtime 范围限制。
+职责，见 2.6，不受新增资源 runtime 范围限制。
 
 SNAT 暂不属于可选资源，`snat.yml`、`opnsense_snat_rules`、`manage-snat.yml` 和
 `opnsense_snat_source` 仅保留给后续上游修复后的 change。当前选择 SNAT 必须失败，
@@ -281,12 +281,53 @@ loss_interval 仅声明整数；工作流不增加 Collection 未声明的范围
 凭据访问和写入前校验。deny rule 的管理接口保护会同时考虑 destination_net 与
 destination_invert；排除自身接口的反选与包含自身接口不是同一种规则。
 
-不要把上述直接 playbook 接入 launcher apply：runtime 对新增 DNAT、1:1 NAT、Groups
-只负责 check/generate，既有 diagnose 仍按 2.5 提供只读诊断；
-直接 Ansible 调用仍须由调用方显式授权、编排和限 host。DNAT/1:1 NAT/Groups
-分别记录软件校验、设备写入和数据面验证结果。
+直接 Ansible 入口保持原有批次语义；launcher 使用下节的候选、漂移检查和分阶段
+save/activate 工作流。两种入口都需要调用方授权、编排和限 host，分别记录
+软件校验、设备写入与数据面验证结果。
 
-## 2.5 有界只读诊断
+## 2.5 Runtime 配置工作流
+
+Runtime 的 OPNsense 入口是 `read`、`plan`、`apply` 和 `verify`。它们使用
+环境文件中的显式 alias：`inventory` 始终需要；`read`/`plan` 需要 `request`；
+`apply`/`verify` 需要 `candidate`；恢复计划可使用 `recovery`，但不能同时声明
+期望资源输入。`plan` 会先校验并加载所有显式声明的七类标准资源文件，再由
+`request.selection` 选择本次候选的执行集合；未选中的已声明文件仍属于候选上下文。
+未知 input 名称、未声明的选择身份和不完整的请求会在准备凭据前拒绝。
+
+```yaml
+components:
+  opnsense:
+    inputs:
+      aliases: opnsense/aliases.yml
+      dnat: opnsense/dnat.yml
+    files:
+      inventory: opnsense/inventory.yml
+      request: opnsense/request.yml
+```
+
+以下是实际在线 plan 的命令结构；synthetic 文件只展示配置格式。离线选择检查见
+[示例说明](../examples/opnsense-workflow/README.md)：
+
+```sh
+iaas run --runtime-config runtime.json \
+  --environment docs/examples/opnsense-workflow/environment.yml \
+  --engine local --component opnsense --operation plan \
+  --scope firewall --output ./opnsense-plan
+```
+
+该示例使用文档保留地址，不包含设备凭据，不证明 API 连通或设备状态。实际
+`plan` 通过 `OPNSENSE_API_KEY`/`OPNSENSE_API_SECRET` 读取设备观察并产生私有
+`candidate.json`。调用方保存候选 SHA-256 后，apply 只接收该候选，不重新加载
+desired inputs。apply 的 options 必须包含 `candidate_sha256`、`execution_id` 和
+`activation_check`，可选 `check_mode: true|false`；三者绑定相同候选和目标；`activation_check` 还必须记录
+`checked_no_pending: true` 与 `serialized: true`。launcher 要求
+`--execution-id` 与新 output 目录 basename 相同，并核对 runtime discovery 的
+回显。调用方负责生成新的执行身份并维持整个保存/激活窗口的串行化；这些字段
+不是分布式锁或跨主机防重放注册表。软件合同校验不等于设备写入或数据面验收。
+
+能力限制、软件证据和消费前提见 [交接说明](../../openspec/changes/add-opnsense-config-workflow/acceptance.md)。
+
+## 2.6 有界只读诊断
 
 使用同一环境清单和调用方注入的 API 凭据。必须明确一个 `opnsense` 组内的 inventory host，
 不能传组名、通配符或 Ansible `--limit`；工具先在控制端校验目标、请求和输出路径。
@@ -342,7 +383,7 @@ API 连接/read timeout 分别为 5/15 秒，每个响应最多 2 MiB、一次�
 其中部分设备权限也包含写操作，但本诊断入口只调用固定的只读操作，不刷新别名、不激活规则、不清理状态。
 权限、字段和限制以 core 26.1.11 源码为基线；软件测试不代表某台设备或流量路径已经验收。
 
-## 2.6 验收与停止
+## 2.7 验收与停止
 
 验收至少包括：API 连通、目标对象身份与顺序正确、管理路径保持可达、DNAT/1:1
 NAT/Groups 的保存与激活结果可区分、所需的 PVE/VM/Registry/DNS 路径经过实际测试，

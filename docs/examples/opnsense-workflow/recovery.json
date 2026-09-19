@@ -1,0 +1,158 @@
+{
+  "candidate_sha256": "bf97b9ddd8843cc435ff9e7ac4d4d7d66e333ebacb0fb588196fdf3af02ab7a5",
+  "entries": [
+    {
+      "after": {
+        "content": [
+          "192.0.2.10"
+        ],
+        "description": "Synthetic workflow target",
+        "enabled": true,
+        "name": "SYNTHETIC_WEB",
+        "state": "present",
+        "type": "host"
+      },
+      "after_status": "confirmed",
+      "attempted": true,
+      "before": null,
+      "before_absent": true,
+      "desired": {
+        "content": [
+          "192.0.2.10"
+        ],
+        "description": "Synthetic workflow target",
+        "enabled": true,
+        "name": "SYNTHETIC_WEB",
+        "state": "present",
+        "type": "host"
+      },
+      "identity": [
+        "SYNTHETIC_WEB"
+      ],
+      "recovery": "expressible",
+      "resource": "aliases"
+    },
+    {
+      "after": {
+        "associated_rule": "rule",
+        "destination_net": "wanip",
+        "destination_port": "443",
+        "enabled": true,
+        "interface": [
+          "wan"
+        ],
+        "ip_protocol": "inet",
+        "local_port": "8443",
+        "nat_reflection": "",
+        "protocol": "tcp",
+        "scope": "synthetic",
+        "sequence": 100,
+        "slug": "web",
+        "source_net": "any",
+        "state": "present",
+        "target": "192.0.2.10"
+      },
+      "after_status": "confirmed",
+      "attempted": true,
+      "before": null,
+      "before_absent": true,
+      "desired": {
+        "associated_rule": "rule",
+        "destination_net": "wanip",
+        "destination_port": "443",
+        "enabled": true,
+        "interface": [
+          "wan"
+        ],
+        "ip_protocol": "inet",
+        "local_port": "8443",
+        "nat_reflection": "",
+        "protocol": "tcp",
+        "scope": "synthetic",
+        "sequence": 100,
+        "slug": "web",
+        "source_net": "any",
+        "state": "present",
+        "target": "192.0.2.10"
+      },
+      "identity": [
+        "iaas:opnsense:dnat:synthetic:web"
+      ],
+      "recovery": "expressible",
+      "resource": "dnat"
+    }
+  ],
+  "execution_id": "synthetic-example",
+  "kind": "opnsense-recovery",
+  "runtime": {
+    "image_digest": "registry.invalid/runtime@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "interface_version": 1,
+    "platform": "linux/arm64"
+  },
+  "schema_version": 1,
+  "stages": [
+    {
+      "activation": "confirmed",
+      "activation_detail": {
+        "status": "confirmed"
+      },
+      "active": [
+        {
+          "active": {
+            "coverage": "saved configuration only",
+            "status": "unsupported"
+          },
+          "configuration": "verified",
+          "identity": [
+            "SYNTHETIC_WEB"
+          ],
+          "resource": "aliases"
+        }
+      ],
+      "attempted": true,
+      "configuration": "verified",
+      "identities": [
+        [
+          "SYNTHETIC_WEB"
+        ]
+      ],
+      "mode": "save",
+      "resource": "aliases",
+      "save": "saved"
+    },
+    {
+      "activation": "confirmed",
+      "activation_detail": {
+        "status": "confirmed"
+      },
+      "active": [
+        {
+          "active": {
+            "coverage": "saved configuration only",
+            "status": "unsupported"
+          },
+          "configuration": "verified",
+          "identity": [
+            "iaas:opnsense:dnat:synthetic:web"
+          ],
+          "resource": "dnat"
+        }
+      ],
+      "attempted": true,
+      "configuration": "verified",
+      "identities": [
+        [
+          "iaas:opnsense:dnat:synthetic:web"
+        ]
+      ],
+      "mode": "save",
+      "resource": "dnat",
+      "save": "saved"
+    }
+  ],
+  "target": {
+    "endpoint": "https://192.0.2.1",
+    "host": "firewall",
+    "ssl_verify": true
+  }
+}

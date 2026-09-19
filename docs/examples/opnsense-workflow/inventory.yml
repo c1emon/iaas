@@ -1,0 +1,7 @@
+all:
+  children:
+    opnsense:
+      hosts:
+        firewall:
+          opnsense_api_host: 192.0.2.1
+          opnsense_ssl_verify: true

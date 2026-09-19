@@ -1,0 +1,7 @@
+schema_version: 1
+selection: &id001
+  aliases:
+  - - SYNTHETIC_WEB
+  dnat:
+  - - iaas:opnsense:dnat:synthetic:web
+managed: *id001

@@ -1,0 +1,199 @@
+{
+  "before": {
+    "[\"aliases\",\"SYNTHETIC_WEB\"]": null,
+    "[\"dnat\",\"iaas:opnsense:dnat:synthetic:web\"]": null
+  },
+  "coverage": [
+    "aliases",
+    "dnat",
+    "filter-rules",
+    "gateways",
+    "interface-groups",
+    "one-to-one-nat"
+  ],
+  "differences": [
+    {
+      "action": "create",
+      "adopted": false,
+      "after": {
+        "content": [
+          "192.0.2.10"
+        ],
+        "description": "Synthetic workflow target",
+        "enabled": true,
+        "name": "SYNTHETIC_WEB",
+        "state": "present",
+        "type": "host"
+      },
+      "before": null,
+      "identity": [
+        "SYNTHETIC_WEB"
+      ],
+      "recovery": "expressible",
+      "resource": "aliases"
+    },
+    {
+      "action": "create",
+      "adopted": false,
+      "after": {
+        "associated_rule": "rule",
+        "destination_net": "wanip",
+        "destination_port": "443",
+        "enabled": true,
+        "interface": [
+          "wan"
+        ],
+        "ip_protocol": "inet",
+        "local_port": "8443",
+        "nat_reflection": "",
+        "protocol": "tcp",
+        "scope": "synthetic",
+        "sequence": 100,
+        "slug": "web",
+        "source_net": "any",
+        "state": "present",
+        "target": "192.0.2.10"
+      },
+      "before": null,
+      "identity": [
+        "iaas:opnsense:dnat:synthetic:web"
+      ],
+      "recovery": "expressible",
+      "resource": "dnat"
+    }
+  ],
+  "documents": {
+    "aliases": {
+      "opnsense_aliases": [
+        {
+          "content": [
+            "192.0.2.10"
+          ],
+          "description": "Synthetic workflow target",
+          "enabled": true,
+          "name": "SYNTHETIC_WEB",
+          "state": "present",
+          "type": "host"
+        }
+      ]
+    },
+    "dnat": {
+      "opnsense_dnat_rules": [
+        {
+          "associated_rule": "rule",
+          "destination_net": "wanip",
+          "destination_port": "443",
+          "enabled": true,
+          "interface": [
+            "wan"
+          ],
+          "ip_protocol": "inet",
+          "local_port": "8443",
+          "nat_reflection": "",
+          "protocol": "tcp",
+          "scope": "synthetic",
+          "sequence": 100,
+          "slug": "web",
+          "source_net": "any",
+          "state": "present",
+          "target": "192.0.2.10"
+        }
+      ]
+    }
+  },
+  "kind": "opnsense-candidate",
+  "provider": "oxlorg.opnsense@1423500c29f88da9ba8147a23fc64006cf464159",
+  "request": {
+    "schema_version": 1,
+    "selection": {
+      "aliases": [
+        [
+          "SYNTHETIC_WEB"
+        ]
+      ],
+      "dnat": [
+        [
+          "iaas:opnsense:dnat:synthetic:web"
+        ]
+      ]
+    }
+  },
+  "runtime": {
+    "image_digest": "registry.invalid/runtime@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "interface_version": 1,
+    "platform": "linux/arm64"
+  },
+  "schema_version": 1,
+  "selected": [
+    {
+      "desired": {
+        "content": [
+          "192.0.2.10"
+        ],
+        "description": "Synthetic workflow target",
+        "enabled": true,
+        "name": "SYNTHETIC_WEB",
+        "state": "present",
+        "type": "host"
+      },
+      "identity": [
+        "SYNTHETIC_WEB"
+      ],
+      "resource": "aliases"
+    },
+    {
+      "desired": {
+        "associated_rule": "rule",
+        "destination_net": "wanip",
+        "destination_port": "443",
+        "enabled": true,
+        "interface": [
+          "wan"
+        ],
+        "ip_protocol": "inet",
+        "local_port": "8443",
+        "nat_reflection": "",
+        "protocol": "tcp",
+        "scope": "synthetic",
+        "sequence": 100,
+        "slug": "web",
+        "source_net": "any",
+        "state": "present",
+        "target": "192.0.2.10"
+      },
+      "identity": [
+        "iaas:opnsense:dnat:synthetic:web"
+      ],
+      "resource": "dnat"
+    }
+  ],
+  "source": {
+    "evidence": "synthetic test double; no device contacted",
+    "inputs": []
+  },
+  "stages": [
+    {
+      "identities": [
+        [
+          "SYNTHETIC_WEB"
+        ]
+      ],
+      "mode": "save",
+      "resource": "aliases"
+    },
+    {
+      "identities": [
+        [
+          "iaas:opnsense:dnat:synthetic:web"
+        ]
+      ],
+      "mode": "save",
+      "resource": "dnat"
+    }
+  ],
+  "target": {
+    "endpoint": "https://192.0.2.1",
+    "host": "firewall",
+    "ssl_verify": true
+  }
+}

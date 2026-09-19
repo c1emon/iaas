@@ -1,0 +1,6 @@
+schema_version: 1
+selection:
+  aliases:
+    - [SYNTHETIC_WEB]
+  dnat:
+    - [iaas:opnsense:dnat:synthetic:web]
