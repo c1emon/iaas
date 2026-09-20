@@ -1,13 +1,14 @@
 """Fixed read-only operations against the documented 26.1.11 response shapes."""
 from datetime import datetime, timezone
 import ipaddress
-import json
 import re
 from typing import NoReturn
 from urllib.parse import urlsplit
 from uuid import UUID
 
 import requests
+
+from iaas_automation.http_transport import ReadBudget, TransportFailure, read_json
 
 from .schema import ALIAS_NAME,utc_time
 
@@ -56,23 +57,21 @@ class Transport:
         if operation=='table':
             if not isinstance(alias,str) or not ALIAS_NAME.fullmatch(alias): problem('invalid_alias_selector')
             path+='/'+alias
+        budget = ReadBudget(used_bytes=self.used, max_response_bytes=MAX_RESPONSE_BYTES,
+                            max_total_bytes=MAX_TOTAL_BYTES)
         try:
-            with self.session.request(method,self.base+path,params=payload if method=='GET' else None,
-                                      json=payload if method=='POST' else None,verify=self.verify,
-                                      timeout=(5,15),allow_redirects=False,stream=True) as response:
-                if response.status_code in (404,405,501): problem('endpoint_unavailable','unsupported')
-                if response.status_code==401: problem('authentication_failed')
-                if response.status_code==403: problem('permission_denied')
-                if not 200<=response.status_code<300: problem('http_failure')
-                content=bytearray()
-                for chunk in response.iter_content(8192):
-                    content.extend(chunk);self.used+=len(chunk)
-                    if len(content)>MAX_RESPONSE_BYTES or self.used>MAX_TOTAL_BYTES:
-                        problem('response_bound_exceeded','unsupported')
-                try: return json.loads(content,parse_constant=lambda _: problem('malformed_json'))
-                except (ValueError,UnicodeError): problem('malformed_json')
-        except requests.Timeout: problem('timeout')
-        except requests.RequestException: problem('transport_failure')
+            return read_json(self.session, method, self.base + path, verify=self.verify, budget=budget,
+                             params=payload if method == 'GET' else None,
+                             json_body=payload if method == 'POST' else None)
+        except TransportFailure as error:
+            reason = error.reason
+            if reason == 'http_failure':
+                reason = {401: 'authentication_failed', 403: 'permission_denied',
+                          404: 'endpoint_unavailable', 405: 'endpoint_unavailable',
+                          501: 'endpoint_unavailable'}.get(error.status_code if error.status_code is not None else 0, 'http_failure')
+            problem(reason, 'unsupported' if reason in {'endpoint_unavailable', 'response_bound_exceeded'} else 'error')
+        finally:
+            self.used = budget.used_bytes
 
 
 def page(data,current):

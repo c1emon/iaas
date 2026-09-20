@@ -14,18 +14,17 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 import ipaddress
-import json
 import re
 import time
 from typing import Any, Callable, Iterator, Protocol
 from urllib.parse import urlsplit
 
 import requests
-from urllib3.util import Timeout
 
 from iaas_automation.opnsense_diagnostics.schema import ALIAS_NAME
 from iaas_automation.opnsense_validation import TOP_LEVEL, validate_document
 from iaas_automation.common.errors import ValidationError
+from iaas_automation.http_transport import ReadBudget, TransportFailure, read_json
 from .gateway_checks import check_gateway_current
 from iaas_automation.common.conversion import ConversionError, optional_bool as _coerce_bool
 from .conversion import convert_provider_row, normalize_standard_record
@@ -177,60 +176,28 @@ class FixedCollectionTransport:
             raise UnsupportedRead("fixed_collection_path_rejected")
         if "OPNSENSE_API_KEY" not in self._credential_names or "OPNSENSE_API_SECRET" not in self._credential_names:
             raise UnsupportedRead("OPNSENSE_API_credentials_missing")
-        budget = current_observation_budget()
-        if budget is not None and budget.remaining() <= 0:
-            raise _HttpFailure("failed", "observation_deadline_exhausted")
+        observation = current_observation_budget()
+        budget = ReadBudget(
+            used_bytes=self._used, max_response_bytes=MAX_RESPONSE_BYTES, max_total_bytes=MAX_TOTAL_BYTES,
+            deadline=None if observation is None else observation.deadline,
+            clock=time.monotonic if observation is None else observation.clock,
+            request_timeout_seconds=15 if observation is None else observation.request_timeout_seconds,
+        )
         try:
-            remaining = None if budget is None else min(budget.remaining(), budget.request_timeout_seconds)
-            if remaining is not None and remaining <= 0:
-                raise _HttpFailure("failed", "observation_deadline_exhausted")
-            request_timeout = (5, 15) if remaining is None else Timeout(
-                total=remaining, connect=min(5.0, remaining), read=min(15.0, remaining))
-            kwargs = {"verify": self.target["ssl_verify"], "timeout": request_timeout, "allow_redirects": False,
-                      "stream": True}
-            if method == "POST":
-                kwargs["json"] = payload or {}
-            response = self._session.request(method, self._base + path, **kwargs)
-        except requests.Timeout as error:
-            raise _HttpFailure("failed", "timeout") from error
-        except requests.RequestException as error:
-            raise _HttpFailure("failed", "transport_failure") from error
-        if budget is not None and budget.remaining() <= 0:
-            close = getattr(response, "close", None)
-            if callable(close):
-                close()
-            raise _HttpFailure("failed", "observation_deadline_exhausted")
-        if response.status_code in (404, 405, 501):
-            raise _HttpFailure("unsupported", "endpoint_unavailable")
-        if response.status_code == 401:
-            raise _HttpFailure("failed", "authentication_failed")
-        if response.status_code == 403:
-            raise _HttpFailure("failed", "permission_denied")
-        if not 200 <= response.status_code < 300:
-            raise _HttpFailure("failed", "http_failure")
-        body = bytearray()
-        try:
-            chunks = response.iter_content(8192) if callable(getattr(response, "iter_content", None)) else [response.content]
-            for chunk in chunks:
-                if budget is not None and budget.remaining() <= 0:
-                    raise _HttpFailure("failed", "observation_deadline_exhausted")
-                if not isinstance(chunk, (bytes, bytearray)):
-                    raise _HttpFailure("failed", "malformed_response_body")
-                body.extend(chunk)
-                self._used += len(chunk)
-                if len(body) > MAX_RESPONSE_BYTES or self._used > MAX_TOTAL_BYTES:
-                    raise _HttpFailure("unsupported", "response_bound_exceeded")
-            if budget is not None and budget.remaining() <= 0:
-                raise _HttpFailure("failed", "observation_deadline_exhausted")
-            return json.loads(bytes(body), parse_constant=lambda _: (_ for _ in ()).throw(ValueError("invalid_json")))
-        except _HttpFailure:
-            raise
-        except (ValueError, UnicodeError) as error:
-            raise _HttpFailure("failed", "malformed_json") from error
+            return read_json(
+                self._session, method, self._base + path, verify=self.target["ssl_verify"], budget=budget,
+                json_body=(payload or {}) if method == "POST" else None,
+            )
+        except TransportFailure as error:
+            reason = error.reason
+            if reason == "http_failure":
+                reason = {401: "authentication_failed", 403: "permission_denied",
+                          404: "endpoint_unavailable", 405: "endpoint_unavailable",
+                          501: "endpoint_unavailable"}.get(error.status_code if error.status_code is not None else 0, "http_failure")
+            status = "unsupported" if reason in {"endpoint_unavailable", "response_bound_exceeded"} else "failed"
+            raise _HttpFailure(status, reason) from None
         finally:
-            close = getattr(response, "close", None)
-            if callable(close):
-                close()
+            self._used = budget.used_bytes
 
     @staticmethod
     def _path(value: Any, path: str) -> Any:

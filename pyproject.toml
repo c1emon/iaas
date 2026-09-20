@@ -46,16 +46,22 @@ include_external_packages = true
 name = "Common primitives stay independent"
 type = "forbidden"
 source_modules = ["iaas_automation.common"]
-forbidden_modules = ["iaas_automation.opnsense_workflow", "iaas_automation.opnsense_diagnostics", "iaas_automation.opnsense_validation", "iaas_automation.pve_inventory", "iaas_automation.k3s_automation", "iaas_automation.runtime_execution", "requests", "httpx", "proxmoxer"]
+forbidden_modules = ["iaas_automation.http_transport", "iaas_automation.opnsense_workflow", "iaas_automation.opnsense_diagnostics", "iaas_automation.opnsense_validation", "iaas_automation.pve_inventory", "iaas_automation.k3s_automation", "iaas_automation.runtime_execution", "requests", "httpx", "proxmoxer"]
 
 [[tool.importlinter.contracts]]
 name = "OPNsense conversion stays pure"
 type = "forbidden"
 source_modules = ["iaas_automation.opnsense_workflow.conversion"]
-forbidden_modules = ["iaas_automation.opnsense_workflow.reader", "iaas_automation.opnsense_workflow.executor", "iaas_automation.opnsense_workflow.planning", "iaas_automation.runtime_execution", "requests", "httpx", "proxmoxer"]
+forbidden_modules = ["iaas_automation.http_transport", "iaas_automation.opnsense_workflow.reader", "iaas_automation.opnsense_workflow.executor", "iaas_automation.opnsense_workflow.planning", "iaas_automation.runtime_execution", "requests", "httpx", "proxmoxer"]
 
 [[tool.importlinter.contracts]]
 name = "Offline OPNsense admission stays offline"
 type = "forbidden"
 source_modules = ["iaas_automation.opnsense_validation"]
-forbidden_modules = ["iaas_automation.opnsense_workflow", "iaas_automation.opnsense_diagnostics", "iaas_automation.runtime_execution", "requests", "httpx", "proxmoxer"]
+forbidden_modules = ["iaas_automation.http_transport", "iaas_automation.opnsense_workflow", "iaas_automation.opnsense_diagnostics", "iaas_automation.runtime_execution", "requests", "httpx", "proxmoxer"]
+
+[[tool.importlinter.contracts]]
+name = "HTTP transport stays independent of domains"
+type = "forbidden"
+source_modules = ["iaas_automation.http_transport"]
+forbidden_modules = ["iaas_automation.opnsense_workflow", "iaas_automation.opnsense_diagnostics", "iaas_automation.opnsense_validation", "iaas_automation.pve_inventory", "iaas_automation.k3s_automation", "iaas_automation.runtime_execution"]
