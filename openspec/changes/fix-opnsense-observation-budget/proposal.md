@@ -15,12 +15,15 @@ rc.10 实测复现同一 reader 跨轮累计响应字节，第五轮观察超过
 ### Modified Capabilities
 
 - `bounded-http-read-transport`: 明确 OPNsense workflow 调用方的累计预算作用域。
+- `opnsense-config-workflow`: 修正原生激活状态的外围空白适配，仍精确要求 ok。
 
 ## Non-goals
 
 不增加 Alias、Gateway、Interface Group 的可表达范围，不修改写入器、自动重试、恢复准入或公共结果格式，不发布镜像。用户随后授权在新的已确认窗口进行本地源码设备写入测试，限独立测试 Alias、禁用 Filter 及其恢复清理。
 
 后续授权的根因诊断仅为激活失败材料增加安全分类，并审阅执行零配置改动的激活恢复候选；该诊断不改变原成功判断。
+
+用户在根因确认后授权修复并统一处理同类响应：共享 Pydantic 转换严格接受非空字符串、去外围空白并转小写；接入 OPNsense workflow / Interface Group、K3s readyz 及 PVE 节点、存储、VM、HA、Ceph 外部状态判断。调用点保留各自成功/失败枚举，内部工作流状态、配置声明与布尔转换不放宽。
 
 ## Impact
 

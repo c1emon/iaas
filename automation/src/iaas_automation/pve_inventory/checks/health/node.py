@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from iaas_automation.common.conversion import normalize_response_status
+
 from ...pve_api import PveApiError, PveReadOnlyApi, redact_sensitive_text
 from ..results import CheckResult, Severity
 from .model import HealthExpectations, THRESHOLDS
@@ -57,7 +59,7 @@ def _node_status_name(record: dict[str, Any]) -> str:
     online = record.get("online")
     if isinstance(online, bool):
         return "online" if online else "offline"
-    return str(record.get("status") or online or "unknown")
+    return normalize_response_status(record.get("status") or online or "unknown") or "unknown"
 
 
 def _node_cpu_percent(record: dict[str, Any]) -> float | None:
@@ -188,7 +190,7 @@ def check_required_datastores(api: PveReadOnlyApi, expectations: HealthExpectati
                 _emit(results, "FAIL", f"storage.{node}.{datastore}", f"required datastore {datastore} is missing on {node}")
                 continue
             active = record.get("active")
-            if active is False or str(record.get("status") or "").lower() in {"inactive", "unavailable", "offline"}:
+            if active is False or (normalize_response_status(record.get("status")) or "") in {"inactive", "unavailable", "offline"}:
                 _emit(results, "FAIL", f"storage.{node}.{datastore}", f"required datastore {datastore} is inactive on {node}")
                 continue
             usage = _storage_usage_percent(record)

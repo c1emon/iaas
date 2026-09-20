@@ -32,3 +32,11 @@ Filter 激活的 no_log 任务仅保留 failed/unknown，临时脱敏 callback �
 **根因是成功状态字符串尾部的两个换行未归一化，导致 IaaS 误报失败。** OPNsense 26.7.3 的 [script action](https://github.com/opnsense/core/blob/26.7.3/src/opnsense/service/modules/actions/script.py#L28-L41) 成功返回 `OK`，[process handler](https://github.com/opnsense/core/blob/26.7.3/src/opnsense/service/modules/processhandler.py#L169-L186) 追加 `\n\n`；[Backend](https://github.com/opnsense/core/blob/26.7.3/src/opnsense/mvc/app/library/OPNsense/Core/Backend.php#L137-L170) 仅去掉 NUL 结束符，[Filter apply](https://github.com/opnsense/core/blob/26.7.3/src/opnsense/mvc/app/controllers/OPNsense/Firewall/Api/FilterBaseController.php#L280-L287) 原样返回。该 `OK\n\n` 与实测长度及分类一致，当前 `string | lower != 'ok'` 必然拒绝它。
 
 本阶段定位根因并保留安全诊断，尚未修改成功判定。后续修复应在原生响应边界裁剪外围空白后仍精确比较 `ok`，不接受任意非空响应；Python writer 消费该任务明确的 confirmed/failed 状态，无需放宽其状态合同。原生 wrapper 成功与 PF/客户端业务验收继续区分；历史失败产物不追改为成功。
+
+## 外部响应状态统一修复与补测
+
+共享 Pydantic 转换严格接受非空字符串，去外围空白并转小写；Ansible filter 与 Python 复用同一实现。接入 OPNsense 共享激活、独立 Interface Group、K3s readyz，以及 PVE 节点、存储、VM、HA、Ceph 的外部状态判断。内部状态机及声明不放宽，每个调用点保留自身状态枚举。带空白的 PVE inactive / failed 不再漏过失败判断。
+
+定向转换、PVE health、实际 Ansible writer、OPNsense 入口和 K3s 测试共 76 项通过，类型检查通过。PVE/K3s 未做联机测试。
+
+同一已确认设备窗口内，基于最终源码重新生成零配置改动的 Filter activation_recovery 候选并执行一次：save=unchanged、activation=confirmed（native_response）、configuration=verified、整体 fully_verified。已删除测试 Filter 仍不存在，先前清理的激活阻断解除；历史创建/恢复失败产物不改写。本轮未执行 PF 或客户端业务验收。私有材料位于原临时目录的 activation-unified-plan / activation-unified-apply。

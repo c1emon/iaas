@@ -14,3 +14,7 @@
 使用真实 Reader/固定 transport 配合合成 HTTP 响应和缩小后的字节阈值，验证多轮累计超过阈值仍分别成功、单轮累计超限失败、下一轮不受耗尽状态污染、多阶段执行及失败恢复。保留时间预算和失败后态的定向回归。无需逐请求追踪系统、设备资格矩阵或新的全执行字节配额。
 
 本地模拟通过不等于 rc.10 原始恢复闭环通过，也不等于新版本真机验收；原始失败记录保持不变。未来联机写入需新的操作窗口。
+
+## 外部响应状态统一转换
+
+在 common.conversion 增加 normalize_response_status，以 Pydantic StringConstraints 统一严格字符串、strip_whitespace、to_lower 和非空约束；无效值返回 None。Ansible 通过薄 filter plugin 复用相同实现。各调用点仍决定接受的状态及缺失值处理，不对整个响应递归转换，也不改变内部状态机。PVE 定向覆盖带空白的失败状态，避免 inactive / failed 漏判。

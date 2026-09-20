@@ -331,7 +331,6 @@ def test_stage_playbook_keeps_save_and_activation_as_separate_tasks() -> None:
     activation_text = ACTIVATE_TASKS.read_text()
     assert "status: confirmed" in activation_text
     assert "native success trusted; internal steps and active state not independently confirmed" in activation_text
-    assert "| string | lower) != 'ok'" in activation_text
     raw_calls = [task["oxlorg.opnsense.raw"] for task in _walk(activate_source)
                  if "oxlorg.opnsense.raw" in task]
     assert len(raw_calls) == 1
@@ -344,6 +343,64 @@ def test_stage_playbook_keeps_save_and_activation_as_separate_tasks() -> None:
         "one-to-one-nat": {"module": "firewall", "controller": "one_to_one", "command": "apply"},
         "interface-groups": {"module": "firewall", "controller": "group", "command": "reconfigure"},
     }
+
+
+@pytest.mark.parametrize(
+    ("response", "expected_ok"),
+    [
+        ({"response": {"status": "OK\n\n"}}, True),
+        ({"response": {"status": "  ok  "}}, True),
+        ({"response": {"status": "ok"}}, True),
+        ({"response": {"status": "Error (1)"}}, False),
+        ({"response": {"status": "   "}}, False),
+        ({}, False),
+        ({"response": {"status": True}}, False),
+        ({"response": {"status": 0}}, False),
+    ],
+    ids=[
+        "uppercase-newline", "lowercase-outer-whitespace", "lowercase", "error", "blank",
+        "missing", "boolean", "integer",
+    ],
+)
+def test_activation_failed_when_expression_runs_against_real_ansible(
+    tmp_path, response, expected_ok
+) -> None:
+    source = yaml.safe_load(ACTIVATE_TASKS.read_text())
+    failed_when = source[1]["block"][0]["failed_when"]
+    playbook = tmp_path / "failed-when.yml"
+    playbook.write_text(yaml.safe_dump([{
+        "hosts": "localhost",
+        "connection": "local",
+        "gather_facts": False,
+        "tasks": [
+            {"ansible.builtin.set_fact": {
+                "opnsense_workflow_activation_call": response,
+            }},
+            {
+                "name": "Evaluate activation failed_when",
+                "ansible.builtin.debug": {"msg": "synthetic activation"},
+                "failed_when": failed_when,
+            },
+        ],
+    }], sort_keys=False))
+    result = subprocess.run(
+        ["uv", "run", "ansible-playbook", "-i", "localhost,", str(playbook)],
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "ANSIBLE_CONFIG": str(ROOT / "automation/ansible/ansible.cfg"),
+            "ANSIBLE_FILTER_PLUGINS": str(ROOT / "automation/ansible/filter_plugins"),
+            "ANSIBLE_LOCAL_TEMP": str(tmp_path / "ansible"),
+        },
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    if expected_ok:
+        assert result.returncode == 0, result.stdout + result.stderr
+    else:
+        assert result.returncode != 0, result.stdout + result.stderr
 
 
 def test_activation_failure_classification_does_not_export_backend_data(tmp_path) -> None:
@@ -372,7 +429,12 @@ def test_activation_failure_classification_does_not_export_backend_data(tmp_path
         'hosts': 'localhost', 'connection': 'local', 'gather_facts': False, 'tasks': tasks,
     }], sort_keys=False))
     result = subprocess.run(['uv', 'run', 'ansible-playbook', '-i', 'localhost,', str(playbook)],
-                            cwd=ROOT, env={**os.environ, 'ANSIBLE_LOCAL_TEMP': str(tmp_path / 'ansible')},
+                            cwd=ROOT, env={
+                                **os.environ,
+                                'ANSIBLE_CONFIG': str(ROOT / 'automation/ansible/ansible.cfg'),
+                                'ANSIBLE_FILTER_PLUGINS': str(ROOT / 'automation/ansible/filter_plugins'),
+                                'ANSIBLE_LOCAL_TEMP': str(tmp_path / 'ansible'),
+                            },
                             capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stdout + result.stderr
 

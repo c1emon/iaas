@@ -16,8 +16,8 @@
         action: post
       register: opnsense_workflow_activation_call
       failed_when: >-
-        (opnsense_workflow_activation_call.response.status | default('failed')
-        | string | lower) != 'ok'
+        (opnsense_workflow_activation_call.response.status | default(none)
+        | iaas_response_status) != 'ok'
       no_log: true
 
     - name: Record fixed activation completion evidence
@@ -45,7 +45,7 @@
               {%- set value = opnsense_workflow_activation_call.response.status | default(none) -%}
               {{ 'missing' if value is none else
                  'ok' if value is string and value | lower == 'ok' else
-                 'ok_with_whitespace' if value is string and value | trim | lower == 'ok' else
+                 'ok_with_whitespace' if value | iaas_response_status == 'ok' else
                  'other' }}
             response_status_length: >-
               {%- set value = opnsense_workflow_activation_call.response.status | default(none) -%}
