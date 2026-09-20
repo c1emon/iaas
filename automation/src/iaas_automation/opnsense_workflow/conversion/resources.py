@@ -9,7 +9,7 @@ from iaas_automation.common.conversion import ConversionError, convert_bool, opt
 from .schema import (
     BOOL_FIELDS, FIELD_ALIASES, IGNORED_NATIVE_FIELDS, INTEGER_FIELDS,
     INVERTED_FIELDS, LIST_FIELDS, NATIVE_FALSE_FIELDS, NATIVE_METADATA,
-    NATIVE_UNEXPRESSED, SELECT_FIELDS, STANDARD_FIELDS,
+    NATIVE_NESTED_IGNORED, NATIVE_UNEXPRESSED, SELECT_FIELDS, STANDARD_FIELDS,
 )
 from .types import INTEGER, OBJECT_LIST, OBJECT_MAP, TEXT, as_list, selected
 
@@ -38,6 +38,11 @@ def _field(resource: str | None, name: str, value: Any) -> Any:
         value = selected(value, multiple=multiple)
     if name in BOOL_FIELDS:
         return convert_bool(value)
+    # The native filter model emits an empty string for its optional timeout.
+    # Preserve that neutral value for unexpressed-field handling; other
+    # integer inputs still use the strict Pydantic adapter below.
+    if resource == "filter-rules" and name == "state_timeout" and value == "":
+        return value
     if name in INTEGER_FIELDS or name == "subnet_bits":
         return INTEGER.validate_python(value)
     if name == "updatefreq_days" and isinstance(value, (int, float)) and not isinstance(value, bool):
@@ -90,6 +95,10 @@ def convert_provider_row(resource: str | None, row: dict[str, Any]) -> Converted
                 if leaf in value:
                     sources.setdefault(f"{key}_{dest}", []).append((f"{key}.{leaf}", nested[leaf]))
                     extras[key].pop(leaf)
+            for leaf in NATIVE_NESTED_IGNORED.get(resource or "", set()):
+                extras[key].pop(leaf, None)
+            if resource == "dnat" and nested.get("address") == "":
+                extras[key].pop("address", None)
             if not extras[key]:
                 extras.pop(key)
         elif key in known:

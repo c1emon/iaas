@@ -52,7 +52,7 @@ LIST_FIELDS: dict[str, set[str]] = {
 
 BOOL_FIELDS: set[str] = {
     "enabled", "bind", "expand", "default_gw", "far_gw", "monitor_disable", "monitor_noroute",
-    "force_down", "quick", "source_invert", "destination_invert", "log", "gui_group",
+    "force_down", "quick", "source_invert", "destination_invert", "log", "gui_group", "no_port_forward",
 }
 
 # Names emitted by the Collection's simplify_translate layer and the common
@@ -103,9 +103,18 @@ NATIVE_UNEXPRESSED: dict[str, set[str]] = {
                       "tcp_flags", "tcp_flags_clear", "schedule", "tos", "icmp_type", "icmpv6_type", "divert_to",
                       "shaper1", "shaper2", "received-on", "received-on-not", "tcpflags_any",
                       "nosync", "nopfsync"},
-    "dnat": {"target_port", "no_nat", "nosync"},
+    "dnat": {"target_port", "no_nat", "no_port_forward", "nosync"},
     "one-to-one-nat": {"nosync"},
     "interface-groups": set(),
+}
+
+# DNAT's native model includes this derived leaf beside the expressible
+# network, port, and invert values.  The previous reader ignored this exact
+# leaf; keep that compatibility narrow so other nested keys remain
+# unexpressed and fail closed.  Empty ``address`` leaves are handled as
+# neutral provider padding; non-empty values remain unexpressed.
+NATIVE_NESTED_IGNORED: dict[str, set[str]] = {
+    "dnat": {"%network"},
 }
 
 # Volatile model fields, scoped to the resource that defines them.
@@ -114,7 +123,7 @@ NATIVE_METADATA: dict[str, set[str]] = {
                 "in_pass_b", "in_pass_p", "out_block_b", "out_block_p", "out_pass_b", "out_pass_p"},
     "filter-rules": {"sort_order", "prio_group", "%source_net", "%destination_net"},
 }
-NATIVE_FALSE_FIELDS: set[str] = {"nosync", "nopfsync", "monitor_killstates", "monitor_killstates_priority",
+NATIVE_FALSE_FIELDS: set[str] = {"nosync", "nopfsync", "no_port_forward", "monitor_killstates", "monitor_killstates_priority",
                                   "received-on-not", "tcpflags_any", "counters"}
 
 IGNORED_NATIVE_FIELDS: set[str] = {

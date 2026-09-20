@@ -26,6 +26,8 @@ OPNsense 原生数据转换位于 `iaas_automation/opnsense_workflow/conversion/
 
 转换先解码结构、来源别名及引用，再验证配置字段。普通配置不可表达的对象保留身份和引用，恢复为 `manual_required`；结构、selector、别名冲突和必要引用失败使观察不完整。动态未知字段名在公开 reason 中统一为 `unknown_native_field`，避免把敏感 key 输出到报告。
 
+联机 `read` 的 `complete` 只说明枚举完整，验收时还要检查每个对象的 `configuration` / `recovery`。内置 Alias、无可表达地址的网关和空成员组按规格保留为 `manual_required`。原生 Filter 的空 `statetimeout`、DNAT 的空字符串 `address` 与 `%network` 展示字段按资源和字段处理，不把空值兼容扩大到其他类型或未知配置。
+
 这些检查使用固定样例、测试替身和临时目录。发布镜像、设备写入及真实客户端验证仍是独立操作。
 
 OPNsense workflow 与 diagnostics 通过 `iaas_automation/http_transport/` 共享一次请求、严格 JSON 解码和响应关闭机制，固定 endpoint 和领域状态映射仍由各自适配器维护。保持单响应 2 MiB、实例累计 8 MiB、默认 `(5, 15)` timeout、现有 TLS 选择和禁止重定向，不自动重试。workflow 的观察 deadline 在请求边界和数据块间检查；这是协作式时间预算，不是可抢占慢流的绝对墙钟保证。HTTP 与流异常由测试替身覆盖。

@@ -94,6 +94,74 @@ def test_nested_aliases_consume_only_known_leaves_and_detect_conflicts():
         convert_provider_row('dnat', raw | {'source_net': 'OTHER'})
 
 
+def test_filter_empty_native_state_timeout_is_a_neutral_unexpressed_value():
+    converted = convert_provider_row('filter-rules', {'statetimeout': ''})
+    assert converted.fields == {'state_timeout': ''}
+    assert converted.errors == ()
+    assert unexpressed_fields('filter-rules', converted.extras, converted.fields) == []
+    assert convert_provider_row('filter-rules', {'statetimeout': None}).errors == ('state_timeout',)
+    assert convert_provider_row('filter-rules', {'statetimeout': 'invalid'}).errors == ('state_timeout',)
+    assert convert_provider_row('filter-rules', {'sequence': ''}).errors == ('sequence',)
+    assert convert_provider_row('dnat', {'statetimeout': ''}).errors == ('state_timeout',)
+    nondefault = convert_provider_row('filter-rules', {'statetimeout': '30'})
+    assert unexpressed_fields('filter-rules', nondefault.extras, nondefault.fields) == ['state_timeout']
+
+    rows = deepcopy(ROWS)
+    rows['filter-rules'][0]['statetimeout'] = ''
+    observed = reader(FakeCollection(rows)).read(['filter-rules'])['filter-rules']
+    assert observed['status'] == 'complete'
+    assert observed['objects'][0]['recovery'] == 'expressible'
+
+
+def test_dnat_compatibility_nested_leaves_are_consumed_but_unknowns_fail_closed():
+    row = deepcopy(ROWS['dnat'][0])
+    row.pop('source_net')
+    row.pop('destination_net')
+    row.update(
+        source={'network': 'any', 'address': '', 'port': '', 'not': '0'},
+        destination={
+            'network': 'PUBLIC_ALIAS', 'address': '',
+            'port': 'WEB_PORT', 'not': '0', '%network': 'NATIVE_DESTINATION_NETWORK',
+        },
+        nordr='0',
+    )
+    converted = convert_provider_row('dnat', row)
+    assert converted.fields['source_net'] == 'any'
+    assert converted.fields['destination_net'] == 'PUBLIC_ALIAS'
+    assert converted.fields['source_port'] == ''
+    assert converted.fields['destination_port'] == 'WEB_PORT'
+    assert 'source' not in converted.extras
+    assert 'destination' not in converted.extras
+    assert unexpressed_fields('dnat', converted.extras, converted.fields) == []
+
+    unknown = deepcopy(row)
+    unknown['source']['unexpected'] = 'UNSUPPORTED'
+    converted_unknown = convert_provider_row('dnat', unknown)
+    assert unexpressed_fields('dnat', converted_unknown.extras, converted_unknown.fields) == ['source']
+
+    for value in (None, [], {}, 'UNSUPPORTED_ADDRESS'):
+        unknown_address = deepcopy(row)
+        unknown_address['source']['address'] = value
+        converted_address = convert_provider_row('dnat', unknown_address)
+        assert unexpressed_fields('dnat', converted_address.extras, converted_address.fields) == ['source']
+
+    from iaas_automation.opnsense_workflow.reader import _configuration
+    configuration, reason = _configuration('dnat', row)
+    assert reason is None
+    assert configuration['destination_net'] == 'PUBLIC_ALIAS'
+    assert _configuration('dnat', row | {'nordr': '1'})[1] == 'unsupported_no_port_forward_mode'
+
+
+@pytest.mark.parametrize('value', [0, '0', False, 'No'])
+def test_dnat_no_port_forward_uses_common_boolean_alias_contract(value):
+    converted = convert_provider_row('dnat', {'nordr': value, 'no_port_forward': False})
+    assert converted.fields == {'no_port_forward': False}
+    assert unexpressed_fields('dnat', converted.extras, converted.fields) == []
+    with pytest.raises(ConversionError, match='conflicting_native_alias'):
+        convert_provider_row('dnat', {'nordr': '1', 'no_port_forward': False})
+    assert convert_provider_row('dnat', {'nordr': 'fasle'}).errors == ('no_port_forward',)
+
+
 def test_selector_identifiers_and_alias_member_map():
     assert selected({'001': {'selected': 'yes', 'value': 'Display'}}) == '001'
     assert selected([{'key': '001', 'value': 'Display', 'selected': 1}]) == '001'

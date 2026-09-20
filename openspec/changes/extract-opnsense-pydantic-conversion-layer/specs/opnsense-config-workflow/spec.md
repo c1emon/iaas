@@ -47,6 +47,12 @@ Conversion SHALL apply only the rules declared for the resource and field. It SH
 - **THEN** the adapter applies that field's declared policy separately to each representation
 - **AND** it does not substitute a missing-field default for an invalid explicit value
 
+#### Scenario: Native optional filter timeout is empty
+- **WHEN** a native filter rule returns `statetimeout=""`
+- **THEN** conversion preserves the empty optional timeout as a neutral native value without an integer conversion error
+- **AND** a non-default timeout still prevents unsupported standard reconstruction
+- **AND** null, malformed integers and empty strings in unrelated integer fields retain their existing rejection behavior
+
 ### Requirement: Selector and collection shapes are decoded without guessing
 Dictionary selectors SHALL use selected keys as identifiers. List selectors SHALL prefer an explicit key and use a value only when the key is absent. Selection flags SHALL use deterministic boolean conversion; malformed flags, malformed items, duplicate selected identifiers and multiple selections for a single-valued field SHALL fail. CSV, newline and member-map forms SHALL be accepted only for fields declaring those shapes. Sorting SHALL be limited to established set-like fields, and conversion SHALL NOT silently deduplicate malformed input.
 
@@ -63,6 +69,17 @@ Dictionary selectors SHALL use selected keys as identifiers. List selectors SHAL
 - **WHEN** a filter network or port field returns supported CSV, or an Alias returns its supported content member map
 - **THEN** each becomes the existing resource-specific standard representation
 - **AND** descriptions and unrelated scalar fields are not split, and Alias member maps are not treated as selector options
+
+#### Scenario: Native DNAT nested padding and display descriptions
+- **WHEN** DNAT source or destination returns its native empty-string `address` padding or `%network` display description beside the configured network
+- **THEN** those fields do not prevent reconstruction of the configured network, port and inversion
+- **AND** non-empty, null or structured address values and unknown sibling fields remain available for unsupported-configuration assessment
+- **AND** the metadata exception does not become a global exclusion for other resources
+
+#### Scenario: Native DNAT no-port-forward flag
+- **WHEN** a normal DNAT rule returns `nordr="0"`, canonical `no_port_forward=False`, or both
+- **THEN** the common boolean conversion yields equivalent false values and the rule remains eligible for standard reconstruction
+- **AND** enabled no-port-forward mode remains unsupported, conflicting aliases fail and misspelled boolean input is not accepted
 
 ### Requirement: Conversion preserves observation and execution contracts
 Conversion SHALL preserve the existing public observation, candidate, comparison and recovery structures. A complete enumeration SHALL retain identifiable built-in and unsupported native objects even when their configuration is not expressible; those objects SHALL remain unknown/manual-required rather than absent. Malformed enumeration, selectors or identity ambiguity SHALL retain incomplete status. Configured defaults and canonical ordering SHALL remain consistent across readback, validated desired state, verification and recovery. Conversion errors SHALL follow the safe common error boundary.
