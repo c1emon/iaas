@@ -1,32 +1,15 @@
 # OCI runtime
 
-The new [native launcher](../runtime-launcher.md) and
-[environment configuration](../runtime-configuration.md) are implemented on the
-runtime adaptation branch. They require an image exposing interface version 1
-through `capabilities`; the historical release below retains the legacy Make
-interface and is not a launcher-compatible release. Current implementation and
-local test boundaries are recorded in [validation](../runtime-adaptation-validation.md).
+The [native launcher](../runtime-launcher.md) requires a runtime image exposing
+interface version 1 through `capabilities`. Select a published version compatible
+with that interface and pin its repository digest. Historical `v0.1.0-rc.2`
+provides only the legacy Make interface and is not launcher-compatible.
 
-Current builds package reusable Python, Ansible and OpenTofu resources for
-Linux amd64 and arm64. The updated Release workflow publishes both under one
-version manifest after both tested artifacts pass; see the
-[launcher guide](../runtime-launcher.md#native-arm64-builds). Image publication is
-not infrastructure deployment or Forgejo acceptance. The historical AMD64-only
-first publicly consumable prerelease is
-[`v0.1.0-rc.2`](https://github.com/c1emon/iaas/releases/tag/v0.1.0-rc.2), from
-source commit `42fd9c82511de2d9a646e02e6f7bd7148b688f5a`:
-
-```text
-ghcr.io/c1emon/iaas-runtime@sha256:9feb560f05a059e37c7bfc0a6f7042bfe6d6a6510cf8edb86f498bd2c03cb5c8
-```
-
-[Release workflow 34185770926](https://github.com/c1emon/iaas/actions/runs/34185770926)
-passed build, tested-image transfer, publication and anonymous digest pull/help
-invocation on 2026-09-08. The anonymous job passed on attempt 2 after the owner
-made the package public; the image was not rebuilt. An independent anonymous
-pull/help check on wsx also passed. These are runtime software acceptance results.
-The earlier `v0.1.0-rc.1` failed before publication and has no usable image digest.
-For future versions, use only a digest reported by a successful release workflow.
+Builds support Linux amd64 and arm64; the Release workflow publishes both under
+one version manifest. Use the digest from the selected successful release;
+workflow configuration alone does not prove publication. See
+[build and publication rules](../runtime-launcher.md#native-arm64-builds) and
+[environment configuration](../runtime-configuration.md).
 
 ## Directory and command interface
 
@@ -126,11 +109,9 @@ make runtime-tofu-check
 uv run python automation/runtime/inspect_image.py
 ```
 
-These are repository commands, using synthetic external inputs. The smoke uses
-the shipped entrypoint, disables networking for generation, and checks Ansible
-resources, caller UID, credential inputs and representative failures. The
-separate OpenTofu portion permits locked provider downloads only. Layer inspection
-checks excluded content and retained license notices. These are software checks.
+These repository checks use synthetic inputs. Generation runs offline; the
+OpenTofu check permits locked provider downloads. They do not validate real
+infrastructure.
 
 Dependency installation precedes repository source copying. Final dependency
 and source layers are separate. Code-only builds reuse dependency caches;

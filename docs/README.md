@@ -9,9 +9,6 @@
 - [OCI 运行时与调用方契约](operations/06-oci-runtime.md)
 - [原生启动器：本地 Docker / DinD](runtime-launcher.md)
 - [环境配置与保存计划](runtime-configuration.md)
-- [Runtime 适配验收记录](runtime-adaptation-validation.md)
-- [OPNsense 工作流软件验收与消费前提](../openspec/changes/archive/2026-09-19-add-opnsense-config-workflow/acceptance.md)
-
 - [准备与通用约定](operations/00-preparation-and-conventions.md)
 - [交换机](operations/01-switch.md)
 - [OPNsense：资源管理与 read / plan / apply / verify 工作流](operations/02-opnsense.md)
@@ -33,6 +30,8 @@
 - [K3s 平台设计](k3s-foundation-platform-design.md)
 - [Forgejo 驱动的 IaaS 与基础平台交付设计及任务清单](decisions/forgejo-iaas-platform-delivery.md)
 - [Roadmap and backlog](roadmap.md)
+- [Runtime 历史验证范围与特殊失败边界](runtime-adaptation-validation.md)
+- [OPNsense 工作流历史交接说明](../openspec/changes/archive/2026-09-19-add-opnsense-config-workflow/acceptance.md)
 
 这些内容用于理解设计、决策和历史证据；如果其中的操作叙述与手册不同，以
 `operations/` 中的当前手册为准。

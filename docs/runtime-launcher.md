@@ -193,16 +193,11 @@ files are included in the returned task tree.
 
 ## Verification boundaries
 
-Darwin arm64 and Linux amd64 launchers build locally. On Apple Silicon, local
-Docker and a nested Linux Docker daemon ran the `linux/amd64` runtime through
-explicit emulation. Offline generation, isolated input transfer and UID/mode
-preservation passed. Local MinIO passed native synthetic state read/write, locking,
-stale-plan rejection and outage recovery. A disposable Forgejo 15.0.8 / runner
-12.13.2 job additionally passed native plan creation, an S3 write outage and
-failed-result-collection retention using the separate DinD daemon. A Linux VM
-client also passed local-bind execution. These are explicit amd64 emulation
-results on an Apple Silicon host; native amd64 hardware and real facilities were
-not qualified. See the [validation record](runtime-adaptation-validation.md).
+Historical checks cover local Docker, independent DinD transfer and synthetic
+state recovery. AMD64 ran through emulation on Apple Silicon; later native ARM64
+checks covered local execution, not DinD or S3 failure recovery. These checks do
+not qualify real facilities or a shared CI environment. See the
+[verification scope and exceptional failures](runtime-adaptation-validation.md).
 
 ## Native ARM64 builds
 

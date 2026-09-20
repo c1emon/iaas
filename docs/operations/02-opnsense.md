@@ -379,14 +379,13 @@ desired inputs。apply 的 options 必须包含 `candidate_sha256`、`execution_
 `checked_no_pending: true` 与 `serialized: true`。launcher 要求
 `--execution-id` 与新 output 目录 basename 相同，并核对 runtime discovery 的
 回显。调用方负责生成新的执行身份并维持整个保存/激活窗口的串行化；这些字段
-不是分布式锁或跨主机防重放注册表。软件合同校验不等于设备写入或数据面验收。
+不是分布式锁或跨主机防重放注册表。
 
 结果中的 save、activation、configuration 和 active 分别记录不同事实；默认成功基础是
 保存、配置回读和原生激活成功。Alias、Gateway、Group 原生返回无法证明的内部子动作
 固定输出不可关闭 stderr 警告并写入 result，但不停止默认依赖阶段。
-默认 `verify` 的 scope 为 `saved_configuration`，active 为 `not_attempted`，不证明运行态
-或业务验收。需要 PF、route-to、接口组或 runtime 深度事实时，显式运行 inspect；inspect
-结果独立记录，不改写原 apply。所有结果的业务验收保持 `not_performed`。
+需要 PF、route-to、接口组或 runtime 深度事实时，显式运行 inspect；结果独立记录，
+不改写原 apply。所有结果的业务验收保持 `not_performed`，确认范围见上表。
 
 可选深度核查命令：
 
