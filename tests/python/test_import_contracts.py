@@ -4,6 +4,9 @@ import os
 import subprocess
 import sys
 import tomllib
+import pytest
+
+pytestmark = pytest.mark.integration
 
 
 def test_import_contracts_reject_each_boundary(tmp_path):

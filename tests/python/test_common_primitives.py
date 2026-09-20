@@ -13,6 +13,8 @@ from iaas_automation.common.io import check_outputs, check_text_file, load_json,
 from iaas_automation.common.markdown import escape_table_cell
 from iaas_automation.common.validation import as_list, as_mapping, require_bool, require_non_empty_string, require_positive_int, require_unknown_keys, require_url_like
 
+pytestmark = pytest.mark.fast
+
 
 ROOT = Path(__file__).resolve().parents[2]
 

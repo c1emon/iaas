@@ -10,6 +10,8 @@ from iaas_automation.opnsense_workflow.conversion.resources import unexpressed_f
 from iaas_automation.opnsense_workflow.conversion.types import selected
 from test_opnsense_workflow_reader import ROWS, FakeCollection, reader
 
+pytestmark = pytest.mark.fast
+
 
 @pytest.mark.parametrize('value', [False, 0, 0.0, '0', 'false', 'False', 'No', 'OFF', 'n', 'F'])
 def test_false(value):

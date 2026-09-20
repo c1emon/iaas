@@ -32,6 +32,11 @@ dev = [
 pythonpath = ["automation/src"]
 testpaths = ["tests"]
 norecursedirs = [".*", "automation/ansible/collections"]
+addopts = "--strict-markers"
+markers = [
+    "fast: bounded pure offline tests with no external tool or infrastructure dependency",
+    "integration: local tool integration using synthetic inputs and temporary paths",
+]
 
 [tool.importlinter]
 root_package = "iaas_automation"
