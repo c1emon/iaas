@@ -17,6 +17,8 @@ from typing import Any, NoReturn, Protocol, cast
 import requests
 from urllib3.util import Timeout
 
+from iaas_automation.common.errors import Diagnostic
+
 
 DEFAULT_MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 DEFAULT_MAX_TOTAL_BYTES = 8 * 1024 * 1024
@@ -116,6 +118,8 @@ class TransportFailure(RuntimeError):
     """Safe, adapter-neutral failure from one bounded request."""
 
     def __init__(self, reason: str, status_code: int | None = None) -> None:
+        safe_status = status_code if type(status_code) is int and 100 <= status_code <= 599 else None
+        self.diagnostic = Diagnostic("http_transport", reason, status_code=safe_status)
         super().__init__(reason)
         self.reason = reason
         self.status_code = status_code
