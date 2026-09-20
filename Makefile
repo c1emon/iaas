@@ -130,7 +130,7 @@ test-pve:
 test-k3s:
 	$(PYTEST) "$(ROOT)"/tests/python/test_k3s_*.py
 
-check-fast: test-fast typecheck lint-imports
+check-fast: test-fast typecheck lint-imports lint-python
 
 lint-yaml:
 	$(UV) run --directory "$(ROOT)" yamllint "$(INVENTORY_DIR)" "$(ENVIRONMENT_DIR)/ansible"
@@ -150,7 +150,7 @@ tofu-validate: pve-validate
 opnsense-validate:
 	$(PYTHON) -m iaas_automation.opnsense_validation --vars-dir "$(ENVIRONMENT_DIR)/ansible/vars/opnsense"
 
-check: check-generated test lint-yaml typecheck ansible-lint tofu-fmt tofu-validate opnsense-validate lint-imports
+check: check-generated test lint-yaml typecheck ansible-lint tofu-fmt tofu-validate opnsense-validate lint-imports lint-python
 
 secret-scan:
 	@command -v "$(GITLEAKS)" >/dev/null 2>&1 || { printf 'error: gitleaks is required for secret-scan (install gitleaks or set GITLEAKS=/path/to/gitleaks)\n' >&2; exit 127; }
@@ -318,3 +318,7 @@ platform-handoff-render: require-platform-handoff-render-inputs k3s-verify
 .PHONY: lint-imports
 lint-imports:
 	PYTHONPATH="$(AUTOMATION)/src" $(UV) run --directory "$(ROOT)" lint-imports
+
+.PHONY: lint-python
+lint-python:
+	$(UV) run --directory "$(ROOT)" ruff check

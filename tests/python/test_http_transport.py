@@ -10,6 +10,8 @@ import requests
 
 from iaas_automation.http_transport import HttpResponse, ReadBudget, TransportFailure, read_json
 
+pytestmark = pytest.mark.fast
+
 
 class Response:
     def __init__(self, chunks: list[object], *, status_code: int = 200) -> None:

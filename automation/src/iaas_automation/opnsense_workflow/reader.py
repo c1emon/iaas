@@ -29,7 +29,7 @@ from .gateway_checks import check_gateway_current
 from iaas_automation.common.conversion import ConversionError, optional_bool as _coerce_bool
 from .conversion import convert_provider_row, normalize_standard_record
 from .conversion.resources import unexpressed_fields as _unexpressed_fields
-from .conversion.schema import _STANDARD_FIELDS, _LIST_FIELDS, _DEFAULTS
+from .conversion.schema import STANDARD_FIELDS, LIST_FIELDS, DEFAULTS
 from .conversion.types import as_list as _as_list
 
 
@@ -1019,12 +1019,12 @@ def _configuration(resource: str, row: dict[str, Any]) -> tuple[dict[str, Any] |
             return None, "unrecognized_managed_identity"
         flat["scope"] = match.group("scope")
         flat["slug"] = match.group("slug")
-    fields = _STANDARD_FIELDS[resource]
+    fields = STANDARD_FIELDS[resource]
     record: dict[str, Any] = {field: deepcopy(flat[field]) for field in fields if field in flat}
-    for field in _LIST_FIELDS[resource]:
+    for field in LIST_FIELDS[resource]:
         if field in record:
             record[field] = _as_list(record[field])
-    for field, default in _DEFAULTS.get(resource, {}).items():
+    for field, default in DEFAULTS.get(resource, {}).items():
         record.setdefault(field, deepcopy(default))
     if resource == "aliases" and record.get("type") != "urltable" and record.get("updatefreq_days") == "":
         # The model emits this empty optional field for every alias type.

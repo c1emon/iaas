@@ -5,6 +5,8 @@ import requests
 from iaas_automation.opnsense_diagnostics import adapter as diagnostics
 from iaas_automation.opnsense_workflow import reader as workflow
 
+pytestmark = pytest.mark.fast
+
 
 class Response:
     def __init__(self, status=200, error=None):

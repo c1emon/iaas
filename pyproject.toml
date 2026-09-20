@@ -25,6 +25,7 @@ dev = [
     "paramiko>=3.5.1",
     "pyright>=1.1.411",
     "pytest>=8.3.0",
+    "ruff>=0.16.8",
     "yamllint>=1.38.0",
 ]
 
@@ -65,3 +66,21 @@ name = "HTTP transport stays independent of domains"
 type = "forbidden"
 source_modules = ["iaas_automation.http_transport"]
 forbidden_modules = ["iaas_automation.opnsense_workflow", "iaas_automation.opnsense_diagnostics", "iaas_automation.opnsense_validation", "iaas_automation.pve_inventory", "iaas_automation.k3s_automation", "iaas_automation.runtime_execution"]
+
+[tool.ruff]
+target-version = "py312"
+include = [
+    "automation/src/iaas_automation/common/conversion.py",
+    "automation/src/iaas_automation/common/errors.py",
+    "automation/src/iaas_automation/opnsense_workflow/conversion/*.py",
+    "automation/src/iaas_automation/http_transport/*.py",
+    "tests/python/test_opnsense_conversion.py",
+    "tests/python/test_import_contracts.py",
+    "tests/python/test_http_transport.py",
+    "tests/python/test_http_read_adapters.py",
+    "tests/python/test_safe_diagnostics.py",
+]
+extend-exclude = ["automation/ansible/collections", "**/generated/**"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]

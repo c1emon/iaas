@@ -75,15 +75,16 @@ class ReadBudget:
                 raise ValueError(f"{name} must be a non-negative integer")
         if self.max_response_bytes == 0 or self.max_total_bytes == 0:
             raise ValueError("byte limits must be greater than zero")
+        # Keep runtime validation for callers outside statically checked code.
         if self.deadline is not None and (
             isinstance(self.deadline, bool)
-            or not isinstance(self.deadline, (int, float))
+            or not isinstance(self.deadline, (int, float))  # pyright: ignore[reportUnnecessaryIsInstance]
             or not math.isfinite(float(self.deadline))
         ):
             raise ValueError("deadline must be a finite number")
         if (
             isinstance(self.request_timeout_seconds, bool)
-            or not isinstance(self.request_timeout_seconds, (int, float))
+            or not isinstance(self.request_timeout_seconds, (int, float))  # pyright: ignore[reportUnnecessaryIsInstance]
             or not 0 < float(self.request_timeout_seconds) <= DEFAULT_REQUEST_TIMEOUT_SECONDS
             or not math.isfinite(float(self.request_timeout_seconds))
         ):

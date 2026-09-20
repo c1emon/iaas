@@ -32,7 +32,8 @@ class Diagnostic:
         if self.component not in _CODES or self.code not in _CODES[self.component]:
             raise ValueError("unsupported diagnostic component or code")
         if self.field_path is not None:
-            if not isinstance(self.field_path, tuple) or not self.field_path:
+            # Runtime dataclass callers may not have passed static type checks.
+            if not isinstance(self.field_path, tuple) or not self.field_path:  # pyright: ignore[reportUnnecessaryIsInstance]
                 raise ValueError("invalid diagnostic field path")
             for part in self.field_path:
                 if not ((type(part) is int and part >= 0) or (isinstance(part, str) and part in _FIELD_NAMES)):

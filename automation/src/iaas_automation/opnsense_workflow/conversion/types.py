@@ -15,8 +15,10 @@ def _reject_bool(value: Any) -> Any:
     return value
 
 
-INTEGER = TypeAdapter(Annotated[int, BeforeValidator(_reject_bool)])
-TEXT = TypeAdapter(StrictStr)
+INTEGER: TypeAdapter[int] = TypeAdapter(Annotated[int, BeforeValidator(_reject_bool)])
+TEXT: TypeAdapter[str] = TypeAdapter(StrictStr)
+OBJECT_MAP: TypeAdapter[dict[object, object]] = TypeAdapter(dict[object, object])
+OBJECT_LIST: TypeAdapter[list[object]] = TypeAdapter(list[object])
 
 
 class _Selection(BaseModel):
@@ -30,19 +32,25 @@ class _ListSelection(_Selection):
 
 def selected(value: Any, *, multiple: bool = False) -> Any:
     identifiers: list[str | int] = []
+    original: Any = value
     try:
         if isinstance(value, dict):
-            for key, option in value.items():
+            mapping = OBJECT_MAP.validate_python(value)
+            for key, option in mapping.items():
                 if _Selection.model_validate(option).selected:
                     # The dict key is the identifier, never its display label.
                     identifiers.append(TEXT.validate_python(key))
-        elif isinstance(value, list) and any(isinstance(item, dict) for item in value):
-            for option in value:
-                entry = _ListSelection.model_validate(option)
-                if entry.selected:
-                    identifiers.append(entry.identifier)
+        elif isinstance(value, list):
+            options = OBJECT_LIST.validate_python(value)
+            if any(isinstance(item, dict) for item in options):
+                for option in options:
+                    entry = _ListSelection.model_validate(option)
+                    if entry.selected:
+                        identifiers.append(entry.identifier)
+            else:
+                return deepcopy(original)
         else:
-            return deepcopy(value)
+            return deepcopy(original)
     except PydanticValidationError:
         raise ConversionError("malformed_native_selector") from None
     if len(set(identifiers)) != len(identifiers) or (not multiple and len(identifiers) > 1):
@@ -52,7 +60,8 @@ def selected(value: Any, *, multiple: bool = False) -> Any:
 
 def as_list(value: Any) -> Any:
     if isinstance(value, dict):
-        return [key for key in value if key != ""]
+        mapping = OBJECT_MAP.validate_python(value)
+        return [key for key in mapping if key != ""]
     if isinstance(value, str):
         return [item for item in re.split(r"[,\n]", value) if item != ""]
     return deepcopy(value)

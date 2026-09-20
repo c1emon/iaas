@@ -1,6 +1,6 @@
 # 公共安全错误描述
 
-状态：设计，未实施。序列第 4 项，前置 `extract-bounded-http-read-transport`。
+状态：已实施，提交 `88caa66`；验收范围见本 change 的 `implementation.md`。序列第 4 项，前置 `extract-bounded-http-read-transport`。本 change 未归档，不代表镜像、设备或生产验收。
 
 ## Why
 

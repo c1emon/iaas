@@ -2,8 +2,8 @@
 from copy import deepcopy
 from decimal import Decimal
 from typing import Any
-from .schema import _DEFAULTS, _LIST_FIELDS, _STANDARD_FIELDS
-from .types import as_list as _as_list
+from .schema import DEFAULTS, LIST_FIELDS, STANDARD_FIELDS
+from .types import OBJECT_LIST, as_list as _as_list
 
 def _copy_value(value: Any) -> Any:
     return deepcopy(value)
@@ -12,7 +12,8 @@ def _copy_value(value: Any) -> Any:
 def _sort_list(value: Any) -> Any:
     if not isinstance(value, list):
         return value
-    return sorted((_copy_value(item) for item in value), key=lambda item: repr(item))
+    items = OBJECT_LIST.validate_python(value)
+    return sorted((_copy_value(item) for item in items), key=lambda item: repr(item))
 
 
 def normalize_standard_record(resource: str, record: dict[str, Any]) -> dict[str, Any]:
@@ -25,24 +26,28 @@ def normalize_standard_record(resource: str, record: dict[str, Any]) -> dict[str
     selected declaration document, where filter safety context is available.
     """
 
-    if resource not in _STANDARD_FIELDS:
+    if resource not in STANDARD_FIELDS:
         raise ValueError(f"unsupported OPNsense resource: {resource}")
-    if not isinstance(record, dict):
+    # Keep this runtime boundary for untyped provider callers; strict callers are statically typed.
+    if not isinstance(record, dict):  # pyright: ignore[reportUnnecessaryIsInstance]
         raise ValueError("resource declaration must be a mapping")
     result = deepcopy(record)
     if result.get("state") == "present":
-        for field, default in _DEFAULTS.get(resource, {}).items():
+        for field, default in DEFAULTS.get(resource, {}).items():
             result.setdefault(field, deepcopy(default))
-        for field in _LIST_FIELDS[resource]:
+        for field in LIST_FIELDS[resource]:
             if field in result:
                 result[field] = _sort_list(result[field])
         if resource == "filter-rules":
             for field in ("source_net", "destination_net", "source_port", "destination_port"):
                 if field in result:
-                    value = _as_list(result[field])
-                    if not isinstance(value, list):
-                        value = [value]
-                    result[field] = _sort_list([str(item) for item in value])
+                    converted = _as_list(result[field])
+                    values: list[object]
+                    if isinstance(converted, list):
+                        values = OBJECT_LIST.validate_python(converted)
+                    else:
+                        values = [converted]
+                    result[field] = _sort_list([str(item) for item in values])
             protocol = result.get('protocol')
             if isinstance(protocol, str):
                 result['protocol'] = {'icmpv6': 'ICMPv6', 'any': 'any'}.get(protocol.lower(), protocol.upper())

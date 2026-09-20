@@ -1,7 +1,7 @@
 """Field vocabulary and native expressibility policy; no I/O."""
 from typing import Any
 
-_STANDARD_FIELDS: dict[str, tuple[str, ...]] = {
+STANDARD_FIELDS: dict[str, tuple[str, ...]] = {
     "aliases": ("name", "type", "content", "description", "enabled", "updatefreq_days"),
     "vips": ("description", "interface", "address", "bind", "expand"),
     "gateways": (
@@ -28,7 +28,7 @@ _STANDARD_FIELDS: dict[str, tuple[str, ...]] = {
     "interface-groups": ("name", "members", "gui_group", "sequence", "description"),
 }
 
-_DEFAULTS: dict[str, dict[str, Any]] = {
+DEFAULTS: dict[str, dict[str, Any]] = {
     "filter-rules": {
         "source_invert": False, "destination_invert": False, "log": True,
     },
@@ -40,7 +40,7 @@ _DEFAULTS: dict[str, dict[str, Any]] = {
     "interface-groups": {"description": ""},
 }
 
-_LIST_FIELDS = {
+LIST_FIELDS: dict[str, set[str]] = {
     "aliases": {"content"},
     "vips": set(),
     "gateways": set(),
@@ -50,7 +50,7 @@ _LIST_FIELDS = {
     "interface-groups": {"members"},
 }
 
-_BOOL_FIELDS = {
+BOOL_FIELDS: set[str] = {
     "enabled", "bind", "expand", "default_gw", "far_gw", "monitor_disable", "monitor_noroute",
     "force_down", "quick", "source_invert", "destination_invert", "log", "gui_group",
 }
@@ -60,7 +60,7 @@ _BOOL_FIELDS = {
 # the left hand side already; accepting the right hand side makes the adapter
 # useful with representative raw response fixtures without exposing those
 # raw fields in its result.
-_FIELD_ALIASES = {
+FIELD_ALIASES: dict[str, str] = {
     "descr": "description", "ifname": "interface", "ipprotocol": "ip_protocol",
     "defaultgw": "default_gw", "fargw": "far_gw", "latencylow": "latency_low",
     "latencyhigh": "latency_high", "losslow": "loss_low", "losshigh": "loss_high",
@@ -79,7 +79,7 @@ _FIELD_ALIASES = {
     "advbase": "advertising_base", "advskew": "advertising_skew",
 }
 
-_SELECT_FIELDS = {
+SELECT_FIELDS: set[str] = {
     "type", "interface", "mode", "vhid", "advertising_base", "advertising_skew", "action", "direction",
     "ip_protocol", "protocol", "gateway", "replyto", "state_type", "state_policy", "overload", "prio",
     "set_prio", "set_prio_low", "schedule", "tos", "members", "nat_reflection", "pool_opts", "associated_rule",
@@ -87,12 +87,12 @@ _SELECT_FIELDS = {
     "divert_to", "shaper1", "shaper2", "authtype", "proto",
 }
 
-_INVERTED_FIELDS = {"disabled": "enabled", "nobind": "bind", "noexpand": "expand", "nogroup": "gui_group"}
+INVERTED_FIELDS: dict[str, str] = {"disabled": "enabled", "nobind": "bind", "noexpand": "expand", "nogroup": "gui_group"}
 
 # Provider fields which carry configuration semantics but are deliberately
 # outside this workflow's standard schema. UUIDs and transport metadata are
 # intentionally absent so irrelevant native fields do not reject a row.
-_NATIVE_UNEXPRESSED: dict[str, set[str]] = {
+NATIVE_UNEXPRESSED: dict[str, set[str]] = {
     "aliases": {"interface", "path_expression", "authtype", "proto", "counters"},
     "vips": {"mode", "gateway", "password", "vhid", "advertising_base", "advertising_skew", "peer", "peer6", "nosync"},
     "gateways": {"nosync", "monitor_killstates", "monitor_killstates_priority"},
@@ -109,15 +109,15 @@ _NATIVE_UNEXPRESSED: dict[str, set[str]] = {
 }
 
 # Volatile model fields, scoped to the resource that defines them.
-_NATIVE_METADATA = {
+NATIVE_METADATA: dict[str, set[str]] = {
     "aliases": {"current_items", "eval_match", "eval_nomatch", "in_block_b", "in_block_p",
                 "in_pass_b", "in_pass_p", "out_block_b", "out_block_p", "out_pass_b", "out_pass_p"},
     "filter-rules": {"sort_order", "prio_group", "%source_net", "%destination_net"},
 }
-_NATIVE_FALSE_FIELDS = {"nosync", "nopfsync", "monitor_killstates", "monitor_killstates_priority",
-                        "received-on-not", "tcpflags_any", "counters"}
+NATIVE_FALSE_FIELDS: set[str] = {"nosync", "nopfsync", "monitor_killstates", "monitor_killstates_priority",
+                                  "received-on-not", "tcpflags_any", "counters"}
 
-_IGNORED_NATIVE_FIELDS = {
+IGNORED_NATIVE_FIELDS: set[str] = {
     "uuid", "id", "created", "updated", "modified", "timestamp", "selected", "key", "value",
     "network", "subnet", "subnet_bits", "source", "destination", "source_not", "destination_not",
     "packets", "bytes", "evaluations", "states", "last_updated",
@@ -125,7 +125,7 @@ _IGNORED_NATIVE_FIELDS = {
     "latencylow", "latencyhigh", "losslow", "losshigh", "natreflection", "pass", "nordr",
 }
 
-_INTEGER_FIELDS = {
+INTEGER_FIELDS: set[str] = {
     "sequence", "latency_low", "latency_high", "loss_low", "loss_high", "interval", "time_period",
     "loss_interval", "data_length", "priority", "weight", "state_timeout",
 }
