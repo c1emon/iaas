@@ -15,6 +15,8 @@ consumer checker when that evidence is available.
 
 from __future__ import annotations
 
+from iaas_automation.common.conversion import optional_bool as _bool
+
 from copy import deepcopy
 from collections.abc import Mapping, Sequence
 import ipaddress
@@ -55,15 +57,6 @@ def _gateway_rows(value: Any) -> tuple[list[dict[str, Any]] | None, str | None, 
     complete = total == len(rows) or total == 0
     return rows, None, complete
 
-
-def _bool(value: Any) -> bool | None:
-    if type(value) is bool:
-        return value
-    if isinstance(value, int) and value in (0, 1):
-        return bool(value)
-    if isinstance(value, str) and value.strip().lower() in {"0", "1", "true", "false", "yes", "no"}:
-        return value.strip().lower() in {"1", "true", "yes"}
-    return None
 
 
 def _text(value: Any) -> str | None:

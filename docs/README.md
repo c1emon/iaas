@@ -49,3 +49,5 @@
 本仓库的 `platform/` 仅记录外部 handoff 边界，不是 platform 实现根，也不
 提供兼容别名。平台仓库的传输、签名、CI 触发和消费结果不由本仓库执行或
 背书。
+
+本地源码检查入口和覆盖边界见 [本地开发验证](development-validation.md)。

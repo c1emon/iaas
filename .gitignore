@@ -70,3 +70,5 @@ exports/
 # Claude Code generated project files
 /CLAUDE.md
 /.claude/
+.hypothesis/
+.import_linter_cache/

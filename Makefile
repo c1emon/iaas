@@ -132,7 +132,7 @@ tofu-validate: pve-validate
 opnsense-validate:
 	$(PYTHON) -m iaas_automation.opnsense_validation --vars-dir "$(ENVIRONMENT_DIR)/ansible/vars/opnsense"
 
-check: check-generated test lint-yaml typecheck ansible-lint tofu-fmt tofu-validate opnsense-validate
+check: check-generated test lint-yaml typecheck ansible-lint tofu-fmt tofu-validate opnsense-validate lint-imports
 
 secret-scan:
 	@command -v "$(GITLEAKS)" >/dev/null 2>&1 || { printf 'error: gitleaks is required for secret-scan (install gitleaks or set GITLEAKS=/path/to/gitleaks)\n' >&2; exit 127; }
@@ -296,3 +296,7 @@ platform-handoff-check: require-platform-handoff-inputs
 
 platform-handoff-render: require-platform-handoff-render-inputs k3s-verify
 	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(K3S_INVENTORY)" -l "$(K3S_ANSIBLE_LIMIT)" -e "platform_handoff_model_path=$(K3S_REVIEW)" -e "platform_handoff_k3s_intent=$(K3S_INTENT)" -e "platform_handoff_intent=$(PLATFORM_HANDOFF_INTENT)" -e "platform_handoff_scope=$(K3S_SCOPE)" -e "platform_handoff_output=$(PLATFORM_HANDOFF_OUTPUT)" "$(PLATFORM_HANDOFF_PLAYBOOK)"
+
+.PHONY: lint-imports
+lint-imports:
+	PYTHONPATH="$(AUTOMATION)/src" $(UV) run --directory "$(ROOT)" lint-imports

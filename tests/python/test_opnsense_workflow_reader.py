@@ -176,7 +176,7 @@ def test_unknown_native_zero_is_not_assumed_to_be_a_default(value):
     rows = {"aliases": [ROWS["aliases"][0] | {"future_option": value}]}
     item = reader(FakeCollection(rows)).read(["aliases"])["aliases"]["objects"][0]
     assert item["configuration"] is None
-    assert item["reason"] == "unexpressed_native_fields:future_option"
+    assert item["reason"] == "unexpressed_native_fields:unknown_native_field"
 
 
 @pytest.mark.parametrize("mode", [
@@ -649,12 +649,12 @@ def test_disabled_alias_old_pf_table_does_not_confirm_active_state():
     ('filter-rules', 'received-on-not'), ('filter-rules', 'tcpflags_any'), ('aliases', 'counters'),
 ])
 def test_native_disabled_flags_are_neutral_but_enabled_flags_block(resource, field):
-    for value in ('0', 0, False, ''):
+    for value in ('0', 0, 0.0, False, 'No', 'off', ''):
         transport = FakeCollection()
         transport.rows[resource][0][field] = value
         obj = reader(transport).read([resource])[resource]['objects'][0]
         assert obj['configuration'] is not None, obj['reason']
-    for value in ('1', True, 'unexpected', 0.0, [], {}):
+    for value in ('1', True, 'unexpected', 2.0, [], {}):
         transport.rows[resource][0][field] = value
         obj = reader(transport).read([resource])[resource]['objects'][0]
         assert obj['configuration'] is None
@@ -744,7 +744,7 @@ def test_live_alias_statistics_do_not_hide_configured_expiration():
     assert not set(stats) & obj['configuration'].keys()
     transport.rows['aliases'][0]['expire'] = '300'
     obj = reader(transport).read(['aliases'])['aliases']['objects'][0]
-    assert obj['reason'] == 'unexpressed_native_fields:expire'
+    assert obj['reason'] == 'unexpressed_native_fields:unknown_native_field'
 
 
 def test_filter_display_text_does_not_replace_network_identifiers():
@@ -756,7 +756,7 @@ def test_filter_display_text_does_not_replace_network_identifiers():
     assert 'aliases:NETS' in obj['references']
     row['%unsupported_feature'] = 'display-like but unknown'
     obj = reader(transport).read(['filter-rules'])['filter-rules']['objects'][0]
-    assert obj['reason'] == 'unexpressed_native_fields:%unsupported_feature'
+    assert obj['reason'] == 'unexpressed_native_fields:unknown_native_field'
 
 
 def test_empty_alias_frequency_is_only_omitted_for_non_urltable():
