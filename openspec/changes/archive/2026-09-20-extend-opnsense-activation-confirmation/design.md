@@ -139,7 +139,7 @@ v1 候选在新 apply/verify 中明确拒绝并提示重新 plan；不在 apply 
 
 ## Source basis and remaining capability facts
 
-- [现有工作流规格](../../specs/opnsense-config-workflow/spec.md)、[rc.7 能力说明](../archive/2026-09-19-add-opnsense-config-workflow/capability-notes.md)。
+- [现有工作流规格](../../../specs/opnsense-config-workflow/spec.md)、[rc.7 能力说明](../2026-09-19-add-opnsense-config-workflow/capability-notes.md)。
 - [OPNsense 26.7.3 Alias](https://github.com/opnsense/core/blob/26.7.3/src/opnsense/mvc/app/controllers/OPNsense/Firewall/Api/AliasController.php#L308)、[Gateway](https://github.com/opnsense/core/blob/26.7.3/src/opnsense/mvc/app/controllers/OPNsense/Routing/Api/SettingsController.php#L39)、[Group](https://github.com/opnsense/core/blob/26.7.3/src/opnsense/mvc/app/controllers/OPNsense/Firewall/Api/GroupController.php#L124) 控制器源码说明单个 `ok` 的限制，不能单独证明拟新增只读能力可用。
 
 严格项审计结果：固定版本已核定可读取 PF 规则、Gateway 路由/运行字段、接口组映射和运行态相关事实，但这些深度事实不纳入默认 plan/apply/verify。默认成功仅依赖保存、配置回读和原生激活成功；Alias/Gateway/Group 的原生返回缺口固定以不可关闭 stderr 警告和 result 字段保留。需要协议/端口、route-to、接口组成员或 runtime 深度事实时，运行独立 inspect。动态 Alias 遵循设备原生缓存刷新，不要求来源、缓存或加载专用证据。

@@ -305,7 +305,7 @@ workflow schema v2；`request` 继续使用 v1，launcher 的 `interface_version
 不影响默认准入。默认完成基础是配置保存、配置回读和原生激活成功；Alias、Gateway 和
 Firewall Group 的深度证据缺口固定输出不可关闭 stderr 警告并写入 result，继续默认流程。
 普通 no-change 不创建动作要求。能力结论以
-[只读能力核对](../../openspec/changes/extend-opnsense-activation-confirmation/capability-notes.md)
+[只读能力核对](../../openspec/changes/archive/2026-09-20-extend-opnsense-activation-confirmation/capability-notes.md)
 为准；其中固定 Collection 的源码事实不能跨版本推断为现场支持资格。
 
 既有基线工作流已在本实现分支完成软件验证；本次确认扩展仍受上述版本和能力闸门
