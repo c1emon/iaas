@@ -1,6 +1,6 @@
 # 提取基于 Pydantic 的 OPNsense 数据转换层
 
-状态：已实施，提交 `aeac3be`；验收范围见本 change 的 `implementation.md`。本 change 未归档，不代表镜像、设备或生产验收。用户已确认 `fasle` 是笔误，必须报错。
+状态：已实施，提交 `aeac3be`，联机只读回归修复 `4205d92`；验收范围见本 change 的 `implementation.md`。本 change 已于 2026-09-20 归档并同步主规格，已完成后续授权的只读设备复验，不代表写入、镜像或生产验收。用户已确认 `fasle` 是笔误，必须报错。
 
 2026-09-20 完成三个子 agent 并行复核及修订复查，四项 P2 设计问题已关闭；范围与证据见 [review.md](review.md)。这不代表实现或设备验收已通过。
 

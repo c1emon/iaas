@@ -1,6 +1,6 @@
 # 范围受限的 Python 质量门禁
 
-状态：已实施；验收范围见本 change 的 `implementation.md`，本阶段提交在当前收尾流程完成。序列第 5 项，前置 `standardize-safe-error-diagnostics`。本 change 未归档，不代表全仓严格验证、镜像、设备或生产验收。
+状态：已实施；验收范围见本 change 的 `implementation.md`，本阶段提交为 `719be12`。序列第 5 项，前置 `standardize-safe-error-diagnostics`。本 change 已于 2026-09-20 归档并同步主规格，不代表全仓严格验证、镜像、设备或生产验收。
 
 ## Why
 

@@ -1,6 +1,6 @@
 # 提取有界 HTTP 读取传输
 
-状态：已实施，提交 `c82e1f1`；验收范围见本 change 的 `implementation.md`。序列第 3 项，前置 `add-fast-offline-validation-profiles`。本 change 未归档，不代表镜像、设备或生产验收。
+状态：已实施，提交 `c82e1f1`；验收范围见本 change 的 `implementation.md`。序列第 3 项，前置 `add-fast-offline-validation-profiles`。本 change 已于 2026-09-20 归档并同步主规格，不代表镜像、设备或生产验收。
 
 ## Why
 
