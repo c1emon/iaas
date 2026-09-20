@@ -993,6 +993,8 @@ _SELECT_FIELDS = {
     "type", "interface", "mode", "vhid", "advertising_base", "advertising_skew", "action", "direction",
     "ip_protocol", "protocol", "gateway", "replyto", "state_type", "state_policy", "overload", "prio",
     "set_prio", "set_prio_low", "schedule", "tos", "members", "nat_reflection", "pool_opts", "associated_rule",
+    "icmp_type", "icmpv6_type", "tcp_flags", "tcp_flags_clear", "received-on",
+    "divert_to", "shaper1", "shaper2", "authtype", "proto",
 }
 
 _INVERTED_FIELDS = {"disabled": "enabled", "nobind": "bind", "noexpand": "expand", "nogroup": "gui_group"}
@@ -1001,18 +1003,29 @@ _INVERTED_FIELDS = {"disabled": "enabled", "nobind": "bind", "noexpand": "expand
 # outside this workflow's standard schema. UUIDs and transport metadata are
 # intentionally absent so irrelevant native fields do not reject a row.
 _NATIVE_UNEXPRESSED: dict[str, set[str]] = {
-    "aliases": {"interface", "path_expression"},
-    "vips": {"mode", "gateway", "password", "vhid", "advertising_base", "advertising_skew", "peer", "peer6"},
-    "gateways": set(),
+    "aliases": {"interface", "path_expression", "authtype", "proto", "counters"},
+    "vips": {"mode", "gateway", "password", "vhid", "advertising_base", "advertising_skew", "peer", "peer6", "nosync"},
+    "gateways": {"nosync", "monitor_killstates", "monitor_killstates_priority"},
     "filter-rules": {"interface_invert", "tag", "tagged", "replyto", "disable_replyto", "allow_opts",
                       "state_type", "state_policy", "state_timeout", "max_states", "max_src_nodes",
                       "max_src_states", "max_src_conn", "max_src_conn_rate", "max_src_conn_rates",
                       "overload", "adaptive_start", "adaptive_end", "prio", "set_prio", "set_prio_low",
-                      "tcp_flags", "tcp_flags_clear", "schedule", "tos", "icmp_type", "icmpv6_type", "divert_to"},
-    "dnat": {"target_port", "no_nat"},
-    "one-to-one-nat": set(),
+                      "tcp_flags", "tcp_flags_clear", "schedule", "tos", "icmp_type", "icmpv6_type", "divert_to",
+                      "shaper1", "shaper2", "received-on", "received-on-not", "tcpflags_any",
+                      "nosync", "nopfsync"},
+    "dnat": {"target_port", "no_nat", "nosync"},
+    "one-to-one-nat": {"nosync"},
     "interface-groups": set(),
 }
+
+# Volatile model fields, scoped to the resource that defines them.
+_NATIVE_METADATA = {
+    "aliases": {"current_items", "eval_match", "eval_nomatch", "in_block_b", "in_block_p",
+                "in_pass_b", "in_pass_p", "out_block_b", "out_block_p", "out_pass_b", "out_pass_p"},
+    "filter-rules": {"sort_order", "prio_group", "%source_net", "%destination_net"},
+}
+_NATIVE_FALSE_FIELDS = {"nosync", "nopfsync", "monitor_killstates", "monitor_killstates_priority",
+                        "received-on-not", "tcpflags_any", "counters"}
 
 _IGNORED_NATIVE_FIELDS = {
     "uuid", "id", "created", "updated", "modified", "timestamp", "selected", "key", "value",
@@ -1153,9 +1166,13 @@ def _flatten_provider_row(row: dict[str, Any], resource: str | None = None) -> d
                     result[f"{prefix}_{'net' if key == 'network' else key}"] = deepcopy(value)
                 elif key == "not":
                     result[f"{prefix}_invert"] = deepcopy(value)
+    if resource == "interface-groups" and row.get("nogroup") == "" and result.get("gui_group") in (None, ""):
+        result["gui_group"] = True
     for field in _SELECT_FIELDS:
         if field in result:
-            multiple = field == "members" or (field == "interface" and resource in {"filter-rules", "dnat"})
+            multiple = (field in {"members", "icmp_type", "icmpv6_type", "tcp_flags", "tcp_flags_clear",
+                                  "received-on", "proto"}
+                        or (field == "interface" and resource in {"filter-rules", "dnat"}))
             result[field] = _selected(result[field], multiple=multiple)
     for field in _BOOL_FIELDS:
         if field in result:
@@ -1191,6 +1208,9 @@ def _parse_identity(resource: str, row: dict[str, Any]) -> list[str] | None:
         name, gateway = row.get("name"), row.get("gateway")
         if isinstance(name, str) and name and isinstance(gateway, str) and gateway:
             return [name, gateway]
+        native_id = row.get("uuid", row.get("id"))
+        if isinstance(name, str) and name and gateway == "" and isinstance(native_id, str) and native_id:
+            return ["native:" + native_id]
         return None
     description = row.get("description", row.get("descr"))
     native_id = row.get("uuid", row.get("id"))
@@ -1277,6 +1297,10 @@ def _configuration(resource: str, row: dict[str, Any]) -> tuple[dict[str, Any] |
             record[field] = _coerce_bool(record[field])
     for field, default in _DEFAULTS.get(resource, {}).items():
         record.setdefault(field, _copy_value(default))
+    if resource == "aliases" and record.get("type") != "urltable" and record.get("updatefreq_days") == "":
+        # The model emits this empty optional field for every alias type.
+        # Preserve non-empty values so unsupported configuration still fails.
+        record.pop("updatefreq_days")
     if resource == "filter-rules":
         # The standard validator treats an explicitly supplied empty port as
         # invalid; the Collection's module default is applied later by the
@@ -1287,6 +1311,11 @@ def _configuration(resource: str, row: dict[str, Any]) -> tuple[dict[str, Any] |
                 record.pop(field, None)
         if record.get('gateway') == '':
             record.pop('gateway')
+        # The model returns multi-value fields as CSV, while the standard
+        # validator accepts lists. Decode before validation, not only afterward.
+        for field in ("source_net", "destination_net", "source_port", "destination_port"):
+            if field in record:
+                record[field] = _as_list(record[field])
     record["state"] = "present"
     try:
         _validate_readback(resource, record)
@@ -1323,6 +1352,11 @@ def _unexpressed_fields(resource: str, row: dict[str, Any], flat: dict[str, Any]
                 'gateways': {'enabled': True}, 'filter-rules': {'state_type': 'keep'}}.get(resource, {})
     for field in fields:
         value = flat.get(field, row.get(field))
+        if field in _NATIVE_FALSE_FIELDS:
+            if value is None or value == "" or _coerce_bool(value) is False:
+                continue
+            found.append(field)
+            continue
         if field in {'interface_invert', 'disable_replyto', 'allow_opts'}:
             value = _coerce_bool(value)
         if field in defaults and str(value) == str(defaults[field]):
@@ -1334,6 +1368,8 @@ def _unexpressed_fields(resource: str, row: dict[str, Any], flat: dict[str, Any]
         if canonical in defaults and str(flat.get(canonical, value)) == str(defaults[canonical]):
             continue
         if canonical in fields:
+            continue
+        if field in _NATIVE_METADATA.get(resource, set()):
             continue
         if field in _IGNORED_NATIVE_FIELDS or canonical in _STANDARD_FIELDS[resource]:
             continue
@@ -1570,6 +1606,8 @@ class Reader:
                 "recovery": "expressible" if configuration is not None else "manual_required",
                 "reason": reason,
             })
+            if resource == "gateways" and isinstance(row.get("name"), str) and row["name"]:
+                objects[-1]["label"] = "gateways:" + row["name"]
         base["objects"] = objects
         # A complete listing can contain identified native objects whose
         # configuration is outside the standard schema.  Keep those objects

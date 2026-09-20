@@ -375,3 +375,28 @@ def test_live_unselected_alias_type_is_checked():
 def test_alias_address_families_are_preserved(members):
     cand = candidate(Appliance(), documents(aliases=[alias(content=members)]))
     assert cand['differences'][0]['after']['content'] == members
+
+
+def test_local_recovery_requires_explicit_mode_and_retains_drift_checks(tmp_path):
+    device = Appliance(aliases=[alias('A', ['198.51.100.0/24'])])
+    cand = candidate(device, documents(aliases=[alias(), alias('B')]))
+    cand['runtime'] = {'kind': 'local-source', 'source_sha256': 'b' * 64,
+                       'platform': 'darwin/arm64', 'interface_version': 1}
+    assert execute(tmp_path, device, cand)['status'] == 'fully_verified'
+    recovery = json.loads((tmp_path / 'recovery.json').read_text())
+    req = {'schema_version': 1, 'selection': {'aliases': 'all'}}
+    with pytest.raises(ValidationError, match='runtime identity'):
+        reverse_documents(recovery, req, device.read(['aliases']), TARGET)
+    restored = reverse_documents(recovery, req, device.read(['aliases']), TARGET, allow_local_source=True)
+    records = restored['aliases'][TOP_LEVEL['aliases']]
+    assert records[0]['content'] == ['198.51.100.0/24']
+    assert records[1]['state'] == 'absent'
+    for patch in ({'source_sha256': 'bad'}, {'kind': 'image'}, {'image_digest': 'sha256:' + 'a' * 64},
+                  {'interface_version': True}, {'platform': 'unknown'}):
+        broken = deepcopy(recovery)
+        broken['runtime'].update(patch)
+        with pytest.raises(ValidationError, match='runtime identity'):
+            reverse_documents(broken, req, device.read(['aliases']), TARGET, allow_local_source=True)
+    device.resources['aliases'][0]['content'] = ['203.0.113.0/24']
+    with pytest.raises(ValidationError, match='later configuration change'):
+        reverse_documents(recovery, req, device.read(['aliases']), TARGET, allow_local_source=True)

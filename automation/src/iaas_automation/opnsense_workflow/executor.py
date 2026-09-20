@@ -222,7 +222,8 @@ def apply(candidate: dict, digest: str, reader: Any, writer: Any, execution_id: 
     return result
 
 
-def reverse_documents(recovery: dict, req: dict, observations: dict, target: dict) -> dict:
+def reverse_documents(recovery: dict, req: dict, observations: dict, target: dict,
+                      *, allow_local_source: bool = False) -> dict:
     import re
 
     from iaas_automation.opnsense_validation import validate_documents
@@ -232,13 +233,20 @@ def reverse_documents(recovery: dict, req: dict, observations: dict, target: dic
     require(type(recovery['schema_version']) is int and recovery['schema_version'] in {1, RECOVERY_VERSION} and recovery['kind'] == 'opnsense-recovery'
             and isinstance(recovery['target'], dict) and recovery['target'] == target,
             'incompatible recovery target or format')
-    require(isinstance(recovery['runtime'], dict)
-            and set(recovery['runtime']) == {'image_digest', 'platform', 'interface_version'}
-            and isinstance(recovery['runtime']['image_digest'], str)
-            and re.fullmatch(r'(?:[^@]+@)?sha256:[0-9a-f]{64}', recovery['runtime']['image_digest'])
-            and recovery['runtime']['platform'] in {'linux/amd64', 'linux/arm64'}
-            and type(recovery['runtime']['interface_version']) is int
-            and recovery['runtime']['interface_version'] == 1,
+    runtime = recovery['runtime']
+    image_runtime = (isinstance(runtime, dict)
+                     and set(runtime) == {'image_digest', 'platform', 'interface_version'}
+                     and isinstance(runtime['image_digest'], str)
+                     and re.fullmatch(r'(?:[^@]+@)?sha256:[0-9a-f]{64}', runtime['image_digest'])
+                     and runtime['platform'] in {'linux/amd64', 'linux/arm64'})
+    local_runtime = (allow_local_source is True and isinstance(runtime, dict)
+                     and set(runtime) == {'kind', 'source_sha256', 'platform', 'interface_version'}
+                     and runtime['kind'] == 'local-source' and isinstance(runtime['source_sha256'], str)
+                     and re.fullmatch(r'[0-9a-f]{64}', runtime['source_sha256'])
+                     and runtime['platform'] in {'linux/amd64', 'linux/arm64', 'darwin/amd64', 'darwin/arm64'})
+    require((image_runtime or local_runtime)
+            and type(runtime['interface_version']) is int
+            and runtime['interface_version'] == 1,
             'incompatible recovery runtime identity')
     require(isinstance(recovery['candidate_sha256'], str)
             and re.fullmatch(r'[0-9a-f]{64}', recovery['candidate_sha256']),

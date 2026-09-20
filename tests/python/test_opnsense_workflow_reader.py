@@ -129,9 +129,9 @@ def _plan_alias_deletion(rows):
 
 @pytest.mark.parametrize("resource, consumer", [
     ("aliases", ROWS["aliases"][0] | {
-        "name": "GROUP", "type": "networkgroup", "content": ["NETS"], "current_items": 1}),
+        "name": "GROUP", "type": "networkgroup", "content": ["NETS"], "proto": ["IPv4"]}),
     ("aliases", ROWS["aliases"][0] | {
-        "name": "GROUP", "type": "networkgroup", "content": {"NETS": {}}, "current_items": 1}),
+        "name": "GROUP", "type": "networkgroup", "content": {"NETS": {}}, "proto": ["IPv4"]}),
     ("filter-rules", ROWS["filter-rules"][0] | {
         "description": "native rule", "uuid": "native-test", "destination_net": "NETS,OTHER"}),
     ("filter-rules", ROWS["filter-rules"][0] | {
@@ -152,7 +152,7 @@ def test_reader_dependencies_prevent_deleting_referenced_alias(resource, consume
 def test_unrelated_unexpressible_networkgroup_does_not_block_alias_deletion():
     rows = {name: [] for name in ROWS}
     rows["aliases"] = [ROWS["aliases"][0], ROWS["aliases"][0] | {
-        "name": "GROUP", "type": "networkgroup", "content": ["OTHER"], "current_items": 1}]
+        "name": "GROUP", "type": "networkgroup", "content": ["OTHER"], "proto": ["IPv4"]}]
     candidate = _plan_alias_deletion(rows)
     assert [item["action"] for item in candidate["differences"]] == ["delete"]
 
@@ -640,3 +640,149 @@ def test_disabled_alias_old_pf_table_does_not_confirm_active_state():
     assert result["reason"] == "native_retirement_and_consumers_unconfirmed"
     assert result["coverage"]["table"] == "residual_nonempty"
     assert diagnostics.calls == 2
+
+
+@pytest.mark.parametrize('resource,field', [
+    ('dnat', 'nosync'), ('vips', 'nosync'), ('gateways', 'nosync'),
+    ('gateways', 'monitor_killstates'), ('gateways', 'monitor_killstates_priority'),
+    ('filter-rules', 'nosync'), ('filter-rules', 'nopfsync'),
+    ('filter-rules', 'received-on-not'), ('filter-rules', 'tcpflags_any'), ('aliases', 'counters'),
+])
+def test_native_disabled_flags_are_neutral_but_enabled_flags_block(resource, field):
+    for value in ('0', 0, False, ''):
+        transport = FakeCollection()
+        transport.rows[resource][0][field] = value
+        obj = reader(transport).read([resource])[resource]['objects'][0]
+        assert obj['configuration'] is not None, obj['reason']
+    for value in ('1', True, 'unexpected', 0.0, [], {}):
+        transport.rows[resource][0][field] = value
+        obj = reader(transport).read([resource])[resource]['objects'][0]
+        assert obj['configuration'] is None
+        assert field in obj['reason']
+
+
+@pytest.mark.parametrize('resource,field,multiple', [
+    ('aliases', 'authtype', False), ('aliases', 'proto', True),
+    ('filter-rules', 'icmp_type', True), ('filter-rules', 'icmpv6_type', True),
+    ('filter-rules', 'tcp_flags', True), ('filter-rules', 'tcp_flags_clear', True),
+    ('filter-rules', 'received-on', True), ('filter-rules', 'divert_to', False),
+    ('filter-rules', 'shaper1', False), ('filter-rules', 'shaper2', False),
+])
+def test_native_selectors_decode_empty_and_reject_active_values(resource, field, multiple):
+    transport = FakeCollection()
+    transport.rows[resource][0][field] = {
+        '': {'value': 'None', 'selected': 0 if multiple else 1},
+        'feature': {'value': 'Display label', 'selected': 0},
+    }
+    obj = reader(transport).read([resource])[resource]['objects'][0]
+    assert obj['configuration'] is not None, obj['reason']
+    transport.rows[resource][0][field]['']['selected'] = 0
+    transport.rows[resource][0][field]['feature']['selected'] = 1
+    obj = reader(transport).read([resource])[resource]['objects'][0]
+    assert obj['configuration'] is None
+    assert field in obj['reason']
+
+
+def test_volatile_fields_are_scoped_and_not_configuration():
+    transport = FakeCollection()
+    transport.rows['aliases'][0]['current_items'] = '42'
+    transport.rows['filter-rules'][0].update(sort_order='1000001', prio_group='200')
+    for resource in ('aliases', 'filter-rules'):
+        assert reader(transport).read([resource])[resource]['objects'][0]['configuration'] is not None
+    transport.rows['dnat'][0]['current_items'] = '42'
+    assert reader(transport).read(['dnat'])['dnat']['objects'][0]['configuration'] is None
+
+
+def test_addressless_gateway_is_enumerated_but_not_manageable():
+    transport = FakeCollection()
+    transport.rows['gateways'][0].update(gateway='', uuid='native-gateway')
+    obs = reader(transport).read(['gateways'])['gateways']
+    assert obs['status'] == 'complete'
+    obj = obs['objects'][0]
+    assert obj['identity'] == ['native:native-gateway']
+    assert obj['label'] == 'gateways:WAN'
+    assert obj['configuration'] is None
+    assert obj['recovery'] == 'manual_required'
+    del transport.rows['gateways'][0]['uuid']
+    assert reader(transport).read(['gateways'])['gateways']['status'] == 'incomplete'
+
+
+def test_empty_optional_nogroup_is_false_but_empty_members_remain_unknown():
+    transport = FakeCollection()
+    row = transport.rows['interface-groups'][0]
+    row.pop('gui_group', None)
+    row['nogroup'] = ''
+    obj = reader(transport).read(['interface-groups'])['interface-groups']['objects'][0]
+    assert obj['configuration']['gui_group'] is True
+    row['members'] = []
+    obj = reader(transport).read(['interface-groups'])['interface-groups']['objects'][0]
+    assert obj['configuration'] is None
+
+
+def test_unrelated_addressless_gateway_does_not_block_alias_plan_but_dependency_does():
+    rows = {name: [] for name in ROWS}
+    rows['aliases'] = deepcopy(ROWS['aliases'])
+    rows['gateways'] = [ROWS['gateways'][0] | {'gateway': '', 'uuid': 'dynamic-native'}]
+    assert _plan_alias_deletion(rows)['admission']['status'] != 'blocked'
+    rows['filter-rules'] = [ROWS['filter-rules'][0] | {'gateway': 'WAN'}]
+    observations = reader(FakeCollection(rows)).read(list(COLLECTION_TARGETS))
+    with pytest.raises(ValidationError, match='dependency|express'):
+        plan({'filter-rules': {'opnsense_filter_rules': [observations['filter-rules']['objects'][0]['configuration']]}},
+             {'schema_version': 1, 'selection': {'filter-rules': 'all'},
+              'managed': {'filter-rules': [observations['filter-rules']['objects'][0]['identity']]}}, observations,
+             TARGET, {}, {})
+
+
+def test_live_alias_statistics_do_not_hide_configured_expiration():
+    transport = FakeCollection()
+    stats = dict.fromkeys(('eval_match', 'eval_nomatch', 'in_block_b', 'in_block_p',
+                          'in_pass_b', 'in_pass_p', 'out_block_b', 'out_block_p',
+                          'out_pass_b', 'out_pass_p'), '123')
+    transport.rows['aliases'][0].update(stats)
+    obj = reader(transport).read(['aliases'])['aliases']['objects'][0]
+    assert obj['configuration'] is not None
+    assert not set(stats) & obj['configuration'].keys()
+    transport.rows['aliases'][0]['expire'] = '300'
+    obj = reader(transport).read(['aliases'])['aliases']['objects'][0]
+    assert obj['reason'] == 'unexpressed_native_fields:expire'
+
+
+def test_filter_display_text_does_not_replace_network_identifiers():
+    transport = FakeCollection()
+    row = transport.rows['filter-rules'][0]
+    row.update({'%source_net': 'Friendly source address', '%destination_net': 'Friendly alias label'})
+    obj = reader(transport).read(['filter-rules'])['filter-rules']['objects'][0]
+    assert obj['configuration']['destination_net'] == ['NETS']
+    assert 'aliases:NETS' in obj['references']
+    row['%unsupported_feature'] = 'display-like but unknown'
+    obj = reader(transport).read(['filter-rules'])['filter-rules']['objects'][0]
+    assert obj['reason'] == 'unexpressed_native_fields:%unsupported_feature'
+
+
+def test_empty_alias_frequency_is_only_omitted_for_non_urltable():
+    transport = FakeCollection()
+    row = transport.rows['aliases'][0]
+    row['updatefreq'] = ''
+    obj = reader(transport).read(['aliases'])['aliases']['objects'][0]
+    assert obj['configuration'] is not None
+    assert 'updatefreq_days' not in obj['configuration']
+    row['updatefreq'] = '1'
+    assert reader(transport).read(['aliases'])['aliases']['objects'][0]['configuration'] is None
+    row.update(type='urltable', content=['https://example.invalid/addresses'], updatefreq='')
+    assert reader(transport).read(['aliases'])['aliases']['objects'][0]['configuration'] is None
+    row['updatefreq'] = '1'
+    assert reader(transport).read(['aliases'])['aliases']['objects'][0]['configuration']['updatefreq_days'] == '1'
+
+
+def test_native_csv_filter_networks_and_ports_are_validated_as_lists():
+    transport = FakeCollection()
+    row = transport.rows['filter-rules'][0]
+    row.update(destination_net='NETS,192.0.2.0/24', source_net='OTHER,198.51.100.1',
+               source_port='1024,1025', destination_port='443,8443')
+    obj = reader(transport).read(['filter-rules'])['filter-rules']['objects'][0]
+    assert obj['configuration']['destination_net'] == ['192.0.2.0/24', 'NETS']
+    assert obj['configuration']['source_net'] == ['198.51.100.1', 'OTHER']
+    assert obj['configuration']['destination_port'] == ['443', '8443']
+    assert {'aliases:NETS', 'aliases:OTHER'} <= set(obj['references'])
+    row['destination_invert'] = True
+    assert reader(transport).read(['filter-rules'])['filter-rules']['objects'][0]['configuration'] is None
