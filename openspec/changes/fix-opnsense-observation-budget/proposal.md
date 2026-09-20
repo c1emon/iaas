@@ -18,7 +18,7 @@ rc.10 实测复现同一 reader 跨轮累计响应字节，第五轮观察超过
 
 ## Non-goals
 
-不增加 Alias、Gateway、Interface Group 的可表达范围，不修改写入器、自动重试、恢复准入或公共结果格式；不执行设备写入或发布镜像。
+不增加 Alias、Gateway、Interface Group 的可表达范围，不修改写入器、自动重试、恢复准入或公共结果格式，不发布镜像。用户随后授权在新的已确认窗口进行本地源码设备写入测试，限独立测试 Alias、禁用 Filter 及其恢复清理。
 
 ## Impact
 

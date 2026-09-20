@@ -135,3 +135,40 @@ def test_smaller_request_budget_applies_to_boundary_reads() -> None:
                              clock=clock.now, sleep=lambda _: None)
     assert result['status'] == 'confirmed'
     assert session.calls[0][2]['timeout'].total == 1
+
+
+@pytest.mark.parametrize('limit, expected', [(4, 'confirmed'), (3, 'unknown')])
+def test_poll_bytes_share_boundary_but_reset_between_attempts(monkeypatch, limit, expected):
+    from iaas_automation.opnsense_workflow import reader as reader_module
+
+    monkeypatch.setattr(reader_module, 'MAX_TOTAL_BYTES', limit)
+    clock = Clock()
+    closed = []
+    session = Session(Response([b'{}'], closed))
+    client = transport(session)
+    timeouts = []
+
+    class Device:
+        transport = client
+
+        def observe_confirmation(self, stage, action_id, *, timeout):
+            timeouts.append(timeout)
+            client._request('GET', 'firewall/alias/get')
+            return {'status': 'processing' if len(timeouts) == 1 else 'confirmed',
+                    'complete': True, 'fresh': True, 'action_id': action_id}
+
+    def boundary():
+        # An inner scope must not split the boundary from the completion read.
+        with client.byte_budget():
+            client._request('GET', 'firewall/alias/get')
+        clock.value += 1
+
+    stage = {'confirmation': {'wait': {
+        'deadline_seconds': 5, 'max_attempts': 2, 'request_timeout_seconds': 5, 'interval_seconds': 0,
+    }}}
+    result = complete_action(stage, {'status': 'processing', 'action_id': 'a-1'}, Device(), boundary,
+                             clock=clock.now, sleep=lambda _: None)
+
+    assert result['status'] == expected
+    assert timeouts == ([4.0, 3.0] if expected == 'confirmed' else [4.0])
+    assert len(closed) == len(session.calls) == (4 if expected == 'confirmed' else 2)
