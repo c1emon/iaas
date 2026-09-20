@@ -22,3 +22,13 @@
 Filter 激活的 no_log 任务仅保留 failed/unknown，临时脱敏 callback 也未取得足以分类的原因；现有证据不能区分设备拒绝、传输失败与不符合成功合同的响应。固定 Collection 原生 rule reload 使用相同的 POST 路径，未发现目标参数错配。后续最小工作是补充安全失败分类，再验证该路径，不能通过放宽成功判断绕过。
 
 未执行客户端业务验证；不可表达对象的原生字段、PF/数据面及 GUI 待应用状态未由最终配置比较证明。测试对象配置已清理，但不声称 Filter 共享激活已完成。私有候选、原生恢复、逐轮计数和最终比较保留在 `/private/tmp/iaas-observation-live-n7knb04k/`，未提交设备原始数据。
+
+## Filter 激活失败根因补查
+
+用户随后要求定位具体原因。保留 no_log 和原成功判断，仅在受保护失败结果中增加状态分类、长度、HTTP 状态码和超时标记；不保存 backend message、请求或凭据。27 项 writer/Ansible 测试通过，包括实际渲染含秘密标记的合成错误，确认结果不泄露原文。
+
+使用新的 activation_recovery 候选（仅已删除的测试 Filter，零配置改动）执行一次诊断。首次 1Password 授权超时发生在 workflow 启动前；授权重试后才产生激活请求。设备结果为 response_present=true、response_status_class=ok_with_whitespace、response_status_length=4、timeout_reported=false；当前 gate 仍返回 failed，配置回读 verified，恢复后态 confirmed 且对象不存在。
+
+**根因是成功状态字符串尾部的两个换行未归一化，导致 IaaS 误报失败。** OPNsense 26.7.3 的 [script action](https://github.com/opnsense/core/blob/26.7.3/src/opnsense/service/modules/actions/script.py#L28-L41) 成功返回 `OK`，[process handler](https://github.com/opnsense/core/blob/26.7.3/src/opnsense/service/modules/processhandler.py#L169-L186) 追加 `\n\n`；[Backend](https://github.com/opnsense/core/blob/26.7.3/src/opnsense/mvc/app/library/OPNsense/Core/Backend.php#L137-L170) 仅去掉 NUL 结束符，[Filter apply](https://github.com/opnsense/core/blob/26.7.3/src/opnsense/mvc/app/controllers/OPNsense/Firewall/Api/FilterBaseController.php#L280-L287) 原样返回。该 `OK\n\n` 与实测长度及分类一致，当前 `string | lower != 'ok'` 必然拒绝它。
+
+本阶段定位根因并保留安全诊断，尚未修改成功判定。后续修复应在原生响应边界裁剪外围空白后仍精确比较 `ok`，不接受任意非空响应；Python writer 消费该任务明确的 confirmed/failed 状态，无需放宽其状态合同。原生 wrapper 成功与 PF/客户端业务验收继续区分；历史失败产物不追改为成功。

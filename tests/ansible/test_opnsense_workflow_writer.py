@@ -346,6 +346,37 @@ def test_stage_playbook_keeps_save_and_activation_as_separate_tasks() -> None:
     }
 
 
+def test_activation_failure_classification_does_not_export_backend_data(tmp_path) -> None:
+    source = yaml.safe_load(ACTIVATE_TASKS.read_text())
+    record_failure = source[1]['rescue'][0]
+    cases = [
+        ({'response': {'status': 'OK\n'}}, 'ok_with_whitespace', [], False),
+        ({'response': {'status': 'ok'}}, 'ok', [], False),
+        ({'response': {'status': 'private-backend-token'}}, 'other', [], False),
+        ({'msg': "API call failed: {'status_code': 403} private-backend-token"}, 'missing', ['403'], False),
+        ({'msg': 'Got timeout private-backend-token'}, 'missing', [], True),
+    ]
+    tasks = []
+    for call, expected, codes, timeout in cases:
+        tasks.append({'name': 'Classify protected synthetic failure', 'vars': {
+            'opnsense_workflow_resource': 'filter-rules', 'opnsense_workflow_activation_call': call,
+            'expected_class': expected, 'expected_codes': codes, 'expected_timeout': timeout,
+        }, 'block': [record_failure, {'ansible.builtin.assert': {'that': [
+            'opnsense_workflow_activation_result.failure.response_status_class | trim == expected_class',
+            'opnsense_workflow_activation_result.failure.http_status_codes == expected_codes',
+            'opnsense_workflow_activation_result.failure.timeout_reported == expected_timeout',
+            "'private-backend-token' not in (opnsense_workflow_activation_result | to_json)",
+        ]}}]})
+    playbook = tmp_path / 'classify.yml'
+    playbook.write_text(yaml.safe_dump([{
+        'hosts': 'localhost', 'connection': 'local', 'gather_facts': False, 'tasks': tasks,
+    }], sort_keys=False))
+    result = subprocess.run(['uv', 'run', 'ansible-playbook', '-i', 'localhost,', str(playbook)],
+                            cwd=ROOT, env={**os.environ, 'ANSIBLE_LOCAL_TEMP': str(tmp_path / 'ansible')},
+                            capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_writer_preserves_action_association_and_separate_content_evidence() -> None:
     evidence = [{'identity': ['A'], 'source': {'type': 'urltable'}, 'status': 'failed'}]
     provider = FakeProvider(activation_result={'status': 'processing', 'action_id': 'native-1',
