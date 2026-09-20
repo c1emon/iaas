@@ -103,7 +103,8 @@ def test_activation_is_explicit_and_groups_request_acceptance_is_not_confirmatio
     assert provider.activation_calls == ["interface-groups"]
 
 
-def test_fixed_controller_ok_stays_unconfirmed_without_active_evidence() -> None:
+def test_provider_response_without_adapter_status_stays_unconfirmed() -> None:
+    """A nested provider response is not the writer adapter's status field."""
     result = Writer(FakeProvider()).activate("dnat")
 
     assert result["status"] == "unconfirmed"
@@ -125,7 +126,7 @@ def test_activation_confirmation_requires_independent_active_evidence() -> None:
 
     result = Writer(provider).activate("dnat")
 
-    assert result["status"] == "confirmed"
+    assert result["status"] == "unconfirmed"
 
 
 def test_runtime_writer_reads_protected_stage_facts(tmp_path) -> None:
@@ -328,8 +329,8 @@ def test_stage_playbook_keeps_save_and_activation_as_separate_tasks() -> None:
                 assert value.get("reload", False) is False
     assert not any("reload" in task for task in _walk(activate_source))
     activation_text = ACTIVATE_TASKS.read_text()
-    assert "'confirmed' if opnsense_workflow_resource in" in activation_text
-    assert "else 'unconfirmed'" in activation_text
+    assert "status: confirmed" in activation_text
+    assert "native success trusted; internal steps and active state not independently confirmed" in activation_text
     assert "| string | lower) != 'ok'" in activation_text
     raw_calls = [task["oxlorg.opnsense.raw"] for task in _walk(activate_source)
                  if "oxlorg.opnsense.raw" in task]
@@ -343,3 +344,16 @@ def test_stage_playbook_keeps_save_and_activation_as_separate_tasks() -> None:
         "one-to-one-nat": {"module": "firewall", "controller": "one_to_one", "command": "apply"},
         "interface-groups": {"module": "firewall", "controller": "group", "command": "reconfigure"},
     }
+
+
+def test_writer_preserves_action_association_and_separate_content_evidence() -> None:
+    evidence = [{'identity': ['A'], 'source': {'type': 'urltable'}, 'status': 'failed'}]
+    provider = FakeProvider(activation_result={'status': 'processing', 'action_id': 'native-1',
+                                               'content_update': evidence})
+    result = Writer(provider).activate('aliases')
+    assert result['status'] == 'processing'
+    assert result['action_id'] == 'native-1'
+    assert result['content_update'] == evidence
+    evidence[0]['status'] = 'confirmed'
+    assert result['content_update'][0]['status'] == 'failed'
+    assert provider.activation_calls == ['aliases']

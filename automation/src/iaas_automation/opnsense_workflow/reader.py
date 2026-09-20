@@ -10,19 +10,24 @@ into an arbitrary API or command runner.
 from __future__ import annotations
 
 from copy import deepcopy
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from decimal import Decimal
 import ipaddress
 import json
 import re
-from typing import Any, Protocol
+import time
+from typing import Any, Callable, Iterator, Protocol
 from urllib.parse import urlsplit
 
 import requests
+from urllib3.util import Timeout
 
 from iaas_automation.opnsense_diagnostics.schema import ALIAS_NAME
 from iaas_automation.opnsense_validation import TOP_LEVEL, validate_document
 from iaas_automation.common.errors import ValidationError
+from .gateway_checks import check_gateway_current
 
 
 MAX_PAGE_ROWS = 1000
@@ -68,6 +73,53 @@ class _HttpFailure(RuntimeError):
         super().__init__(reason)
         self.status = status
         self.reason = reason
+
+
+@dataclass(frozen=True)
+class ObservationBudget:
+    """Monotonic deadline shared by all reads in one confirmation boundary."""
+
+    deadline: float
+    clock: Callable[[], float] = time.monotonic
+    request_timeout_seconds: float = 15.0
+
+    def remaining(self) -> float:
+        return max(0.0, self.deadline - self.clock())
+
+    def timeout(self, requested: float | None = None) -> float:
+        remaining = self.remaining()
+        if remaining <= 0:
+            raise TimeoutError("observation deadline exhausted")
+        return remaining if requested is None else min(requested, remaining)
+
+
+_OBSERVATION_BUDGET: ContextVar[ObservationBudget | None] = ContextVar(
+    "iaas_opnsense_observation_budget", default=None
+)
+
+
+@contextmanager
+def observation_budget(seconds: float, *, clock: Callable[[], float] = time.monotonic,
+                       request_timeout_seconds: float = 15.0) -> Iterator[ObservationBudget]:
+    """Install one cooperative read deadline for nested fixed-transport calls."""
+
+    if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or seconds <= 0:
+        raise ValueError("observation budget must be greater than zero")
+    if (isinstance(request_timeout_seconds, bool) or not isinstance(request_timeout_seconds, (int, float))
+            or not 0 < request_timeout_seconds <= 15):
+        raise ValueError("request timeout must be within the fixed limit")
+    budget = ObservationBudget(clock() + float(seconds), clock, float(request_timeout_seconds))
+    token = _OBSERVATION_BUDGET.set(budget)
+    try:
+        yield budget
+    finally:
+        _OBSERVATION_BUDGET.reset(token)
+
+
+def current_observation_budget() -> ObservationBudget | None:
+    """Return the current cooperative budget for a fixed transport call."""
+
+    return _OBSERVATION_BUDGET.get()
 
 
 class ReadTransport(Protocol):
@@ -116,12 +168,21 @@ class FixedCollectionTransport:
 
     def _request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
         if not (path.startswith("firewall/") or path.startswith("interfaces/")
-                or path.startswith("routing/") or path.startswith("diagnostics/")):
+                or path.startswith("routing/") or path.startswith("diagnostics/")
+                or (method == "GET" and path == "core/firmware/status")):
             raise UnsupportedRead("fixed_collection_path_rejected")
         if "OPNSENSE_API_KEY" not in self._credential_names or "OPNSENSE_API_SECRET" not in self._credential_names:
             raise UnsupportedRead("OPNSENSE_API_credentials_missing")
+        budget = current_observation_budget()
+        if budget is not None and budget.remaining() <= 0:
+            raise _HttpFailure("failed", "observation_deadline_exhausted")
         try:
-            kwargs = {"verify": self.target["ssl_verify"], "timeout": (5, 15), "allow_redirects": False,
+            remaining = None if budget is None else min(budget.remaining(), budget.request_timeout_seconds)
+            if remaining is not None and remaining <= 0:
+                raise _HttpFailure("failed", "observation_deadline_exhausted")
+            request_timeout = (5, 15) if remaining is None else Timeout(
+                total=remaining, connect=min(5.0, remaining), read=min(15.0, remaining))
+            kwargs = {"verify": self.target["ssl_verify"], "timeout": request_timeout, "allow_redirects": False,
                       "stream": True}
             if method == "POST":
                 kwargs["json"] = payload or {}
@@ -130,6 +191,11 @@ class FixedCollectionTransport:
             raise _HttpFailure("failed", "timeout") from error
         except requests.RequestException as error:
             raise _HttpFailure("failed", "transport_failure") from error
+        if budget is not None and budget.remaining() <= 0:
+            close = getattr(response, "close", None)
+            if callable(close):
+                close()
+            raise _HttpFailure("failed", "observation_deadline_exhausted")
         if response.status_code in (404, 405, 501):
             raise _HttpFailure("unsupported", "endpoint_unavailable")
         if response.status_code == 401:
@@ -142,12 +208,16 @@ class FixedCollectionTransport:
         try:
             chunks = response.iter_content(8192) if callable(getattr(response, "iter_content", None)) else [response.content]
             for chunk in chunks:
+                if budget is not None and budget.remaining() <= 0:
+                    raise _HttpFailure("failed", "observation_deadline_exhausted")
                 if not isinstance(chunk, (bytes, bytearray)):
                     raise _HttpFailure("failed", "malformed_response_body")
                 body.extend(chunk)
                 self._used += len(chunk)
                 if len(body) > MAX_RESPONSE_BYTES or self._used > MAX_TOTAL_BYTES:
                     raise _HttpFailure("unsupported", "response_bound_exceeded")
+            if budget is not None and budget.remaining() <= 0:
+                raise _HttpFailure("failed", "observation_deadline_exhausted")
             return json.loads(bytes(body), parse_constant=lambda _: (_ for _ in ()).throw(ValueError("invalid_json")))
         except _HttpFailure:
             raise
@@ -237,6 +307,28 @@ class FixedCollectionTransport:
         response = self._request("GET", f"{module}/{controller}/get")
         return [self._provider_row(row) for row in self._entries(response, response_path)]
 
+    def confirmation_capabilities(self) -> dict[str, Any]:
+        """Fixed source-audited profile; a controller ack is not completion."""
+        from .confirmation import SYNC_RESOURCES
+        try:
+            response = self._request("GET", "core/firmware/status")
+            product = response.get("product", {}) if isinstance(response, dict) else {}
+            version = product.get("product_version") if isinstance(product, dict) else None
+        except (UnsupportedRead, _HttpFailure):
+            version = None
+        profiles = {}
+        for resource in SUPPORTED_RESOURCES:
+            supported = version == "26.7.3" and resource in SYNC_RESOURCES
+            profiles[resource] = {
+                "activation_completion": "available" if supported else "unknown" if version != "26.7.3" else "unsupported",
+                "source_processing": "unsupported", "content_loading": "unsupported",
+                "basis": "OPNsense 26.7.3 / fixed Collection 1423500c29f88da9ba8147a23fc64006cf464159",
+                "device_version": "26.7.3" if version == "26.7.3" else None,
+                "reason": "device_version_unqualified" if version != "26.7.3" else
+                          "synchronous_configd_return" if supported else "native_action_completion_unavailable",
+            }
+        return profiles
+
     def interfaces(self) -> list[str]:
         """Group member choices expose logical interface keys, excluding groups.
 
@@ -250,8 +342,19 @@ class FixedCollectionTransport:
             raise _HttpFailure('failed', 'malformed_interface_choices')
         return sorted(choices)
 
-    def active_check(self, resource: str, identity: list[str], desired: dict[str, Any]) -> dict[str, Any]:
+    def active_check(
+        self,
+        resource: str,
+        identity: list[str],
+        desired: dict[str, Any],
+        *,
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Use the restricted diagnostics alias-table read when it can prove activity."""
+        if resource == "gateways":
+            return self._gateway_active_observation(identity, desired, context)
+        if resource == "interface-groups":
+            return self._group_current_observation(identity, desired, context)
         if resource != "aliases" or len(identity) != 1 or not isinstance(identity[0], str) \
                 or not ALIAS_NAME.fullmatch(identity[0]):
             return {"status": "unsupported", "reason": "active_observation_unavailable",
@@ -259,17 +362,15 @@ class FixedCollectionTransport:
         alias = identity[0]
         alias_type = desired.get("type") if isinstance(desired, dict) else None
         state = desired.get("state") if isinstance(desired, dict) else None
-        if state != "present":
-            return {"status": "unsupported", "reason": "absent_alias_active_proof_unavailable",
-                    "coverage": "saved_configuration_only"}
-        if desired.get("enabled") is not True:
-            return {"status": "unsupported", "reason": "disabled_alias_active_proof_unavailable",
-                    "coverage": "saved_configuration_only"}
+        if state != "present" or desired.get("enabled") is not True:
+            return self._retired_alias_observation(alias)
+        if alias_type == "port":
+            return self._port_alias_observation(desired)
         try:
             response = self._request("POST", f"firewall/alias_util/list/{alias}",
                                      {"rowCount": MAX_PAGE_ROWS, "current": 1})
         except _HttpFailure as error:
-            return {"status": error.status, "reason": error.reason,
+            return {"status": "unsupported" if error.status == "unsupported" else "unknown", "reason": error.reason,
                     "coverage": "alias_table_unavailable"}
         if isinstance(response, dict) and isinstance(response.get("rows"), list):
             rows = response["rows"]
@@ -277,7 +378,7 @@ class FixedCollectionTransport:
         elif isinstance(response, list):
             rows, total = response, len(response)
         else:
-            return {"status": "failed", "reason": "malformed_alias_table", "coverage": "alias_table"}
+            return {"status": "incomplete", "reason": "malformed_alias_table", "coverage": "alias_table"}
         if type(total) is not int or total != len(rows) or len(rows) > MAX_PAGE_ROWS:
             return {"status": "incomplete", "reason": "malformed_alias_table", "coverage": "alias_table"}
         coverage = {"scope": "alias_table", "rows": len(rows), "total": total,
@@ -285,38 +386,511 @@ class FixedCollectionTransport:
         if alias_type in {"urltable", "urljson", "dynipv6host"}:
             return {"status": "unsupported", "reason": "dynamic_alias_membership_not_refresh_proof",
                     "coverage": coverage}
-        if alias_type not in {"host", "network"}:
+        if alias_type == "networkgroup":
+            expected, dependency_status, dependency_reason, dependency_coverage = self._networkgroup_members(
+                alias, desired, context
+            )
+            coverage["dependency"] = dependency_coverage
+            if dependency_status != "verified":
+                return {"status": dependency_status, "reason": dependency_reason,
+                        "coverage": coverage}
+        elif alias_type in {"host", "network"}:
+            expected, dependency_status, dependency_reason = self._static_members(desired)
+            coverage["dependency"] = {"scope": "selected_definition", "status": dependency_status}
+            if dependency_status != "verified":
+                return {"status": dependency_status, "reason": dependency_reason,
+                        "coverage": coverage}
+        else:
             return {"status": "unsupported", "reason": "alias_type_active_proof_unavailable",
                     "coverage": coverage}
-        expected_values = desired.get("content") if isinstance(desired, dict) else None
-        if not isinstance(expected_values, list) or not expected_values:
-            return {"status": "unsupported", "reason": "static_alias_membership_unavailable",
-                    "coverage": coverage}
-        observed_values: set[str] = set()
+        observed_values: list[str] = []
         for row in rows:
             if not isinstance(row, dict) or not isinstance(row.get("ip"), str):
-                return {"status": "unsupported", "reason": "alias_table_membership_unavailable",
+                return {"status": "incomplete", "reason": "malformed_alias_table",
                         "coverage": coverage}
-            try:
-                observed_values.add(str(ipaddress.ip_network(row["ip"], strict=False)))
-            except ValueError:
-                return {"status": "unsupported", "reason": "malformed_alias_table_entry",
-                        "coverage": coverage}
-        expected: set[str] = set()
-        for value in expected_values:
-            if not isinstance(value, str):
-                return {"status": "unsupported", "reason": "static_alias_membership_unavailable",
-                        "coverage": coverage}
-            try:
-                expected.add(str(ipaddress.ip_network(value, strict=False)))
-            except ValueError:
-                return {"status": "unsupported", "reason": "static_alias_membership_unavailable",
-                        "coverage": coverage}
+            observed_values.append(row["ip"])
+        observed, observed_status = self._canonical_networks(observed_values)
+        if observed_status != "verified":
+            return {"status": "incomplete", "reason": "malformed_alias_table_entry",
+                    "coverage": coverage}
         coverage["expected"] = len(expected)
-        coverage["matched"] = len(observed_values & expected)
-        if observed_values == expected:
+        coverage["matched"] = len(observed & expected)
+        if observed == expected:
             return {"status": "verified", "reason": None, "coverage": coverage}
         return {"status": "failed", "reason": "alias_table_membership_mismatch", "coverage": coverage}
+
+    def _port_alias_observation(self, desired: dict[str, Any]) -> dict[str, Any]:
+        from .pf_rules import PF_STATISTICS_RULES_PATH, check_port_alias_active
+        if self.confirmation_capabilities()["aliases"]["device_version"] != "26.7.3":
+            return {"status": "unsupported", "reason": "device_version_unqualified"}
+        consumers = []
+        try:
+            for resource in ("filter-rules", "dnat", "one-to-one-nat"):
+                rows = self.list(COLLECTION_TARGETS[resource])
+                if not isinstance(rows, list) or len(rows) > MAX_PAGE_ROWS * MAX_PAGES:
+                    return {"status": "incomplete", "reason": "port_consumer_configuration_incomplete"}
+                for row in rows:
+                    if not isinstance(row, dict):
+                        return {"status": "incomplete", "reason": "port_consumer_configuration_malformed"}
+                    config = _flatten_provider_row(row, resource)
+                    config["resource"] = resource
+                    consumers.append(config)
+            snapshot = self._request("GET", PF_STATISTICS_RULES_PATH)
+        except _HttpFailure as error:
+            return {"status": "unsupported" if error.status == "unsupported" else "unknown",
+                    "reason": error.reason, "coverage": "loaded_port_rules"}
+        return check_port_alias_active(desired, snapshot, consumers)
+
+    def _gateway_active_observation(
+        self,
+        identity: list[str],
+        desired: dict[str, Any],
+        context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Observe one gateway through the fixed 26.7.3 native read paths.
+
+        ``search_gateway`` is fetched directly so its runtime fields are
+        retained.  Pagination is bounded and must be complete before the
+        selected row can be associated.  A route table is requested only for
+        an explicit monitor-host route expectation whose live configuration
+        says that such a route is required.
+        """
+        coverage: dict[str, Any] = {
+            "scope": "gateway_current",
+            "source": "OPNsense 26.7.3",
+            "gateway_status": {"pages": 0, "rows": 0, "total": None, "complete": False},
+            "routes": "not_requested",
+        }
+        try:
+            firmware = self._request("GET", "core/firmware/status")
+        except _HttpFailure as error:
+            return {"status": "unsupported" if error.status == "unsupported" else "unknown",
+                    "reason": error.reason, "coverage": coverage}
+        product = firmware.get("product") if isinstance(firmware, dict) else None
+        version = product.get("product_version") if isinstance(product, dict) else None
+        coverage["device_version"] = version
+        if not isinstance(version, str) or not version:
+            return {"status": "unknown", "reason": "device_version_unavailable", "coverage": coverage}
+        if version != "26.7.3":
+            return {"status": "unsupported", "reason": "device_version_unqualified", "coverage": coverage}
+
+        if (not isinstance(identity, list) or len(identity) != 2
+                or any(not isinstance(value, str) or not value for value in identity)
+                or not isinstance(desired, dict)):
+            return {"status": "unsupported", "reason": "gateway_identity_unavailable", "coverage": coverage}
+        if desired.get("name") != identity[0] or desired.get("gateway") != identity[1]:
+            return {"status": "unsupported", "reason": "gateway_identity_mismatch", "coverage": coverage}
+
+        rows: list[dict[str, Any]] = []
+        total: int | None = None
+        try:
+            for page in range(1, MAX_PAGES + 1):
+                response = self._request("POST", "routing/settings/search_gateway",
+                                         {"current": page, "rowCount": MAX_PAGE_ROWS})
+                if (not isinstance(response, dict)
+                        or response.get("current") != page
+                        or type(response.get("rowCount")) is not int
+                        or response["rowCount"] < 0
+                        or type(response.get("total")) is not int
+                        or response["total"] < 0
+                        or not isinstance(response.get("rows"), list)
+                        or len(response["rows"]) > response["rowCount"]
+                        or any(not isinstance(row, dict) for row in response["rows"])):
+                    return {"status": "unknown", "reason": "malformed_gateway_page", "coverage": coverage}
+                page_total = response["total"]
+                if total is None:
+                    total = page_total
+                elif page_total != total:
+                    return {"status": "unknown", "reason": "gateway_status_total_changed", "coverage": coverage}
+                rows.extend(deepcopy(response["rows"]))
+                coverage["gateway_status"].update({"pages": page, "rows": len(rows), "total": total})
+                if total == len(rows):
+                    coverage["gateway_status"]["complete"] = True
+                    break
+            if not coverage["gateway_status"]["complete"]:
+                reason = ("gateway_configuration_bound_exceeded"
+                          if (total is not None and total > MAX_PAGE_ROWS * MAX_PAGES)
+                          else "gateway_configuration_incomplete")
+                return {"status": "unknown", "reason": reason, "coverage": coverage}
+
+            selected_rows = [row for row in rows if row.get("name") == identity[0]]
+            selected_live = selected_rows[0] if len(selected_rows) == 1 else None
+
+            # Gateway active evidence is collected here from fixed native read
+            # paths.  Caller context cannot replace the PF consumer proof.
+            from .pf_consumers import check_gateway_active
+            from .pf_rules import PF_STATISTICS_RULES_PATH
+
+            consumers_raw = self.list("rule")
+            if (not isinstance(consumers_raw, list)
+                    or len(consumers_raw) > MAX_PAGE_ROWS * MAX_PAGES
+                    or any(not isinstance(row, dict) for row in consumers_raw)):
+                return {"status": "unknown", "reason": "filter_consumer_configuration_incomplete",
+                        "coverage": coverage}
+            consumers = []
+            for row in consumers_raw:
+                consumer = _flatten_provider_row(row, "filter-rules")
+                consumer["resource"] = "filter-rules"
+                consumers.append(consumer)
+            pf_snapshot = self._request("GET", PF_STATISTICS_RULES_PATH)
+            physical = selected_live.get("if") if isinstance(selected_live, dict) else None
+            gateway_for_pf = deepcopy(desired)
+            gateway_for_pf["physical_interfaces"] = [physical] if isinstance(physical, str) and physical else None
+            consumer_observation = check_gateway_active(gateway_for_pf, pf_snapshot, consumers)
+
+            route_expectation = None
+            monitor = desired.get("monitor")
+            if (isinstance(monitor, str) and monitor.strip()
+                    and desired.get("monitor_disable") is False
+                    and desired.get("monitor_noroute") is False
+                    and monitor.strip() != desired.get("gateway")):
+                try:
+                    monitor_address = ipaddress.ip_address(monitor.strip())
+                    destination = f"{monitor_address}/{monitor_address.max_prefixlen}"
+                except ValueError:
+                    destination = monitor.strip()
+                route_expectation = {"purpose": "monitor_host", "destination": destination}
+            live_routes: Any = None
+            explicit_monitor_route = (isinstance(route_expectation, dict)
+                                      and route_expectation.get("purpose") == "monitor_host")
+            native_false = {False, 0, "0", "false", "False", "no", "No"}
+            route_required = (isinstance(selected_live, dict)
+                              and selected_live.get("monitor_disable") in native_false
+                              and selected_live.get("monitor_noroute") in native_false)
+            if explicit_monitor_route and route_required:
+                live_routes = self._request("GET", "diagnostics/interface/get_routes")
+                coverage["routes"] = "requested"
+                if not isinstance(live_routes, list):
+                    return {"status": "unknown", "reason": "malformed_live_routes", "coverage": coverage}
+            elif explicit_monitor_route:
+                coverage["routes"] = "not_required_by_configuration"
+
+            status_page = {"current": 1, "rowCount": max(MAX_PAGE_ROWS, len(rows)),
+                           "total": len(rows), "rows": rows}
+            result = check_gateway_current(
+                desired, live_routes, status_page, consumer_observation,
+                route_expectation=route_expectation,
+            )
+            result["coverage"] = coverage
+            return result
+        except _HttpFailure as error:
+            return {"status": "unsupported" if error.status == "unsupported" else "unknown",
+                    "reason": error.reason, "coverage": coverage}
+
+    def _retired_alias_observation(self, alias: str) -> dict[str, Any]:
+        """Record retirement observations without inventing a cleanup guarantee."""
+        coverage: dict[str, Any] = {"scope": "alias_retirement", "table": "unknown",
+                                    "consumers": "unobserved", "pf_states": "not_touched"}
+        try:
+            tables = self._request("GET", "firewall/alias_util/aliases")
+            if not isinstance(tables, list) or any(not isinstance(name, str) or not name for name in tables):
+                return {"status": "unknown", "reason": "table_enumeration_unavailable", "coverage": coverage}
+            coverage["table"] = "absent" if alias not in tables else "residual"
+            if alias in tables:
+                response = self._request("POST", f"firewall/alias_util/list/{alias}",
+                                         {"rowCount": MAX_PAGE_ROWS, "current": 1})
+                if not isinstance(response, dict) or not isinstance(response.get("rows"), list):
+                    return {"status": "unknown", "reason": "table_members_unavailable", "coverage": coverage}
+                rows = response["rows"]
+                if type(response.get("total")) is not int or response["total"] != len(rows) or len(rows) > MAX_PAGE_ROWS:
+                    return {"status": "incomplete", "reason": "table_members_incomplete", "coverage": coverage}
+                if any(not isinstance(row, dict) or not isinstance(row.get("ip"), str) for row in rows):
+                    return {"status": "incomplete", "reason": "table_members_malformed", "coverage": coverage}
+                coverage["observed_rows"] = len(rows)
+                # listAction maps backend null/error to an empty recordset.  An
+                # empty response alone cannot prove an empty native PF table.
+                coverage["table"] = "residual_nonempty" if rows else "empty_or_unreadable"
+        except _HttpFailure as error:
+            return {"status": "unsupported" if error.status == "unsupported" else "unknown",
+                    "reason": error.reason, "coverage": coverage}
+        return {"status": "unsupported", "reason": "native_retirement_and_consumers_unconfirmed",
+                "coverage": coverage}
+
+    def _group_current_observation(
+        self,
+        identity: list[str],
+        desired: dict[str, Any],
+        context: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Check saved group members against current ifconfig membership.
+
+        The version gate, interface reads, complete filter/NAT consumer reads,
+        and loaded PF snapshot are all fixed.  ``context`` never substitutes
+        for these observations; operation completion remains a separate
+        unknown fact.
+        """
+        from .group_checks import check_interface_group_current
+        from .pf_consumers import check_interface_group_active
+        from .pf_rules import PF_STATISTICS_RULES_PATH
+
+        if (len(identity) != 1 or not isinstance(identity[0], str) or not identity[0]
+                or not isinstance(desired, dict)):
+            return {"status": "unknown", "reason": "malformed_interface_group_identity"}
+        if desired.get("name") not in (None, identity[0]):
+            return {"status": "unknown", "reason": "interface_group_identity_mismatch"}
+        if desired.get("name") is None:
+            desired = {**desired, "name": identity[0]}
+
+        try:
+            version_response = self._request("GET", "core/firmware/status")
+        except _HttpFailure as error:
+            return self._group_observation_failure(error)
+        product = version_response.get("product") if isinstance(version_response, dict) else None
+        version = product.get("product_version") if isinstance(product, dict) else None
+        if not isinstance(version, str) or not version:
+            return {"status": "unknown", "reason": "device_version_unavailable"}
+        if version != "26.7.3":
+            return {"status": "unsupported", "reason": "device_version_unqualified",
+                    "device_version": version}
+
+        try:
+            overview = self._request("GET", "interfaces/overview/interfaces_info")
+            ifconfig = self._request("GET", "diagnostics/interface/get_interface_config")
+        except _HttpFailure as error:
+            return self._group_observation_failure(error)
+
+        result = check_interface_group_current(desired, overview, ifconfig)
+        if result.get("status") != "verified":
+            result["device_version"] = version
+            return result
+
+        expected = result.get("expected")
+        physical_members = expected.get("physical_members") if isinstance(expected, dict) else None
+        if not isinstance(physical_members, list) or any(not isinstance(item, str) for item in physical_members):
+            result["device_version"] = version
+            return result
+        try:
+            consumers = []
+            for resource in ("filter-rules", "dnat", "one-to-one-nat"):
+                rows = self.list(COLLECTION_TARGETS[resource])
+                if (not isinstance(rows, list) or len(rows) > MAX_PAGE_ROWS * MAX_PAGES
+                        or any(not isinstance(row, dict) for row in rows)):
+                    consumer = {"status": "incomplete", "reason": "malformed_consumer_configuration"}
+                    break
+                for row in rows:
+                    consumer_row = _flatten_provider_row(row, resource)
+                    consumer_row["resource"] = resource
+                    consumers.append(consumer_row)
+            else:
+                snapshot = self._request("GET", PF_STATISTICS_RULES_PATH)
+                consumer = check_interface_group_active(
+                    {"name": identity[0], "members": physical_members},
+                    snapshot,
+                    consumers,
+                )
+        except UnsupportedRead as error:
+            consumer = {"status": "unsupported", "reason": str(error)}
+        except _HttpFailure as error:
+            consumer = {"status": "unsupported" if error.status == "unsupported" else "unknown",
+                        "reason": error.reason}
+        result = check_interface_group_current(desired, overview, ifconfig, consumer)
+        result["device_version"] = version
+        return result
+
+    @staticmethod
+    def _group_observation_failure(error: _HttpFailure) -> dict[str, Any]:
+        if error.status == "unsupported":
+            return {"status": "unsupported", "reason": error.reason}
+        return {"status": "unknown", "reason": error.reason}
+
+    @staticmethod
+    def _static_members(desired: dict[str, Any]) -> tuple[set[str], str, str | None]:
+        expected_values = desired.get("content") if isinstance(desired, dict) else None
+        if not isinstance(expected_values, list) or not expected_values:
+            return set(), "unsupported", "static_alias_membership_unavailable"
+        expected_values = [value for value in expected_values if isinstance(value, str)]
+        if len(expected_values) != len(desired.get("content", [])):
+            return set(), "unsupported", "static_alias_membership_unavailable"
+        expected, status = FixedCollectionTransport._canonical_networks(expected_values)
+        if status != "verified":
+            return set(), "unsupported", "static_alias_membership_unavailable"
+        return expected, "verified", None
+
+    @staticmethod
+    def _canonical_networks(values: list[str]) -> tuple[set[str], str]:
+        parsed: dict[int, list[Any]] = {4: [], 6: []}
+        for value in values:
+            try:
+                network = ipaddress.ip_network(value, strict=False)
+            except ValueError:
+                return set(), "failed"
+            parsed[network.version].append(network)
+        return {str(network) for version in (4, 6) for network in ipaddress.collapse_addresses(parsed[version])}, "verified"
+
+    @staticmethod
+    def _is_network_literal(value: str) -> bool:
+        try:
+            ipaddress.ip_network(value, strict=False)
+        except ValueError:
+            return False
+        return True
+
+    def _networkgroup_members(
+        self,
+        alias: str,
+        desired: dict[str, Any],
+        context: dict[str, Any] | None,
+    ) -> tuple[set[str], str, str | None, dict[str, Any]]:
+        """Resolve a static group from selected transitions and live dependencies.
+
+        The selected declaration wins only for selected aliases.  Every other
+        member is read from the appliance (or from an explicitly supplied live
+        observation).  Dynamic, missing, malformed, and incomplete members
+        never become an empty set, because that could turn an unreadable group
+        into a false active confirmation.
+        """
+        content = desired.get("content") if isinstance(desired, dict) else None
+        literal_only = isinstance(content, list) and bool(content) and all(
+            isinstance(value, str) and self._is_network_literal(value) for value in content
+        )
+        selected, live, live_status = self._networkgroup_definitions(context, require_live=not literal_only)
+        selected[alias] = deepcopy(desired)
+        dependency_coverage = {
+            "scope": "selected_transitions_and_live_dependencies",
+            "selected": sorted(selected),
+            "live": sorted(live),
+            "live_status": live_status,
+        }
+        if live_status not in {"complete", "not_required"}:
+            return set(), "incomplete", "networkgroup_dependency_incomplete", dependency_coverage
+
+        expected: set[str] = set()
+        visiting: set[str] = set()
+        visited: set[str] = set()
+
+        def resolve(name: str) -> tuple[str, str | None]:
+            if name in visited:
+                return "verified", None
+            if name in visiting:
+                return "incomplete", "networkgroup_dependency_cycle"
+            record = selected.get(name, live.get(name))
+            if not isinstance(record, dict):
+                return "incomplete", "networkgroup_dependency_unavailable"
+            if record.get("state", "present") != "present" or record.get("enabled") is not True:
+                return "incomplete", "networkgroup_dependency_unavailable"
+            kind = record.get("type")
+            if kind in {"urltable", "urljson", "dynipv6host", "port"}:
+                return "unsupported", "dynamic_networkgroup_member"
+            if kind not in {"host", "network", "networkgroup"}:
+                return "unsupported", "networkgroup_member_type_unavailable"
+            values = record.get("content")
+            if not isinstance(values, list) or not values:
+                return "incomplete", "networkgroup_dependency_incomplete"
+            if any(not isinstance(value, str) or not value for value in values):
+                return "incomplete", "networkgroup_dependency_incomplete"
+            visiting.add(name)
+            for value in values:
+                try:
+                    expected.add(str(ipaddress.ip_network(value, strict=False)))
+                    continue
+                except ValueError:
+                    pass
+                if not ALIAS_NAME.fullmatch(value):
+                    visiting.discard(name)
+                    return "incomplete", "networkgroup_dependency_unavailable"
+                status, reason = resolve(value)
+                if status != "verified":
+                    visiting.discard(name)
+                    return status, reason
+            visiting.discard(name)
+            visited.add(name)
+            return "verified", None
+
+        status, reason = resolve(alias)
+        if status != "verified":
+            return set(), status, reason, dependency_coverage
+        canonical, canonical_status = self._canonical_networks(list(expected))
+        if canonical_status != "verified":
+            return set(), "incomplete", "networkgroup_dependency_incomplete", dependency_coverage
+        dependency_coverage["members"] = len(canonical)
+        return canonical, "verified", None, dependency_coverage
+
+    def _networkgroup_definitions(
+        self, context: dict[str, Any] | None, *, require_live: bool = True
+    ) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]], str]:
+        """Read the narrow, internal context contract used by group checks."""
+        selected: dict[str, dict[str, Any]] = {}
+        live: dict[str, dict[str, Any]] = {}
+        if isinstance(context, dict):
+            allowed = {"selected", "live_aliases", "observations"}
+            if set(context) - allowed or {"live_aliases", "observations"} <= set(context):
+                return selected, live, "incomplete"
+            if "selected" in context:
+                value = context["selected"]
+                if not isinstance(value, list):
+                    return selected, live, "incomplete"
+                for item in value:
+                    if (not isinstance(item, dict) or item.get("resource") != "aliases"
+                            or not isinstance(item.get("identity"), list)
+                            or len(item["identity"]) != 1 or not isinstance(item["identity"][0], str)
+                            or not isinstance(item.get("desired"), dict)):
+                        return selected, live, "incomplete"
+                    name = item["identity"][0]
+                    if name in selected:
+                        return selected, live, "incomplete"
+                    record = deepcopy(item["desired"])
+                    declared_name = record.get("name")
+                    if declared_name is not None and declared_name != name:
+                        return selected, live, "incomplete"
+                    record["name"] = name
+                    selected[name] = record
+            if not require_live:
+                return selected, live, "not_required"
+            if "live_aliases" in context:
+                value = context["live_aliases"]
+                if not isinstance(value, list):
+                    return selected, live, "incomplete"
+                for record in value:
+                    if not isinstance(record, dict) or not isinstance(record.get("name"), str) \
+                            or not record["name"] or record["name"] in live:
+                        return selected, live, "incomplete"
+                    live[record["name"]] = deepcopy(record)
+                return selected, live, "complete"
+            if "observations" in context:
+                observations = context["observations"]
+                aliases = observations.get("aliases") if isinstance(observations, dict) else None
+                if not isinstance(aliases, dict) or aliases.get("status") != "complete":
+                    return selected, live, "incomplete"
+                objects = aliases.get("objects")
+                if not isinstance(objects, list):
+                    return selected, live, "incomplete"
+                for item in objects:
+                    if (not isinstance(item, dict) or item.get("resource") not in {None, "aliases"}
+                            or not isinstance(item.get("identity"), list)
+                            or len(item["identity"]) != 1 or not isinstance(item["identity"][0], str)
+                            or not isinstance(item.get("configuration"), dict)):
+                        return selected, live, "incomplete"
+                    name = item["identity"][0]
+                    if name in live:
+                        return selected, live, "incomplete"
+                    record = deepcopy(item["configuration"])
+                    declared_name = record.get("name")
+                    if declared_name is not None and declared_name != name:
+                        return selected, live, "incomplete"
+                    record["name"] = name
+                    live[name] = record
+                return selected, live, "complete"
+            if any(key in context for key in ("live", "observed", "aliases", "selected_aliases")):
+                return selected, live, "incomplete"
+        if not require_live:
+            return selected, live, "not_required"
+        try:
+            rows = self.list("alias")
+        except (UnsupportedRead, _HttpFailure, TypeError, ValueError):
+            return selected, live, "unavailable"
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+            return selected, live, "malformed"
+        for row in rows:
+            flat = _flatten_provider_row(self._provider_row(row), "aliases")
+            if "content" in flat:
+                flat["content"] = _as_list(flat["content"])
+            if "enabled" in flat:
+                flat["enabled"] = _coerce_bool(flat["enabled"])
+            name = flat.get("name")
+            if not isinstance(name, str) or not name or name in live:
+                return selected, live, "incomplete"
+            live[name] = flat
+        return selected, live, "complete"
 
 
 class ReaderError(ValueError):
@@ -992,24 +1566,34 @@ class Reader:
         if callable(close):
             close()
 
-    def active_check(self, resource: str, identity: list[str], desired: dict[str, Any]) -> dict[str, Any]:
+    def active_check(
+        self,
+        resource: str,
+        identity: list[str],
+        desired: dict[str, Any],
+        *,
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         method = getattr(self.transport, "active_check", None)
         if not callable(method):
             return {"status": "unsupported", "reason": "active_observation_unavailable",
                     "coverage": "saved_configuration_only"}
         try:
-            result = method(resource, identity, desired)
+            if context is None:
+                result = method(resource, identity, desired)
+            else:
+                result = method(resource, identity, desired, context=context)
         except _HttpFailure as error:
-            return {"status": error.status, "reason": error.reason,
+            return {"status": "unsupported" if error.status == "unsupported" else "unknown", "reason": error.reason,
                     "coverage": "active_observation_unavailable"}
         except UnsupportedRead as error:
             return {"status": "unsupported", "reason": str(error),
                     "coverage": "saved_configuration_only"}
         except Exception as error:
-            return {"status": "failed", "reason": type(error).__name__,
+            return {"status": "unknown", "reason": type(error).__name__,
                     "coverage": "active_observation_unavailable"}
         return result if isinstance(result, dict) else {
-            "status": "failed", "reason": "malformed_active_observation",
+            "status": "unknown", "reason": "malformed_active_observation",
             "coverage": "active_observation_unavailable",
         }
 

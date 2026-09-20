@@ -3,11 +3,12 @@ from __future__ import annotations
 
 from copy import deepcopy
 from pathlib import Path
+import sys
 from typing import Any
 
 from iaas_automation.common.errors import ValidationError, require
 from iaas_automation.opnsense_validation import TOP_LEVEL, validate_document
-from .contracts import VERSION, key, save, selected_records, selection_keys, selectors, shape, validate_coverage
+from .contracts import RECOVERY_VERSION, RESULT_VERSION, key, save, selected_records, selection_keys, selectors, shape, validate_coverage
 from .planning import interfaces_from, objects, overlay, plan, relevant, semantic, valid_state
 
 
@@ -63,13 +64,13 @@ def verify(candidate: dict, reader: Any, *, identities: set[str] | None = None) 
             elif matches[0].get('configuration') is not None:
                 config = ('verified' if semantic(item['resource'], matches[0]['configuration']) ==
                           semantic(item['resource'], item['desired']) else 'failed')
-        active = (reader.active_check(item['resource'], item['identity'], item['desired'])
-                  if hasattr(reader, 'active_check') else {'status': 'unsupported', 'coverage': 'saved configuration only'})
+        active = {'status': 'not_attempted', 'reason': 'use_optional_inspect_tool'}
         results.append({'resource': item['resource'], 'identity': item['identity'],
                         'configuration': config, 'active': active})
-    failed = any(item['configuration'] != 'verified' or item['active']['status'] not in {'verified', 'unsupported'} for item in results)
-    unverified = any(item['active']['status'] != 'verified' for item in results)
-    return {'status': 'failed' if failed else 'completed_with_unverified' if unverified else 'fully_verified', 'objects': results,
+    failed = any(item['configuration'] != 'verified' for item in results)
+    return {'status': 'failed' if failed else 'fully_verified', 'objects': results,
+            'scope': 'saved_configuration',
+            'historical_actions': {'activation': 'not_provided', 'content_update': 'not_provided'},
             'business_acceptance': 'not_performed'}
 
 
@@ -93,7 +94,7 @@ def recovery_document(candidate: dict, digest: str, execution_id: str, current: 
                         'recovery': recoverable,
                         'desired': deepcopy(item['desired']), 'attempted': False,
                         'after_status': 'unknown', 'after': None})
-    return {'schema_version': VERSION, 'kind': 'opnsense-recovery', 'target': candidate['target'],
+    return {'schema_version': RECOVERY_VERSION, 'kind': 'opnsense-recovery', 'target': candidate['target'],
             'runtime': candidate['runtime'], 'candidate_sha256': digest, 'execution_id': execution_id,
             'entries': entries, 'stages': []}
 
@@ -116,16 +117,18 @@ def readback(recovery: dict, candidate: dict, reader: Any) -> None:
 
 def apply(candidate: dict, digest: str, reader: Any, writer: Any, execution_id: str,
           conclusion: dict, output: Path, *, check_mode: bool = False) -> dict:
-    result = {'schema_version': VERSION, 'kind': 'opnsense-result', 'operation': 'apply',
+    result = {'schema_version': RESULT_VERSION, 'kind': 'opnsense-result', 'operation': 'apply',
               'target': candidate['target'], 'runtime': candidate['runtime'], 'candidate_sha256': digest,
               'execution_id': execution_id, 'selected': [{'resource': item['resource'], 'identity': item['identity']}
                                                        for item in candidate['selected']],
-              'status': 'running', 'stages': [], 'business_acceptance': 'not_performed',
+              'status': 'running', 'stages': [], 'warnings': [], 'business_acceptance': 'not_performed',
               'recovery_file': str(output / 'recovery.json')}
     save(output / 'result.json', result)
     recovery = None
     try:
         observations, current = checked_live(candidate, reader, candidate['before'])
+        from .confirmation import recheck
+        recheck(candidate, observations)
         # Recheck declaration and effective state locally, without changing the fixed stages.
         selected_records(candidate['documents'], candidate['request']['selection'])
         effective = deepcopy(current)
@@ -143,6 +146,7 @@ def apply(candidate: dict, digest: str, reader: Any, writer: Any, execution_id: 
         expected = current
         for stage in candidate['stages']:
             observations, _ = checked_live(candidate, reader, expected)
+            recheck(candidate, observations)
             activation_admission(reader, candidate, digest, execution_id, conclusion)
             markers = {key(stage['resource'], ident) for ident in stage['identities']}
             items = [item for item in candidate['selected'] if key(item['resource'], item['identity']) in markers]
@@ -151,7 +155,8 @@ def apply(candidate: dict, digest: str, reader: Any, writer: Any, execution_id: 
                 stage_state = overlay(stage_state, item)
             valid_state(stage_state, interfaces_from(observations))
             outcome = {**deepcopy(stage), 'attempted': True, 'save': 'not_attempted',
-                       'activation': 'not_attempted', 'configuration': 'not_attempted', 'active': 'not_attempted'}
+                       'activation': 'not_attempted', 'configuration': 'not_attempted', 'active': 'not_attempted',
+                       'content_update': [{**action, 'status': 'not_attempted'} for action in stage['content_actions']]}
             result['stages'].append(outcome)
             recovery['stages'].append(outcome)
             for entry in recovery['entries']:
@@ -176,15 +181,23 @@ def apply(candidate: dict, digest: str, reader: Any, writer: Any, execution_id: 
             checked_live(candidate, reader, stage_state)
             activation_admission(reader, candidate, digest, execution_id, conclusion)
             outcome['activation'] = 'unknown'
+            from .confirmation import native_content_results, response_warnings
+            outcome['warnings'] = response_warnings(stage['resource'])
+            result['warnings'].extend(outcome['warnings'])
+            for warning in outcome['warnings']:
+                print(f"WARNING {warning['code']} [{warning['resource']}]: {warning['message']}",
+                      file=sys.stderr, flush=True)
+            save(output / 'result.json', result)
             activation = writer.activate(stage['resource'])
             outcome['activation'] = activation['status']
             outcome['activation_detail'] = activation
+            outcome['activation_basis'] = 'native_response'
+            outcome['content_update'] = native_content_results(stage, activation)
             checks = verify(candidate, reader, identities=markers)
             outcome['active'] = checks['objects']
-            if outcome['activation'] in {'accepted', 'unconfirmed'} and checks['objects'] and all(
-                    row['active']['status'] == 'verified' for row in checks['objects']):
-                outcome['activation'] = 'confirmed'
             require(outcome['activation'] == 'confirmed', 'activation failed or unconfirmed; dependent stages stopped')
+            require(all(row['status'] == 'provider_managed' for row in outcome['content_update']),
+                    'native content processing reported failure; dependent stages stopped')
             require(checks['status'] != 'failed', 'post-activation verification failed')
             # Refresh only our selected post-state; unrelated drift is still compared at the next boundary.
             _, observed = checked_live(candidate, reader, stage_state)
@@ -216,7 +229,7 @@ def reverse_documents(recovery: dict, req: dict, observations: dict, target: dic
     from .contracts import RESOURCES, identity
 
     shape(recovery, {'schema_version', 'kind', 'target', 'runtime', 'candidate_sha256', 'execution_id', 'entries', 'stages'})
-    require(recovery['schema_version'] == VERSION and recovery['kind'] == 'opnsense-recovery'
+    require(type(recovery['schema_version']) is int and recovery['schema_version'] in {1, RECOVERY_VERSION} and recovery['kind'] == 'opnsense-recovery'
             and isinstance(recovery['target'], dict) and recovery['target'] == target,
             'incompatible recovery target or format')
     require(isinstance(recovery['runtime'], dict)
@@ -280,7 +293,8 @@ def reverse_documents(recovery: dict, req: dict, observations: dict, target: dic
     staged = set()
     for stage in recovery['stages']:
         shape(stage, {'resource', 'mode', 'identities', 'attempted', 'save', 'activation',
-                      'configuration', 'active'}, {'activation_detail'})
+                      'configuration', 'active'}, {'activation_detail', 'activation_basis', 'warnings',
+                                                  'confirmation', 'content_actions', 'content_update'})
         require(stage['mode'] in {'save', 'activation_recovery'}
                 and type(stage['attempted']) is bool and stage['attempted'],
                 'malformed recovery stage')

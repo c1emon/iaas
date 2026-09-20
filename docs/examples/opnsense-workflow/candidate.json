@@ -1,4 +1,10 @@
 {
+  "admission": {
+    "gaps": [],
+    "guidance": null,
+    "recovery": "not_required",
+    "status": "ready"
+  },
   "before": {
     "[\"aliases\",\"SYNTHETIC_WEB\"]": null,
     "[\"dnat\",\"iaas:opnsense:dnat:synthetic:web\"]": null
@@ -9,7 +15,8 @@
     "filter-rules",
     "gateways",
     "interface-groups",
-    "one-to-one-nat"
+    "one-to-one-nat",
+    "vips"
   ],
   "differences": [
     {
@@ -123,7 +130,7 @@
     "interface_version": 1,
     "platform": "linux/arm64"
   },
-  "schema_version": 1,
+  "schema_version": 2,
   "selected": [
     {
       "desired": {
@@ -168,11 +175,31 @@
     }
   ],
   "source": {
-    "evidence": "synthetic test double; no device contacted",
-    "inputs": []
+    "inputs": [],
+    "note": "synthetic adapter; not appliance execution evidence"
   },
   "stages": [
     {
+      "confirmation": {
+        "basis": "fixed Collection native response; configuration readback",
+        "capability": "available",
+        "content_actions": [],
+        "gaps": [],
+        "required_evidence": [
+          "native_response",
+          "configuration_readback"
+        ],
+        "rule": "opnsense-provider-response-aliases-v2",
+        "supplementary_checks": [],
+        "warnings": [
+          {
+            "code": "IAAS-OPNSENSE-RESULT-LIMITATION",
+            "message": "Native success is trusted; upstream does not return all internal step results. Internal completion and active state are not independently confirmed.",
+            "resource": "aliases"
+          }
+        ]
+      },
+      "content_actions": [],
       "identities": [
         [
           "SYNTHETIC_WEB"
@@ -182,6 +209,20 @@
       "resource": "aliases"
     },
     {
+      "confirmation": {
+        "basis": "fixed Collection native response; configuration readback",
+        "capability": "available",
+        "content_actions": [],
+        "gaps": [],
+        "required_evidence": [
+          "native_response",
+          "configuration_readback"
+        ],
+        "rule": "opnsense-provider-response-dnat-v2",
+        "supplementary_checks": [],
+        "warnings": []
+      },
+      "content_actions": [],
       "identities": [
         [
           "iaas:opnsense:dnat:synthetic:web"

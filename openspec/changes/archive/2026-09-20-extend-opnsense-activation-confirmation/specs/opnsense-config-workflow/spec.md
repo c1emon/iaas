@@ -1,59 +1,4 @@
-# opnsense-config-workflow Specification
-
-## Purpose
-Provide a generic, explicitly scoped OPNsense configuration workflow for reading live resources, reviewing candidates, executing selected changes, verifying results and preparing bounded recovery while leaving site policy and deployment records with callers.
-
-## Requirements
-
-### Requirement: Generic workflow and ownership boundary
-The system SHALL provide read, plan, apply and verify operations for the existing aliases, IP Alias VIPs, PBR gateways, filter rules, DNAT, one-to-one NAT and interface groups. It SHALL preserve each resource's existing schema, identity, address-family and ownership constraints. It SHALL consume standard declarations independently of their authoring tool and SHALL NOT compile site policy, infer business permissions, choose migration stages, maintain deployment baselines or interpret caller-specific ownership metadata. Unsupported resources and arbitrary API or command requests SHALL fail before writes.
-
-#### Scenario: Caller supplies generated resources
-- **WHEN** a caller supplies valid standard resources produced by an external policy generator
-- **THEN** the workflow treats them equivalently to handwritten declarations without requiring the generator or its metadata in iaas
-- **AND** no caller deployment pointer or previous-generation baseline is read or advanced
-
-#### Scenario: Deferred resource requested
-- **WHEN** a caller selects SNAT, DHCP, RA or another unsupported resource
-- **THEN** admission rejects that operation before device mutation without extending the resource contract
-
-### Requirement: Explicit target and resource selection
-Each online workflow SHALL require exactly one explicit existing inventory target and an explicit resource-class or stable-object selection. Read SHALL select live resources from its request without requiring desired declarations or a candidate. Plan SHALL select declarations from its standard inputs; apply and verify SHALL use the candidate's fixed selection. For declaration-based selection, a class SHALL select only supplied declarations of that class and an object SHALL resolve an exact declared identity, not sequence or approximate content. Missing or ambiguous selection SHALL fail, while a declared present object absent on the appliance SHALL remain eligible for creation. Empty declaration lists SHALL be no-ops and omission SHALL preserve objects. A necessary dependency read SHALL NOT authorize a dependency write. First adoption of an existing unmanaged matching object SHALL require an explicit caller decision recorded with the reviewed difference.
-
-#### Scenario: Read before preparing declarations
-- **WHEN** a caller requests a supported resource class or exact live identity for one inventory target without supplying a candidate
-- **THEN** read returns bounded live observations and their coverage without requiring or generating desired declarations
-- **AND** a complete lookup of a missing exact identity reports absence without mutation
-
-#### Scenario: Object subset selected
-- **WHEN** a candidate contains multiple declarations but the request selects only two stable identities
-- **THEN** only those identities are eligible for writes and other declarations remain available only as candidate context
-- **AND** identities missing from the supplied declarations and duplicate live matches are rejected rather than guessed
-
-#### Scenario: Empty execution set
-- **WHEN** the explicitly selected candidate list is empty
-- **THEN** no appliance object is deleted or adopted and no ordinary reload occurs
-
-#### Scenario: Same name does not authorize adoption
-- **WHEN** a selected present object matches a live object outside the caller's declared management scope
-- **THEN** plan identifies the adoption decision and apply refuses it unless the caller explicitly included that exact object in the reviewed adoption selection
-
-### Requirement: Bounded configuration reads and semantic differences
-Read and plan SHALL retrieve only selected configuration and necessary dependency or reverse-reference information using bounded read-only operations. Results SHALL distinguish complete, unsupported, incomplete and failed observations. Plan SHALL distinguish create, update, explicit delete, unchanged and unknown using managed configuration semantics, excluding non-configuration counters and timestamps. Missing objects SHALL be concluded only from a complete relevant lookup; unknown or truncated results SHALL NOT be interpreted as absent or unchanged. These operations SHALL NOT save, activate, refresh Alias contents or clear connection state.
-
-#### Scenario: Incomplete lookup
-- **WHEN** a lookup is truncated, times out, omits a required field or has ambiguous identity matches
-- **THEN** the affected difference is unknown and apply cannot use it as an admitted mutation
-- **AND** the result identifies the bounded coverage without exposing raw sensitive responses
-
-#### Scenario: Effective field changes
-- **WHEN** a selected rule changes sequence, IP family, ports or gateway while counters also change
-- **THEN** the configuration difference shows the effective field changes and excludes counters
-
-#### Scenario: Dynamic Alias observation
-- **WHEN** a DNS or URL-table Alias has changing resolved members
-- **THEN** declared configuration comparison and active membership observations remain separate
-- **AND** observed entries alone do not prove periodic refresh success
+## MODIFIED Requirements
 
 ### Requirement: Reviewed candidate remains the execution input
 Plan SHALL produce a self-contained candidate containing resolved standard declarations, selected identities, fixed execution stages, relevant live observations, target connection identity and runtime identity. Each actual stage SHALL additionally bind its save, configuration-readback and native-activation conditions, supplementary checks, finite observation policy and any content actions derived from selected configuration changes. Content actions SHALL identify selected resource identity, candidate source configuration and native processing semantics; they SHALL NOT require a separate source/cache/loading proof for dynamic content. Apply SHALL consume only that explicit reviewed candidate and verify its caller-supplied reviewed digest, target, runtime digest, platform and format compatibility before writes. It SHALL NOT recompile policy, load replacement desired inputs, silently replan, add content actions or turn an allowed cache reuse into an unreviewed refresh. Available source revision and dirty state SHALL be recorded honestly; unavailable provenance SHALL remain unavailable. Credentials SHALL be injected separately and SHALL NOT be saved in the candidate. Candidates missing the required new confirmation contract SHALL be rejected with re-planning guidance rather than implicitly upgraded during execution.
@@ -76,19 +21,6 @@ Plan SHALL produce a self-contained candidate containing resolved standard decla
 - **WHEN** a selected dynamic Alias is saved and activated
 - **THEN** the device's native content and cache refresh semantics are used
 - **AND** apply does not add source, cache-validity, download or DNS-resolution actions that were not reviewed
-
-### Requirement: Effective-state reference admission and ordering
-The complete candidate SHALL receive static declaration validation, but execution admission SHALL use selected changes overlaid on the necessary live state of unselected objects. Supported forward and reverse references SHALL be checked before the first write and at relevant stage boundaries. The system SHALL order only explicitly selected writes to establish new references, switch references and retire old objects, preserving required dependencies at every actual activation stage. Missing dependent selections, cycles or unsupported safe ordering SHALL reject the execution with guidance, not expand its write scope. Site migration sequencing SHALL remain caller-owned.
-
-#### Scenario: Candidate reference switch is not selected
-- **WHEN** the full candidate changes a rule from Alias A to B but the execution selects only deletion of A while the live rule still references A
-- **THEN** admission rejects deletion before the first write and identifies the missing reference transition
-- **AND** the unselected candidate rule is not treated as live or silently written
-
-#### Scenario: Selected rename sequence
-- **WHEN** the caller explicitly selects creation of a replacement Alias, all required reference switches and retirement of the old Alias
-- **THEN** the workflow orders the selected stages with valid references and required activation between them
-- **AND** native reference protection remains effective for remaining external references
 
 ### Requirement: Relevant drift and shared activation admission
 Apply SHALL re-read affected objects and necessary references before the first write and reject relevant changes or unknown required state compared with the reviewed candidate. Shared activation effects SHALL be disclosed independently of object write selection. Detected pending changes outside the reviewed activation authorization SHALL stop execution. Where automatic detection is unavailable, the result SHALL say unknown and require an explicit caller check conclusion bound to the target, candidate and current execution before writes. This conclusion SHALL NOT override detected conflicts or be reported as device evidence. Callers SHALL serialize target writes throughout saving, activation and configuration readback; relevant checks SHALL continue across stage boundaries and stop on observed external changes without claiming transaction isolation or requiring a whole-device per-object snapshot. A caller conclusion SHALL NOT substitute for activation completion evidence, and a confirmation failure SHALL NOT authorize a broader reload or new credentials.
@@ -181,33 +113,7 @@ Verify and apply's post-write verification SHALL compare selected saved configur
 - **THEN** apply returns failure with a nonzero exit code and stops dependent progression
 - **AND** standalone verify's saved-configuration result does not rewrite the earlier apply result
 
-### Requirement: Before-state recovery with explicit new execution
-Before the first write, the system SHALL protect recovery material for all potentially affected objects using actual pre-write configuration and original absence markers. The same self-contained material SHALL retain execution identity and record attempted stages and confirmed post-write state as execution progresses; missing or uncollected post-write evidence SHALL remain unknown. It SHALL distinguish fully expressible recovery from manual-required fields or modes. Recovery SHALL target reversal of that execution's affected configuration, not silently substitute a historical deployment baseline. It SHALL prepare a new plan using current observations and explicitly selected recovery material, then require the ordinary reviewed apply path. New objects SHALL have explicit inverse deletion. Subsequent changes, unresolved original outcomes or lossy reconstruction SHALL prevent automatic recovery selection until reconciled or routed to manual recovery. No automatic rollback, lease/state restoration or whole-device restore SHALL be claimed.
-
-#### Scenario: Live before-state differs from old source
-- **WHEN** a reviewed update overwrites a live managed value that differs from an older source declaration
-- **THEN** recovery material retains the actual live before-state rather than that older declaration
-
-#### Scenario: Reverse a newly created object
-- **WHEN** the caller prepares recovery for an object originally confirmed absent and subsequently created
-- **THEN** the recovery candidate contains its explicit deletion, subject to current reference and drift admission
-
-#### Scenario: Recovery cannot be expressed safely
-- **WHEN** unsupported native fields or subsequent edits prevent a safe inverse declaration
-- **THEN** the material identifies the manual-required or unresolved scope and does not silently discard fields or overwrite later changes
-
-### Requirement: Private results and caller-owned deployment records
-The system SHALL return versioned generic results containing target, candidate and runtime identity, selected resources, attempted stages, confirmed before/after state, persistence/activation/verification outcomes, unresolved scope and recovery locations. Sensitive configuration, raw API responses and subprocess output SHALL be protected using the existing task-output contract. Output preparation failure SHALL prevent writes; failed collection SHALL preserve the only recovery copy. Results SHALL enable caller reconciliation without interpreting or advancing caller deployment baselines, policy ownership metadata or business acceptance.
-
-#### Scenario: Partial result consumed by a caller
-- **WHEN** only part of the selected execution is confirmed successful
-- **THEN** the result identifies that resource scope and all failed or unknown stages
-- **AND** iaas does not mark the whole candidate deployed or update caller previous-generation metadata
-
-#### Scenario: Recovery collection fails
-- **WHEN** private recovery material cannot be collected from task storage
-- **THEN** the operation reports collection failure and retains the material at a disclosed protected location
-- **AND** it does not expose raw output publicly or delete the only copy
+## ADDED Requirements
 
 ### Requirement: Operation-specific confirmation capability admission
 Plan SHALL identify the necessary save, configuration-readback and native-activation conditions and optional deep checks for each selected changed resource and operation, including enablement, disablement, deletion, activation recovery and necessary dependencies. Capability declarations SHALL specify supported provider/device conditions, observation boundaries and gaps rather than treating endpoint existence as proof of deep inspection. Known unavailable or unknown core capability SHALL produce an actionable blocked planning result that cannot authorize apply. Before its first write, apply SHALL recheck core capability for all planned stages, including required read permissions and known observation limits, and SHALL reject any unresolved core gap without partial execution. Known Alias/Gateway/Group native-response limitations SHALL emit the fixed warning on each actual activation. Optional inspection gaps SHALL be recorded in the separate inspect report and SHALL NOT alone become a write blocker. Ordinary no-change SHALL NOT create additional reload or business-test requirements.

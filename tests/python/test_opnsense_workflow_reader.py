@@ -101,6 +101,17 @@ def test_all_seven_collection_targets_are_read_only_and_normalized():
     assert not transport.mutated
 
 
+def test_read_does_not_probe_optional_confirmation_capabilities():
+    class ProbeFail(FakeCollection):
+        def confirmation_capabilities(self):
+            raise AssertionError('optional firmware probe must not run during read')
+
+    transport = ProbeFail()
+    observation = reader(transport).read(['aliases'])['aliases']
+    assert observation['status'] == 'complete'
+    assert observation['objects'][0]['identity'] == ['NETS']
+
+
 def test_page_shapes_are_bounded_and_complete():
     class Paged(FakeCollection):
         def list(self, target, **kwargs):
@@ -269,6 +280,20 @@ def test_alias_active_check_uses_diagnostics_table_without_writes():
     assert not transport.mutated
 
 
+def test_reader_active_check_forwards_optional_dependency_context():
+    class Active(FakeCollection):
+        def active_check(self, resource, identity, desired, *, context=None):
+            assert resource == "aliases"
+            assert identity == ["GROUP"]
+            assert context == {"live_aliases": []}
+            return {"status": "incomplete", "reason": "networkgroup_dependency_unavailable"}
+
+    result = reader(Active()).active_check(
+        "aliases", ["GROUP"], ROWS["aliases"][0], context={"live_aliases": []}
+    )
+    assert result["status"] == "incomplete"
+
+
 def test_fixed_alias_active_check_requires_complete_static_membership_match():
     class Diagnostics(FixedCollectionTransport):
         def __init__(self, response):
@@ -290,10 +315,190 @@ def test_fixed_alias_active_check_requires_complete_static_membership_match():
     assert Diagnostics({"rows": [], "total": 1}).active_check(
         "aliases", ["NETS"], desired
     )["status"] == "incomplete"
+    assert Diagnostics({"rows": [{}], "total": 1}).active_check(
+        "aliases", ["NETS"], desired
+    )["status"] == "incomplete"
+    assert Diagnostics({"rows": [{"ip": "not-an-address"}], "total": 1}).active_check(
+        "aliases", ["NETS"], desired
+    )["status"] == "incomplete"
     dynamic = desired | {"type": "urltable"}
     assert Diagnostics({"rows": [{"ip": "192.0.2.10"}], "total": 1}).active_check(
         "aliases", ["NETS"], dynamic
     )["status"] == "unsupported"
+
+
+@pytest.mark.parametrize("alias_type, content, rows", [
+    ("host", ["192.0.2.0/24"], ["192.0.2.0/25", "192.0.2.128/25"]),
+    ("network", ["192.0.2.0/24"], ["192.0.2.0/24", "192.0.2.0/25"]),
+    ("network", ["2001:db8::/64"], ["2001:db8::/65", "2001:db8:0:0:8000::/65"]),
+])
+def test_fixed_static_alias_active_check_compares_address_union(alias_type, content, rows):
+    class Diagnostics(FixedCollectionTransport):
+        def __init__(self, response):
+            self.response = response
+
+        def _request(self, method, path, payload=None):
+            return self.response
+
+    desired = {
+        "name": "NETS", "type": alias_type, "content": content,
+        "state": "present", "enabled": True,
+    }
+    result = Diagnostics({"rows": [{"ip": value} for value in rows], "total": len(rows)}).active_check(
+        "aliases", ["NETS"], desired
+    )
+
+    assert result["status"] == "verified"
+    assert result["coverage"]["expected"] == 1
+    assert result["coverage"]["matched"] == 1
+
+
+def test_fixed_networkgroup_active_check_resolves_selected_and_live_static_dependencies():
+    class Diagnostics(FixedCollectionTransport):
+        def __init__(self, response):
+            self.response = response
+            self.calls = []
+
+        def _request(self, method, path, payload=None):
+            self.calls.append((method, path))
+            return self.response
+
+    desired = {
+        "name": "GROUP", "type": "networkgroup", "content": ["HOST", "NESTED"],
+        "state": "present", "enabled": True,
+    }
+    context = {
+        "selected": [{
+            "resource": "aliases", "identity": ["GROUP"], "desired": desired,
+        }, {
+            "resource": "aliases", "identity": ["HOST"], "desired": {
+                "name": "HOST", "type": "host", "content": ["192.0.2.10"],
+                "state": "present", "enabled": True,
+            },
+        }],
+        "live_aliases": [{
+            "name": "NESTED", "type": "network", "content": ["2001:db8::/64"],
+            "state": "present", "enabled": True,
+        }],
+    }
+    result = Diagnostics({
+        "rows": [{"ip": "192.0.2.10"}, {"ip": "2001:db8::/64"}], "total": 2,
+    }).active_check("aliases", ["GROUP"], desired, context=context)
+
+    assert result["status"] == "verified"
+    assert result["coverage"]["expected"] == 2
+    assert result["coverage"]["dependency"]["scope"] == "selected_transitions_and_live_dependencies"
+
+
+def test_fixed_networkgroup_active_check_uses_live_unselected_dependency_only():
+    class Diagnostics(FixedCollectionTransport):
+        def __init__(self, response):
+            self.response = response
+
+        def _request(self, method, path, payload=None):
+            return self.response
+
+    desired = {
+        "name": "GROUP", "type": "networkgroup", "content": ["HOST"],
+        "state": "present", "enabled": True,
+    }
+    result = Diagnostics({"rows": [{"ip": "192.0.2.10"}], "total": 1}).active_check(
+        "aliases", ["GROUP"], desired,
+        context={
+            "selected": [{"resource": "aliases", "identity": ["GROUP"], "desired": desired}],
+            "live_aliases": [{
+                "name": "HOST", "type": "host", "content": ["192.0.2.10"],
+                "state": "present", "enabled": True,
+            }],
+        },
+    )
+
+    assert result["status"] == "verified"
+
+
+@pytest.mark.parametrize("member, expected_status, expected_reason", [
+    ({"name": "DYNAMIC", "type": "urltable", "content": ["https://example.invalid/list"],
+      "state": "present", "enabled": True}, "unsupported", "dynamic_networkgroup_member"),
+    (None, "incomplete", "networkgroup_dependency_unavailable"),
+])
+def test_fixed_networkgroup_active_check_does_not_turn_dynamic_or_missing_dependency_into_empty(
+    member, expected_status, expected_reason
+):
+    class Diagnostics(FixedCollectionTransport):
+        def __init__(self, response):
+            self.response = response
+
+        def _request(self, method, path, payload=None):
+            return self.response
+
+    dependency_name = "DYNAMIC" if member else "MISSING"
+    desired = {
+        "name": "GROUP", "type": "networkgroup", "content": [dependency_name],
+        "state": "present", "enabled": True,
+    }
+    live = [] if member is None else [member]
+    result = Diagnostics({"rows": [], "total": 0}).active_check(
+        "aliases", ["GROUP"], desired,
+        context={"selected": [{"resource": "aliases", "identity": ["GROUP"], "desired": desired}],
+                 "live_aliases": live},
+    )
+
+    assert result["status"] == expected_status
+    assert result["reason"] == expected_reason
+
+
+def test_fixed_networkgroup_active_check_rejects_incomplete_observation_with_enough_rows():
+    class Diagnostics(FixedCollectionTransport):
+        def __init__(self, response):
+            self.response = response
+
+        def _request(self, method, path, payload=None):
+            return self.response
+
+    desired = {
+        "name": "GROUP", "type": "networkgroup", "content": ["HOST"],
+        "state": "present", "enabled": True,
+    }
+    result = Diagnostics({"rows": [{"ip": "192.0.2.10"}], "total": 1}).active_check(
+        "aliases", ["GROUP"], desired,
+        context={
+            "selected": [{"resource": "aliases", "identity": ["GROUP"], "desired": desired}],
+            "observations": {"aliases": {
+                "status": "incomplete",
+                "objects": [{"resource": "aliases", "identity": ["HOST"],
+                              "configuration": {"name": "HOST", "type": "host",
+                                                 "content": ["192.0.2.10"],
+                                                 "state": "present", "enabled": True}}],
+            }},
+        },
+    )
+
+    assert result["status"] == "incomplete"
+    assert result["reason"] == "networkgroup_dependency_incomplete"
+
+
+def test_fixed_networkgroup_active_check_rejects_duplicate_live_dependency_names():
+    class Diagnostics(FixedCollectionTransport):
+        def __init__(self, response):
+            self.response = response
+
+        def _request(self, method, path, payload=None):
+            return self.response
+
+    desired = {
+        "name": "GROUP", "type": "networkgroup", "content": ["HOST"],
+        "state": "present", "enabled": True,
+    }
+    host = {"name": "HOST", "type": "host", "content": ["192.0.2.10"],
+            "state": "present", "enabled": True}
+    result = Diagnostics({"rows": [{"ip": "192.0.2.10"}], "total": 1}).active_check(
+        "aliases", ["GROUP"], desired,
+        context={"selected": [{"resource": "aliases", "identity": ["GROUP"], "desired": desired}],
+                 "live_aliases": [host, dict(host)]},
+    )
+
+    assert result["status"] == "incomplete"
+    assert result["reason"] == "networkgroup_dependency_incomplete"
 
 
 def test_disabled_alias_old_pf_table_does_not_confirm_active_state():
@@ -304,6 +509,8 @@ def test_disabled_alias_old_pf_table_does_not_confirm_active_state():
 
         def _request(self, method, path, payload=None):
             self.calls += 1
+            if path == "firewall/alias_util/aliases":
+                return ["NETS"]
             return {"rows": [{"ip": "192.0.2.10"}], "total": 1}
 
     desired = {
@@ -315,5 +522,6 @@ def test_disabled_alias_old_pf_table_does_not_confirm_active_state():
     )
     result = diagnostics.active_check("aliases", ["NETS"], desired)
     assert result["status"] == "unsupported"
-    assert result["reason"] == "disabled_alias_active_proof_unavailable"
-    assert diagnostics.calls == 0
+    assert result["reason"] == "native_retirement_and_consumers_unconfirmed"
+    assert result["coverage"]["table"] == "residual_nonempty"
+    assert diagnostics.calls == 2

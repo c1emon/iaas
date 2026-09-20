@@ -4,7 +4,7 @@
       "status": "unknown"
     },
     "caller": {
-      "candidate_sha256": "bf97b9ddd8843cc435ff9e7ac4d4d7d66e333ebacb0fb588196fdf3af02ab7a5",
+      "candidate_sha256": "b69281d3fb9196ea8d7b30cf583f4c076f4bf087807c1817e5ff85eecb1f3d98",
       "checked_no_pending": true,
       "execution_id": "synthetic-example",
       "serialized": true,
@@ -16,7 +16,7 @@
     }
   },
   "business_acceptance": "not_performed",
-  "candidate_sha256": "bf97b9ddd8843cc435ff9e7ac4d4d7d66e333ebacb0fb588196fdf3af02ab7a5",
+  "candidate_sha256": "b69281d3fb9196ea8d7b30cf583f4c076f4bf087807c1817e5ff85eecb1f3d98",
   "execution_id": "synthetic-example",
   "kind": "opnsense-result",
   "operation": "apply",
@@ -26,7 +26,7 @@
     "interface_version": 1,
     "platform": "linux/arm64"
   },
-  "schema_version": 1,
+  "schema_version": 2,
   "selected": [
     {
       "identity": [
@@ -44,14 +44,15 @@
   "stages": [
     {
       "activation": "confirmed",
+      "activation_basis": "native_response",
       "activation_detail": {
         "status": "confirmed"
       },
       "active": [
         {
           "active": {
-            "coverage": "saved configuration only",
-            "status": "unsupported"
+            "reason": "use_optional_inspect_tool",
+            "status": "not_attempted"
           },
           "configuration": "verified",
           "identity": [
@@ -62,6 +63,27 @@
       ],
       "attempted": true,
       "configuration": "verified",
+      "confirmation": {
+        "basis": "fixed Collection native response; configuration readback",
+        "capability": "available",
+        "content_actions": [],
+        "gaps": [],
+        "required_evidence": [
+          "native_response",
+          "configuration_readback"
+        ],
+        "rule": "opnsense-provider-response-aliases-v2",
+        "supplementary_checks": [],
+        "warnings": [
+          {
+            "code": "IAAS-OPNSENSE-RESULT-LIMITATION",
+            "message": "Native success is trusted; upstream does not return all internal step results. Internal completion and active state are not independently confirmed.",
+            "resource": "aliases"
+          }
+        ]
+      },
+      "content_actions": [],
+      "content_update": [],
       "identities": [
         [
           "SYNTHETIC_WEB"
@@ -69,18 +91,26 @@
       ],
       "mode": "save",
       "resource": "aliases",
-      "save": "saved"
+      "save": "saved",
+      "warnings": [
+        {
+          "code": "IAAS-OPNSENSE-RESULT-LIMITATION",
+          "message": "Native success is trusted; upstream does not return all internal step results. Internal completion and active state are not independently confirmed.",
+          "resource": "aliases"
+        }
+      ]
     },
     {
       "activation": "confirmed",
+      "activation_basis": "native_response",
       "activation_detail": {
         "status": "confirmed"
       },
       "active": [
         {
           "active": {
-            "coverage": "saved configuration only",
-            "status": "unsupported"
+            "reason": "use_optional_inspect_tool",
+            "status": "not_attempted"
           },
           "configuration": "verified",
           "identity": [
@@ -91,6 +121,21 @@
       ],
       "attempted": true,
       "configuration": "verified",
+      "confirmation": {
+        "basis": "fixed Collection native response; configuration readback",
+        "capability": "available",
+        "content_actions": [],
+        "gaps": [],
+        "required_evidence": [
+          "native_response",
+          "configuration_readback"
+        ],
+        "rule": "opnsense-provider-response-dnat-v2",
+        "supplementary_checks": [],
+        "warnings": []
+      },
+      "content_actions": [],
+      "content_update": [],
       "identities": [
         [
           "iaas:opnsense:dnat:synthetic:web"
@@ -98,10 +143,11 @@
       ],
       "mode": "save",
       "resource": "dnat",
-      "save": "saved"
+      "save": "saved",
+      "warnings": []
     }
   ],
-  "status": "completed_with_unverified",
+  "status": "fully_verified",
   "target": {
     "endpoint": "https://192.0.2.1",
     "host": "firewall",
@@ -109,11 +155,15 @@
   },
   "verification": {
     "business_acceptance": "not_performed",
+    "historical_actions": {
+      "activation": "not_provided",
+      "content_update": "not_provided"
+    },
     "objects": [
       {
         "active": {
-          "coverage": "saved configuration only",
-          "status": "unsupported"
+          "reason": "use_optional_inspect_tool",
+          "status": "not_attempted"
         },
         "configuration": "verified",
         "identity": [
@@ -123,8 +173,8 @@
       },
       {
         "active": {
-          "coverage": "saved configuration only",
-          "status": "unsupported"
+          "reason": "use_optional_inspect_tool",
+          "status": "not_attempted"
         },
         "configuration": "verified",
         "identity": [
@@ -133,6 +183,14 @@
         "resource": "dnat"
       }
     ],
-    "status": "completed_with_unverified"
-  }
+    "scope": "saved_configuration",
+    "status": "fully_verified"
+  },
+  "warnings": [
+    {
+      "code": "IAAS-OPNSENSE-RESULT-LIMITATION",
+      "message": "Native success is trusted; upstream does not return all internal step results. Internal completion and active state are not independently confirmed.",
+      "resource": "aliases"
+    }
+  ]
 }

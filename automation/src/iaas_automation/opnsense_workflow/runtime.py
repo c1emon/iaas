@@ -12,7 +12,7 @@ import yaml
 from iaas_automation.common.errors import require
 from iaas_automation.runtime_config.selection import runtime_platform
 from iaas_automation.runtime_execution.execution import OperationFailed
-from .contracts import VERSION, load_candidate, request, save, selected_records, selectors
+from .contracts import RESULT_VERSION, load_candidate, request, save, selected_records, selectors
 from .executor import apply, reverse_documents, verify
 from .planning import coverage, plan
 
@@ -106,7 +106,7 @@ def run(selected, operation: str, scope: str, execution, image_digest: str) -> N
         require(candidate['target'] == target and candidate['runtime'] == runtime, 'candidate target or runtime mismatch')
         if operation == 'apply':
             require(isinstance(selected.options.get('candidate_sha256'), str), 'apply needs a reviewed candidate digest')
-    base = {'schema_version': VERSION, 'kind': 'opnsense-result', 'operation': operation, 'target': target,
+    base = {'schema_version': RESULT_VERSION, 'kind': 'opnsense-result', 'operation': operation, 'target': target,
             'runtime': runtime, 'candidate_sha256': candidate_digest, 'status': 'running', 'business_acceptance': 'not_performed'}
     save(directory / 'result.json', base)
     reader = Reader(target, execution.environ)
@@ -136,7 +136,8 @@ def run(selected, operation: str, scope: str, execution, image_digest: str) -> N
             candidate_digest = save(directory / 'candidate.json', candidate)
             from iaas_automation.common.io import write_text
             write_text(directory / 'candidate.sha256', candidate_digest + '\n', secure=True)
-            base.update(status='planned', candidate_sha256=candidate_digest,
+            base.update(status='blocked' if candidate['admission']['status'] == 'blocked' else 'planned',
+                        admission=candidate['admission'], candidate_sha256=candidate_digest,
                         candidate_file=str(directory / 'candidate.json'), differences=candidate['differences'])
         elif operation == 'verify':
             base.update(verify(candidate, reader))
@@ -152,7 +153,7 @@ def run(selected, operation: str, scope: str, execution, image_digest: str) -> N
         execution.outputs.summary({'component': 'opnsense', 'operation': operation, 'scope': scope,
                                    'status': base['status'], 'result': str(directory / 'result.json'),
                                    'retain_storage': base.get('retain_storage', False), 'phases': execution.phases})
-        if base['status'] == 'failed':
+        if base['status'] in {'failed', 'blocked'}:
             if base.get('retain_storage'):
                 execution.phases.append({'phase': 'opnsense-recovery', 'exit_code': 2,
                                          'retain_storage': True, 'capture_complete': False})

@@ -148,7 +148,7 @@ class _AnsibleProvider:
         except Exception:
             return {"status": "unknown" if error is None else "failed", "error": "stage result unavailable"}
         if error is not None:
-            return {"status": facts.get("status", "failed"), "result": facts}
+            return {"status": "unknown" if isinstance(error, TimeoutError) else "failed", "result": facts}
         return {"status": facts.get("status", "unknown"), "changed": facts.get("changed", False), "result": facts}
 
     def save(self, resource: str, records: Sequence[Mapping[str, Any]], *, reload: bool,
@@ -271,22 +271,18 @@ def _status_from_error(error: BaseException) -> str:
 
 
 def _provider_status(raw: Mapping[str, Any], *, activation: bool, resource: str | None = None) -> str:
-    explicit = raw.get("status")
-    if not activation and explicit == "accepted":
-        return "saved" if raw.get("changed", True) else "unchanged"
-    if explicit in {"accepted", "confirmed", "unconfirmed", "failed", "unknown"}:
-        return str(explicit)
     if raw.get("failed") or raw.get("failed_when"):
         return "failed"
+    explicit = raw.get("status")
+    if activation and explicit == "ok":
+        return "confirmed"
+    if not activation and explicit == "accepted":
+        return "saved" if raw.get("changed", True) else "unchanged"
+    if explicit in {"accepted", "confirmed", "unconfirmed", "processing", "failed", "unknown"}:
+        return str(explicit)
     if activation:
-        # A controller response is provider/request evidence only.  The
-        # executor must supply independent active-state evidence before this
-        # status can become confirmed.
-        if raw.get("active_confirmed") is True:
-            return "confirmed"
-        # The fixed group endpoint reports request acceptance only.  Keep that
-        # fact distinct from an active confirmation; a caller may also choose
-        # to normalize it to unconfirmed after its own active check.
+        # An active-state flag does not prove this invocation completed.  The
+        # fixed activation task must return its audited completion status.
         return "accepted" if resource == "interface-groups" else "unconfirmed"
     if raw.get("changed") is False:
         return "unchanged"
@@ -390,6 +386,10 @@ class Writer:
         status = _provider_status(raw, activation=True, resource=resource)
         result["status"] = status
         result["activation"] = {"status": status}
+        if isinstance(raw.get("action_id"), str) and raw["action_id"]:
+            result["action_id"] = raw["action_id"]
+        if isinstance(raw.get("content_update"), list):
+            result["content_update"] = deepcopy(raw["content_update"])
         if raw.get("error"):
             result["activation"]["error"] = raw["error"]
         if raw.get("active_check") is not None:

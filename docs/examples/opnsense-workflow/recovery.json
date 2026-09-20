@@ -1,5 +1,5 @@
 {
-  "candidate_sha256": "bf97b9ddd8843cc435ff9e7ac4d4d7d66e333ebacb0fb588196fdf3af02ab7a5",
+  "candidate_sha256": "b69281d3fb9196ea8d7b30cf583f4c076f4bf087807c1817e5ff85eecb1f3d98",
   "entries": [
     {
       "after": {
@@ -89,18 +89,19 @@
     "interface_version": 1,
     "platform": "linux/arm64"
   },
-  "schema_version": 1,
+  "schema_version": 2,
   "stages": [
     {
       "activation": "confirmed",
+      "activation_basis": "native_response",
       "activation_detail": {
         "status": "confirmed"
       },
       "active": [
         {
           "active": {
-            "coverage": "saved configuration only",
-            "status": "unsupported"
+            "reason": "use_optional_inspect_tool",
+            "status": "not_attempted"
           },
           "configuration": "verified",
           "identity": [
@@ -111,6 +112,27 @@
       ],
       "attempted": true,
       "configuration": "verified",
+      "confirmation": {
+        "basis": "fixed Collection native response; configuration readback",
+        "capability": "available",
+        "content_actions": [],
+        "gaps": [],
+        "required_evidence": [
+          "native_response",
+          "configuration_readback"
+        ],
+        "rule": "opnsense-provider-response-aliases-v2",
+        "supplementary_checks": [],
+        "warnings": [
+          {
+            "code": "IAAS-OPNSENSE-RESULT-LIMITATION",
+            "message": "Native success is trusted; upstream does not return all internal step results. Internal completion and active state are not independently confirmed.",
+            "resource": "aliases"
+          }
+        ]
+      },
+      "content_actions": [],
+      "content_update": [],
       "identities": [
         [
           "SYNTHETIC_WEB"
@@ -118,18 +140,26 @@
       ],
       "mode": "save",
       "resource": "aliases",
-      "save": "saved"
+      "save": "saved",
+      "warnings": [
+        {
+          "code": "IAAS-OPNSENSE-RESULT-LIMITATION",
+          "message": "Native success is trusted; upstream does not return all internal step results. Internal completion and active state are not independently confirmed.",
+          "resource": "aliases"
+        }
+      ]
     },
     {
       "activation": "confirmed",
+      "activation_basis": "native_response",
       "activation_detail": {
         "status": "confirmed"
       },
       "active": [
         {
           "active": {
-            "coverage": "saved configuration only",
-            "status": "unsupported"
+            "reason": "use_optional_inspect_tool",
+            "status": "not_attempted"
           },
           "configuration": "verified",
           "identity": [
@@ -140,6 +170,21 @@
       ],
       "attempted": true,
       "configuration": "verified",
+      "confirmation": {
+        "basis": "fixed Collection native response; configuration readback",
+        "capability": "available",
+        "content_actions": [],
+        "gaps": [],
+        "required_evidence": [
+          "native_response",
+          "configuration_readback"
+        ],
+        "rule": "opnsense-provider-response-dnat-v2",
+        "supplementary_checks": [],
+        "warnings": []
+      },
+      "content_actions": [],
+      "content_update": [],
       "identities": [
         [
           "iaas:opnsense:dnat:synthetic:web"
@@ -147,7 +192,8 @@
       ],
       "mode": "save",
       "resource": "dnat",
-      "save": "saved"
+      "save": "saved",
+      "warnings": []
     }
   ],
   "target": {
