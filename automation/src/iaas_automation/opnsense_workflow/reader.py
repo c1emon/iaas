@@ -1008,7 +1008,7 @@ _NATIVE_UNEXPRESSED: dict[str, set[str]] = {
                       "state_type", "state_policy", "state_timeout", "max_states", "max_src_nodes",
                       "max_src_states", "max_src_conn", "max_src_conn_rate", "max_src_conn_rates",
                       "overload", "adaptive_start", "adaptive_end", "prio", "set_prio", "set_prio_low",
-                      "tcp_flags", "tcp_flags_clear", "schedule", "tos", "icmp_type"},
+                      "tcp_flags", "tcp_flags_clear", "schedule", "tos", "icmp_type", "icmpv6_type", "divert_to"},
     "dnat": {"target_port", "no_nat"},
     "one-to-one-nat": set(),
     "interface-groups": set(),
@@ -1096,21 +1096,28 @@ def _coerce_scalar(value: Any) -> Any:
 
 def _selected(value: Any, *, multiple: bool = False) -> Any:
     """Decode OPNsense select/select-list wire values used by model responses."""
+    selected: list[Any] = []
     if isinstance(value, dict):
-        selected: list[Any] = []
         for key, option in value.items():
-            if isinstance(option, dict) and _coerce_bool(option.get("selected")) is True:
-                selected.append(option.get("value", key))
-        if multiple:
-            return [_coerce_scalar(item) for item in selected]
-        return _coerce_scalar(selected[0]) if selected else ""
-    if isinstance(value, list) and value and all(isinstance(item, dict) for item in value):
-        selected = [item.get("value", item.get("key")) for item in value
-                    if _coerce_bool(item.get("selected")) is True]
-        if multiple:
-            return [_coerce_scalar(item) for item in selected]
-        return _coerce_scalar(selected[0]) if selected else ""
-    return value
+            if not isinstance(option, dict) or type(_coerce_bool(option.get("selected"))) is not bool:
+                raise _HttpFailure("incomplete", "malformed_native_selector")
+            if _coerce_bool(option["selected"]):
+                # Model response keys are identifiers; `value` is a display label.
+                selected.append(key)
+    elif isinstance(value, list) and any(isinstance(item, dict) for item in value):
+        for option in value:
+            if not isinstance(option, dict) or type(_coerce_bool(option.get("selected"))) is not bool:
+                raise _HttpFailure("incomplete", "malformed_native_selector")
+            if _coerce_bool(option["selected"]):
+                selected.append(option.get("key", option.get("value")))
+    else:
+        return value
+    if (any(not isinstance(item, (str, int)) or isinstance(item, bool) for item in selected)
+            or len(set(selected)) != len(selected) or (not multiple and len(selected) > 1)):
+        raise _HttpFailure("incomplete", "malformed_native_selector")
+    if multiple:
+        return [_coerce_scalar(item) for item in selected]
+    return _coerce_scalar(selected[0]) if selected else ""
 
 
 def _as_list(value: Any) -> Any:
@@ -1203,9 +1210,14 @@ def _references(resource: str, row: dict[str, Any], configuration: dict[str, Any
     source = configuration or _flatten_provider_row(row, resource)
     refs: set[str] = set()
     aliases: set[str] = set()
-    for field in ("source_net", "destination_net", "target", "external", "source_port", "destination_port", "local_port"):
-        value = source.get(field)
+    fields = ["source_net", "destination_net", "target", "external", "source_port", "destination_port", "local_port"]
+    if resource == "aliases" and source.get("type") == "networkgroup":
+        fields.append("content")
+    for field in fields:
+        value = _as_list(source.get(field))
         values = value if isinstance(value, list) else [value]
+        values = [token.strip() for item in values if isinstance(item, str)
+                  for token in re.split(r"[,\n]", item)]
         for item in values:
             if not isinstance(item, str) or item in {"", "any", "(self)"} or item.isdecimal():
                 continue
@@ -1323,11 +1335,13 @@ def _unexpressed_fields(resource: str, row: dict[str, Any], flat: dict[str, Any]
             continue
         if canonical in fields:
             continue
-        if field in _IGNORED_NATIVE_FIELDS or field in _STANDARD_FIELDS[resource] or field in fields:
+        if field in _IGNORED_NATIVE_FIELDS or canonical in _STANDARD_FIELDS[resource]:
             continue
-        if field in _FIELD_ALIASES or field in {"description", "state", "source", "destination"}:
+        if field in {"description", "state", "source", "destination"}:
             continue
-        if value not in (None, "", [], {}, False):
+        # Unknown fields have no established false/zero default. Only known
+        # native fields above may use their existing neutral-value handling.
+        if value not in (None, "", [], {}):
             found.append(field)
     return sorted(set(found))
 
@@ -1427,8 +1441,10 @@ def _fetch(transport: Any, target: str) -> _Fetch:
         elif total != page_total:
             return _Fetch([], page, total, False, "inconsistent_collection_total")
         rows.extend(deepcopy(page_rows))
-        if len(rows) >= total:
-            return _Fetch(rows[:total], page, total, True)
+        if len(rows) > total:
+            return _Fetch([], page, total, False, "inconsistent_collection_total")
+        if len(rows) == total:
+            return _Fetch(rows, page, total, True)
         if not page_rows:
             return _Fetch(rows, page, total, False, "incomplete_collection_page")
     return _Fetch(rows, MAX_PAGES, total, False, "configuration_bound_exceeded")
@@ -1532,9 +1548,13 @@ class Reader:
         incomplete_reasons: list[str] = []
         identities: set[tuple[str, ...]] = set()
         for row in fetched.rows:
-            identity = _parse_identity(resource, _flatten_provider_row(row, resource))
-            configuration, reason = _configuration(resource, row)
-            references = _references(resource, row, configuration)
+            try:
+                identity = _parse_identity(resource, _flatten_provider_row(row, resource))
+                configuration, reason = _configuration(resource, row)
+                references = _references(resource, row, configuration)
+            except _HttpFailure as error:
+                incomplete_reasons.append(error.reason)
+                continue
             if identity is None:
                 incomplete_reasons.append("missing_identity")
                 continue

@@ -6,6 +6,8 @@ from copy import deepcopy
 
 import pytest
 
+from iaas_automation.common.errors import ValidationError
+from iaas_automation.opnsense_workflow.planning import coverage, plan
 from iaas_automation.opnsense_workflow.reader import (
     COLLECTION_TARGETS,
     FixedCollectionTransport,
@@ -110,6 +112,119 @@ def test_read_does_not_probe_optional_confirmation_capabilities():
     observation = reader(transport).read(['aliases'])['aliases']
     assert observation['status'] == 'complete'
     assert observation['objects'][0]['identity'] == ['NETS']
+
+
+def _plan_alias_deletion(rows):
+    observations = reader(FakeCollection(rows)).read(coverage([{"resource": "aliases"}]))
+    return plan(
+        {"aliases": {"opnsense_aliases": [ROWS["aliases"][0] | {"state": "absent"}]}},
+        {"schema_version": 1, "selection": {"aliases": "all"},
+         "managed": {"aliases": [["NETS"]]}},
+        observations, TARGET,
+        {"image_digest": "registry.invalid/runtime@sha256:" + "a" * 64,
+         "platform": "linux/arm64", "interface_version": 1},
+        {"inputs": []},
+    )
+
+
+@pytest.mark.parametrize("resource, consumer", [
+    ("aliases", ROWS["aliases"][0] | {
+        "name": "GROUP", "type": "networkgroup", "content": ["NETS"], "current_items": 1}),
+    ("aliases", ROWS["aliases"][0] | {
+        "name": "GROUP", "type": "networkgroup", "content": {"NETS": {}}, "current_items": 1}),
+    ("filter-rules", ROWS["filter-rules"][0] | {
+        "description": "native rule", "uuid": "native-test", "destination_net": "NETS,OTHER"}),
+    ("filter-rules", ROWS["filter-rules"][0] | {
+        "description": "native rule", "uuid": "native-test", "destination_net": "NETS\nOTHER"}),
+    ("dnat", ROWS["dnat"][0] | {"source_net": "NETS,OTHER"}),
+])
+def test_reader_dependencies_prevent_deleting_referenced_alias(resource, consumer):
+    rows = {name: [] for name in ROWS}
+    rows["aliases"] = deepcopy(ROWS["aliases"])
+    rows[resource].append(consumer)
+    observed = reader(FakeCollection(rows)).read([resource])[resource]["objects"][-1]
+    assert observed["configuration"] is None
+    assert "aliases:NETS" in observed["references"]
+    with pytest.raises(ValidationError, match="missing dependency"):
+        _plan_alias_deletion(rows)
+
+
+def test_unrelated_unexpressible_networkgroup_does_not_block_alias_deletion():
+    rows = {name: [] for name in ROWS}
+    rows["aliases"] = [ROWS["aliases"][0], ROWS["aliases"][0] | {
+        "name": "GROUP", "type": "networkgroup", "content": ["OTHER"], "current_items": 1}]
+    candidate = _plan_alias_deletion(rows)
+    assert [item["action"] for item in candidate["differences"]] == ["delete"]
+
+
+@pytest.mark.parametrize("field, value, canonical", [
+    ("icmp6type", ["echoreq"], "icmpv6_type"),
+    ("icmpv6_type", ["echoreq"], "icmpv6_type"),
+    ("divert-to", {"192.0.2.20": {"selected": 1}}, "divert_to"),
+    ("divert_to", "192.0.2.20", "divert_to"),
+])
+def test_unsupported_native_field_aliases_never_become_recoverable(field, value, canonical):
+    rows = {"filter-rules": [ROWS["filter-rules"][0] | {field: value}]}
+    item = reader(FakeCollection(rows)).read(["filter-rules"])["filter-rules"]["objects"][0]
+    assert item["configuration"] is None
+    assert item["reason"] == "unexpressed_native_fields:" + canonical
+    assert item["recovery"] == "manual_required"
+
+
+@pytest.mark.parametrize("value", [0, False, "0"])
+def test_unknown_native_zero_is_not_assumed_to_be_a_default(value):
+    rows = {"aliases": [ROWS["aliases"][0] | {"future_option": value}]}
+    item = reader(FakeCollection(rows)).read(["aliases"])["aliases"]["objects"][0]
+    assert item["configuration"] is None
+    assert item["reason"] == "unexpressed_native_fields:future_option"
+
+
+@pytest.mark.parametrize("mode", [
+    {"ipalias": {"selected": 1}, "carp": {"selected": 1}},
+    [{"value": "ipalias", "selected": 1}, {"value": "carp", "selected": 1}],
+    {"ipalias": {"selected": 1}, "carp": {"selected": "invalid"}},
+    {"ipalias": {"selected": 1}, "carp": "invalid"},
+])
+def test_invalid_selector_makes_observation_incomplete_without_exposing_values(mode):
+    rows = {"vips": [ROWS["vips"][0] | {"mode": mode}]}
+    observation = reader(FakeCollection(rows)).read(["vips"])["vips"]
+    assert observation["status"] == "incomplete"
+    assert observation["objects"] == []
+    assert observation["reason"] == ["malformed_native_selector"]
+
+
+def test_selector_labels_do_not_replace_keys_and_multiple_members_are_preserved():
+    rows = {"vips": [ROWS["vips"][0] | {
+        "mode": {"ipalias": {"selected": 1, "value": "IP Alias"}},
+        "interface": [{"key": "lan", "selected": 1, "value": "LAN display label"}],
+    }], "interface-groups": [ROWS["interface-groups"][0] | {
+        "members": {"wan": {"selected": 1, "value": "WAN display label"},
+                    "lan": {"selected": 1, "value": "LAN display label"}},
+    }]}
+    observations = reader(FakeCollection(rows)).read(list(rows))
+    vip = observations["vips"]["objects"][0]
+    assert vip["identity"] == ["192.0.2.10/32", "lan"]
+    assert vip["configuration"] is not None
+    assert observations["interface-groups"]["objects"][0]["configuration"]["members"] == ["lan", "wan"]
+
+
+@pytest.mark.parametrize("overflow", [False, True])
+def test_pagination_never_discards_objects_to_match_total(overflow):
+    class Paged(FakeCollection):
+        def list(self, target, **kwargs):
+            page = kwargs["page"]
+            names = ["A", "B"] if page == 1 else ["C", "D"] if overflow else ["C"]
+            return {"current": page, "rowCount": 2, "total": 3,
+                    "rows": [ROWS["aliases"][0] | {"name": name} for name in names]}
+
+    observation = reader(Paged()).read(["aliases"])["aliases"]
+    if overflow:
+        assert observation["status"] == "incomplete"
+        assert observation["objects"] == []
+        assert observation["reason"] == "inconsistent_collection_total"
+    else:
+        assert observation["status"] == "complete"
+        assert [item["identity"] for item in observation["objects"]] == [["A"], ["B"], ["C"]]
 
 
 def test_page_shapes_are_bounded_and_complete():
