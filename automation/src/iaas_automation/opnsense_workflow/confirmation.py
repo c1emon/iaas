@@ -11,6 +11,15 @@ from iaas_automation.common.errors import require
 WAIT_POLICY = {'deadline_seconds': 60, 'max_attempts': 30, 'interval_seconds': 2, 'request_timeout_seconds': 15}
 SYNC_RESOURCES = {'filter-rules', 'dnat', 'one-to-one-nat', 'vips'}
 SOURCE_FIELDS = ('type', 'content', 'updatefreq_days', 'interface', 'counters')
+LIMITED_RESPONSE_RESOURCES = {'aliases', 'gateways', 'interface-groups'}
+
+
+def response_warnings(resource: str) -> list[dict]:
+    if resource not in LIMITED_RESPONSE_RESOURCES:
+        return []
+    return [{'code': 'IAAS-OPNSENSE-RESULT-LIMITATION', 'resource': resource,
+             'message': 'Native success is trusted; upstream does not return all internal step results. '
+                        'Internal completion and active state are not independently confirmed.'}]
 
 
 def validate_wait(value: dict) -> dict:
@@ -56,35 +65,23 @@ def content_actions(stage: dict, differences: list[dict]) -> list[dict]:
         actions.append({'identity': deepcopy(diff['identity']), 'source': source,
                         'trigger': trigger, 'action': 'initialize' if not before else 'update',
                         'execution': 'native_activation',
-                        'cache': {'reuse': False, 'reason': 'source_and_validity_evidence_unavailable'},
-                        'required_evidence': ['source_processing', 'content_loading'],
-                        'wait': deepcopy(WAIT_POLICY)})
+                        'cache': {'policy': 'provider_native'},
+                        'required_evidence': ['native_response']})
     return actions
 
 
 def stage_contract(stage: dict, differences: list[dict], observation: dict) -> dict:
     resource = stage['resource']
     actions = content_actions(stage, differences)
-    # These capabilities come from the fixed reader, never request/apply options.
-    capabilities = observation.get('confirmation_capability', {})
-    evidence = ['activation_completion']
-    if actions:
-        evidence.extend(['source_processing', 'content_loading'])
     gaps = []
-    for fact in evidence:
-        state = capabilities.get(fact, 'unknown')
-        if state != 'available':
-            gaps.append({'evidence': fact, 'status': state if state in {'unknown', 'unsupported'} else 'unknown',
-                         'reason': capabilities.get('reason', 'necessary_confirmation_unavailable')})
     if observation.get('status') != 'complete':
         gaps.append({'evidence': 'configuration_read', 'status': 'unknown',
                      'reason': 'required_configuration_observation_incomplete'})
-    return {'rule': 'opnsense-native-' + resource + '-v2',
-            'required_evidence': evidence, 'supplementary_checks': ['current_active_state'],
-            'capability': 'available' if not gaps else 'unsupported' if any(
-                gap['status'] == 'unsupported' for gap in gaps) else 'unknown',
-            'basis': capabilities.get('basis', 'unavailable'), 'gaps': gaps,
-            'wait': validate_wait(capabilities.get('wait', WAIT_POLICY)), 'content_actions': actions}
+    return {'rule': 'opnsense-provider-response-' + resource + '-v2',
+            'required_evidence': ['native_response', 'configuration_readback'], 'supplementary_checks': [],
+            'capability': 'available' if not gaps else 'unknown',
+            'basis': 'fixed Collection native response; configuration readback', 'gaps': gaps,
+            'warnings': response_warnings(resource), 'content_actions': actions}
 
 
 def bind_stages(stages: list[dict], differences: list[dict], observations: dict) -> list[dict]:
@@ -98,9 +95,23 @@ def disposition(stages: list[dict]) -> dict:
             'gaps': [{'resource': stage['resource'], 'identities': stage['identities'],
                       'missing': stage['confirmation']['gaps']} for stage in blocked],
             'recovery': ('manual_required' if any(stage['mode'] == 'activation_recovery' for stage in blocked) else 'not_required'),
-            'guidance': ('Required native completion evidence is unavailable. Separately authorized manual handling '
-                         'or explicitly selected configuration reversal from reconciled recovery material is required; '
-                         'do not replay, force refresh, or fabricate configuration differences.' if blocked else None)}
+            'guidance': ('Required configuration could not be read completely. Resolve the read failure '
+                         'and review a new plan before writing.' if blocked else None)}
+
+
+def native_content_results(stage: dict, activation: dict) -> list[dict]:
+    """Disclose provider-managed content without inventing cache or load evidence."""
+    evidence = activation.get('content_update', [])
+    explicit_failure = any(isinstance(row, dict) and (
+        row.get('status') in {'failed', 'error'} or row.get('loading') in {'failed', 'error'})
+        for row in evidence) if isinstance(evidence, list) else False
+    require(not explicit_failure or stage['content_actions'],
+            'native content processing reported failure; dependent stages stopped')
+    return [{'identity': action['identity'], 'action': action['action'], 'source': action['source'],
+             'status': 'failed' if explicit_failure else
+                       'provider_managed' if activation.get('status') == 'confirmed' else 'unknown',
+             'cache': 'provider_native', 'loading': 'not_independently_checked'}
+            for action in stage['content_actions']]
 
 
 def recheck(candidate: dict, observations: dict) -> None:

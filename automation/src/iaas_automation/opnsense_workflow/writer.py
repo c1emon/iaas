@@ -148,7 +148,7 @@ class _AnsibleProvider:
         except Exception:
             return {"status": "unknown" if error is None else "failed", "error": "stage result unavailable"}
         if error is not None:
-            return {"status": facts.get("status", "failed"), "result": facts}
+            return {"status": "unknown" if isinstance(error, TimeoutError) else "failed", "result": facts}
         return {"status": facts.get("status", "unknown"), "changed": facts.get("changed", False), "result": facts}
 
     def save(self, resource: str, records: Sequence[Mapping[str, Any]], *, reload: bool,
@@ -271,13 +271,15 @@ def _status_from_error(error: BaseException) -> str:
 
 
 def _provider_status(raw: Mapping[str, Any], *, activation: bool, resource: str | None = None) -> str:
+    if raw.get("failed") or raw.get("failed_when"):
+        return "failed"
     explicit = raw.get("status")
+    if activation and explicit == "ok":
+        return "confirmed"
     if not activation and explicit == "accepted":
         return "saved" if raw.get("changed", True) else "unchanged"
     if explicit in {"accepted", "confirmed", "unconfirmed", "processing", "failed", "unknown"}:
         return str(explicit)
-    if raw.get("failed") or raw.get("failed_when"):
-        return "failed"
     if activation:
         # An active-state flag does not prove this invocation completed.  The
         # fixed activation task must return its audited completion status.

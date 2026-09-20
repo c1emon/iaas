@@ -1,5 +1,5 @@
 {
-  "candidate_sha256": "d2934a3b41ca5df928207f5f9715484f5e3717ecc76b2c0962cf6827d4674d88",
+  "candidate_sha256": "b69281d3fb9196ea8d7b30cf583f4c076f4bf087807c1817e5ff85eecb1f3d98",
   "entries": [
     {
       "after": {
@@ -93,14 +93,15 @@
   "stages": [
     {
       "activation": "confirmed",
+      "activation_basis": "native_response",
       "activation_detail": {
         "status": "confirmed"
       },
       "active": [
         {
           "active": {
-            "coverage": "saved configuration only",
-            "status": "unsupported"
+            "reason": "use_optional_inspect_tool",
+            "status": "not_attempted"
           },
           "configuration": "verified",
           "identity": [
@@ -112,23 +113,23 @@
       "attempted": true,
       "configuration": "verified",
       "confirmation": {
-        "basis": "synthetic action completion",
+        "basis": "fixed Collection native response; configuration readback",
         "capability": "available",
         "content_actions": [],
         "gaps": [],
         "required_evidence": [
-          "activation_completion"
+          "native_response",
+          "configuration_readback"
         ],
-        "rule": "opnsense-native-aliases-v2",
-        "supplementary_checks": [
-          "current_active_state"
-        ],
-        "wait": {
-          "deadline_seconds": 60,
-          "interval_seconds": 2,
-          "max_attempts": 30,
-          "request_timeout_seconds": 15
-        }
+        "rule": "opnsense-provider-response-aliases-v2",
+        "supplementary_checks": [],
+        "warnings": [
+          {
+            "code": "IAAS-OPNSENSE-RESULT-LIMITATION",
+            "message": "Native success is trusted; upstream does not return all internal step results. Internal completion and active state are not independently confirmed.",
+            "resource": "aliases"
+          }
+        ]
       },
       "content_actions": [],
       "content_update": [],
@@ -139,18 +140,26 @@
       ],
       "mode": "save",
       "resource": "aliases",
-      "save": "saved"
+      "save": "saved",
+      "warnings": [
+        {
+          "code": "IAAS-OPNSENSE-RESULT-LIMITATION",
+          "message": "Native success is trusted; upstream does not return all internal step results. Internal completion and active state are not independently confirmed.",
+          "resource": "aliases"
+        }
+      ]
     },
     {
       "activation": "confirmed",
+      "activation_basis": "native_response",
       "activation_detail": {
         "status": "confirmed"
       },
       "active": [
         {
           "active": {
-            "coverage": "saved configuration only",
-            "status": "unsupported"
+            "reason": "use_optional_inspect_tool",
+            "status": "not_attempted"
           },
           "configuration": "verified",
           "identity": [
@@ -162,23 +171,17 @@
       "attempted": true,
       "configuration": "verified",
       "confirmation": {
-        "basis": "synthetic action completion",
+        "basis": "fixed Collection native response; configuration readback",
         "capability": "available",
         "content_actions": [],
         "gaps": [],
         "required_evidence": [
-          "activation_completion"
+          "native_response",
+          "configuration_readback"
         ],
-        "rule": "opnsense-native-dnat-v2",
-        "supplementary_checks": [
-          "current_active_state"
-        ],
-        "wait": {
-          "deadline_seconds": 60,
-          "interval_seconds": 2,
-          "max_attempts": 30,
-          "request_timeout_seconds": 15
-        }
+        "rule": "opnsense-provider-response-dnat-v2",
+        "supplementary_checks": [],
+        "warnings": []
       },
       "content_actions": [],
       "content_update": [],
@@ -189,7 +192,8 @@
       ],
       "mode": "save",
       "resource": "dnat",
-      "save": "saved"
+      "save": "saved",
+      "warnings": []
     }
   ],
   "target": {

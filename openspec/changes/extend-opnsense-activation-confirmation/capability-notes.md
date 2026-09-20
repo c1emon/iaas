@@ -8,24 +8,26 @@
 - 目标设备源码固定为 OPNsense core [`26.7.3`](https://github.com/opnsense/core/tree/26.7.3)。以下结论只绑定这一源码目标，不能外推到其他 OPNsense 版本。
 - Collection 的 Alias、Gateway、接口组模块都通过 [`BaseLogic._base_reload`](https://github.com/O-X-L/ansible-opnsense/blob/1423500c29f88da9ba8147a23fc64006cf464159/plugins/module_utils/base/logic.py#L425-L440) 调各自 controller 的 `reconfigure`。固定 Collection 的 `raw` 模块可以接受任意 API 路径，但这不是已核定的只读能力，也不允许用它绕过本说明的固定端点边界。
 
-### 版本闸门
+### 版本事实与当前决策
 
 26.7.3 的 [`FirmwareController::statusAction`](https://github.com/opnsense/core/blob/26.7.3/src/opnsense/mvc/app/controllers/OPNsense/Core/Api/FirmwareController.php#L92-L123) 从 `firmware product` 读取产品资料；[`product.php`](https://github.com/opnsense/core/blob/26.7.3/src/opnsense/scripts/firmware/product.php#L30-L45) 读取 `/usr/local/opnsense/version/core`，而 [`core.in`](https://github.com/opnsense/core/blob/26.7.3/src/opnsense/version/core.in#L1-L41) 明确提供 `product_version` 字段。因此固定源码支持一个只读版本事实：通过该 controller 的 `status` 读取并检查返回的 `product.product_version`（或在错误/缺失时返回 unknown）。
 
-当前 workflow reader 已固定使用 `GET /api/core/firmware/status`，读取 `product.product_version` 后与精确值 `26.7.3` 比较；这确认了软件合同中的版本字段，不确认现场设备已经通过版本闸门。该只读路径在 26.7.3 的 ACL 中归属 [`System: Firmware`](https://github.com/opnsense/core/blob/26.7.3/src/opnsense/mvc/app/models/OPNsense/Core/ACL/ACL.xml#L506-L514)，其 pattern 是 `api/core/firmware/*`，源码没有单独的“firmware version read-only”权限名。因此调用方必须按已有 ACL 授权取得该状态，不能把权限名描述成窄只读权限。设备版本读取失败、权限拒绝、响应不完整或不是精确的 `26.7.3` 时，依赖本说明的操作必须保持 blocked。版本 probe 不能触发 firmware probe、升级检查或其他写操作。
+当前 workflow reader 已固定使用 `GET /api/core/firmware/status`，读取 `product.product_version` 后与精确值 `26.7.3` 比较；这确认了软件合同中的版本字段，不确认现场设备已经通过版本观察。该只读路径在 26.7.3 的 ACL 中归属 [`System: Firmware`](https://github.com/opnsense/core/blob/26.7.3/src/opnsense/mvc/app/models/OPNsense/Core/ACL/ACL.xml#L506-L514)，其 pattern 是 `api/core/firmware/*`，源码没有单独的“firmware version read-only”权限名。因此调用方必须按已有 ACL 授权取得该状态，不能把权限名描述成窄只读权限。仅当 inspect 或其他明确版本观察调用该路径时，版本事实缺失、权限拒绝或响应不完整才记录该观察为 unsupported/unknown；默认 reader/plan/apply/verify 不 probe 版本，不把它写成默认 warning 或首写阻断。版本 probe 不能触发 firmware probe、升级检查或其他写操作。
+
+当前执行决策：默认操作完成以配置保存、配置回读和原生激活成功为基础。Alias/Gateway/Group 原生返回丢失的内部步骤、PF/接口组/runtime 深度事实，固定输出不可关闭 stderr 警告并写入 result，继续默认流程；默认 `verify` scope 为 `saved_configuration`，active 为 `not_attempted`。深度检查由独立 `python -m iaas_automation.opnsense_workflow.inspect --inventory INVENTORY --candidate CANDIDATE --output OUTPUT` 提取，不由 plan/apply/verify 默认调用。本文其余源码事实是非阻断保留项，不是默认写入硬缺口。
 
 ## 按操作的能力矩阵
 
 | 操作 | 已核定的只读事实 | 本次动作完成证据 | 结论 |
 | --- | --- | --- | --- |
-| 静态 host/network Alias | 配置可由 Collection 的 Alias `get` 读取；对启用对象，`firewall/alias_util/list/<name>` 可返回当前 PF table 成员，完整响应时可比较 IPv4/IPv6 地址语义。 | `reconfigure` 没有统一完成关联；同次 refresh 无 messages 加上 PF table 精确匹配，只能确认当前态，不能回溯未观测的 reload/template/cron 链路。 | 静态 table 当前生效可以确认；写入动作完成仍 blocked，新增/删除消费者或整条同步链仍须单独标注 `unconfirmed`。 |
+| 静态 host/network Alias | 配置可由 Collection 的 Alias `get` 读取；对启用对象，`firewall/alias_util/list/<name>` 可返回当前 PF table 成员，完整响应时可比较 IPv4/IPv6 地址语义。 | `reconfigure` 没有统一完成关联；同次 refresh 无 messages 加上 PF table 精确匹配，只能确认当前态，不能回溯未观测的 reload/template/cron 链路。 | 默认保存/回读/原生激活继续；深度链路缺口以 warning/result 保留，PF table 可由 inspect 另行确认。 |
 | port Alias | 配置和 Alias 类型可读；PF table 读取只返回地址项。26.7.3 另有通用的 `pf_statistics` 规则统计路径，可看到 pfctl 原始规则文本和计数。 | 规则文本本身可带 `label "<uuid>"`；固定 reader 已通过 `pf_statistics/rules` 使用选中配置规则 UUID 做关联，并定向解析 `on`、`proto`、`from/to`、端口表达式及 `route-to`。这仍是当前 loaded-rule 观察，不是 reconfigure 完成关联。 | port 当前检查可独立报告；本次 native reconfigure 的完成证据仍缺失，不应阻止该只读检查。 |
-| 动态 Alias（URL/DNS 等） | 配置中的来源、类型和更新频率可读；当前 Alias table 可在端点可用时读取。 | `refresh_aliases` 由脚本处理依赖链、解析/下载并加载 table；源码存在内部 cache/resolve 处理，但审阅到的固定读取路径未逐对象返回来源、缓存时间、有效期、解析/下载结果或加载完成结果；workflow 也不能观察 `/var/db/aliastables`。 | 新增、来源变化、重新启用和缓存复用的必要证据缺失，动作 blocked。这是当前 adapter/公共合同的证据缺口，不是“上游完全没有任何动态 API”的结论。 |
-| Alias 禁用/删除 | 配置列表、活动 table 名称和单表内容可分别读取；可区分部分对象是否仍存在。 | Alias reconfigure 仍只有无关联 `ok`；缺少统一的退役完成结果，缺表、空表和读取失败不能由同一个响应安全区分。 | 只有在明确的当前状态检查中报告观察结果；作为必要动作确认时 blocked。 |
-| PBR Gateway | `routing/settings/search_gateway` 返回配置，并同步调用 `interface gateways status`，可读接口、下一跳、监控状态、loss、delay、stddev 等运行信息；26.7.3 还提供 `GET /api/diagnostics/interface/get_routes` 读取当前系统路由表。 | 固定 reader 对完整分页的 `search_gateway` 保留配置/runtime 字段，并按显式 monitor-host 需要读取路由快照；`reconfigure` 只调用 `interface routes configure` 并无条件返回 `status=ok`，仍无本次动作关联。`route-to` 消费者关联由独立 PF 规则观察合同提供。 | 配置、gateway monitor 和系统路由快照可用；PBR Gateway 必要动作确认 blocked。 |
-| 接口组 | `firewall/group/get`/search 可读保存的名称、成员、GUI 标志、顺序和描述；`diagnostics/interface/get_interface_config` 可读 kernel/interface config，`interfaces/overview/interfaces_info` 可把 `config.identifier` 映射到设备；Filter 配置可提供规则引用。 | Group reconfigure 依次调用接口注册、接口选项缓存刷新和 filter reload，但丢弃这些调用的返回值并无条件返回 `ok`；上述当前读路径没有完成代数或 loaded rule 消费确认。 | 保存配置、当前 kernel 组/接口映射和部分引用可读；接口组注册、成员生效和 filter reload 的必要动作确认 blocked。 |
+| 动态 Alias（URL/DNS 等） | 配置中的来源、类型和更新频率可读；当前 Alias table 可在端点可用时读取。 | `refresh_aliases` 由脚本处理依赖链、解析/下载并加载 table；源码存在内部 cache/resolve 处理，但固定读取路径不逐对象返回来源/缓存/加载细节。 | 默认遵循设备原生缓存刷新；来源、缓存、加载细节是非阻断保留项，由 warning/result 或 inspect 表达。 |
+| Alias 禁用/删除 | 配置列表、活动 table 名称和单表内容可分别读取；可区分部分对象是否仍存在。 | Alias reconfigure 仍只有无关联 `ok`；缺少统一的退役完成结果，缺表、空表和读取失败不能由同一个响应安全区分。 | 默认保存/回读/原生激活继续；退役深度事实由 inspect 可选报告，warning/result 不可关闭。 |
+| PBR Gateway | `routing/settings/search_gateway` 返回配置，并同步调用 `interface gateways status`，可读接口、下一跳、监控状态、loss、delay、stddev 等运行信息；26.7.3 还提供 `GET /api/diagnostics/interface/get_routes` 读取当前系统路由表。 | 固定 reader 对完整分页的 `search_gateway` 保留配置/runtime 字段，并按显式 monitor-host 需要读取路由快照；`reconfigure` 只调用 `interface routes configure` 并无条件返回 `status=ok`，仍无本次动作关联。`route-to` 消费者关联由独立 PF 规则观察合同提供。 | 默认保存/回读/原生激活继续；路由、monitor 和 route-to 深度事实由 inspect 可选核对，缺口 warning/result 保留。 |
+| 接口组 | `firewall/group/get`/search 可读保存的名称、成员、GUI 标志、顺序和描述；`diagnostics/interface/get_interface_config` 可读 kernel/interface config，`interfaces/overview/interfaces_info` 可把 `config.identifier` 映射到设备；Filter 配置可提供规则引用。 | Group reconfigure 依次调用接口注册、接口选项缓存刷新和 filter reload，但丢弃这些调用的返回值并无条件返回 `ok`；上述当前读路径没有完成代数或 loaded rule 消费确认。 | 默认保存/回读/原生激活继续；inspect 仅可选核对当前成员和规则接口观察，不表述为注册或 filter reload 完成证明，缺口 warning/result 保留。 |
 
-## 证据和硬缺口
+## 源码证据和非阻断保留项
 
 ### Filter/NAT/VIP 同步激活与 ACL
 
@@ -103,18 +105,18 @@ Gateway controller 的 [`reconfigureAction`](https://github.com/opnsense/core/bl
 
 26.7.3 确实存在 [`InterfaceController::getRoutesAction`](https://github.com/opnsense/core/blob/26.7.3/src/opnsense/mvc/app/controllers/OPNsense/Diagnostics/Api/InterfaceController.php#L157-L184)，即 `GET /api/diagnostics/interface/get_routes`；它调用 `interface routes list -n json`（带 `resolve` 时为 `interface routes list json`），返回当前系统路由的 destination、gateway、netif，并补充接口描述和 id。该路径归属 [`Diagnostics: Routing tables`](https://github.com/opnsense/core/blob/26.7.3/src/opnsense/mvc/app/models/OPNsense/Diagnostics/ACL/ACL.xml#L30-L36)。它能补充“当前安装路由快照”观察，但不是本次 `routes configure` 的完成关联，也不提供完整 loaded PBR `route-to` 消费者合同。
 
-因此搜索结果里的 status 仍是 gateway monitor 状态，不是 PBR 规则是否已加载。默认路由、ping 成功或启用 monitor 都不能替代缺少的动作完成证据。`get_routes` 是可用的当前路由快照；route-to consumer 的关联属于当前 PF parser/consumer 观察合同，不能把 parser 尚未覆盖说成上游没有 endpoint。Gateway 适配应在能力规则中保留配置、monitor、系统路由快照的当前观察范围，并对必要确认保持 blocked。
+因此搜索结果里的 status 仍是 gateway monitor 状态，不是 PBR 规则是否已加载。默认路由、ping 成功或启用 monitor 都不是默认完成条件。`get_routes` 是可用的当前路由快照；route-to consumer 的关联属于独立 PF parser/consumer 观察合同，不能把 parser 尚未覆盖说成上游没有 endpoint。Gateway 默认结果继续记录保存/回读/原生激活，深度事实由 inspect 可选提供。
 
 ### 接口组
 
 Group controller 的 [`reconfigureAction`](https://github.com/opnsense/core/blob/26.7.3/src/opnsense/mvc/app/controllers/OPNsense/Firewall/Api/GroupController.php#L121-L135) 先调用接口注册，再调用 `filter reload skip_alias`，但两者返回值均未进入响应。其重命名路径也调用同一个注册流程。注册实现位于 [`ApiControllerBase::runInterfaceRegistration`](https://github.com/opnsense/core/blob/26.7.3/src/opnsense/mvc/app/controllers/OPNsense/Base/ApiControllerBase.php#L406-L415)，其中 `interface invoke registration` 和 `!interface list assign-opts` 的结果同样被丢弃。
 
-当前只读路径包括 [`InterfaceController::getInterfaceConfigAction`](https://github.com/opnsense/core/blob/26.7.3/src/opnsense/mvc/app/controllers/OPNsense/Diagnostics/Api/InterfaceController.php) 的 `GET /api/diagnostics/interface/get_interface_config`（kernel/interface config）以及 [`OverviewController::interfacesInfoAction`](https://github.com/opnsense/core/blob/26.7.3/src/opnsense/mvc/app/controllers/OPNsense/Interfaces/Api/OverviewController.php) 的 `GET /api/interfaces/overview/interfaces_info`（`config.identifier` 到 device/interface 映射）。这些路径能补充当前态事实，但没有 group completion 或 filter consumer 完成关联。保存的 `ifgroupentry` 成员不等同于运行中接口组已注册；配置规则引用也不等同于 loaded filter rule 已使用新成员。没有新增 SSH、插件、任意 raw endpoint 或设备权限前，接口组注册和 reload 的必要确认能力保持 blocked。
+当前只读路径包括 [`InterfaceController::getInterfaceConfigAction`](https://github.com/opnsense/core/blob/26.7.3/src/opnsense/mvc/app/controllers/OPNsense/Diagnostics/Api/InterfaceController.php) 的 `GET /api/diagnostics/interface/get_interface_config`（kernel/interface config）以及 [`OverviewController::interfacesInfoAction`](https://github.com/opnsense/core/blob/26.7.3/src/opnsense/mvc/app/controllers/OPNsense/Interfaces/Api/OverviewController.php) 的 `GET /api/interfaces/overview/interfaces_info`（`config.identifier` 到 device/interface 映射）。这些路径能补充当前态事实，但没有 group completion 或 filter consumer 完成关联。保存的 `ifgroupentry` 成员不等同于运行中接口组已注册；配置规则引用也不等同于 loaded filter rule 已使用新成员。接口组默认结果继续记录保存/回读/原生激活；inspect 仅报告当前成员和规则接口可读观察，不把它们表述为 registration 或 filter reload 完成证明，warning/result 不可关闭。
 
 ## 对实施的准入结论
 
-1. Filter/NAT/VIP 的既有同步激活可以继续使用其原生同步返回作为 provider action evidence；这不提升 Alias、Gateway 或 Group 的 `ok` 响应。
-2. 静态 host/network Alias 在同次 reconfigure 的 refresh 无 messages、配置期望成员与 `list/<name>` 精确匹配时，可以记录为“当前 PF table 已确认”；不能把它扩展成 filter reload/template/cron 全链路完成。动态 Alias、Gateway、Group 仍按各自缺失的完成事实记录为 `accepted`/`unconfirmed`，首写前若其动作是必要前置且没有其他已核定完成证据，必须零写入并返回 actionable blocked。
-3. 静态 host/network Alias 的精确 PF table 匹配可以与同次无 messages 结果共同确认当前目标状态；它仍不能追认未观测的 reload/template/cron 分支或历史动作。Gateway 的部分 status/路由快照、Group 的保存配置仍属于独立当前状态观察，不能替代动作完成证据。
-4. 版本读取必须是只读且精确检查 `product.product_version == 26.7.3`；缺失、权限拒绝、响应不完整或不同版本均为 unknown/blocked。没有设备访问，本说明只确认源码存在该事实通道，不声称现场已通过版本闸门。
-5. 补足上述硬缺口需要新的受审查只读适配、权限或 OPNsense 端能力，超出本 task 的源码核定范围；在获得独立授权前不引入 SSH、插件、补丁、任意 endpoint 或新权限。
+1. Filter/NAT/VIP 的既有同步激活可以继续使用其原生同步返回作为 provider action evidence；Alias、Gateway 和 Group 同样以保存、回读和原生激活组成默认完成基础。
+2. 静态 host/network Alias 在同次 reconfigure 的 refresh 无 messages、配置期望成员与 `list/<name>` 精确匹配时，可以记录为“当前 PF table 已确认”；不能把它扩展成 filter reload/template/cron 全链路完成。动态 Alias、Gateway、Group 的未观测深度事实固定记录为 warning/result，不转成默认首写阻断。
+3. 静态 host/network Alias 的精确 PF table 匹配可以确认当前目标状态；它仍不能追认未观测的 reload/template/cron 分支或历史动作。Gateway 的部分 status/路由快照、Group 的保存配置属于可选深度观察，默认结果继续保留 warning/result。
+4. 版本读取是只读事实观察，源码基线精确绑定 `product.product_version == 26.7.3`；缺失、权限拒绝、响应不完整或不同版本记录 warning/result，不声称现场已通过版本观察。
+5. 独立 inspect 仅使用已核定只读端点；SSH、插件、补丁、任意 endpoint 或新权限仍需独立授权，不因 warning/result 自动引入。

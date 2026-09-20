@@ -103,7 +103,8 @@ def test_activation_is_explicit_and_groups_request_acceptance_is_not_confirmatio
     assert provider.activation_calls == ["interface-groups"]
 
 
-def test_fixed_controller_ok_stays_unconfirmed_without_active_evidence() -> None:
+def test_provider_response_without_adapter_status_stays_unconfirmed() -> None:
+    """A nested provider response is not the writer adapter's status field."""
     result = Writer(FakeProvider()).activate("dnat")
 
     assert result["status"] == "unconfirmed"
@@ -328,8 +329,8 @@ def test_stage_playbook_keeps_save_and_activation_as_separate_tasks() -> None:
                 assert value.get("reload", False) is False
     assert not any("reload" in task for task in _walk(activate_source))
     activation_text = ACTIVATE_TASKS.read_text()
-    assert "'confirmed' if opnsense_workflow_resource in" in activation_text
-    assert "else 'unconfirmed'" in activation_text
+    assert "status: confirmed" in activation_text
+    assert "native success trusted; internal steps and active state not independently confirmed" in activation_text
     assert "| string | lower) != 'ok'" in activation_text
     raw_calls = [task["oxlorg.opnsense.raw"] for task in _walk(activate_source)
                  if "oxlorg.opnsense.raw" in task]

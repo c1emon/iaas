@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from pathlib import Path
+import sys
 from typing import Any
 
 from iaas_automation.common.errors import ValidationError, require
@@ -63,18 +64,12 @@ def verify(candidate: dict, reader: Any, *, identities: set[str] | None = None) 
             elif matches[0].get('configuration') is not None:
                 config = ('verified' if semantic(item['resource'], matches[0]['configuration']) ==
                           semantic(item['resource'], item['desired']) else 'failed')
-        active = (reader.active_check(item['resource'], item['identity'], item['desired'])
-                  if hasattr(reader, 'active_check') else {'status': 'unsupported', 'coverage': 'saved configuration only'})
+        active = {'status': 'not_attempted', 'reason': 'use_optional_inspect_tool'}
         results.append({'resource': item['resource'], 'identity': item['identity'],
                         'configuration': config, 'active': active})
-    failed = any(item['configuration'] != 'verified'
-                 or item['active']['status'] not in {'verified', 'unsupported', 'not_applicable'}
-                 or (item['active']['status'] == 'unsupported' and item['active'].get('required', False))
-                 or (item['active']['status'] == 'not_applicable' and not item['active'].get('reason'))
-                 for item in results)
-    unverified = any(item['active']['status'] == 'unsupported' for item in results)
-    return {'status': 'failed' if failed else 'completed_with_unverified' if unverified else 'fully_verified', 'objects': results,
-            'scope': 'current_state',
+    failed = any(item['configuration'] != 'verified' for item in results)
+    return {'status': 'failed' if failed else 'fully_verified', 'objects': results,
+            'scope': 'saved_configuration',
             'historical_actions': {'activation': 'not_provided', 'content_update': 'not_provided'},
             'business_acceptance': 'not_performed'}
 
@@ -126,7 +121,7 @@ def apply(candidate: dict, digest: str, reader: Any, writer: Any, execution_id: 
               'target': candidate['target'], 'runtime': candidate['runtime'], 'candidate_sha256': digest,
               'execution_id': execution_id, 'selected': [{'resource': item['resource'], 'identity': item['identity']}
                                                        for item in candidate['selected']],
-              'status': 'running', 'stages': [], 'business_acceptance': 'not_performed',
+              'status': 'running', 'stages': [], 'warnings': [], 'business_acceptance': 'not_performed',
               'recovery_file': str(output / 'recovery.json')}
     save(output / 'result.json', result)
     recovery = None
@@ -186,22 +181,23 @@ def apply(candidate: dict, digest: str, reader: Any, writer: Any, execution_id: 
             checked_live(candidate, reader, stage_state)
             activation_admission(reader, candidate, digest, execution_id, conclusion)
             outcome['activation'] = 'unknown'
+            from .confirmation import native_content_results, response_warnings
+            outcome['warnings'] = response_warnings(stage['resource'])
+            result['warnings'].extend(outcome['warnings'])
+            for warning in outcome['warnings']:
+                print(f"WARNING {warning['code']} [{warning['resource']}]: {warning['message']}",
+                      file=sys.stderr, flush=True)
+            save(output / 'result.json', result)
             activation = writer.activate(stage['resource'])
-            from .confirmation import action_results, complete_action
-
-            def boundary():
-                checked_live(candidate, reader, stage_state)
-                activation_admission(reader, candidate, digest, execution_id, conclusion)
-
-            activation = complete_action(stage, activation, reader, boundary)
             outcome['activation'] = activation['status']
             outcome['activation_detail'] = activation
-            outcome['content_update'] = action_results(stage, activation)
+            outcome['activation_basis'] = 'native_response'
+            outcome['content_update'] = native_content_results(stage, activation)
             checks = verify(candidate, reader, identities=markers)
             outcome['active'] = checks['objects']
             require(outcome['activation'] == 'confirmed', 'activation failed or unconfirmed; dependent stages stopped')
-            require(all(row['status'] == 'confirmed' for row in outcome['content_update']),
-                    'content processing failed or unknown; manual handling or reviewed recovery required')
+            require(all(row['status'] == 'provider_managed' for row in outcome['content_update']),
+                    'native content processing reported failure; dependent stages stopped')
             require(checks['status'] != 'failed', 'post-activation verification failed')
             # Refresh only our selected post-state; unrelated drift is still compared at the next boundary.
             _, observed = checked_live(candidate, reader, stage_state)
@@ -297,7 +293,8 @@ def reverse_documents(recovery: dict, req: dict, observations: dict, target: dic
     staged = set()
     for stage in recovery['stages']:
         shape(stage, {'resource', 'mode', 'identities', 'attempted', 'save', 'activation',
-                      'configuration', 'active'}, {'activation_detail', 'confirmation', 'content_actions', 'content_update'})
+                      'configuration', 'active'}, {'activation_detail', 'activation_basis', 'warnings',
+                                                  'confirmation', 'content_actions', 'content_update'})
         require(stage['mode'] in {'save', 'activation_recovery'}
                 and type(stage['attempted']) is bool and stage['attempted'],
                 'malformed recovery stage')

@@ -56,7 +56,8 @@
     "filter-rules",
     "gateways",
     "interface-groups",
-    "one-to-one-nat"
+    "one-to-one-nat",
+    "vips"
   ],
   "differences": [
     {
@@ -200,28 +201,28 @@
   ],
   "source": {
     "inputs": [],
-    "note": "synthetic adapter; not appliance support evidence"
+    "note": "synthetic adapter; not appliance execution evidence"
   },
   "stages": [
     {
       "confirmation": {
-        "basis": "synthetic action completion",
+        "basis": "fixed Collection native response; configuration readback",
         "capability": "available",
         "content_actions": [],
         "gaps": [],
         "required_evidence": [
-          "activation_completion"
+          "native_response",
+          "configuration_readback"
         ],
-        "rule": "opnsense-native-aliases-v2",
-        "supplementary_checks": [
-          "current_active_state"
-        ],
-        "wait": {
-          "deadline_seconds": 60,
-          "interval_seconds": 2,
-          "max_attempts": 30,
-          "request_timeout_seconds": 15
-        }
+        "rule": "opnsense-provider-response-aliases-v2",
+        "supplementary_checks": [],
+        "warnings": [
+          {
+            "code": "IAAS-OPNSENSE-RESULT-LIMITATION",
+            "message": "Native success is trusted; upstream does not return all internal step results. Internal completion and active state are not independently confirmed.",
+            "resource": "aliases"
+          }
+        ]
       },
       "content_actions": [],
       "identities": [
@@ -234,23 +235,17 @@
     },
     {
       "confirmation": {
-        "basis": "synthetic action completion",
+        "basis": "fixed Collection native response; configuration readback",
         "capability": "available",
         "content_actions": [],
         "gaps": [],
         "required_evidence": [
-          "activation_completion"
+          "native_response",
+          "configuration_readback"
         ],
-        "rule": "opnsense-native-dnat-v2",
-        "supplementary_checks": [
-          "current_active_state"
-        ],
-        "wait": {
-          "deadline_seconds": 60,
-          "interval_seconds": 2,
-          "max_attempts": 30,
-          "request_timeout_seconds": 15
-        }
+        "rule": "opnsense-provider-response-dnat-v2",
+        "supplementary_checks": [],
+        "warnings": []
       },
       "content_actions": [],
       "identities": [

@@ -21,27 +21,37 @@ PYTHONPATH=automation/src uv run python -m iaas_automation.runtime_execution \
 
 迁移时保留 request v1 和 launcher `interface_version` v1；新运行时生成的
 `candidate`、`result` 和 `recovery` 是 workflow schema v2。旧材料不会由 apply/verify
-静默升级，必须重新 plan。实际消费前先通过只读版本闸门确认 OPNsense 26.7.3；版本
-无法确认或不匹配时，待执行阶段在首写前阻塞。即使版本匹配，Alias、Gateway 和
-Firewall Group 仍缺少必要完成证据。静态 Alias 的活动成员匹配只说明当前状态，
-不能提升 activation；`verify` 只
-检查当前状态，也不追认历史动作。动态内容只按设备原生处理/加载语义执行；没有
-来源、有效期和所有权证据的缓存不得复用。
+静默升级，必须重新 plan。同为 v2 的旧严格确认候选也需重新 plan。默认以配置回读
+匹配与原生激活成功作为通过条件，不探测精确固件版本，不要求 PF/内核运行态证明。
+Alias、Gateway 和接口组每次实际激活都会向 stderr 与 result 写入不可关闭的
+`IAAS-OPNSENSE-RESULT-LIMITATION` 提醒；明确失败仍会停止后续阶段。
+动态 Alias 的缓存、刷新和加载交给设备原生机制，结果不声称独立验证了内部步骤。
+独立 `verify` 仅核对已保存配置，不追认历史动作。
 
 
 本目录还提供实际合同生成的合成材料：
 
 - [candidate.json](candidate.json)：固定声明、选择、目标、虚构 runtime digest、现场空集合与阶段。
-- [blocked-candidate.json](blocked-candidate.json)：按当前源码能力边界生成的阻塞示例，Alias 缺少动作完成证据，整批零写入。
-- [result.json](result.json)：测试替身确认保存/激活，活动态不支持，结果为 `completed_with_unverified`。
+- [result.json](result.json)：测试替身返回原生成功、配置回读一致，结果为 `fully_verified`，验证范围为 `saved_configuration`，包含 Alias 提醒。
 - [recovery.json](recovery.json)：写前不存在标记和测试替身的可确认后态。
 - [recovery-request.yml](recovery-request.yml) 与 [reverse-candidate.json](reverse-candidate.json)：
   从上述 recovery 生成新的删除候选；没有执行回滚。
 
-成功示例使用能返回动作完成证据的合成适配器，超出了当前真实 Alias API 的能力，
-用于演示编排和恢复合同；真实支持边界见 blocked 示例。
+成功示例使用合成适配器演示编排和恢复合同，不证明上游内部步骤或实际运行态。
 这些 JSON 来自离线测试替身，不可当作设备执行证据或直接用于真实 apply。
 真实恢复需在环境的 `files` 指定 inventory、request、recovery，移除 desired inputs；
 运行 plan 得到新候选后重新审查，再以新的执行身份及激活检查结论 apply。
 未知后态、后续漂移或 `manual_required` 会拒绝自动恢复。示例里的肯定检查结论
 只是软件输入；真实调用方必须先完成共享激活检查并保持串行化。
+
+需要进一步诊断时，使用真实 inventory、候选和环境变量凭据运行只读检查：
+
+```sh
+PYTHONPATH=automation/src uv run python -m iaas_automation.opnsense_workflow.inspect \
+  --inventory /path/to/inventory.yml --candidate /path/to/candidate.json \
+  --output /path/to/new-inspection.json
+```
+
+该工具复用已有 PF、成员和路由检查；精确版本限制仅影响相应诊断能力。
+报告是当前运行态观察，不是历史动作或业务验收证明。退出码 `0` 表示匹配或不适用，
+`1` 表示不匹配，`2` 表示未知、不支持或检查不完整；不改变默认 apply 的结果。

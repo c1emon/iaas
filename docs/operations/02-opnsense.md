@@ -56,7 +56,7 @@ rules、默认防火墙策略和关键公网入口不在本仓库管理范围。
 
 URL 由调用方选择，不允许用户名密码、fragment 或嵌入凭据；普通查询参数也必须是非秘密配置。
 还须符合固定 Collection 的 URL 语法；IPv6 字面地址、单标签主机名等不受该版本支持的形式会在离线阶段拒绝。
-运行时不下载或改写列表，配置保存和激活成功不代表列表已加载。OPNsense 负责定期刷新。
+运行时不下载或改写列表；动态 Alias 遵循 OPNsense 原生内容与缓存刷新语义，不由执行机自行解析或增加强制刷新。
 
 组引用会先在本地校验，再只读解析外部定义。按依赖顺序创建成员和组，先释放旧引用、后按设备现有依赖反序删除。
 未声明的对象不被接管。删除仍受设备的最终引用保护；失败可能留下已保存的部分配置，不会自动回滚或激活。
@@ -300,10 +300,11 @@ workflow schema v2；`request` 继续使用 v1，launcher 的 `interface_version
 仅用于显式选择且后态已核清的配置逆向计划，不继承旧激活结论。request 和 launcher
 不因材料版本升级而自动迁移。
 
-本工作流将 OPNsense 26.7.3 作为确认能力的只读版本闸门。调用方必须先用固定只读
-版本观察确认目标版本；版本缺失、读取失败或不是 26.7.3 时，所有待执行阶段均在
-首写前停止。即使版本匹配，Alias、Gateway 和 Firewall Group 仍因动作完成证据缺口
-保持 blocked。普通 no-change 不创建动作要求。能力结论以
+本工作流以 OPNsense 26.7.3 源码作为能力说明基线。默认不探测精确固件版本；可选 inspect
+中的相应检查仍有版本限制，版本缺失、不可读或不匹配时在该诊断中报告未知或不支持，
+不影响默认准入。默认完成基础是配置保存、配置回读和原生激活成功；Alias、Gateway 和
+Firewall Group 的深度证据缺口固定输出不可关闭 stderr 警告并写入 result，继续默认流程。
+普通 no-change 不创建动作要求。能力结论以
 [只读能力核对](../../openspec/changes/extend-opnsense-activation-confirmation/capability-notes.md)
 为准；其中固定 Collection 的源码事实不能跨版本推断为现场支持资格。
 
@@ -336,18 +337,17 @@ apply 的 `check_mode: true` 只执行准入及材料准备，不保存或激活
 
 确认范围按当前能力边界处理：
 
-本次 Alias、Gateway 和 Firewall Group 的必要确认资源任务尚未全部完成；即使配置
-读取成功，缺少对应能力合同或必要现场事实仍会在首写前 blocked。以下规则用于说明
-当前状态与迁移边界，不能作为资源任务已完成或设备已验收的声明。
+默认流程只确认保存、配置回读和原生激活；PF、接口组和 runtime 深度事实由独立
+inspect 可选提取。以下规则用于说明默认结果、固定警告与深度报告边界，不能作为设备验收声明。
 
 | 资源或事实 | 当前规则 |
 | --- | --- |
-| Alias 当前活动成员 | 静态 host/network/networkgroup 只有在完整 PF 表、IPv4/IPv6 地址语义和必要依赖均可读时才比较；当前成员匹配只是 current-state 观察，不提升本次 activation。 |
-| port Alias | 从固定 API 消费者配置和 PF 规则原文按原生 UUID 关联，比较协议、源/目标端口及范围。无法解析或读取不完整不算成功；不创建验证规则。此检查不证明本次 reload 完成。 |
-| Gateway / Firewall Group | 当前观察按用途核对路由、监控配置、内核组成员及相关已加载规则；保存的配置与运行观察分别呈现。不要求默认路由或 ping，不创建消费者。原生 reconfigure 丢弃必要子动作返回值，受影响写入仍在首写前 blocked。 |
-| `verify` | 只汇总本次读取到的当前状态；没有历史 activation/content-update 完成证据时不追认、不改写原 apply 结果。 |
-| 动态 Alias | 只使用设备原生内容处理和加载语义；执行机不自行解析来源，也不新增强制刷新路径。 |
-| 缓存 | 没有来源、有效期和所有权等足够证据时禁止复用缓存，返回明确能力缺口；activation_recovery 无法补足证据时给出 manual_required 和另行授权的配置逆向恢复指引。 |
+| Alias 当前活动成员 | 默认不调用深度成员核对；需要时由 inspect 比较完整 PF 表、IPv4/IPv6 地址语义和必要依赖。成员匹配不提升本次 activation。 |
+| port Alias | inspect 从固定 API 消费者配置和 PF 规则原文按原生 UUID 关联，比较协议、源/目标端口及范围；不创建验证规则，也不证明本次 reload 完成。 |
+| Gateway / Firewall Group | 默认只确认保存、回读和原生激活；inspect 按用途核对路由、监控配置、内核组成员及已加载规则。不要求默认路由或 ping，不创建消费者。深度缺口以固定警告和 result 保留。 |
+| `verify` | 默认返回 `fully_verified`，scope 为 `saved_configuration`，`active` 为 `not_attempted`；不追认历史激活、不声称运行态或业务验收。 |
+| 动态 Alias | 只使用设备原生内容处理和缓存刷新语义；执行机不自行解析来源，也不新增强制刷新路径。 |
+| 缓存 | 不要求来源、有效期和所有权等专用证据；设备原生缓存语义不由工作流替换。 |
 
 
 ```yaml
@@ -381,13 +381,23 @@ desired inputs。apply 的 options 必须包含 `candidate_sha256`、`execution_
 回显。调用方负责生成新的执行身份并维持整个保存/激活窗口的串行化；这些字段
 不是分布式锁或跨主机防重放注册表。软件合同校验不等于设备写入或数据面验收。
 
-结果中的 save、activation、configuration、content_update 和 active 分别记录不同事实。
-禁用或 absent Alias 的旧 PF 表不能证明激活成功，活动核对保留 unsupported。
-任何通用 active 观察都不能把 `accepted`/`unconfirmed` 提升为 activation 成功；
-Groups、Gateway、动态 Alias 的原生 `ok` 缺乏充分完成证据时会停止依赖阶段。
-Filter/NAT/VIP 可依据同步 configd 成功确认激活；其他活动核对仍按实际支持记录。
-`completed_with_unverified` 表示仍有活动项未验证，所有结果的业务验收保持
-`not_performed`。
+结果中的 save、activation、configuration 和 active 分别记录不同事实；默认成功基础是
+保存、配置回读和原生激活成功。Alias、Gateway、Group 原生返回无法证明的内部子动作
+固定输出不可关闭 stderr 警告并写入 result，但不停止默认依赖阶段。
+默认 `verify` 的 scope 为 `saved_configuration`，active 为 `not_attempted`，不证明运行态
+或业务验收。需要 PF、route-to、接口组或 runtime 深度事实时，显式运行 inspect；inspect
+结果独立记录，不改写原 apply。所有结果的业务验收保持 `not_performed`。
+
+可选深度核查命令：
+
+```sh
+PYTHONPATH=automation/src uv run python -m iaas_automation.opnsense_workflow.inspect \
+  --inventory INVENTORY --candidate CANDIDATE --output OUTPUT
+```
+
+该命令只读候选选中对象并生成新的私有 JSON 报告；不保存、不激活、不刷新内容，
+也不证明内部子动作完成或业务连通性。`--inventory`、`--candidate` 和 `--output`
+必须分别指向匹配的 inventory、已审查候选和新输出路径。
 
 显式恢复按以下步骤执行：
 

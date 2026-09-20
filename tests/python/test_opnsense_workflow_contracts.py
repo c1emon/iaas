@@ -29,6 +29,15 @@ def _saved_recovery(tmp_path):
     return json.loads((tmp_path / "recovery.json").read_text())
 
 
+@pytest.mark.parametrize('confirmation', [None, {'rule': 'opnsense-native-aliases-v2'}])
+def test_candidate_rejects_malformed_or_previous_confirmation_policy(tmp_path, confirmation):
+    value, path, _ = _saved_candidate(tmp_path)
+    value['stages'][0]['confirmation'] = confirmation
+    reviewed = save(path, value)
+    with pytest.raises(ValidationError, match='malformed candidate confirmation|re-plan'):
+        load_candidate(path, reviewed)
+
+
 def test_candidate_rejects_management_scope_outside_selected_execution(tmp_path):
     value, path, _ = _saved_candidate(tmp_path)
     value["request"]["managed"] = {"aliases": [["UNSELECTED"]]}

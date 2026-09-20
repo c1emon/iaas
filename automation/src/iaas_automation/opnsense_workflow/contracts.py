@@ -228,17 +228,18 @@ def load_candidate(path: Path, reviewed: str | None = None) -> tuple[dict, str]:
     staged = set()
     for stage in stages:
         shape(stage, {'resource', 'mode', 'identities', 'confirmation', 'content_actions'})
-        from .confirmation import content_actions, validate_wait
+        from .confirmation import content_actions, response_warnings
         confirmation = stage['confirmation']
+        require(isinstance(confirmation, dict), 'malformed candidate confirmation')
+        require(confirmation.get('rule') == 'opnsense-provider-response-' + stage['resource'] + '-v2',
+                'candidate confirmation policy changed; re-plan with the current runtime')
         shape(confirmation, {'rule', 'required_evidence', 'supplementary_checks', 'capability',
-                             'basis', 'gaps', 'wait', 'content_actions'})
+                             'basis', 'gaps', 'warnings', 'content_actions'})
         expected_actions = content_actions(stage, differences)
         require(stage['content_actions'] == confirmation['content_actions'] == expected_actions
-                and validate_wait(confirmation['wait']) == confirmation['wait']
-                and confirmation['rule'] == 'opnsense-native-' + stage['resource'] + '-v2'
-                and confirmation['required_evidence'] == ['activation_completion'] + (
-                    ['source_processing', 'content_loading'] if expected_actions else [])
-                and confirmation['supplementary_checks'] == ['current_active_state']
+                and confirmation['required_evidence'] == ['native_response', 'configuration_readback']
+                and confirmation['supplementary_checks'] == []
+                and confirmation['warnings'] == response_warnings(stage['resource'])
                 and confirmation['capability'] in {'available', 'unsupported', 'unknown'}
                 and isinstance(confirmation['gaps'], list)
                 and (confirmation['capability'] == 'available') == (not confirmation['gaps']),

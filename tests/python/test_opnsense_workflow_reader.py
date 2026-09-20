@@ -101,6 +101,17 @@ def test_all_seven_collection_targets_are_read_only_and_normalized():
     assert not transport.mutated
 
 
+def test_read_does_not_probe_optional_confirmation_capabilities():
+    class ProbeFail(FakeCollection):
+        def confirmation_capabilities(self):
+            raise AssertionError('optional firmware probe must not run during read')
+
+    transport = ProbeFail()
+    observation = reader(transport).read(['aliases'])['aliases']
+    assert observation['status'] == 'complete'
+    assert observation['objects'][0]['identity'] == ['NETS']
+
+
 def test_page_shapes_are_bounded_and_complete():
     class Paged(FakeCollection):
         def list(self, target, **kwargs):

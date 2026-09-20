@@ -23,8 +23,8 @@ def test_target_requires_single_host_and_binds_tls():
 
 
 @pytest.mark.parametrize('layout', ['flat', 'nested'])
-@pytest.mark.parametrize('blocked', [False, True])
-def test_formal_read_plan_apply_verify_and_fixed_source(tmp_path, monkeypatch, layout, blocked):
+@pytest.mark.parametrize('missing_evidence', [False, True])
+def test_formal_read_plan_apply_verify_and_fixed_source(tmp_path, monkeypatch, layout, missing_evidence):
     import iaas_automation.opnsense_workflow.reader as reader_module
     import iaas_automation.opnsense_workflow.writer as writer_module
     device = Appliance(aliases=[alias('UNMANAGED')])
@@ -32,8 +32,8 @@ def test_formal_read_plan_apply_verify_and_fixed_source(tmp_path, monkeypatch, l
 
     def read(resources):
         observations = original_read(resources)
-        if blocked and 'aliases' in observations:
-            observations['aliases']['confirmation_capability']['activation_completion'] = 'unsupported'
+        if missing_evidence and 'aliases' in observations:
+            observations['aliases'].pop('confirmation_capability', None)
         return observations
 
     device.read = read
@@ -69,14 +69,12 @@ def test_formal_read_plan_apply_verify_and_fixed_source(tmp_path, monkeypatch, l
 
     assert invoke('read') == 0
     assert not device.calls
-    assert invoke('plan') == (2 if blocked else 0)
+    assert invoke('plan') == 0
     candidate = tmp_path / 'plan/plan/candidate.json'
     summary = json.loads((tmp_path / 'plan/plan/result.json').read_text())
-    if blocked:
-        assert summary['status'] == 'blocked'
-        assert json.loads(candidate.read_text())['admission']['status'] == 'blocked'
-        assert not device.calls
-        return
+    assert summary['status'] == 'planned'
+    assert json.loads(candidate.read_text())['admission']['status'] == 'ready'
+    assert not device.calls
     component['files']['candidate'] = str(candidate)
     # Apply and verify must never reopen changed/missing desired inputs.
     inputs.unlink()
@@ -89,4 +87,34 @@ def test_formal_read_plan_apply_verify_and_fixed_source(tmp_path, monkeypatch, l
     assert invoke('verify') == 0
     for path in (candidate, tmp_path / 'execution-1/recovery/recovery.json'):
         assert path.stat().st_mode & 0o777 == 0o600
-    assert json.loads((tmp_path / 'verify/diagnostics/result.json').read_text())['status'] == 'completed_with_unverified'
+    verification = json.loads((tmp_path / 'verify/diagnostics/result.json').read_text())
+    assert verification['status'] == 'fully_verified'
+    assert verification['scope'] == 'saved_configuration'
+
+
+@pytest.mark.parametrize('error,expected', [
+    (TimeoutError('runner timeout'), 'unknown'),
+    (RuntimeError('runner failed'), 'failed'),
+])
+def test_provider_runner_error_overrides_confirmed_facts(tmp_path, error, expected):
+    from iaas_automation.opnsense_workflow.writer import _AnsibleProvider
+
+    class Outputs:
+        def path(self, category):
+            directory = tmp_path / category
+            directory.mkdir(exist_ok=True)
+            return directory
+
+    class Execution:
+        outputs = Outputs()
+
+        def run(self, phase, command, cwd):
+            variables = Path(command[command.index('-e') + 1][1:]).read_text()
+            result_path = json.loads(variables)['opnsense_workflow_result_path']
+            Path(result_path).write_text(json.dumps({'status': 'confirmed', 'changed': True}))
+            raise error
+
+    provider = _AnsibleProvider(Execution(), {'host': 'fw', 'endpoint': 'https://fw.example', 'ssl_verify': True})
+    result = provider.activate('aliases')
+    assert result['status'] == expected
+    assert result['result']['status'] == 'confirmed'

@@ -139,7 +139,7 @@ def test_existing_identity_needs_adoption():
 def test_native_interface_address_token_requires_observed_interface(tmp_path):
     device = Appliance()
     cand = candidate(device, documents(filter_rules=[rule('wanip')]))
-    assert execute(tmp_path, device, cand)['status'] == 'completed_with_unverified'
+    assert execute(tmp_path, device, cand)['status'] == 'fully_verified'
     with pytest.raises(ValidationError, match='missing dependency'):
         candidate(Appliance(), documents(filter_rules=[rule('missingip')]))
 
@@ -157,7 +157,7 @@ def test_seven_resource_semantic_updates_preserve_other_objects(tmp_path, resour
         changed['description'] = 'reviewed update'
     cand = candidate(device, {resource: {TOP_LEVEL[resource]: [changed]}})
     assert cand['differences'][0]['action'] == 'update'
-    assert execute(tmp_path, device, cand)['status'] == 'completed_with_unverified'
+    assert execute(tmp_path, device, cand)['status'] == 'fully_verified'
     assert all(device.resources[name] == rows for name, rows in actual.items() if name != resource)
 
 
@@ -169,7 +169,7 @@ def test_create_switch_retire_and_reverse_reference_rejection(tmp_path):
     cand = candidate(device, docs)
     assert [stage['resource'] for stage in cand['stages']] == ['aliases', 'filter-rules', 'aliases']
     result = execute(tmp_path, device, cand)
-    assert result['status'] == 'completed_with_unverified'
+    assert result['status'] == 'fully_verified'
     assert [row['name'] for row in device.resources['aliases']] == ['B']
     assert device.resources['filter-rules'][0]['destination_net'] == ['B']
 
@@ -225,7 +225,7 @@ def test_partial_save_and_unavailable_readback(tmp_path):
 def test_absent_verify_and_ordinary_noop(tmp_path):
     device = Appliance(aliases=[alias()])
     cand = candidate(device, documents(aliases=[alias()]))
-    assert execute(tmp_path, device, cand)['status'] == 'completed_with_unverified'
+    assert execute(tmp_path, device, cand)['status'] == 'fully_verified'
     assert not device.calls
     deleted = candidate(device, documents(aliases=[alias(state='absent')]))
     assert verify(deleted, device)['status'] == 'failed'
@@ -236,14 +236,14 @@ def test_absent_verify_and_ordinary_noop(tmp_path):
 def test_explicit_activation_recovery(tmp_path):
     device = Appliance(aliases=[alias()])
     cand = candidate(device, documents(aliases=[alias()]), activation_recovery={'aliases': [['A']]})
-    assert execute(tmp_path, device, cand)['status'] == 'completed_with_unverified'
+    assert execute(tmp_path, device, cand)['status'] == 'fully_verified'
     assert device.calls == [('activate', 'aliases')]
 
 
 def test_recovery_actual_before_state_and_created_inverse(tmp_path):
     device = Appliance(aliases=[alias('A', ['198.51.100.0/24'])])
     cand = candidate(device, documents(aliases=[alias(), alias('B')]))
-    assert execute(tmp_path, device, cand)['status'] == 'completed_with_unverified'
+    assert execute(tmp_path, device, cand)['status'] == 'fully_verified'
     recovery = json.loads((tmp_path / 'recovery.json').read_text())
     req = {'schema_version': 1, 'selection': {'aliases': 'all'}}
     reverse = reverse_documents(recovery, req, device.read(['aliases']), TARGET)
@@ -303,7 +303,7 @@ def test_rule_reference_removal_keeps_original_dependency_in_drift_scope(tmp_pat
     desired = rule('A', state='absent') if remove else rule('B')
     cand = candidate(device, documents(filter_rules=[desired]))
     result = execute(tmp_path, device, cand)
-    assert result['status'] == 'completed_with_unverified'
+    assert result['status'] == 'fully_verified'
     assert device.calls == [('save', 'filter-rules'), ('activate', 'filter-rules')]
     assert device.resources['aliases'] == [alias('A'), alias('B')]
 
@@ -352,7 +352,7 @@ def test_recovery_unknown_and_manual_required_refused(tmp_path):
     for field, value in [('after_status', 'unknown'), ('recovery', 'manual_required')]:
         recovery = deepcopy(original)
         recovery['entries'][0][field] = value
-        with pytest.raises(ValidationError, match='reconciled|manual'):
+        with pytest.raises(ValidationError, match='missing|unknown|reconciled|manual'):
             reverse_documents(recovery, req, device.read(['aliases']), TARGET)
 
 

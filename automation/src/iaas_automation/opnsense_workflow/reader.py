@@ -1493,19 +1493,7 @@ class Reader:
         for resource in resources:
             if resource not in SUPPORTED_RESOURCES:
                 raise ReaderError(f"unsupported OPNsense resource: {resource}")
-        observations = {resource: self._read_one(resource) for resource in resources}
-        if not observations:
-            return observations
-        probe = getattr(self.transport, "confirmation_capabilities", None)
-        try:
-            capabilities = probe() if callable(probe) else {}
-            if not isinstance(capabilities, dict):
-                capabilities = {}
-        except Exception:
-            capabilities = {}
-        for resource, observation in observations.items():
-            observation["confirmation_capability"] = capabilities.get(resource, {})
-        return observations
+        return {resource: self._read_one(resource) for resource in resources}
 
     def _read_one(self, resource: str) -> dict[str, Any]:
         target = COLLECTION_TARGETS[resource]

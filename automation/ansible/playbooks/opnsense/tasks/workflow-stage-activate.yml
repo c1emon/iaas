@@ -23,15 +23,13 @@
     - name: Record fixed activation completion evidence
       ansible.builtin.set_fact:
         opnsense_workflow_activation_result:
-          status: >-
-            {{ 'confirmed' if opnsense_workflow_resource in
-            ['vips', 'filter-rules', 'dnat', 'one-to-one-nat'] else 'unconfirmed' }}
+          status: confirmed
           target: "{{ opnsense_workflow_resource }}"
           response: "{{ opnsense_workflow_activation_call.response | default({}) }}"
           evidence: >-
             {{ 'synchronous configd completion response'
             if opnsense_workflow_resource in ['vips', 'filter-rules', 'dnat', 'one-to-one-nat']
-            else 'controller response only; active state was not independently checked' }}
+            else 'native success trusted; internal steps and active state not independently confirmed' }}
           active_check:
             status: not_attempted
   rescue:
