@@ -23,6 +23,7 @@ TOFU ?= tofu
 GITLEAKS ?= gitleaks
 RUNTIME_IMAGE ?= iaas-runtime:oci-release-test
 PYTHON ?= PYTHONPATH="$(AUTOMATION)/src" $(UV) run --directory "$(ROOT)" python
+PYTEST := PYTHONPATH="$(AUTOMATION)/src" $(UV) run --directory "$(ROOT)" pytest
 ANSIBLE_LINT_PATHS ?= $(AUTOMATION)/ansible/playbooks/pve $(AUTOMATION)/ansible/playbooks/opnsense $(AUTOMATION)/ansible/roles/vm_baseline
 PACKER_BUILD_SCRIPT ?= $(AUTOMATION)/packer/proxmox/debian-13/build-template.sh
 TEMPLATE_BUILD_ENV ?= $(GENERATED_DIR)/packer/debian-13.env
@@ -73,7 +74,7 @@ runtime-tofu-check:
 
 .PHONY: help require-environment require-pve-dir
 help:
-	@printf '%s\n' 'IaaS operations: pve-generate pve-check services-generate services-check foundation-generate foundation-check k3s-check k3s-render' 'Select ENVIRONMENT_DIR and OUTPUT_DIR for environment operations; PVE_DIR selects an external OpenTofu root.' 'Checkout validation: check test secret-scan'
+	@printf '%s\n' 'IaaS operations: pve-generate pve-check services-generate services-check foundation-generate foundation-check k3s-check k3s-render' 'Select ENVIRONMENT_DIR and OUTPUT_DIR for environment operations; PVE_DIR selects an external OpenTofu root.' 'Checkout validation: check test check-fast test-fast test-integration test-opnsense test-pve test-k3s secret-scan'
 	@printf '%s\n' 'Standalone k3s-preflight requires K3S_PREFLIGHT_MODE=install|converge|upgrade; deploy and upgrade select their own mode.'
 	@printf '%s\n' 'opnsense-diagnose: set OPNSENSE_TARGET and absolute OPNSENSE_DIAGNOSTICS_REQUEST; opted-in details also require OPNSENSE_DIAGNOSTICS_OUTPUT.'
 
@@ -105,14 +106,31 @@ require-k3s-output: require-output
 render-cloud-init upload-cloud-init verify-cloud-init pve-backup-state: require-output
 k3s-render: require-k3s-output
 
-.PHONY: generate check-generated test lint-yaml typecheck ansible-lint tofu-fmt tofu-validate opnsense-validate check secret-scan ansible-syntax pve-generate pve-check services-generate services-check foundation-generate foundation-check foundation-health pve-validate pve-fmt pve-preflight pve-health pve-packer-build pve-plan pve-apply pve-destroy pve-verify-guests pve-bootstrap-guests pve-bootstrap-guests-syntax pve-ansible-syntax pve-backup-state render-cloud-init upload-cloud-init verify-cloud-init require-k3s-inputs require-k3s-scoped-inputs require-k3s-online-inputs require-k3s-upgrade-inputs require-platform-handoff-inputs require-platform-handoff-render-inputs k3s-check k3s-render k3s-ansible-syntax k3s-ansible-lint k3s-preflight k3s-verify k3s-deploy k3s-snapshot k3s-upgrade platform-handoff-check platform-handoff-render
+.PHONY: generate check-generated test test-fast test-integration test-opnsense test-pve test-k3s check-fast lint-yaml typecheck ansible-lint tofu-fmt tofu-validate opnsense-validate check secret-scan ansible-syntax pve-generate pve-check services-generate services-check foundation-generate foundation-check foundation-health pve-validate pve-fmt pve-preflight pve-health pve-packer-build pve-plan pve-apply pve-destroy pve-verify-guests pve-bootstrap-guests pve-bootstrap-guests-syntax pve-ansible-syntax pve-backup-state render-cloud-init upload-cloud-init verify-cloud-init require-k3s-inputs require-k3s-scoped-inputs require-k3s-online-inputs require-k3s-upgrade-inputs require-platform-handoff-inputs require-platform-handoff-render-inputs k3s-check k3s-render k3s-ansible-syntax k3s-ansible-lint k3s-preflight k3s-verify k3s-deploy k3s-snapshot k3s-upgrade platform-handoff-check platform-handoff-render
 
 generate: pve-generate services-generate foundation-generate
 
 check-generated: pve-check services-check foundation-check
 
 test:
-	PYTHONPATH="$(AUTOMATION)/src" $(UV) run --directory "$(ROOT)" pytest
+	$(PYTEST)
+
+test-fast:
+	$(PYTEST) -m fast
+
+test-integration:
+	$(PYTEST) -m integration
+
+test-opnsense:
+	$(PYTEST) "$(ROOT)"/tests/python/test_opnsense_*.py
+
+test-pve:
+	$(PYTEST) "$(ROOT)"/tests/python/test_pve_*.py
+
+test-k3s:
+	$(PYTEST) "$(ROOT)"/tests/python/test_k3s_*.py
+
+check-fast: test-fast typecheck lint-imports lint-python
 
 lint-yaml:
 	$(UV) run --directory "$(ROOT)" yamllint "$(INVENTORY_DIR)" "$(ENVIRONMENT_DIR)/ansible"
@@ -132,7 +150,7 @@ tofu-validate: pve-validate
 opnsense-validate:
 	$(PYTHON) -m iaas_automation.opnsense_validation --vars-dir "$(ENVIRONMENT_DIR)/ansible/vars/opnsense"
 
-check: check-generated test lint-yaml typecheck ansible-lint tofu-fmt tofu-validate opnsense-validate
+check: check-generated test lint-yaml typecheck ansible-lint tofu-fmt tofu-validate opnsense-validate lint-imports lint-python
 
 secret-scan:
 	@command -v "$(GITLEAKS)" >/dev/null 2>&1 || { printf 'error: gitleaks is required for secret-scan (install gitleaks or set GITLEAKS=/path/to/gitleaks)\n' >&2; exit 127; }
@@ -296,3 +314,11 @@ platform-handoff-check: require-platform-handoff-inputs
 
 platform-handoff-render: require-platform-handoff-render-inputs k3s-verify
 	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(K3S_INVENTORY)" -l "$(K3S_ANSIBLE_LIMIT)" -e "platform_handoff_model_path=$(K3S_REVIEW)" -e "platform_handoff_k3s_intent=$(K3S_INTENT)" -e "platform_handoff_intent=$(PLATFORM_HANDOFF_INTENT)" -e "platform_handoff_scope=$(K3S_SCOPE)" -e "platform_handoff_output=$(PLATFORM_HANDOFF_OUTPUT)" "$(PLATFORM_HANDOFF_PLAYBOOK)"
+
+.PHONY: lint-imports
+lint-imports:
+	PYTHONPATH="$(AUTOMATION)/src" $(UV) run --directory "$(ROOT)" lint-imports
+
+.PHONY: lint-python
+lint-python:
+	$(UV) run --directory "$(ROOT)" ruff check

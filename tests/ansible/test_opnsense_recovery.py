@@ -8,6 +8,8 @@ import subprocess
 import pytest
 import yaml
 
+pytestmark = pytest.mark.integration
+
 
 ROOT = Path(__file__).resolve().parents[2]
 ANSIBLE = ROOT / "automation/ansible"

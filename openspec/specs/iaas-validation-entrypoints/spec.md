@@ -213,3 +213,66 @@ The system SHALL keep newly added P0 hygiene checks compatible with cloud CI and
 - **WHEN** an operator reads the local validation documentation
 - **THEN** it SHALL distinguish default offline checks from optional explicit hygiene checks
 - **AND** it SHALL identify which commands are safe anywhere and which commands require explicit online/runtime context
+
+### Requirement: Executable conversion invariants and dependency boundaries
+The offline gate SHALL check bounded normalization properties and the established dependency direction of common primitives, OPNsense conversion and pure declaration validation. These checks SHALL require no infrastructure access or runtime credentials and SHALL not replace existing deterministic regression cases.
+
+#### Scenario: Conversion property fails
+- **WHEN** normalization changes an already canonical record, mutates its input, mishandles equivalent aliases or exposes synthetic sensitive input
+- **THEN** the relevant property check fails with a reproducible counterexample
+- **AND** generated cases remain bounded to the declared input domain
+
+#### Scenario: Pure layer imports execution behavior
+- **WHEN** common imports a domain or online adapter, conversion imports a workflow executor or transport, or pure declaration validation imports an online workflow adapter
+- **THEN** the repository-owned dependency check fails in both local and CI validation
+- **AND** normal domain-to-common imports remain permitted
+
+### Requirement: Explicit fast and domain validation profiles
+The repository SHALL expose environment-independent fast checks and named domain test profiles alongside the full offline test and check commands. Fast checks SHALL use an explicit bounded set of pure offline tests, SHALL report subset coverage and SHALL fail for an empty selected set. They SHALL not require inventory selection, runtime credentials, image builds or external infrastructure tools.
+
+#### Scenario: Developer runs fast validation
+- **WHEN** a developer requests the fast profile without environment inventory, Docker, Ansible execution or device credentials
+- **THEN** the selected pure Python tests and configured static checks can execute
+- **AND** the report does not claim full repository or appliance acceptance
+
+#### Scenario: Domain profile is selected
+- **WHEN** a developer selects the OPNsense, PVE or K3s test profile
+- **THEN** the repository-owned command runs the documented offline domain set and propagates failure
+- **AND** it does not implicitly invoke a device operation
+
+### Requirement: Fast profiles preserve complete validation
+Adding profiles SHALL preserve collection of all existing tests by the full test command and preserve the aggregate offline gate used by CI. External-tool integration and image smoke checks SHALL remain explicit and SHALL not be mistaken for pure fast tests.
+
+#### Scenario: Test has no profile marker
+- **WHEN** an existing or new test has no fast or integration marker
+- **THEN** the full test command still collects it
+- **AND** the fast profile does not silently treat it as a verified fast test
+
+#### Scenario: Full CI validation runs
+- **WHEN** PR or main CI invokes the aggregate offline gate
+- **THEN** existing required validation remains present regardless of fast-profile results
+
+### Requirement: Validation performance claims are measured
+Performance reports SHALL identify the executed test set, runtime environment and measured timings. Parallel execution SHALL be opt-in for tested isolated offline groups and SHALL not enable concurrent device operations.
+
+#### Scenario: Faster feedback is reported
+- **WHEN** an implementation reports a speed improvement
+- **THEN** it provides comparable measurements and discloses omitted checks
+- **AND** absence of a measured parallelism benefit does not cause parallel execution to be enabled by default
+
+### Requirement: Scoped non-mutating Python quality checks
+Repository validation SHALL include Python lint and stricter type checks for an explicitly configured set of new boundary modules. The scope SHALL be consistent between local and CI execution and SHALL exclude vendored and generated code. Quality checks SHALL not modify files, contact infrastructure or require runtime credentials.
+
+#### Scenario: Selected module violates a quality rule
+- **WHEN** a configured source file contains an enabled lint violation or strict type error
+- **THEN** the repository-owned quality gate fails in both fast and full validation
+- **AND** no automatic fix or reformat is applied
+
+#### Scenario: Unrelated legacy module is checked
+- **WHEN** a legacy file outside the stricter scope is part of existing project validation
+- **THEN** its previous type-checking mode remains in force
+- **AND** the new gate does not trigger an unrelated repository-wide formatting migration
+
+#### Scenario: CI and local checks run the same commit
+- **WHEN** local and CI invoke the quality gate with the same locked tools and source tree
+- **THEN** both use the same configured rule and path sets regardless of Git comparison base

@@ -14,8 +14,8 @@ CONSUMERS = {'filter-rules', 'dnat', 'one-to-one-nat'}
 def semantic(resource: str, record: dict | None) -> dict | None:
     if record is None:
         return None
-    from .reader import normalize_desired
-    return normalize_desired(resource, record)
+    from .conversion import normalize_standard_record
+    return normalize_standard_record(resource, record)
 
 
 def coverage(selected: list[dict]) -> list[str]:

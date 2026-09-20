@@ -18,6 +18,8 @@ from iaas_automation.k3s_automation.operations import (
     validate_upgrade,
 )
 
+pytestmark = pytest.mark.fast
+
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "tests" / "fixtures" / "k3s"

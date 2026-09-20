@@ -7,6 +7,8 @@ from iaas_automation.common.errors import ValidationError
 from iaas_automation.opnsense_validation import validate_document
 from iaas_automation.opnsense_validation.aliases import plan_aliases
 
+pytestmark = pytest.mark.fast
+
 
 def alias(name, kind='host', content=None, state='present', **extra):
     return dict(name=name, type=kind, content=content or ['192.0.2.1'],

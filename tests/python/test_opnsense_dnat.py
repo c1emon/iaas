@@ -8,6 +8,8 @@ import pytest
 from iaas_automation.common.errors import ValidationError
 from iaas_automation.opnsense_validation.dnat import validate_dnat
 
+pytestmark = pytest.mark.fast
+
 
 def _present(**overrides: Any) -> dict[str, Any]:
     record: dict[str, Any] = {

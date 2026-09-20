@@ -13,21 +13,24 @@ from copy import deepcopy
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from decimal import Decimal
 import ipaddress
-import json
 import re
 import time
 from typing import Any, Callable, Iterator, Protocol
 from urllib.parse import urlsplit
 
 import requests
-from urllib3.util import Timeout
 
 from iaas_automation.opnsense_diagnostics.schema import ALIAS_NAME
 from iaas_automation.opnsense_validation import TOP_LEVEL, validate_document
 from iaas_automation.common.errors import ValidationError
+from iaas_automation.http_transport import ReadBudget, TransportFailure, read_json
 from .gateway_checks import check_gateway_current
+from iaas_automation.common.conversion import ConversionError, optional_bool as _coerce_bool
+from .conversion import convert_provider_row, normalize_standard_record
+from .conversion.resources import unexpressed_fields as _unexpressed_fields
+from .conversion.schema import STANDARD_FIELDS, LIST_FIELDS, DEFAULTS
+from .conversion.types import as_list as _as_list
 
 
 MAX_PAGE_ROWS = 1000
@@ -173,60 +176,28 @@ class FixedCollectionTransport:
             raise UnsupportedRead("fixed_collection_path_rejected")
         if "OPNSENSE_API_KEY" not in self._credential_names or "OPNSENSE_API_SECRET" not in self._credential_names:
             raise UnsupportedRead("OPNSENSE_API_credentials_missing")
-        budget = current_observation_budget()
-        if budget is not None and budget.remaining() <= 0:
-            raise _HttpFailure("failed", "observation_deadline_exhausted")
+        observation = current_observation_budget()
+        budget = ReadBudget(
+            used_bytes=self._used, max_response_bytes=MAX_RESPONSE_BYTES, max_total_bytes=MAX_TOTAL_BYTES,
+            deadline=None if observation is None else observation.deadline,
+            clock=time.monotonic if observation is None else observation.clock,
+            request_timeout_seconds=15 if observation is None else observation.request_timeout_seconds,
+        )
         try:
-            remaining = None if budget is None else min(budget.remaining(), budget.request_timeout_seconds)
-            if remaining is not None and remaining <= 0:
-                raise _HttpFailure("failed", "observation_deadline_exhausted")
-            request_timeout = (5, 15) if remaining is None else Timeout(
-                total=remaining, connect=min(5.0, remaining), read=min(15.0, remaining))
-            kwargs = {"verify": self.target["ssl_verify"], "timeout": request_timeout, "allow_redirects": False,
-                      "stream": True}
-            if method == "POST":
-                kwargs["json"] = payload or {}
-            response = self._session.request(method, self._base + path, **kwargs)
-        except requests.Timeout as error:
-            raise _HttpFailure("failed", "timeout") from error
-        except requests.RequestException as error:
-            raise _HttpFailure("failed", "transport_failure") from error
-        if budget is not None and budget.remaining() <= 0:
-            close = getattr(response, "close", None)
-            if callable(close):
-                close()
-            raise _HttpFailure("failed", "observation_deadline_exhausted")
-        if response.status_code in (404, 405, 501):
-            raise _HttpFailure("unsupported", "endpoint_unavailable")
-        if response.status_code == 401:
-            raise _HttpFailure("failed", "authentication_failed")
-        if response.status_code == 403:
-            raise _HttpFailure("failed", "permission_denied")
-        if not 200 <= response.status_code < 300:
-            raise _HttpFailure("failed", "http_failure")
-        body = bytearray()
-        try:
-            chunks = response.iter_content(8192) if callable(getattr(response, "iter_content", None)) else [response.content]
-            for chunk in chunks:
-                if budget is not None and budget.remaining() <= 0:
-                    raise _HttpFailure("failed", "observation_deadline_exhausted")
-                if not isinstance(chunk, (bytes, bytearray)):
-                    raise _HttpFailure("failed", "malformed_response_body")
-                body.extend(chunk)
-                self._used += len(chunk)
-                if len(body) > MAX_RESPONSE_BYTES or self._used > MAX_TOTAL_BYTES:
-                    raise _HttpFailure("unsupported", "response_bound_exceeded")
-            if budget is not None and budget.remaining() <= 0:
-                raise _HttpFailure("failed", "observation_deadline_exhausted")
-            return json.loads(bytes(body), parse_constant=lambda _: (_ for _ in ()).throw(ValueError("invalid_json")))
-        except _HttpFailure:
-            raise
-        except (ValueError, UnicodeError) as error:
-            raise _HttpFailure("failed", "malformed_json") from error
+            return read_json(
+                self._session, method, self._base + path, verify=self.target["ssl_verify"], budget=budget,
+                json_body=(payload or {}) if method == "POST" else None,
+            )
+        except TransportFailure as error:
+            reason = error.reason
+            if reason == "http_failure":
+                reason = {401: "authentication_failed", 403: "permission_denied",
+                          404: "endpoint_unavailable", 405: "endpoint_unavailable",
+                          501: "endpoint_unavailable"}.get(error.status_code if error.status_code is not None else 0, "http_failure")
+            status = "unsupported" if reason in {"endpoint_unavailable", "response_bound_exceeded"} else "failed"
+            raise _HttpFailure(status, reason) from None
         finally:
-            close = getattr(response, "close", None)
-            if callable(close):
-                close()
+            self._used = budget.used_bytes
 
     @staticmethod
     def _path(value: Any, path: str) -> Any:
@@ -258,17 +229,8 @@ class FixedCollectionTransport:
 
     @staticmethod
     def _provider_row(row: dict[str, Any]) -> dict[str, Any]:
-        result = deepcopy(row)
-        # These four fields are inverted by simplify_translate in the pinned
-        # Collection.  Apply that same conversion to raw API fixture/results.
-        for raw, canonical in (("disabled", "enabled"), ("nobind", "bind"),
-                               ("noexpand", "expand"), ("nogroup", "gui_group")):
-            if canonical not in result and raw in result:
-                value = _coerce_bool(result[raw])
-                result[canonical] = not value if type(value) is bool else value
-        if "updatefreq" in result and "updatefreq_days" not in result:
-            result["updatefreq_days"] = result["updatefreq"]
-        return result
+        # Wire conversion belongs to the resource-aware pure layer.
+        return deepcopy(row)
 
     def list(self, target: str, **kwargs: Any) -> Any:
         page = kwargs.get("page", 1)
@@ -553,10 +515,9 @@ class FixedCollectionTransport:
             live_routes: Any = None
             explicit_monitor_route = (isinstance(route_expectation, dict)
                                       and route_expectation.get("purpose") == "monitor_host")
-            native_false = {False, 0, "0", "false", "False", "no", "No"}
             route_required = (isinstance(selected_live, dict)
-                              and selected_live.get("monitor_disable") in native_false
-                              and selected_live.get("monitor_noroute") in native_false)
+                              and _coerce_bool(selected_live.get("monitor_disable")) is False
+                              and _coerce_bool(selected_live.get("monitor_noroute")) is False)
             if explicit_monitor_route and route_required:
                 live_routes = self._request("GET", "diagnostics/interface/get_routes")
                 coverage["routes"] = "requested"
@@ -881,7 +842,10 @@ class FixedCollectionTransport:
         if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
             return selected, live, "malformed"
         for row in rows:
-            flat = _flatten_provider_row(self._provider_row(row), "aliases")
+            try:
+                flat = _flatten_provider_row(self._provider_row(row), "aliases")
+            except _HttpFailure:
+                return selected, live, "unavailable"
             if "content" in flat:
                 flat["content"] = _as_list(flat["content"])
             if "enabled" in flat:
@@ -910,122 +874,6 @@ _IDENTITY_DESCRIPTION = re.compile(
     r"^iaas:opnsense:(?P<resource>filter|dnat|one-to-one-nat):"
     r"(?P<scope>[a-z0-9][a-z0-9-]*):(?P<slug>[a-z0-9][a-z0-9-]*)$"
 )
-
-_STANDARD_FIELDS: dict[str, tuple[str, ...]] = {
-    "aliases": ("name", "type", "content", "description", "enabled", "updatefreq_days"),
-    "vips": ("description", "interface", "address", "bind", "expand"),
-    "gateways": (
-        "name", "interface", "ip_protocol", "gateway", "default_gw", "far_gw",
-        "monitor_disable", "monitor_noroute", "monitor", "force_down", "latency_low",
-        "latency_high", "loss_low", "loss_high", "interval", "time_period",
-        "loss_interval", "data_length", "priority", "weight", "description",
-    ),
-    "filter-rules": (
-        "scope", "slug", "enabled", "sequence", "interface", "direction", "action",
-        "quick", "ip_protocol", "protocol", "source_net", "destination_net",
-        "source_invert", "source_port", "destination_invert", "destination_port", "gateway", "log",
-    ),
-    "dnat": (
-        "scope", "slug", "enabled", "sequence", "interface", "ip_protocol", "protocol",
-        "source_net", "destination_net", "target", "nat_reflection", "associated_rule",
-        "source_port", "destination_port", "local_port", "source_invert", "destination_invert",
-        "log", "pool_opts", "tag", "tagged",
-    ),
-    "one-to-one-nat": (
-        "scope", "slug", "enabled", "sequence", "interface", "type", "external", "source_net",
-        "destination_net", "nat_reflection", "source_invert", "destination_invert", "log",
-    ),
-    "interface-groups": ("name", "members", "gui_group", "sequence", "description"),
-}
-
-_DEFAULTS: dict[str, dict[str, Any]] = {
-    "filter-rules": {
-        "source_invert": False, "destination_invert": False, "log": True,
-    },
-    "dnat": {
-        "source_port": "", "destination_port": "", "local_port": "", "source_invert": False,
-        "destination_invert": False, "log": False, "pool_opts": "", "tag": "", "tagged": "",
-    },
-    "one-to-one-nat": {"source_invert": False, "destination_invert": False, "log": False},
-    "interface-groups": {"description": ""},
-}
-
-_LIST_FIELDS = {
-    "aliases": {"content"},
-    "vips": set(),
-    "gateways": set(),
-    "filter-rules": {"interface"},
-    "dnat": {"interface"},
-    "one-to-one-nat": set(),
-    "interface-groups": {"members"},
-}
-
-_BOOL_FIELDS = {
-    "enabled", "bind", "expand", "default_gw", "far_gw", "monitor_disable", "monitor_noroute",
-    "force_down", "quick", "source_invert", "destination_invert", "log", "gui_group",
-}
-
-# Names emitted by the Collection's simplify_translate layer and the common
-# nested names of its native API responses.  Canonical Collection output uses
-# the left hand side already; accepting the right hand side makes the adapter
-# useful with representative raw response fixtures without exposing those
-# raw fields in its result.
-_FIELD_ALIASES = {
-    "descr": "description", "ifname": "interface", "ipprotocol": "ip_protocol",
-    "defaultgw": "default_gw", "fargw": "far_gw", "latencylow": "latency_low",
-    "latencyhigh": "latency_high", "losslow": "loss_low", "losshigh": "loss_high",
-    "disabled": "enabled", "nobind": "bind", "noexpand": "expand", "nogroup": "gui_group",
-    "natreflection": "nat_reflection", "pass": "associated_rule", "nordr": "no_port_forward",
-    "source_not": "source_invert", "destination_not": "destination_invert",
-    "updatefreq": "updatefreq_days", "source-port": "source_port", "destination-port": "destination_port",
-    "local-port": "local_port", "target-port": "target_port", "poolopts": "pool_opts", "no-nat": "no_nat",
-    "interfacenot": "interface_invert", "disablereplyto": "disable_replyto", "allowopts": "allow_opts",
-    "statetype": "state_type", "state-policy": "state_policy", "statetimeout": "state_timeout",
-    "max": "max_states", "max-src-nodes": "max_src_nodes", "max-src-states": "max_src_states",
-    "max-src-conn": "max_src_conn", "max-src-conn-rate": "max_src_conn_rate", "max-src-conn-rates": "max_src_conn_rates",
-    "adaptivestart": "adaptive_start", "adaptiveend": "adaptive_end", "set-prio": "set_prio",
-    "set-prio-low": "set_prio_low", "tcpflags1": "tcp_flags", "tcpflags2": "tcp_flags_clear",
-    "sched": "schedule", "icmptype": "icmp_type", "icmp6type": "icmpv6_type", "divert-to": "divert_to",
-    "advbase": "advertising_base", "advskew": "advertising_skew",
-}
-
-_SELECT_FIELDS = {
-    "type", "interface", "mode", "vhid", "advertising_base", "advertising_skew", "action", "direction",
-    "ip_protocol", "protocol", "gateway", "replyto", "state_type", "state_policy", "overload", "prio",
-    "set_prio", "set_prio_low", "schedule", "tos", "members", "nat_reflection", "pool_opts", "associated_rule",
-}
-
-_INVERTED_FIELDS = {"disabled": "enabled", "nobind": "bind", "noexpand": "expand", "nogroup": "gui_group"}
-
-# Provider fields which carry configuration semantics but are deliberately
-# outside this workflow's standard schema. UUIDs and transport metadata are
-# intentionally absent so irrelevant native fields do not reject a row.
-_NATIVE_UNEXPRESSED: dict[str, set[str]] = {
-    "aliases": {"interface", "path_expression"},
-    "vips": {"mode", "gateway", "password", "vhid", "advertising_base", "advertising_skew", "peer", "peer6"},
-    "gateways": set(),
-    "filter-rules": {"interface_invert", "tag", "tagged", "replyto", "disable_replyto", "allow_opts",
-                      "state_type", "state_policy", "state_timeout", "max_states", "max_src_nodes",
-                      "max_src_states", "max_src_conn", "max_src_conn_rate", "max_src_conn_rates",
-                      "overload", "adaptive_start", "adaptive_end", "prio", "set_prio", "set_prio_low",
-                      "tcp_flags", "tcp_flags_clear", "schedule", "tos", "icmp_type", "icmpv6_type", "divert_to"},
-    "dnat": {"target_port", "no_nat"},
-    "one-to-one-nat": set(),
-    "interface-groups": set(),
-}
-
-_IGNORED_NATIVE_FIELDS = {
-    "uuid", "id", "created", "updated", "modified", "timestamp", "selected", "key", "value",
-    "network", "subnet", "subnet_bits", "source", "destination", "source_not", "destination_not",
-    "packets", "bytes", "evaluations", "states", "last_updated",
-    "disabled", "nobind", "noexpand", "nogroup", "ifname", "descr", "ipprotocol", "defaultgw", "fargw",
-    "latencylow", "latencyhigh", "losslow", "losshigh", "natreflection", "pass", "nordr",
-}
-
-_INTEGER_FIELDS = {
-    "sequence", "latency_low", "latency_high", "loss_low", "loss_high", "interval", "time_period",
-    "loss_interval", "data_length", "priority", "weight", "state_timeout",
-}
 
 
 def _validate_target(target: dict[str, Any]) -> dict[str, Any]:
@@ -1064,118 +912,16 @@ def _validate_credentials(credentials: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _copy_value(value: Any) -> Any:
-    return deepcopy(value)
-
-
-def _sort_list(value: Any) -> Any:
-    if not isinstance(value, list):
-        return value
-    return sorted((_copy_value(item) for item in value), key=lambda item: repr(item))
-
-
-def _coerce_bool(value: Any) -> Any:
-    if type(value) is bool:
-        return value
-    if isinstance(value, int) and value in (0, 1):
-        return bool(value)
-    if isinstance(value, str):
-        if value.lower() in {"1", "true", "yes", "on"}:
-            return True
-        if value.lower() in {"0", "false", "no", "off"}:
-            return False
-    return value
-
-
-def _coerce_scalar(value: Any) -> Any:
-    """Match simplify_translate's numeric conversion without changing names."""
-    if isinstance(value, str) and value.isnumeric():
-        return int(value)
-    return value
-
-
-def _selected(value: Any, *, multiple: bool = False) -> Any:
-    """Decode OPNsense select/select-list wire values used by model responses."""
-    selected: list[Any] = []
-    if isinstance(value, dict):
-        for key, option in value.items():
-            if not isinstance(option, dict) or type(_coerce_bool(option.get("selected"))) is not bool:
-                raise _HttpFailure("incomplete", "malformed_native_selector")
-            if _coerce_bool(option["selected"]):
-                # Model response keys are identifiers; `value` is a display label.
-                selected.append(key)
-    elif isinstance(value, list) and any(isinstance(item, dict) for item in value):
-        for option in value:
-            if not isinstance(option, dict) or type(_coerce_bool(option.get("selected"))) is not bool:
-                raise _HttpFailure("incomplete", "malformed_native_selector")
-            if _coerce_bool(option["selected"]):
-                selected.append(option.get("key", option.get("value")))
-    else:
-        return value
-    if (any(not isinstance(item, (str, int)) or isinstance(item, bool) for item in selected)
-            or len(set(selected)) != len(selected) or (not multiple and len(selected) > 1)):
-        raise _HttpFailure("incomplete", "malformed_native_selector")
-    if multiple:
-        return [_coerce_scalar(item) for item in selected]
-    return _coerce_scalar(selected[0]) if selected else ""
-
-
-def _as_list(value: Any) -> Any:
-    if isinstance(value, list):
-        return value
-    if isinstance(value, dict):
-        # The Collection's Alias helper turns a provider content mapping into
-        # its non-empty keys before returning ``get_existing``.
-        return [key for key in value if key != ""]
-    if isinstance(value, str):
-        if not value:
-            return []
-        return [item for item in re.split(r"[,\n]", value) if item != ""]
-    return value
-
-
-def _flatten_provider_row(row: dict[str, Any], resource: str | None = None) -> dict[str, Any]:
-    result = deepcopy(row)
-    for source, destination in _INVERTED_FIELDS.items():
-        if destination not in result and source in row:
-            value = _coerce_bool(row[source])
-            result[destination] = not value if type(value) is bool else value
-    for source, destination in _FIELD_ALIASES.items():
-        if destination not in result and source in result:
-            result[destination] = deepcopy(result[source])
-    if resource == "interface-groups" and "name" not in result and isinstance(row.get("ifname"), str):
-        result["name"] = row["ifname"]
-    for section, prefix in (("source", "source"), ("destination", "destination")):
-        nested = row.get(section)
-        if isinstance(nested, dict):
-            for key, value in nested.items():
-                if key in {"network", "port"}:
-                    result[f"{prefix}_{'net' if key == 'network' else key}"] = deepcopy(value)
-                elif key == "not":
-                    result[f"{prefix}_invert"] = deepcopy(value)
-    for field in _SELECT_FIELDS:
-        if field in result:
-            multiple = field == "members" or (field == "interface" and resource in {"filter-rules", "dnat"})
-            result[field] = _selected(result[field], multiple=multiple)
-    for field in _BOOL_FIELDS:
-        if field in result:
-            result[field] = _coerce_bool(result[field])
-    for field in _INTEGER_FIELDS:
-        if field in result:
-            result[field] = _coerce_scalar(result[field])
-    if "updatefreq_days" in result and isinstance(result["updatefreq_days"], (int, float)) \
-            and not isinstance(result["updatefreq_days"], bool):
-        value = float(result["updatefreq_days"])
-        result["updatefreq_days"] = str(int(value) if value.is_integer() else round(value, 1))
-    # Raw API VIPs use network/subnet_bits while the Collection's list result
-    # exposes address.  Only combine literal values; malformed values remain
-    # unknown and never become a fabricated configuration.
-    if "address" not in result:
-        network = result.get("subnet", result.get("network"))
-        prefix = _coerce_scalar(result.get("subnet_bits"))
-        if isinstance(network, str) and isinstance(prefix, int) and 0 <= prefix <= 128:
-            result["address"] = f"{network}/{prefix}"
-    return result
+def _flatten_provider_row(
+    row: dict[str, Any], resource: str | None = None, *, allow_partial: bool = False
+) -> dict[str, Any]:
+    try:
+        converted = convert_provider_row(resource, row)
+        if converted.errors and not allow_partial:
+            raise ConversionError("invalid_configuration")
+        return converted.fields
+    except ConversionError as error:
+        raise _HttpFailure("incomplete", error.code) from None
 
 
 def _parse_identity(resource: str, row: dict[str, Any]) -> list[str] | None:
@@ -1191,6 +937,9 @@ def _parse_identity(resource: str, row: dict[str, Any]) -> list[str] | None:
         name, gateway = row.get("name"), row.get("gateway")
         if isinstance(name, str) and name and isinstance(gateway, str) and gateway:
             return [name, gateway]
+        native_id = row.get("uuid", row.get("id"))
+        if isinstance(name, str) and name and gateway == "" and isinstance(native_id, str) and native_id:
+            return ["native:" + native_id]
         return None
     description = row.get("description", row.get("descr"))
     native_id = row.get("uuid", row.get("id"))
@@ -1207,7 +956,7 @@ def _parse_identity(resource: str, row: dict[str, Any]) -> list[str] | None:
 
 
 def _references(resource: str, row: dict[str, Any], configuration: dict[str, Any] | None) -> list[str]:
-    source = configuration or _flatten_provider_row(row, resource)
+    source = configuration or _flatten_provider_row(row, resource, allow_partial=True)
     refs: set[str] = set()
     aliases: set[str] = set()
     fields = ["source_net", "destination_net", "target", "external", "source_port", "destination_port", "local_port"]
@@ -1246,7 +995,10 @@ def _references(resource: str, row: dict[str, Any], configuration: dict[str, Any
 
 
 def _configuration(resource: str, row: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
-    flat = _flatten_provider_row(row, resource)
+    flat = _flatten_provider_row(row, resource, allow_partial=True)
+    converted = convert_provider_row(resource, row)
+    if converted.errors:
+        return None, "unrepresentable_configuration:ConversionError"
     if resource == 'vips' and (flat.get('mode') not in {None, 'ipalias'}
                                or ('subnet' in row and 'mode' not in flat)):
         return None, 'unsupported_vip_mode'
@@ -1255,7 +1007,7 @@ def _configuration(resource: str, row: dict[str, Any]) -> tuple[dict[str, Any] |
         return None, 'unsupported_no_port_forward_mode'
     if resource == 'gateways' and flat.get('enabled', True) is not True:
         return None, 'disabled_gateway_not_expressible'
-    unexpressed = _unexpressed_fields(resource, row, flat)
+    unexpressed = _unexpressed_fields(resource, converted.extras, flat)
     if unexpressed:
         return None, "unexpressed_native_fields:" + ",".join(unexpressed)
     if resource in {"filter-rules", "dnat", "one-to-one-nat"}:
@@ -1267,16 +1019,17 @@ def _configuration(resource: str, row: dict[str, Any]) -> tuple[dict[str, Any] |
             return None, "unrecognized_managed_identity"
         flat["scope"] = match.group("scope")
         flat["slug"] = match.group("slug")
-    fields = _STANDARD_FIELDS[resource]
-    record: dict[str, Any] = {field: _copy_value(flat[field]) for field in fields if field in flat}
-    for field in _LIST_FIELDS[resource]:
+    fields = STANDARD_FIELDS[resource]
+    record: dict[str, Any] = {field: deepcopy(flat[field]) for field in fields if field in flat}
+    for field in LIST_FIELDS[resource]:
         if field in record:
             record[field] = _as_list(record[field])
-    for field in _BOOL_FIELDS:
-        if field in record:
-            record[field] = _coerce_bool(record[field])
-    for field, default in _DEFAULTS.get(resource, {}).items():
-        record.setdefault(field, _copy_value(default))
+    for field, default in DEFAULTS.get(resource, {}).items():
+        record.setdefault(field, deepcopy(default))
+    if resource == "aliases" and record.get("type") != "urltable" and record.get("updatefreq_days") == "":
+        # The model emits this empty optional field for every alias type.
+        # Preserve non-empty values so unsupported configuration still fails.
+        record.pop("updatefreq_days")
     if resource == "filter-rules":
         # The standard validator treats an explicitly supplied empty port as
         # invalid; the Collection's module default is applied later by the
@@ -1287,6 +1040,11 @@ def _configuration(resource: str, row: dict[str, Any]) -> tuple[dict[str, Any] |
                 record.pop(field, None)
         if record.get('gateway') == '':
             record.pop('gateway')
+        # The model returns multi-value fields as CSV, while the standard
+        # validator accepts lists. Decode before validation, not only afterward.
+        for field in ("source_net", "destination_net", "source_port", "destination_port"):
+            if field in record:
+                record[field] = _as_list(record[field])
     record["state"] = "present"
     try:
         _validate_readback(resource, record)
@@ -1316,79 +1074,12 @@ def _validate_readback(resource: str, record: dict[str, Any]) -> None:
     validate_document(resource, {TOP_LEVEL[resource]: [probe]})
 
 
-def _unexpressed_fields(resource: str, row: dict[str, Any], flat: dict[str, Any]) -> list[str]:
-    fields = _NATIVE_UNEXPRESSED.get(resource, set())
-    found = []
-    defaults = {'vips': {'mode': 'ipalias', 'advertising_base': 1, 'advertising_skew': 0},
-                'gateways': {'enabled': True}, 'filter-rules': {'state_type': 'keep'}}.get(resource, {})
-    for field in fields:
-        value = flat.get(field, row.get(field))
-        if field in {'interface_invert', 'disable_replyto', 'allow_opts'}:
-            value = _coerce_bool(value)
-        if field in defaults and str(value) == str(defaults[field]):
-            continue
-        if value not in (None, "", [], {}, False):
-            found.append(field)
-    for field, value in row.items():
-        canonical = _FIELD_ALIASES.get(field, field)
-        if canonical in defaults and str(flat.get(canonical, value)) == str(defaults[canonical]):
-            continue
-        if canonical in fields:
-            continue
-        if field in _IGNORED_NATIVE_FIELDS or canonical in _STANDARD_FIELDS[resource]:
-            continue
-        if field in {"description", "state", "source", "destination"}:
-            continue
-        # Unknown fields have no established false/zero default. Only known
-        # native fields above may use their existing neutral-value handling.
-        if value not in (None, "", [], {}):
-            found.append(field)
-    return sorted(set(found))
-
-
 def normalize_desired(resource: str, record: dict[str, Any]) -> dict[str, Any]:
-    """Return a validator-backed, comparison-stable standard declaration.
-
-    This function deliberately does not infer resource identity or ownership.
-    It only supplies provider-compatible optional defaults and stable ordering
-    for fields whose Collection representation is a set-like list. ``state``
-    remains explicit. Full cross-resource validation belongs to the caller's
-    selected declaration document, where filter safety context is available.
-    """
-
-    if resource not in SUPPORTED_RESOURCES:
-        raise ReaderError(f"unsupported OPNsense resource: {resource}")
-    if not isinstance(record, dict):
-        raise ReaderError("resource declaration must be a mapping")
-    result = deepcopy(record)
-    if result.get("state") == "present":
-        for field, default in _DEFAULTS.get(resource, {}).items():
-            result.setdefault(field, deepcopy(default))
-        for field in _LIST_FIELDS[resource]:
-            if field in result:
-                result[field] = _sort_list(result[field])
-        if resource == "filter-rules":
-            for field in ("source_net", "destination_net", "source_port", "destination_port"):
-                if field in result:
-                    value = _as_list(result[field])
-                    if not isinstance(value, list):
-                        value = [value]
-                    result[field] = _sort_list([str(item) for item in value])
-            protocol = result.get('protocol')
-            if isinstance(protocol, str):
-                result['protocol'] = {'icmpv6': 'ICMPv6', 'any': 'any'}.get(protocol.lower(), protocol.upper())
-        elif resource == "dnat":
-            for field in ("source_net", "destination_net"):
-                if isinstance(result.get(field), list):
-                    result[field] = ",".join(sorted(str(item) for item in result[field]))
-            for field in ("source_port", "destination_port", "local_port"):
-                if field in result and isinstance(result[field], int):
-                    result[field] = str(result[field])
-            if isinstance(result.get("protocol"), str):
-                result["protocol"] = result["protocol"].lower()
-        if resource == 'aliases' and result.get('type') == 'urltable' and 'updatefreq_days' in result:
-            result['updatefreq_days'] = format(Decimal(str(result['updatefreq_days'])).normalize(), 'f')
-    return result
+    """Compatibility entry point for canonical comparison."""
+    try:
+        return normalize_standard_record(resource, record)
+    except ValueError as error:
+        raise ReaderError(str(error)) from None
 
 
 def _invoke_list(transport: Any, target: str, page: int) -> Any:
@@ -1549,7 +1240,7 @@ class Reader:
         identities: set[tuple[str, ...]] = set()
         for row in fetched.rows:
             try:
-                identity = _parse_identity(resource, _flatten_provider_row(row, resource))
+                identity = _parse_identity(resource, _flatten_provider_row(row, resource, allow_partial=True))
                 configuration, reason = _configuration(resource, row)
                 references = _references(resource, row, configuration)
             except _HttpFailure as error:
@@ -1570,6 +1261,8 @@ class Reader:
                 "recovery": "expressible" if configuration is not None else "manual_required",
                 "reason": reason,
             })
+            if resource == "gateways" and isinstance(row.get("name"), str) and row["name"]:
+                objects[-1]["label"] = "gateways:" + row["name"]
         base["objects"] = objects
         # A complete listing can contain identified native objects whose
         # configuration is outside the standard schema.  Keep those objects
