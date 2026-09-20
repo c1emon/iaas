@@ -29,6 +29,8 @@
   恢复仍需核清后态、候选绑定、漂移、引用完整性和凭据保护。
 - 禁用/删除的空 table 响应可能掩盖后端读取失败；表残留及配置不存在分别报告，
   不据此声明完整退役，不清 PF state。
+- 本轮复核明确：inspect 当前只观察 table 状态；活动 consumer 未经固定读取，统一记录为
+  `unobserved`/`unsupported`，不承诺区分引用存在性，也不新增检查。
 - DNAT/1:1 NAT 原生加载规则缺少与保存配置 UUID 的稳定关联；相关 port/group
   消费者返回明确能力缺口，不按无消费者成功。Filter 的 UUID 关联检查已实现。
 - 接口组当前成员可用内核 `ifconfig` groups 与逻辑/物理接口映射核对；该深度检查由 inspect
@@ -74,3 +76,10 @@ Docker daemon 表述为实际 DinD 容器执行，更不构成 OPNsense 设备/�
 - 沿用本分支此前已通过的 launcher local/DinD 模拟回归；本轮未修改 launcher。所有测试替身、源码核对和可选 inspect 均不构成设备或业务验收。
 
 上游内部子步骤反馈及 NAT 深度关联限制作为非阻断保留项；没有新增 SSH、插件、权限或设备操作。本轮不创建 PR、不归档、不发布。
+
+## 多 agent 复核修复
+
+- 可选检查将超时、权限不足和不可用响应保留为 unknown/incomplete，退出码 2；完整观察得到的真实不匹配仍为 failed，退出码 1。端口和退役 Alias 的接口不支持结果保留 unsupported。普通配置读取及默认 apply 的失败规则不变。
+- 退役规范限定为实际可观察的表状态和未观测消费者，不再承诺活动引用核对；模块示例补齐 `PYTHONPATH=automation/src`，仓库根目录 `--help` 验证通过。
+- 使用真实 Reader、FixedCollectionTransport 与 HTTP session 替身覆盖 timeout、403、404、真实成员不匹配和混合结果。相关读取、诊断、合同、runtime、writer 回归共 159 passed；修改的生产模块与测试文件 pyright 为 0 errors、0 warnings。
+- 两轮交叉复核后，无剩余的已确认发现；严格 OpenSpec、`git diff --check` 和提交前图变更检查通过。上述证据均为离线软件验证。

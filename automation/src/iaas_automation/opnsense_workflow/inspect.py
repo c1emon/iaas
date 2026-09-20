@@ -2,7 +2,7 @@
 
 Example::
 
-    uv run python -m iaas_automation.opnsense_workflow.inspect \
+    PYTHONPATH=automation/src uv run python -m iaas_automation.opnsense_workflow.inspect \
         --inventory inventory.yml --candidate candidate.json --output current.json
 
 The report is evidence about the selected current state.  It does not save,

@@ -370,7 +370,7 @@ class FixedCollectionTransport:
             response = self._request("POST", f"firewall/alias_util/list/{alias}",
                                      {"rowCount": MAX_PAGE_ROWS, "current": 1})
         except _HttpFailure as error:
-            return {"status": error.status, "reason": error.reason,
+            return {"status": "unsupported" if error.status == "unsupported" else "unknown", "reason": error.reason,
                     "coverage": "alias_table_unavailable"}
         if isinstance(response, dict) and isinstance(response.get("rows"), list):
             rows = response["rows"]
@@ -378,7 +378,7 @@ class FixedCollectionTransport:
         elif isinstance(response, list):
             rows, total = response, len(response)
         else:
-            return {"status": "failed", "reason": "malformed_alias_table", "coverage": "alias_table"}
+            return {"status": "incomplete", "reason": "malformed_alias_table", "coverage": "alias_table"}
         if type(total) is not int or total != len(rows) or len(rows) > MAX_PAGE_ROWS:
             return {"status": "incomplete", "reason": "malformed_alias_table", "coverage": "alias_table"}
         coverage = {"scope": "alias_table", "rows": len(rows), "total": total,
@@ -437,7 +437,8 @@ class FixedCollectionTransport:
                     consumers.append(config)
             snapshot = self._request("GET", PF_STATISTICS_RULES_PATH)
         except _HttpFailure as error:
-            return {"status": "unknown", "reason": error.reason, "coverage": "loaded_port_rules"}
+            return {"status": "unsupported" if error.status == "unsupported" else "unknown",
+                    "reason": error.reason, "coverage": "loaded_port_rules"}
         return check_port_alias_active(desired, snapshot, consumers)
 
     def _gateway_active_observation(
@@ -463,7 +464,8 @@ class FixedCollectionTransport:
         try:
             firmware = self._request("GET", "core/firmware/status")
         except _HttpFailure as error:
-            return {"status": error.status, "reason": error.reason, "coverage": coverage}
+            return {"status": "unsupported" if error.status == "unsupported" else "unknown",
+                    "reason": error.reason, "coverage": coverage}
         product = firmware.get("product") if isinstance(firmware, dict) else None
         version = product.get("product_version") if isinstance(product, dict) else None
         coverage["device_version"] = version
@@ -572,7 +574,8 @@ class FixedCollectionTransport:
             result["coverage"] = coverage
             return result
         except _HttpFailure as error:
-            return {"status": error.status, "reason": error.reason, "coverage": coverage}
+            return {"status": "unsupported" if error.status == "unsupported" else "unknown",
+                    "reason": error.reason, "coverage": coverage}
 
     def _retired_alias_observation(self, alias: str) -> dict[str, Any]:
         """Record retirement observations without inventing a cleanup guarantee."""
@@ -598,7 +601,8 @@ class FixedCollectionTransport:
                 # empty response alone cannot prove an empty native PF table.
                 coverage["table"] = "residual_nonempty" if rows else "empty_or_unreadable"
         except _HttpFailure as error:
-            return {"status": "unknown", "reason": error.reason, "coverage": coverage}
+            return {"status": "unsupported" if error.status == "unsupported" else "unknown",
+                    "reason": error.reason, "coverage": coverage}
         return {"status": "unsupported", "reason": "native_retirement_and_consumers_unconfirmed",
                 "coverage": coverage}
 
@@ -1580,16 +1584,16 @@ class Reader:
             else:
                 result = method(resource, identity, desired, context=context)
         except _HttpFailure as error:
-            return {"status": error.status, "reason": error.reason,
+            return {"status": "unsupported" if error.status == "unsupported" else "unknown", "reason": error.reason,
                     "coverage": "active_observation_unavailable"}
         except UnsupportedRead as error:
             return {"status": "unsupported", "reason": str(error),
                     "coverage": "saved_configuration_only"}
         except Exception as error:
-            return {"status": "failed", "reason": type(error).__name__,
+            return {"status": "unknown", "reason": type(error).__name__,
                     "coverage": "active_observation_unavailable"}
         return result if isinstance(result, dict) else {
-            "status": "failed", "reason": "malformed_active_observation",
+            "status": "unknown", "reason": "malformed_active_observation",
             "coverage": "active_observation_unavailable",
         }
 

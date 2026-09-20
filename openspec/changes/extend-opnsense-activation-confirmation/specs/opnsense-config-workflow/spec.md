@@ -150,7 +150,7 @@ The workflow SHALL submit only the reviewed activation and required content acti
 - **AND** no polling or content retry overrides the native failure
 
 ### Requirement: Resource-specific Alias active confirmation
-The workflow SHALL preserve address-table membership, loaded-rule port expansion, effective networkgroup membership, dynamic content processing and active retirement as optional deep inspection scopes. Static address and networkgroup checks SHALL compare complete effective address semantics while preserving IPv4 and IPv6 when inspect is requested. Effective networkgroup members SHALL use selected transitions and necessary live dependencies, not unselected desired values; dynamic or unresolvable dependencies SHALL retain their incomplete status rather than becoming empty sets. Port Alias checks SHALL inspect related loaded PF rule expansion with protocol, source/destination port roles and ranges, not address tables. Disabled and deleted Alias checks SHALL distinguish absent objects, empty tables, residual tables, live references and failed reads when inspect is requested. Necessary dependency reads SHALL NOT enlarge the selected write scope.
+The workflow SHALL preserve address-table membership, loaded-rule port expansion, effective networkgroup membership, dynamic content processing and active retirement as optional deep inspection scopes. Static address and networkgroup checks SHALL compare complete effective address semantics while preserving IPv4 and IPv6 when inspect is requested. Effective networkgroup members SHALL use selected transitions and necessary live dependencies, not unselected desired values; dynamic or unresolvable dependencies SHALL retain their incomplete status rather than becoming empty sets. Port Alias checks SHALL inspect related loaded PF rule expansion with protocol, source/destination port roles and ranges, not address tables. When inspect is requested for a disabled or deleted Alias, it SHALL report observed table absence or residual table content. An empty response that cannot distinguish an empty table from backend failure SHALL remain `empty_or_unreadable`; failed or incomplete reads SHALL retain their unknown or incomplete status. Consumer coverage SHALL remain explicitly `unobserved`, and complete retirement SHALL remain `unsupported`; inspect SHALL NOT promise to read or distinguish live-reference existence. Necessary dependency reads SHALL NOT enlarge the selected write scope.
 
 #### Scenario: Port Alias has loaded consumers
 - **WHEN** a selected port Alias is used by related loaded PF rules
@@ -168,9 +168,9 @@ The workflow SHALL preserve address-table membership, loaded-rule port expansion
 - **AND** unresolved dynamic members or incomplete reads cannot be treated as empty or silently written to match the candidate
 
 #### Scenario: Retired Alias leaves a table
-- **WHEN** a selected Alias is disabled or deleted and a table remains visible
-- **THEN** the workflow evaluates remaining references and table state under that operation's native retirement conditions
-- **AND** it distinguishes residual and empty tables from absent objects and read failures without clearing PF states or deleting unselected objects
+- **WHEN** a selected Alias is disabled or deleted and inspect observes its table
+- **THEN** the workflow reports the observed table state as absent, empty/unreadable, residual or failed to read, without claiming complete retirement
+- **AND** live consumers remain `unobserved`/`unsupported`; no PF state is cleared and no unselected object is deleted
 
 ### Requirement: Configuration-derived dynamic Alias content actions
 The workflow SHALL NOT introduce an independent forced-refresh operation for unchanged configuration. Dynamic Alias initialization, update and cache reuse SHALL follow the device's native content-processing and cache-refresh semantics; the workflow SHALL NOT require separate source identity, cache ownership/validity or per-object loading evidence. Description-only changes SHALL NOT require forced content updates or changed members. Configuration save, configuration readback, native activation and optional deep inspection SHALL remain separately represented.
