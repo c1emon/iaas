@@ -31,6 +31,7 @@ from .conversion import convert_provider_row, normalize_standard_record
 from .conversion.resources import unexpressed_fields as _unexpressed_fields
 from .conversion.schema import STANDARD_FIELDS, LIST_FIELDS, DEFAULTS
 from .conversion.types import as_list as _as_list
+from .classification import classify_resource, reference_support
 
 
 MAX_PAGE_ROWS = 1000
@@ -68,6 +69,19 @@ _COLLECTION_GET = {
     "nat_destination": ("firewall", "d_nat", "DNat.rule"),
     "nat_one_to_one": ("firewall", "one_to_one", "filter.onetoone.rule"),
     "rule_interface_group": ("firewall", "group", "group.ifgroupentry"),
+}
+
+# The workflow is pinned to the fixed Collection model used by the supported
+# OPNsense 26.7.3 profile.  This labels the bounded configuration endpoint;
+# it does not claim a complete active PF rule-set observation.
+_ENUMERATION_SOURCES = {
+    "aliases": "oxlorg.opnsense@26.1.11:firewall/alias/get",
+    "vips": "oxlorg.opnsense@26.1.11:interfaces/vip_settings/get",
+    "gateways": "oxlorg.opnsense@26.1.11:routing/settings/search_gateway+get_gateway",
+    "filter-rules": "oxlorg.opnsense@26.1.11:firewall/filter/get",
+    "dnat": "oxlorg.opnsense@26.1.11:firewall/d_nat/get",
+    "one-to-one-nat": "oxlorg.opnsense@26.1.11:firewall/one_to_one/get",
+    "interface-groups": "oxlorg.opnsense@26.1.11:firewall/group/get",
 }
 
 
@@ -1226,6 +1240,8 @@ class Reader:
         base = {
             "resource": resource,
             "collection_target": target,
+            "observation_scope": "configuration",
+            "enumeration_source": _ENUMERATION_SOURCES[resource],
             "status": "failed",
             "objects": [],
             "coverage": {"scope": "selected_resource", "pages": 0, "rows": 0, "total": None, "complete": False},
@@ -1255,9 +1271,15 @@ class Reader:
         identities: set[tuple[str, ...]] = set()
         for row in fetched.rows:
             try:
-                identity = _parse_identity(resource, _flatten_provider_row(row, resource, allow_partial=True))
+                flattened = _flatten_provider_row(row, resource, allow_partial=True)
+                identity = _parse_identity(resource, flattened)
                 configuration, reason = _configuration(resource, row)
                 references = _references(resource, row, configuration)
+                classification, data_nature = classify_resource(
+                    resource, flattened, identity=identity, configuration=configuration,
+                    native_row=row,
+                )
+                supported_reference = reference_support(resource, flattened, classification)
             except _HttpFailure as error:
                 incomplete_reasons.append(error.reason)
                 continue
@@ -1273,9 +1295,13 @@ class Reader:
                 "identity": identity,
                 "configuration": configuration,
                 "references": references,
+                "classification": classification,
+                "data_nature": data_nature,
                 "recovery": "expressible" if configuration is not None else "manual_required",
                 "reason": reason,
             })
+            if supported_reference is not None:
+                objects[-1]["reference_support"] = supported_reference
             if resource == "gateways" and isinstance(row.get("name"), str) and row["name"]:
                 objects[-1]["label"] = "gateways:" + row["name"]
         base["objects"] = objects
