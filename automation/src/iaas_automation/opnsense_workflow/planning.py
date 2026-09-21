@@ -7,6 +7,8 @@ from typing import Any, cast
 
 from iaas_automation.common.errors import ValidationError, require
 from .contracts import PROVIDER, CANDIDATE_VERSION, identity, key, request, selected_records, selection_keys
+from .admission import (reference_label, reference_support, require_configuration_observation,
+                        require_independent, require_reference, validate_classification)
 
 CONSUMERS = {'filter-rules', 'dnat', 'one-to-one-nat'}
 
@@ -32,8 +34,10 @@ def coverage(selected: list[dict]) -> list[str]:
 def objects(observations: dict) -> dict[str, dict]:
     result = {}
     for resource, observation in observations.items():
+        require_configuration_observation(observation)
         require(observation.get('status') == 'complete', 'required configuration observation is unknown or incomplete')
         for obj in observation['objects']:
+            validate_classification(obj.get('classification'))
             marker = key(resource, obj['identity'])
             require(marker not in result, 'ambiguous live identity')
             result[marker] = {**deepcopy(obj), 'resource': resource}
@@ -102,7 +106,7 @@ def relevant(observations: dict, selected: list[dict]) -> dict[str, dict | None]
         previous = (len(wanted), len(needed))
         for marker, obj in live.items():
             config = obj.get('configuration')
-            obj_label = label(obj['resource'], config) if config else obj.get('label')
+            obj_label = label(obj['resource'], config) if config else reference_label(obj)
             refs = object_references(obj)
             if marker in wanted or obj_label in needed or refs & labels:
                 wanted.add(marker)
@@ -122,7 +126,7 @@ def valid_state(state: dict[str, dict | None], interfaces: set[str]) -> None:
         if obj is None:
             continue
         config = obj.get('configuration')
-        obj_label = label(obj['resource'], config) if config else obj.get('label')
+        obj_label = label(obj['resource'], config) if config else reference_label(obj)
         if obj_label:
             require(obj_label not in labels, 'ambiguous dependency identity')
             labels[obj_label] = marker
@@ -130,11 +134,14 @@ def valid_state(state: dict[str, dict | None], interfaces: set[str]) -> None:
     for marker, obj in state.items():
         if obj is None:
             continue
+        if obj.get('configuration') is None and reference_support(obj) is not None:
+            require(obj['reference_support']['dependencies_complete'],
+                    'system dependency coverage is incomplete')
         refs = object_references(obj)
         dependencies = set()
         for ref in refs:
             category, name = ref.split(':', 1)
-            if category in {'aliases', 'interface-groups'} and name in interfaces:
+            if category in {'aliases', 'interface-groups'} and name in interfaces and ref not in labels:
                 continue
             if category == 'aliases' and name.endswith('ip') and name[:-2] in interfaces and ref not in labels:
                 # Native NetworkAliasField exposes <interface>ip for addresses.
@@ -142,7 +149,19 @@ def valid_state(state: dict[str, dict | None], interfaces: set[str]) -> None:
             require(ref in labels, 'missing dependency or unselected reference transition')
             dependency = state[labels[ref]]
             config = dependency.get('configuration') if dependency else None
-            require(config is not None, 'required dependency configuration is unknown')
+            if config is None:
+                # Only supported rule consumers may use the bounded native
+                # reference description; it is not a reconstructed declaration.
+                require(obj['resource'] in CONSUMERS and dependency is not None,
+                        'required dependency configuration is unknown')
+                role = 'interface-group' if category == 'interface-groups' else 'address'
+                if category == 'aliases':
+                    # Address/port compatibility is checked per field below.
+                    support = reference_support(cast(dict, dependency))
+                    require(support is not None and support['dependencies_complete'],
+                            'required dependency configuration is unknown')
+                else:
+                    require_reference(cast(dict, dependency), role)
             if category == 'aliases' and obj['resource'] == 'aliases':
                 require(config is not None and config['type'] in {'host', 'network', 'urltable', 'networkgroup'},
                         'incompatible alias dependency')
@@ -159,8 +178,13 @@ def valid_state(state: dict[str, dict | None], interfaces: set[str]) -> None:
                     if linked is not None:
                         dependency = state[linked]
                         config = dependency.get('configuration') if dependency else None
-                        require(config is not None and (config['type'] == 'port') == field.endswith('port'),
-                                'effective alias reference has incompatible address/port type')
+                        if config is None:
+                            require_reference(cast(dict, dependency),
+                                              'port' if field.endswith('port') else 'address',
+                                              row.get('ip_protocol'))
+                        else:
+                            require((config['type'] == 'port') == field.endswith('port'),
+                                    'effective alias reference has incompatible address/port type')
         graph[marker] = dependencies
     pending = deepcopy(graph)
     while pending:
@@ -176,6 +200,8 @@ def overlay(state: dict, item: dict) -> dict:
     updated[marker] = (None if item['desired']['state'] == 'absent' else
                        {**(state.get(marker) or {}), 'resource': item['resource'], 'identity': item['identity'],
                         'configuration': semantic(item['resource'], item['desired']), 'recovery': 'expressible'})
+    if state.get(marker) is None and updated[marker] is not None:
+        updated[marker]['creation_expected'] = True
     return updated
 
 
@@ -224,6 +250,11 @@ def plan(documents: dict, req: dict, observations: dict, target: dict, runtime: 
     for item in selected:
         marker = key(item['resource'], item['identity'])
         old = before[marker]
+        if old is not None:
+            require_independent(old)
+        if marker in recovery:
+            require(old is not None,
+                    'activation recovery requires an existing observed identity')
         require(old is None or old.get('configuration') is not None, 'selected native configuration is unsupported')
         desired = item['desired']
         actual = old['configuration'] if old else None

@@ -4,12 +4,14 @@ from __future__ import annotations
 from copy import deepcopy
 from pathlib import Path
 import sys
-from typing import Any
+from typing import Any, cast
 
 from iaas_automation.common.errors import ValidationError, require
 from iaas_automation.opnsense_validation import TOP_LEVEL, validate_document
 from .contracts import RECOVERY_VERSION, RESULT_VERSION, key, save, selected_records, selection_keys, selectors, shape, validate_coverage
 from .planning import interfaces_from, objects, overlay, plan, relevant, semantic, valid_state
+from .admission import (management_semantics, require_configuration_observation,
+                        require_independent, validate_classification)
 
 
 def fingerprint(state: dict) -> dict:
@@ -18,6 +20,8 @@ def fingerprint(state: dict) -> dict:
         'configuration': semantic(obj['resource'], obj['configuration']) if obj.get('configuration') else None,
         'references': obj.get('references') if obj.get('configuration') is None else None,
         'recovery': obj.get('recovery', 'manual_required'),
+        'management': management_semantics(obj.get('classification')),
+        'reference_support': obj.get('reference_support'),
     } for marker, obj in state.items()}
 
 
@@ -31,7 +35,20 @@ def checked_live(candidate: dict, reader: Any, expected: dict) -> tuple[dict, di
     live = objects(observations)
     for marker in expected:
         current.setdefault(marker, live.get(marker))
-    require(fingerprint(current) == fingerprint(expected), 'related configuration drift; review a new candidate')
+    comparison = deepcopy(expected)
+    for item in candidate['selected']:
+        marker = key(item['resource'], item['identity'])
+        actual = current.get(marker)
+        if actual is not None:
+            require_independent(actual)
+        previous = comparison.get(marker)
+        if previous is not None and previous.get('creation_expected'):
+            # There was no native before-classification for a reviewed create.
+            # Admit only independently manageable actual state; never invent
+            # management evidence in the candidate or accept a missing object.
+            require(actual is not None, 'created resource is missing from configuration readback')
+            previous['classification'] = deepcopy(cast(dict, actual)['classification'])
+    require(fingerprint(current) == fingerprint(comparison), 'related configuration drift; review a new candidate')
     return observations, current
 
 
@@ -56,7 +73,8 @@ def verify(candidate: dict, reader: Any, *, identities: set[str] | None = None) 
         observation = observations.get(item['resource'], {})
         matches = [obj for obj in observation.get('objects', []) if obj['identity'] == item['identity']]
         config = 'unknown'
-        if observation.get('status') == 'complete' and len(matches) <= 1:
+        if (observation.get('observation_scope') == 'configuration'
+                and observation.get('status') == 'complete' and len(matches) <= 1):
             if item['desired']['state'] == 'absent':
                 config = 'verified' if not matches else 'failed'
             elif not matches:
@@ -80,6 +98,8 @@ def recovery_document(candidate: dict, digest: str, execution_id: str, current: 
     entries = []
     for marker in sorted(affected):
         item, old = selected[marker], current[marker]
+        if old is not None:
+            require_independent(old)
         recoverable = old.get('recovery', 'manual_required') if old else 'expressible'
         if old and recoverable == 'expressible':
             try:
@@ -91,9 +111,10 @@ def recovery_document(candidate: dict, digest: str, execution_id: str, current: 
         entries.append({'resource': item['resource'], 'identity': item['identity'],
                         'before': old.get('configuration') if old else None,
                         'before_absent': old is None,
+                        'before_classification': deepcopy(old['classification']) if old else None,
                         'recovery': recoverable,
                         'desired': deepcopy(item['desired']), 'attempted': False,
-                        'after_status': 'unknown', 'after': None})
+                        'after_status': 'unknown', 'after': None, 'after_classification': None})
     return {'schema_version': RECOVERY_VERSION, 'kind': 'opnsense-recovery', 'target': candidate['target'],
             'runtime': candidate['runtime'], 'candidate_sha256': digest, 'execution_id': execution_id,
             'entries': entries, 'stages': []}
@@ -107,12 +128,18 @@ def readback(recovery: dict, candidate: dict, reader: Any) -> None:
     for entry in recovery['entries']:
         observation = observations.get(entry['resource'], {})
         matches = [obj for obj in observation.get('objects', []) if obj['identity'] == entry['identity']]
-        entry.update(after_status='unknown', after=None)
-        if observation.get('status') == 'complete' and len(matches) <= 1:
+        entry.update(after_status='unknown', after=None, after_classification=None)
+        if (observation.get('observation_scope') == 'configuration'
+                and observation.get('status') == 'complete' and len(matches) <= 1):
             if not matches:
                 entry['after_status'] = 'confirmed'
             elif matches[0].get('configuration') is not None:
-                entry.update(after_status='confirmed', after=matches[0]['configuration'])
+                try:
+                    classification = validate_classification(matches[0].get('classification'))
+                except ValidationError:
+                    continue
+                entry.update(after_status='confirmed', after=matches[0]['configuration'],
+                             after_classification=deepcopy(classification))
 
 
 def apply(candidate: dict, digest: str, reader: Any, writer: Any, execution_id: str,
@@ -161,7 +188,7 @@ def apply(candidate: dict, digest: str, reader: Any, writer: Any, execution_id: 
             recovery['stages'].append(outcome)
             for entry in recovery['entries']:
                 if key(entry['resource'], entry['identity']) in markers:
-                    entry.update(attempted=True, after_status='unknown', after=None)
+                    entry.update(attempted=True, after_status='unknown', after=None, after_classification=None)
             # Invalidate any old confirmed post-state durably BEFORE the next write.
             save(output / 'recovery.json', recovery)
             save(output / 'result.json', result)
@@ -230,9 +257,9 @@ def reverse_documents(recovery: dict, req: dict, observations: dict, target: dic
     from .contracts import RESOURCES, identity
 
     shape(recovery, {'schema_version', 'kind', 'target', 'runtime', 'candidate_sha256', 'execution_id', 'entries', 'stages'})
-    require(type(recovery['schema_version']) is int and recovery['schema_version'] in {1, RECOVERY_VERSION} and recovery['kind'] == 'opnsense-recovery'
+    require(type(recovery['schema_version']) is int and recovery['schema_version'] == RECOVERY_VERSION and recovery['kind'] == 'opnsense-recovery'
             and isinstance(recovery['target'], dict) and recovery['target'] == target,
-            'incompatible recovery target or format')
+            'incompatible recovery target or format; retain evidence, reconcile and prepare a new plan')
     runtime = recovery['runtime']
     image_runtime = (isinstance(runtime, dict)
                      and set(runtime) == {'image_digest', 'platform', 'interface_version'}
@@ -260,7 +287,7 @@ def reverse_documents(recovery: dict, req: dict, observations: dict, target: dic
     available = {}
     for entry in recovery['entries']:
         shape(entry, {'resource', 'identity', 'before', 'before_absent', 'recovery', 'desired',
-                      'attempted', 'after_status', 'after'})
+                      'attempted', 'after_status', 'after', 'before_classification', 'after_classification'})
         resource = entry['resource']
         identity_value = entry['identity']
         require(resource in RESOURCES and isinstance(identity_value, list),
@@ -279,23 +306,30 @@ def reverse_documents(recovery: dict, req: dict, observations: dict, target: dic
                 'recovery desired identity does not match its entry')
         before = entry['before']
         if entry['before_absent']:
-            require(before is None, 'recovery absence marker has a before-state')
+            require(before is None and entry['before_classification'] is None,
+                    'recovery absence marker has a before-state')
         elif before is not None:
+            validate_classification(entry['before_classification'])
             require(isinstance(before, dict), 'malformed recovery before-state')
             validate_documents({resource: {TOP_LEVEL[resource]: [before]}})
             require(identity(resource, before) == identity_value,
                     'recovery before identity does not match its entry')
         else:
+            validate_classification(entry['before_classification'])
             require(entry['recovery'] == 'manual_required',
                     'missing recovery before-state must be manual-required')
         after = entry['after']
         if entry['after_status'] == 'unknown':
-            require(after is None, 'unknown recovery status needs reconciled evidence before recovery')
+            require(after is None and entry['after_classification'] is None,
+                    'unknown recovery status needs reconciled evidence before recovery')
         elif after is not None:
+            validate_classification(entry['after_classification'])
             require(isinstance(after, dict), 'malformed recovery after-state')
             validate_documents({resource: {TOP_LEVEL[resource]: [after]}})
             require(identity(resource, after) == identity_value,
                     'recovery after identity does not match its entry')
+        else:
+            require(entry['after_classification'] is None, 'absent recovery after-state has classification')
         available[marker] = entry
 
     staged = set()
@@ -331,9 +365,20 @@ def reverse_documents(recovery: dict, req: dict, observations: dict, target: dic
                 and entry['after_status'] == 'confirmed',
                 'recovery needs reconciled evidence or manual recovery')
         observation = observations.get(entry['resource'], {})
+        require_configuration_observation(observation)
         matches = [obj for obj in observation.get('objects', []) if obj['identity'] == entry['identity']]
         require(observation.get('status') == 'complete' and len(matches) <= 1, 'current recovery scope is unknown')
         current = matches[0].get('configuration') if matches else None
+        if not entry['before_absent']:
+            require_independent({'classification': entry['before_classification']})
+        if entry['after'] is not None:
+            require_independent({'classification': entry['after_classification']})
+        if matches:
+            require_independent(matches[0])
+            require(entry['after'] is not None
+                    and management_semantics(matches[0].get('classification')) ==
+                    management_semantics(entry['after_classification']),
+                    'later resource management change prevents automatic recovery; reconcile and review')
         require(not matches or current is not None, 'current recovery state is unsupported')
         require(semantic(entry['resource'], current) == semantic(entry['resource'], entry['after']),
                 'later configuration change prevents automatic recovery; reconcile and review')

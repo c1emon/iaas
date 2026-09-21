@@ -7,6 +7,13 @@
   },
   "before": {
     "[\"aliases\",\"SYNTHETIC_WEB\"]": {
+      "classification": {
+        "basis": [
+          "supported_model"
+        ],
+        "management": "independent",
+        "origin": "user_config"
+      },
       "configuration": {
         "content": [
           "192.0.2.10"
@@ -24,6 +31,13 @@
       "resource": "aliases"
     },
     "[\"dnat\",\"iaas:opnsense:dnat:synthetic:web\"]": {
+      "classification": {
+        "basis": [
+          "supported_model"
+        ],
+        "management": "independent",
+        "origin": "user_config"
+      },
       "configuration": {
         "associated_rule": "rule",
         "destination_net": "wanip",
@@ -169,7 +183,7 @@
     "interface_version": 1,
     "platform": "linux/arm64"
   },
-  "schema_version": 2,
+  "schema_version": 3,
   "selected": [
     {
       "desired": {

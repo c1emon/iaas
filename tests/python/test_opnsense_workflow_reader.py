@@ -580,10 +580,14 @@ def test_fixed_networkgroup_active_check_rejects_incomplete_observation_with_eno
             "selected": [{"resource": "aliases", "identity": ["GROUP"], "desired": desired}],
             "observations": {"aliases": {
                 "status": "incomplete",
+                "observation_scope": "configuration",
                 "objects": [{"resource": "aliases", "identity": ["HOST"],
                               "configuration": {"name": "HOST", "type": "host",
                                                  "content": ["192.0.2.10"],
-                                                 "state": "present", "enabled": True}}],
+                                                 "state": "present", "enabled": True},
+                              "classification": {"origin": "user_config",
+                                                   "management": "independent",
+                                                   "basis": ["supported_model"]}}],
             }},
         },
     )

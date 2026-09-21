@@ -16,6 +16,7 @@ from iaas_automation.opnsense_workflow.contracts import load_candidate
 
 OPNSENSE_WORKFLOW_OPERATIONS = {"read", "plan", "apply", "verify"}
 _OPNSENSE_APPLY_OPTIONS = {"candidate_sha256", "execution_id", "activation_check"}
+_OPNSENSE_READ_OPTIONS = {"include_system"}
 
 
 def _declared_input_names(entry: Path, component: str, scenario: str | None,
@@ -43,6 +44,12 @@ def _validate_opnsense_request(selected: SelectedConfig, reader: SourceReader) -
 
 
 def _validate_opnsense_options(selected: SelectedConfig, operation: str) -> None:
+    if operation == "read":
+        require(set(selected.options) <= _OPNSENSE_READ_OPTIONS,
+                "OPNsense read option must be include_system")
+        require(type(selected.options.get("include_system", False)) is bool,
+                "OPNsense read include_system must be a boolean")
+        return
     if operation != "apply":
         require(not selected.options, "OPNsense workflow read, plan and verify do not accept options")
         return

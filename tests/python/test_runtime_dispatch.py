@@ -23,7 +23,7 @@ def config(tmp_path, component, inputs, files=None):
 
 def candidate_file(path):
     value = {
-        "schema_version": 2,
+        "schema_version": 3,
         "kind": "opnsense-candidate",
         "target": {"host": "firewall", "endpoint": "https://192.0.2.1", "ssl_verify": True},
         "runtime": {"image_digest": "sha256:" + "1" * 64, "platform": "linux/amd64", "interface_version": 1},

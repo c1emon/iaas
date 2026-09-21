@@ -16,9 +16,9 @@ from iaas_automation.opnsense_validation.aliases import ALIAS_NAME
 from iaas_automation.opnsense_validation.interface_groups import GROUP_NAME
 
 REQUEST_VERSION = 1
-CANDIDATE_VERSION = 2
-RESULT_VERSION = 2
-RECOVERY_VERSION = 2
+CANDIDATE_VERSION = 3
+RESULT_VERSION = 3
+RECOVERY_VERSION = 3
 RESOURCES = tuple(TOP_LEVEL)
 PROVIDER = "oxlorg.opnsense@1423500c29f88da9ba8147a23fc64006cf464159"
 
@@ -160,6 +160,10 @@ def load_candidate(path: Path, reviewed: str | None = None) -> tuple[dict, str]:
                 and isinstance(state.get('configuration'), (dict, type(None)))
                 and state.get('recovery') in {'expressible', 'manual_required'},
                 "malformed candidate before-state")
+        require('creation_expected' not in state, 'candidate cannot contain execution-only creation state')
+        from .admission import reference_support, validate_classification
+        validate_classification(state.get('classification'))
+        reference_support(state)
 
     differences = value['differences']
     require(isinstance(differences, list), "malformed candidate differences")
@@ -196,8 +200,13 @@ def load_candidate(path: Path, reviewed: str | None = None) -> tuple[dict, str]:
         old_configuration = old.get('configuration') if old else None
         require(old is None or old_configuration is not None,
                 "selected native configuration is unsupported")
+        if marker in activation_recovery:
+            require(old is not None,
+                    'activation recovery requires an existing observed identity')
         desired = item['desired']
         if old is not None:
+            from .admission import require_independent
+            require_independent(old)
             require(marker in managed | adopted,
                     "existing identity requires explicit managed or adoption selection")
         if desired['state'] == 'absent':
