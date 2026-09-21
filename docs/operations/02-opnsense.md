@@ -294,11 +294,22 @@ Runtime 的 OPNsense 入口是 `read`、`plan`、`apply` 和 `verify`。它们�
 `request.selection` 选择本次候选的执行集合；未选中的已声明文件仍属于候选上下文。
 未知 input 名称、未声明的选择身份和不完整的请求会在准备凭据前拒绝。
 
-本次确认合同只升级候选和结果材料：`candidate`、`result`、`recovery` 使用
-workflow schema v2；`request` 继续使用 v1，launcher 的 `interface_version` 也继续
-使用 v1。旧 v1 候选在 apply/verify 中被拒绝，须重新 plan。v1 恢复材料仍可受限读取，
-仅用于显式选择且后态已核清的配置逆向计划，不继承旧激活结论。request 和 launcher
-不因材料版本升级而自动迁移。
+资源分类合同使用 workflow schema v3 的 `candidate`、`result`、`recovery`；
+`request` 和 launcher 的 `interface_version` 继续使用 v1。v1/v2 候选在
+apply/verify 中被拒绝，须重新读取并 plan。旧恢复材料应保留，但不能直接自动升级；
+先核对原执行与当前状态，再准备新的显式恢复方案。不要手工改版本号绕过准入。
+
+`read` 默认隐藏已确认属于系统内置／派生且仅只读或须通过来源管理的对象；
+未知项和普通配置转换失败仍显示，显式选择身份也始终显示。设置
+`components.opnsense.options.include_system: true`（仅限 read），或本地 read 使用
+`--include-system`，可展开当前选择和枚举范围内的全部对象。完整观察保存在
+`diagnostics/observations.json`；读取结果是带 `observation_scope: display` 的视图，
+含枚举、展示、隐藏及分类摘要，不能作为完整配置状态输入。该开关不扩大 PF 枚举范围。
+
+来源与管理能力分别记录在 `classification` 中。原生 internal Alias、固定模型的
+静态防护 Alias 和 VPN 组按已核实证据分类；external 或动态内容本身不表示系统只读。
+证据不足保持 unknown，局部可覆盖设置不获得独立删除／重建权限。
+infra-ops 应消费分类和摘要，将完整观察用于诊断；系统项可见不代表可被接管或操作。
 
 本工作流以 OPNsense 26.7.3 源码作为能力说明基线。默认不探测精确固件版本；可选 inspect
 中的相应检查仍有版本限制，版本缺失、不可读或不匹配时在该诊断中报告未知或不支持，
@@ -319,7 +330,7 @@ HTTP endpoint 可用于只读适配，但不能用于 apply，也不会被静默
 
 | 操作 | 输入 | 副作用 | 相对新 output 目录的主要结果 |
 | --- | --- | --- | --- |
-| `read` | inventory、request | 在线只读 | `diagnostics/result.json` |
+| `read` | inventory、request | 在线只读 | `diagnostics/observations.json` 完整观察、`diagnostics/result.json` 展示视图 |
 | `plan` | inventory、request、显式 desired inputs | 在线只读 | `plan/candidate.json`、`plan/candidate.sha256`、`plan/result.json` |
 | `apply` | inventory、candidate、绑定的 options | 可能保存配置并激活 | `recovery/result.json`、`recovery/recovery.json` |
 | `verify` | inventory、candidate | 在线只读 | `diagnostics/result.json` |

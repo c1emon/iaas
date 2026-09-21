@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import re
 import subprocess
 from urllib.parse import urlsplit
@@ -15,6 +14,8 @@ from iaas_automation.runtime_execution.execution import OperationFailed
 from .contracts import RESULT_VERSION, load_candidate, request, save, selected_records, selectors
 from .executor import apply, reverse_documents, verify
 from .planning import coverage, plan
+from .presentation import (CONFIGURATION_SCOPE, display_result_metadata,
+                           include_system_value, project_observations)
 
 
 def target_from_inventory(inventory: dict, scope: str) -> dict:
@@ -72,14 +73,12 @@ def runtime_identity(image_digest: str) -> dict:
     return {'image_digest': image_digest, 'platform': runtime_platform(), 'interface_version': 1}
 
 
-def read_selected(req: dict, reader) -> dict:
-    observations = reader.read(list(req['selection']))
-    for resource, entries in req['selection'].items():
-        if entries != 'all':
-            observations[resource]['objects'] = [obj for obj in observations[resource].get('objects', [])
-                                                 if obj['identity'] in entries]
-            observations[resource]['selected_identities'] = entries
-    return observations
+def read_selected(req: dict, reader, *, include_system: bool = False,
+                  observations: dict | None = None) -> dict:
+    """Read the requested scope and return only its marked display projection."""
+    include_system = include_system_value(include_system)
+    complete = reader.read(list(req['selection'])) if observations is None else observations
+    return project_observations(complete, req['selection'], include_system=include_system)
 
 
 def run(selected, operation: str, scope: str, execution, image_digest: str) -> None:
@@ -89,8 +88,12 @@ def run(selected, operation: str, scope: str, execution, image_digest: str) -> N
     inventory = yaml.safe_load(selected.files['inventory'].read_text())
     target = target_from_inventory(inventory, scope)
     runtime = runtime_identity(image_digest)
-    allowed_options = {'candidate_sha256', 'execution_id', 'activation_check', 'check_mode'} if operation == 'apply' else set()
+    allowed_options = ({'include_system'} if operation == 'read' else
+                       {'candidate_sha256', 'execution_id', 'activation_check', 'check_mode'}
+                       if operation == 'apply' else set())
     require(not selected.options.keys() - allowed_options, 'unknown workflow operation option')
+    include_system = selected.options.get('include_system', False)
+    require(type(include_system) is bool, 'workflow include_system must be a boolean')
     require(type(selected.options.get('check_mode', False)) is bool, 'workflow check_mode must be a boolean')
     directory = execution.outputs.path('recovery' if operation == 'apply' else 'plan' if operation == 'plan' else 'diagnostics')
     candidate = {}
@@ -112,9 +115,12 @@ def run(selected, operation: str, scope: str, execution, image_digest: str) -> N
     reader = Reader(target, execution.environ)
     try:
         if operation == 'read':
-            observations = read_selected(req, reader)
-            base.update(observations=observations, status='complete' if all(
-                value['status'] == 'complete' for value in observations.values()) else 'failed')
+            complete = reader.read(list(req['selection']))
+            save(execution.outputs.path('diagnostics') / 'observations.json', complete)
+            observations = project_observations(complete, req['selection'], include_system=include_system)
+            base.update(observations=observations, status=('complete' if all(
+                value['status'] == 'complete' for value in complete.values()) else 'failed'),
+                        **display_result_metadata(observations))
         elif operation == 'plan':
             documents = selected.documents
             if 'recovery' in selected.files:
@@ -125,7 +131,9 @@ def run(selected, operation: str, scope: str, execution, image_digest: str) -> N
                 documents = reverse_documents(recovery, req, observed, target)
             chosen = selected_records(documents, req['selection'])
             observations = reader.read(coverage(chosen))
-            base['observations'] = observations
+            save(execution.outputs.path('diagnostics') / 'observations.json', observations)
+            base.update(observations=observations, observation_scope=CONFIGURATION_SCOPE,
+                        display_projection=False)
             try:
                 candidate = plan(documents, req, observations, target, runtime, provenance(selected))
             except Exception:
@@ -140,7 +148,8 @@ def run(selected, operation: str, scope: str, execution, image_digest: str) -> N
                         admission=candidate['admission'], candidate_sha256=candidate_digest,
                         candidate_file=str(directory / 'candidate.json'), differences=candidate['differences'])
         elif operation == 'verify':
-            base.update(verify(candidate, reader))
+            base.update(verify(candidate, reader), observation_scope=CONFIGURATION_SCOPE,
+                        display_projection=False)
         else:
             execution_id = selected.options.get('execution_id')
             require(isinstance(execution_id, str) and re.fullmatch(r'[A-Za-z0-9_.-]{1,128}', execution_id),
@@ -149,6 +158,8 @@ def run(selected, operation: str, scope: str, execution, image_digest: str) -> N
             base = apply(candidate, candidate_digest, reader, writer, execution_id,
                          selected.options.get('activation_check', {}), directory,
                          check_mode=selected.options.get('check_mode', False))
+            base.update(schema_version=RESULT_VERSION, kind='opnsense-result', operation=operation,
+                        observation_scope=CONFIGURATION_SCOPE, display_projection=False)
         save(directory / 'result.json', base)
         execution.outputs.summary({'component': 'opnsense', 'operation': operation, 'scope': scope,
                                    'status': base['status'], 'result': str(directory / 'result.json'),

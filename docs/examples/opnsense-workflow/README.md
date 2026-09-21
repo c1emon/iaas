@@ -20,13 +20,22 @@ PYTHONPATH=automation/src uv run python -m iaas_automation.runtime_execution \
 身份进入 apply。apply 的 `execution_id` 必须同时作为 output 目录 basename。
 
 迁移时保留 request v1 和 launcher `interface_version` v1；新运行时生成的
-`candidate`、`result` 和 `recovery` 是 workflow schema v2。旧材料不会由 apply/verify
-静默升级，必须重新 plan。同为 v2 的旧严格确认候选也需重新 plan。默认以配置回读
+`candidate`、`result` 和 `recovery` 是 workflow schema v3。v1/v2 候选不会由 apply/verify
+静默升级，必须重新 plan；旧恢复材料应保留，核对原执行和当前状态后准备新的显式方案。
+默认以配置回读
 匹配与原生激活成功作为通过条件，不探测精确固件版本，不要求 PF/内核运行态证明。
 Alias、Gateway 和接口组每次实际激活都会向 stderr 与 result 写入不可关闭的
 `IAAS-OPNSENSE-RESULT-LIMITATION` 提醒；明确失败仍会停止后续阶段。
 动态 Alias 的缓存、刷新和加载交给设备原生机制，结果不声称独立验证了内部步骤。
 独立 `verify` 仅核对已保存配置，不追认历史动作。
+
+`read` 默认隐藏已确认不能独立管理的系统内置／派生对象详情，未知来源、未知管理能力
+和普通配置转换失败仍可见。环境的 `components.opnsense.options.include_system: true`
+可展开当前选择范围内的系统项；该布尔选项仅用于 read。本地开发命令对应
+`python -m iaas_automation.opnsense_workflow.local read ... --include-system`。
+完整观察保存在 `diagnostics/observations.json`，`result.json` 中的读取视图带有
+`observation_scope: display`，不能当作计划、漂移或缺失判断的完整状态输入。
+打开开关不扩大管理权限，也不提供完整 PF 活动规则集。
 
 
 本目录还提供实际合同生成的合成材料：

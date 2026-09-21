@@ -16,7 +16,8 @@ class FakeReader:
         pass
 
     def read(self, resources):
-        return {resource: {'status': 'complete', 'objects': [], 'interfaces': ['lan', 'wan'],
+        return {resource: {'status': 'complete', 'observation_scope': 'configuration',
+                           'objects': [], 'interfaces': ['lan', 'wan'],
                            'interfaces_status': 'complete'} for resource in resources}
 
     def close(self):

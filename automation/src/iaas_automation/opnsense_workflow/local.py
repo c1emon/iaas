@@ -26,11 +26,11 @@ from iaas_automation.common.errors import require
 from iaas_automation.runtime_config.selection import runtime_platform
 from iaas_automation.runtime_execution.execution import Execution
 from iaas_automation.runtime_execution.outputs import TaskOutputs
-from .contracts import load_candidate, request, save, selected_records
+from .contracts import RESULT_VERSION, load_candidate, request, save, selected_records
 from .executor import apply, reverse_documents, verify
 from .planning import coverage, plan
+from .presentation import CONFIGURATION_SCOPE, display_result_metadata, project_observations
 from .reader import Reader
-from .runtime import read_selected
 from .writer import Writer
 
 
@@ -58,6 +58,10 @@ def run_local(args: argparse.Namespace) -> dict:
             'local input must contain only target, request and documents')
     runtime = source_identity(root)
     target = spec['target']
+    include_system = getattr(args, 'include_system', False)
+    require(type(include_system) is bool, 'local include_system must be a boolean')
+    require(not include_system or args.operation == 'read',
+            'include_system is only supported for read')
     candidate = {}
     digest = ''
     if args.operation in {'apply', 'verify'}:
@@ -84,10 +88,17 @@ def run_local(args: argparse.Namespace) -> dict:
     execution = Execution(outputs, environ)
     reader = Reader(target, environ)
     try:
+        result = {'schema_version': RESULT_VERSION, 'kind': 'opnsense-result',
+                  'operation': args.operation, 'target': target, 'runtime': runtime,
+                  'candidate_sha256': digest, 'status': 'running',
+                  'business_acceptance': 'not_performed'}
         if args.operation == 'read':
-            observations = read_selected(request(spec['request']), reader)
-            result = {'status': 'complete' if all(x['status'] == 'complete' for x in observations.values()) else 'failed',
-                      'observations': observations}
+            req = request(spec['request'])
+            complete = reader.read(list(req['selection']))
+            save(outputs.path('diagnostics') / 'observations.json', complete)
+            observations = project_observations(complete, req['selection'], include_system=include_system)
+            result.update(status='complete' if all(x['status'] == 'complete' for x in complete.values()) else 'failed',
+                          observations=observations, **display_result_metadata(observations))
         elif args.operation == 'plan':
             req = request(spec['request'])
             documents = spec.get('documents', {})
@@ -99,18 +110,22 @@ def run_local(args: argparse.Namespace) -> dict:
             chosen = selected_records(documents, req['selection'])
             observations = reader.read(coverage(chosen))
             save(outputs.path('diagnostics') / 'observations.json', observations)
+            result.update(observation_scope=CONFIGURATION_SCOPE, display_projection=False,
+                          observations=observations)
             candidate = plan(documents, req, observations, target, runtime, {'inputs': [], 'mode': 'local-test'})
             digest = save(outputs.path('plan') / 'candidate.json', candidate)
-            result = {'status': 'blocked' if candidate['admission']['status'] == 'blocked' else 'planned',
-                      'candidate_sha256': digest, 'differences': candidate['differences'],
-                      'admission': candidate['admission']}
+            result.update(status='blocked' if candidate['admission']['status'] == 'blocked' else 'planned',
+                          candidate_sha256=digest, differences=candidate['differences'],
+                          admission=candidate['admission'])
         elif args.operation == 'verify':
-            result = verify(candidate, reader)
+            result.update(verify(candidate, reader), observation_scope=CONFIGURATION_SCOPE,
+                          display_projection=False)
         else:
-            result = apply(candidate, digest, reader, Writer(execution, target, documents=candidate['documents']),
-                           args.execution_id, json.loads(args.activation_check.read_text()),
-                           outputs.path('recovery'), check_mode=args.check_mode)
-        result.update(runtime=runtime, operation=args.operation, business_acceptance='not_performed')
+            result.update(apply(candidate, digest, reader, Writer(execution, target, documents=candidate['documents']),
+                                args.execution_id, json.loads(args.activation_check.read_text()),
+                                outputs.path('recovery'), check_mode=args.check_mode),
+                          schema_version=RESULT_VERSION, kind='opnsense-result',
+                          observation_scope=CONFIGURATION_SCOPE, display_projection=False)
         save(outputs.path('diagnostics') / 'result.json', result)
         outputs.summary({'status': result['status'], 'operation': args.operation, 'mode': 'local-test'})
         return result
@@ -130,6 +145,8 @@ def main() -> None:
     parser.add_argument('--recovery', type=Path)
     parser.add_argument('--allow-test-writes', action='store_true')
     parser.add_argument('--check-mode', action='store_true')
+    parser.add_argument('--include-system', action='store_true',
+                        help='include confirmed system and derived objects in read output')
     args = parser.parse_args()
     try:
         require(args.recovery is None or args.operation == 'plan', 'recovery only supports plan')

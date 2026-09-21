@@ -99,6 +99,14 @@ Online component `files` aliases are explicit:
   declared context. API credentials use `OPNSENSE_API_KEY` and
   `OPNSENSE_API_SECRET`.
 
+For OPNsense `read`, `components.opnsense.options.include_system: true` includes
+confirmed system and derived object details in the selected view. It is a strict
+boolean accepted only by `read`. The default view retains unknown objects and
+unsupported user configurations. Complete scoped observations are saved separately
+in `diagnostics/observations.json`; the `result.json` display projection is not an
+execution snapshot. Workflow candidate/result/recovery formats are v3; re-plan old
+candidates and retain old recovery evidence for explicit reconciliation.
+
 ```sh
 iaas run --runtime-config runtime.json \
   --environment docs/examples/opnsense-workflow/environment.yml \
