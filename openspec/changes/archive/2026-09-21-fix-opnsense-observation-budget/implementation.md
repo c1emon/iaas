@@ -40,3 +40,5 @@ Filter 激活的 no_log 任务仅保留 failed/unknown，临时脱敏 callback �
 定向转换、PVE health、实际 Ansible writer、OPNsense 入口和 K3s 测试共 76 项通过，类型检查通过。PVE/K3s 未做联机测试。
 
 同一已确认设备窗口内，基于最终源码重新生成零配置改动的 Filter activation_recovery 候选并执行一次：save=unchanged、activation=confirmed（native_response）、configuration=verified、整体 fully_verified。已删除测试 Filter 仍不存在，先前清理的激活阻断解除；历史创建/恢复失败产物不改写。本轮未执行 PF 或客户端业务验收。私有材料位于原临时目录的 activation-unified-plan / activation-unified-apply。
+
+合并前复核：两位 Luna/high 子 agent 分别复核观察预算和状态转换，未发现新增实质缺陷；本轮 90 项定向测试、依赖分层与 Python lint 通过。`complete_action` 目前仅有辅助函数单测，生产执行器仍走同步原生响应；其测试不计为生产轮询或真机覆盖。
