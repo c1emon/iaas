@@ -4,7 +4,7 @@
       "status": "unknown"
     },
     "caller": {
-      "candidate_sha256": "b69281d3fb9196ea8d7b30cf583f4c076f4bf087807c1817e5ff85eecb1f3d98",
+      "candidate_sha256": "6e40556c384169e8ef875b05c000885b5f9d1507c9d418502b3ae1727714b9a4",
       "checked_no_pending": true,
       "execution_id": "synthetic-example",
       "serialized": true,
@@ -16,7 +16,7 @@
     }
   },
   "business_acceptance": "not_performed",
-  "candidate_sha256": "b69281d3fb9196ea8d7b30cf583f4c076f4bf087807c1817e5ff85eecb1f3d98",
+  "candidate_sha256": "6e40556c384169e8ef875b05c000885b5f9d1507c9d418502b3ae1727714b9a4",
   "execution_id": "synthetic-example",
   "kind": "opnsense-result",
   "operation": "apply",
@@ -26,7 +26,7 @@
     "interface_version": 1,
     "platform": "linux/arm64"
   },
-  "schema_version": 2,
+  "schema_version": 3,
   "selected": [
     {
       "identity": [

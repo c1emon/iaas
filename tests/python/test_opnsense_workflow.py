@@ -43,13 +43,18 @@ class Appliance:
         self.unreadable = False
 
     def read(self, resources):
-        return {resource: {'status': 'failed' if self.unreadable else 'complete', 'interfaces': ['lan', 'wan'],
+        return {resource: {'status': 'failed' if self.unreadable else 'complete',
+                           'observation_scope': 'configuration', 'interfaces': ['lan', 'wan'],
                            # Synthetic completion adapter exercises orchestration, not appliance support.
                            'confirmation_capability': {'activation_completion': 'available',
                                'source_processing': 'available', 'content_loading': 'available',
                                'basis': 'synthetic action completion'},
                            'objects': [{'identity': identity(resource, row), 'configuration': deepcopy(row),
-                                        'recovery': 'expressible'} for row in self.resources.get(resource, [])]}
+                                        'classification': {'origin': 'user_config',
+                                                           'management': 'independent',
+                                                           'basis': ['supported_model']},
+                                        'recovery': 'expressible'}
+                                      for row in self.resources.get(resource, [])]}
                 for resource in resources}
 
     def pending_changes(self):

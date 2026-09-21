@@ -1,5 +1,5 @@
 {
-  "candidate_sha256": "b69281d3fb9196ea8d7b30cf583f4c076f4bf087807c1817e5ff85eecb1f3d98",
+  "candidate_sha256": "6e40556c384169e8ef875b05c000885b5f9d1507c9d418502b3ae1727714b9a4",
   "entries": [
     {
       "after": {
@@ -12,10 +12,18 @@
         "state": "present",
         "type": "host"
       },
+      "after_classification": {
+        "basis": [
+          "supported_model"
+        ],
+        "management": "independent",
+        "origin": "user_config"
+      },
       "after_status": "confirmed",
       "attempted": true,
       "before": null,
       "before_absent": true,
+      "before_classification": null,
       "desired": {
         "content": [
           "192.0.2.10"
@@ -52,10 +60,18 @@
         "state": "present",
         "target": "192.0.2.10"
       },
+      "after_classification": {
+        "basis": [
+          "supported_model"
+        ],
+        "management": "independent",
+        "origin": "user_config"
+      },
       "after_status": "confirmed",
       "attempted": true,
       "before": null,
       "before_absent": true,
+      "before_classification": null,
       "desired": {
         "associated_rule": "rule",
         "destination_net": "wanip",
@@ -89,7 +105,7 @@
     "interface_version": 1,
     "platform": "linux/arm64"
   },
-  "schema_version": 2,
+  "schema_version": 3,
   "stages": [
     {
       "activation": "confirmed",

@@ -68,13 +68,15 @@ def test_recovery_rejects_unknown_resource_and_duplicate_identity(tmp_path):
     recovery["entries"].append({**deepcopy(recovery["entries"][0]), "resource": "snat"})
     with pytest.raises(ValidationError, match="recovery|selection"):
         reverse_documents(recovery, {"schema_version": 1, "selection": {"aliases": "all"}},
-                          {"aliases": {"status": "complete", "objects": []}}, TARGET)
+                          {"aliases": {"status": "complete", "observation_scope": "configuration",
+                                        "objects": []}}, TARGET)
 
     recovery = _saved_recovery(tmp_path / "duplicate")
     recovery["entries"].append(deepcopy(recovery["entries"][0]))
     with pytest.raises(ValidationError, match="duplicate"):
         reverse_documents(recovery, {"schema_version": 1, "selection": {"aliases": "all"}},
-                          {"aliases": {"status": "complete", "objects": []}}, TARGET)
+                          {"aliases": {"status": "complete", "observation_scope": "configuration",
+                                        "objects": []}}, TARGET)
 
 
 def test_recovery_rejects_invalid_standard_declaration_and_unattempted_entry(tmp_path):
@@ -82,18 +84,20 @@ def test_recovery_rejects_invalid_standard_declaration_and_unattempted_entry(tmp
     recovery["entries"][0]["desired"]["unexpected"] = True
     with pytest.raises(ValidationError):
         reverse_documents(recovery, {"schema_version": 1, "selection": {"aliases": "all"}},
-                          {"aliases": {"status": "complete", "objects": []}}, TARGET)
+                          {"aliases": {"status": "complete", "observation_scope": "configuration",
+                                        "objects": []}}, TARGET)
 
     recovery = _saved_recovery(tmp_path / "unattempted")
     recovery["entries"][0]["attempted"] = False
     with pytest.raises(ValidationError, match="reconciled|attempted"):
         reverse_documents(recovery, {"schema_version": 1, "selection": {"aliases": "all"}},
-                          {"aliases": {"status": "complete", "objects": []}}, TARGET)
+                          {"aliases": {"status": "complete", "observation_scope": "configuration",
+                                        "objects": []}}, TARGET)
 
 
 def test_workflow_versions_leave_request_and_launcher_unchanged(tmp_path):
     value, path, reviewed = _saved_candidate(tmp_path)
-    assert value['schema_version'] == 2
+    assert value['schema_version'] == 3
     assert value['request']['schema_version'] == 1
     assert value['runtime']['interface_version'] == 1
     assert load_candidate(path, reviewed)[0] == value
@@ -110,16 +114,13 @@ def test_workflow_versions_leave_request_and_launcher_unchanged(tmp_path):
 
 
 @pytest.mark.parametrize('version', [1, 2])
-def test_legacy_recovery_uses_configuration_not_activation_proof(tmp_path, version):
+def test_legacy_recovery_is_rejected_even_with_activation_proof(tmp_path, version):
     recovery = _saved_recovery(tmp_path)
-    assert recovery['schema_version'] == 2
-    assert json.loads((tmp_path / 'result.json').read_text())['schema_version'] == 2
+    assert recovery['schema_version'] == 3
+    assert json.loads((tmp_path / 'result.json').read_text())['schema_version'] == 3
     recovery['schema_version'] = version
     recovery['stages'][0]['activation'] = 'confirmed'
     observed = Appliance(aliases=[alias()]).read(['aliases'])
     req = {'schema_version': 1, 'selection': {'aliases': 'all'}}
-    reversed_docs = reverse_documents(recovery, req, observed, TARGET)
-    assert reversed_docs['aliases']['opnsense_aliases'][0]['state'] == 'absent'
-    recovery['entries'][0].update(after_status='unknown', after=None)
-    with pytest.raises(ValidationError, match='reconciled'):
+    with pytest.raises(ValidationError, match='re-plan|incompatible recovery'):
         reverse_documents(recovery, req, observed, TARGET)
