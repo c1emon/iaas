@@ -50,6 +50,12 @@ _STATIC_GROUPS = {
     "enc0": "IPsec encapsulation",
     "wireguard": "WireGuard (Group)",
 }
+_STATIC_ALIASES = {
+    "bogons": ("bogon networks (internal)", ""),
+    "bogonsv6": ("bogon networks IPv6 (internal)", ""),
+    "virusprot": ("overload table for rate limiting (internal)", "3600"),
+    "sshlockout": ("abuse lockout table (internal)", "3600"),
+}
 
 
 def _classification(
@@ -117,6 +123,33 @@ def classify_resource(
                 "unknown", "unknown", ["classification_evidence_missing"],
                 reason="classification_evidence_missing",
             ), ["persistent_configuration"]))
+        native = native_row or row
+        name = row.get("name")
+        native_uuid = native.get("uuid")
+        static_payload = _STATIC_ALIASES.get(name) if isinstance(name, str) else None
+        exact_static = (
+            static_payload is not None
+            and native_uuid == name
+            and native.get("name") == name
+            and alias_type == "external"
+            and row.get("description") == static_payload[0]
+            and native.get("expire") == static_payload[1]
+            and row.get("content") == []
+            and row.get("enabled") is True
+        )
+        if exact_static:
+            return _finish(evidence_row, (_classification(
+                "system_builtin", "read_only",
+                ["native_static_child", "persistent_configuration"],
+                source="firewall/alias/static-child",
+            ), ["persistent_configuration"]))
+        if alias_type == "external" and native_uuid == name:
+            # The native static-child identity is present but its payload does
+            # not match a fixed core entry; do not grant user CRUD semantics.
+            return _finish(evidence_row, (_classification(
+                "unknown", "unknown", ["classification_evidence_missing"],
+                reason="classification_evidence_missing",
+            ), ["persistent_configuration", "dynamic_contents"]))
         if alias_type == "internal":
             # The pinned Alias model treats internal aliases as native
             # objects and excludes them from ordinary existing-entry CRUD.
@@ -140,7 +173,6 @@ def classify_resource(
         native_uuid = native.get("uuid")
         sequence = row.get("sequence")
         description = row.get("description")
-        native_members = native.get("members")
         # GroupField's fixed virtual children are materialized with uuid/name,
         # sequence and description from this exact static payload.  Require
         # every stable field and an empty member list; a matching name alone
@@ -148,7 +180,7 @@ def classify_resource(
         if (isinstance(name, str) and name in _STATIC_GROUPS
                 and native_name == name and native_uuid == name and sequence == 10
                 and description == _STATIC_GROUPS[name]
-                and native_members in (None, "", [], {})):
+                and row.get("members") == []):
             return _finish(evidence_row, (_classification(
                 "derived", "read_only",
                 ["native_static_child", "persistent_configuration"],

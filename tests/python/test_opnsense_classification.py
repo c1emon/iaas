@@ -2,6 +2,8 @@
 
 from copy import deepcopy
 
+import pytest
+
 from iaas_automation.opnsense_workflow.classification import classify_resource, reference_support
 from iaas_automation.opnsense_workflow.reader import COLLECTION_TARGETS, Reader
 
@@ -37,6 +39,58 @@ def test_internal_alias_is_system_read_only_and_supports_literal_address_referen
         "dependencies_complete": True,
         "ip_protocol": "inet",
     }
+
+
+@pytest.mark.parametrize("name, description, expire", [
+    ("bogons", "bogon networks (internal)", ""),
+    ("bogonsv6", "bogon networks IPv6 (internal)", ""),
+    ("virusprot", "overload table for rate limiting (internal)", "3600"),
+    ("sshlockout", "abuse lockout table (internal)", "3600"),
+])
+def test_fixed_static_external_alias_requires_exact_native_payload(name, description, expire):
+    native = {
+        "uuid": name, "name": name,
+        "type": {"external": {"selected": 1}, "host": {"selected": 0}},
+        "description": description,
+        "expire": expire, "content": "", "enabled": "1",
+    }
+    normalized = {
+        "name": name, "type": "external", "description": description,
+        "content": [], "enabled": True,
+    }
+    classified, _ = classify_resource(
+        "aliases", normalized, identity=[name], configuration=None, native_row=native,
+    )
+    assert classified["origin"] == "system_builtin"
+    assert classified["management"] == "read_only"
+    assert classified["basis"] == ["native_static_child", "persistent_configuration"]
+
+
+def test_static_alias_name_with_user_uuid_remains_user_external():
+    native = {
+        "uuid": "550e8400-e29b-41d4-a716-446655440000", "name": "bogons",
+        "type": "external", "description": "bogon networks (internal)",
+        "expire": "", "content": "", "enabled": "1",
+    }
+    row = {"name": "bogons", "type": "external", "content": [], "enabled": True}
+    classified, _ = classify_resource(
+        "aliases", row, identity=["bogons"], configuration=None, native_row=native,
+    )
+    assert classified["origin"] == "user_config"
+    assert classified["management"] == "independent"
+
+
+def test_static_alias_uuid_with_conflicting_payload_stays_unknown():
+    native = {
+        "uuid": "bogons", "name": "bogons", "type": "external",
+        "description": "user supplied", "expire": "", "content": "", "enabled": "1",
+    }
+    row = {"name": "bogons", "type": "external", "content": [], "enabled": True}
+    classified, _ = classify_resource(
+        "aliases", row, identity=["bogons"], configuration=None, native_row=native,
+    )
+    assert classified["origin"] == "unknown"
+    assert classified["management"] == "unknown"
 
 
 def test_external_and_dynamic_aliases_remain_user_managed():
@@ -108,6 +162,24 @@ def test_static_group_uuid_mismatch_is_not_treated_as_derived():
     assert classified["origin"] == "unknown"
     assert classified["management"] == "unknown"
     assert reference_support("interface-groups", row, classified) is None
+
+
+def test_static_group_accepts_unselected_native_member_choices_after_conversion():
+    native = {
+        "name": "wireguard", "ifname": "wireguard", "uuid": "wireguard",
+        "sequence": "10", "descr": "WireGuard (Group)",
+        "members": {"wg0": {"selected": 0}, "wg1": {"selected": 0}},
+    }
+    normalized = {
+        "name": "wireguard", "uuid": "wireguard", "sequence": 10,
+        "description": "WireGuard (Group)", "members": [],
+    }
+    classified, _ = classify_resource(
+        "interface-groups", normalized, identity=["wireguard"], configuration=None,
+        native_row=native,
+    )
+    assert classified["origin"] == "derived"
+    assert classified["management"] == "read_only"
 
 
 def test_gui_group_false_does_not_remove_normal_group_crud_evidence():
