@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
+from iaas_automation.common.conversion import normalize_response_status
+
 from ...pve_api import PveApiError, PveReadOnlyApi, redact_sensitive_text
 from ..results import CheckResult, Severity
 from .model import HealthExpectations
@@ -80,7 +82,7 @@ def check_vms(api: PveReadOnlyApi, expectations: HealthExpectations, vm_index: d
         except PveApiError as exc:
             _emit(results, "FAIL", f"vm.{vm['name']}", _safe_message(api, str(exc)))
             continue
-        state = str(status.get("status") or record.get("status") or "unknown")
+        state = normalize_response_status(status.get("status") or record.get("status") or "unknown") or "unknown"
         if state == "running":
             _emit(results, "PASS", f"vm.{vm['name']}", f"VM {vm['name']} is running on {node}")
         elif lifecycle == "long_lived":

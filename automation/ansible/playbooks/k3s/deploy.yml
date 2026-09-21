@@ -143,7 +143,7 @@
       ansible.builtin.assert:
         that:
           - k3s_deploy_bootstrap_ready.rc == 0
-          - k3s_deploy_bootstrap_ready.stdout | trim | lower == 'ok'
+          - k3s_deploy_bootstrap_ready.stdout | iaas_response_status == 'ok'
         fail_msg: "bootstrap server API did not become ready; dependent joins were not attempted"
       changed_when: false
       no_log: true

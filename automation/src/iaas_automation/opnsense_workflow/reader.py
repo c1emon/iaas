@@ -10,7 +10,7 @@ into an arbitrary API or command runner.
 from __future__ import annotations
 
 from copy import deepcopy
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
 from dataclasses import dataclass
 import ipaddress
@@ -168,6 +168,19 @@ class FixedCollectionTransport:
         close = getattr(self._session, "close", None)
         if callable(close):
             close()
+
+    @contextmanager
+    def byte_budget(self) -> Iterator[None]:
+        """Share bytes within an observation, not across the session lifetime."""
+        if getattr(self, "_byte_budget_active", False):
+            yield
+            return
+        self._used = 0
+        self._byte_budget_active = True
+        try:
+            yield
+        finally:
+            self._byte_budget_active = False
 
     def _request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
         if not (path.startswith("firewall/") or path.startswith("interfaces/")
@@ -1204,7 +1217,9 @@ class Reader:
         for resource in resources:
             if resource not in SUPPORTED_RESOURCES:
                 raise ReaderError(f"unsupported OPNsense resource: {resource}")
-        return {resource: self._read_one(resource) for resource in resources}
+        scope = self.transport.byte_budget() if isinstance(self.transport, FixedCollectionTransport) else nullcontext()
+        with scope:
+            return {resource: self._read_one(resource) for resource in resources}
 
     def _read_one(self, resource: str) -> dict[str, Any]:
         target = COLLECTION_TARGETS[resource]
@@ -1292,10 +1307,12 @@ class Reader:
             return {"status": "unsupported", "reason": "active_observation_unavailable",
                     "coverage": "saved_configuration_only"}
         try:
-            if context is None:
-                result = method(resource, identity, desired)
-            else:
-                result = method(resource, identity, desired, context=context)
+            scope = self.transport.byte_budget() if isinstance(self.transport, FixedCollectionTransport) else nullcontext()
+            with scope:
+                if context is None:
+                    result = method(resource, identity, desired)
+                else:
+                    result = method(resource, identity, desired, context=context)
         except _HttpFailure as error:
             return {"status": "unsupported" if error.status == "unsupported" else "unknown", "reason": error.reason,
                     "coverage": "active_observation_unavailable"}

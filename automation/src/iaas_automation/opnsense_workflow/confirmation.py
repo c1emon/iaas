@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from contextlib import nullcontext
 import math
 import ipaddress
 import time
@@ -164,14 +165,15 @@ def complete_action(stage: dict, activation: dict, reader, boundary, *,
     with observation_budget(policy.deadline_seconds, clock=clock,
                             request_timeout_seconds=policy.request_timeout_seconds) as budget:
         def read(timeout: float) -> dict:
-            boundary()
-            remaining = budget.remaining()
-            if remaining <= 0:
-                return {'status': 'timeout', 'reason': 'observation_deadline_exhausted', 'action_id': action_id}
-            result = observe(stage, action_id, timeout=min(timeout, remaining))
-            if not isinstance(result, dict) or result.get('action_id') != action_id:
-                return {'status': 'unknown', 'reason': 'uncorrelated_completion_observation'}
-            return result
+            with transport.byte_budget() if transport is not None else nullcontext():
+                boundary()
+                remaining = budget.remaining()
+                if remaining <= 0:
+                    return {'status': 'timeout', 'reason': 'observation_deadline_exhausted', 'action_id': action_id}
+                result = observe(stage, action_id, timeout=min(timeout, remaining))
+                if not isinstance(result, dict) or result.get('action_id') != action_id:
+                    return {'status': 'unknown', 'reason': 'uncorrelated_completion_observation'}
+                return result
 
         waited = wait_for_confirmation(read, policy=policy, clock=clock, sleep=sleep)
     return {**activation, **(waited.last_observation or {}), 'status': waited.status,

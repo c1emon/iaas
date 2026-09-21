@@ -1,0 +1,20 @@
+## 决策
+
+固定 transport 提供可嵌套的字节预算上下文。最外层进入时清零计数，嵌套调用共享本轮计数；成功或异常退出均释放作用域。计数不会在单个请求、分页或资源之间重置。
+
+- 一次 `Reader.read(resources)` 是一轮配置观察，接口选择、全部请求资源、分页和详情共享 8 MiB。
+- 一次 `Reader.active_check(...)` 是一轮主动观察，其内部能力、配置、依赖和诊断请求共享 8 MiB。
+- 一轮关联完成轮询的 boundary 与 observe 共享预算；内嵌 Reader 调用不能重置外层计数。后续轮询重开字节预算，但整个 wait 的 deadline 和 max_attempts 继续有效。
+- apply 的后续检查和失败恢复回读通过现有 Reader 入口获得新预算，无需新建 session 或修改 executor。单轮本身超限或其他原因读取失败仍保留 unknown。
+
+单响应 2 MiB、分页上限、固定端点、TLS、timeout、禁止重定向及响应关闭行为不变。未开启观察上下文的底层直接调用保留原有累计行为。注入的非固定测试/Collection transport 保持既有接口，不强行声称其获得 HTTP 字节保护。
+
+## 验证与边界
+
+使用真实 Reader/固定 transport 配合合成 HTTP 响应和缩小后的字节阈值，验证多轮累计超过阈值仍分别成功、单轮累计超限失败、下一轮不受耗尽状态污染、多阶段执行及失败恢复。保留时间预算和失败后态的定向回归。无需逐请求追踪系统、设备资格矩阵或新的全执行字节配额。
+
+本地模拟通过不等于 rc.10 原始恢复闭环通过，也不等于新版本真机验收；原始失败记录保持不变。未来联机写入需新的操作窗口。
+
+## 外部响应状态统一转换
+
+在 common.conversion 增加 normalize_response_status，以 Pydantic StringConstraints 统一严格字符串、strip_whitespace、to_lower 和非空约束；无效值返回 None。Ansible 通过薄 filter plugin 复用相同实现。各调用点仍决定接受的状态及缺失值处理，不对整个响应递归转换，也不改变内部状态机。PVE 定向覆盖带空白的失败状态，避免 inactive / failed 漏判。

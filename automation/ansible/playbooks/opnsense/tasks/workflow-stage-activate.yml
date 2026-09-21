@@ -16,8 +16,8 @@
         action: post
       register: opnsense_workflow_activation_call
       failed_when: >-
-        (opnsense_workflow_activation_call.response.status | default('failed')
-        | string | lower) != 'ok'
+        (opnsense_workflow_activation_call.response.status | default(none)
+        | iaas_response_status) != 'ok'
       no_log: true
 
     - name: Record fixed activation completion evidence
@@ -39,6 +39,23 @@
           status: failed
           target: "{{ opnsense_workflow_resource }}"
           active_check: {status: unknown}
+          failure:
+            response_present: "{{ opnsense_workflow_activation_call.response is defined }}"
+            response_status_class: >-
+              {%- set value = opnsense_workflow_activation_call.response.status | default(none) -%}
+              {{ 'missing' if value is none else
+                 'ok' if value is string and value | lower == 'ok' else
+                 'ok_with_whitespace' if value | iaas_response_status == 'ok' else
+                 'other' }}
+            response_status_length: >-
+              {%- set value = opnsense_workflow_activation_call.response.status | default(none) -%}
+              {{ value | length if value is string else 0 }}
+            http_status_codes: >-
+              {{ opnsense_workflow_activation_call.msg | default('')
+                 | regex_findall("'status_code': ([1-5][0-9]{2})") }}
+            timeout_reported: >-
+              {{ 'timeout' in (opnsense_workflow_activation_call.msg | default('') | lower)
+                 or 'timed out' in (opnsense_workflow_activation_call.msg | default('') | lower) }}
     - name: Persist the protected failed activation facts
       ansible.builtin.copy:
         content: "{{ opnsense_workflow_activation_result | to_json }}"

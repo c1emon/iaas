@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from iaas_automation.common.conversion import normalize_response_status
+
 from ...pve_api import PveApiError, PveApiNotConfiguredError, PveApiUnavailableError, PveReadOnlyApi, redact_sensitive_text
 from ..results import CheckResult, Severity
 
@@ -40,10 +42,10 @@ def _ceph_health_status(data: Any) -> str:
     health = data.get("health")
     if isinstance(health, dict):
         value = health.get("status") or health.get("state")
-        return str(value or "").upper()
+        return (normalize_response_status(value) or "").upper()
     if health is not None:
-        return str(health).upper()
-    return str(data.get("status") or "").upper()
+        return (normalize_response_status(health) or "").upper()
+    return (normalize_response_status(data.get("status")) or "").upper()
 
 
 def check_ha(api: PveReadOnlyApi, results: list[CheckResult]) -> None:
@@ -60,7 +62,7 @@ def check_ha(api: PveReadOnlyApi, results: list[CheckResult]) -> None:
         return
     unhealthy: list[str] = []
     for record in records:
-        state = str(_lookup_field(record, "state", "status") or "").lower()
+        state = normalize_response_status(_lookup_field(record, "state", "status")) or ""
         name = str(_lookup_field(record, "sid", "service", "name") or "ha-resource")
         if state in {"error", "fence", "fenced", "unknown", "failed", "unhealthy"}:
             unhealthy.append(name)

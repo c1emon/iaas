@@ -169,6 +169,35 @@ def test_health_passes_quorum_and_marks_optional_node_missing_while_flagging_cap
     assert result_map["node.capacity.node-a.rootfs"].severity == "FAIL"
 
 
+def test_health_normalizes_whitespace_in_pve_status_values() -> None:
+    api = _baseline_api(
+        nodes=[{"node": "node-a", "status": " online "}],
+        node_storage={
+            "node-a": [
+                {"storage": "images", "active": True, "status": " inactive ", "usage": 10},
+                {"storage": "memory", "active": True, "usage": 10},
+            ],
+        },
+        vm_status={
+            ("node-a", 9001): {"status": "stopped"},
+            ("node-a", 1000): {"status": " running "},
+            ("node-a", 500): {"status": "running"},
+            ("node-a", 501): {"status": "running"},
+        },
+        ha_status=[{"sid": "vm:1000", "state": " failed "}],
+        ceph_status={"health": {"status": " HEALTH_OK "}},
+    )
+
+    result_map = _results_by_id(run_health(CLUSTER_PATH, VMS_PATH, environ={}, api_client=api))
+
+    assert result_map["node.node-a"].severity == "PASS"
+    assert result_map["storage.node-a.images"].severity == "FAIL"
+    assert result_map["vm.prod-app-01"].severity == "PASS"
+    assert result_map["ha.vm:1000"].severity == "FAIL"
+    assert result_map["ha"].severity == "FAIL"
+    assert result_map["ceph"].severity == "PASS"
+
+
 @pytest.mark.parametrize(
     ("storage", "expected_severity"),
     [
