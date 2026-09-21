@@ -74,7 +74,9 @@
             command: reconfigure
             action: post
           register: opnsense_interface_group_activation
-          failed_when: opnsense_interface_group_activation.response.status | default(none) | iaas_response_status != 'ok'
+          failed_when: >-
+            opnsense_interface_group_activation.response.status
+            | default(none) | iaas_response_status != 'ok'
           no_log: true
         - name: Report interface group activation success
           ansible.builtin.debug:
