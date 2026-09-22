@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iaas.invalid/schemas/image-publish/v1/image-build-request.schema.json",
+  "title": "image-build-request/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "schema_version", "profile", "version", "base", "guest", "customization", "resources", "checks"],
+  "properties": {
+    "kind": {"const": "image-build-request"}, "schema_version": {"const": 1},
+    "profile": {"type": "object", "additionalProperties": false, "required": ["id", "version"], "properties": {"id": {"const": "debian-13-amd64"}, "version": {"type": "string"}}},
+    "version": {"type": "string"},
+    "base": {"type": "object", "additionalProperties": false, "required": ["object_ref", "checksum"], "properties": {"object_ref": {"type": "string", "format": "uri", "pattern": "^https://"}, "checksum": {"$ref": "#/$defs/checksum"}}},
+    "guest": {"type": "object", "additionalProperties": false, "required": ["architecture", "firmware"], "properties": {"architecture": {"const": "amd64"}, "firmware": {"enum": ["bios", "uefi"]}}},
+    "customization": {"type": "object", "additionalProperties": false, "properties": {"apt_mirror": {"type": "string", "pattern": "^https://"}, "apt_security_mirror": {"type": "string", "pattern": "^https://"}, "packages": {"type": "array", "items": {"type": "string"}}, "timezone": {"type": "string"}, "locale": {"type": "string"}, "cloud_init": {"enum": ["installed", "absent"]}, "guest_agent": {"enum": ["installed", "absent"]}}, "required": ["apt_mirror", "apt_security_mirror", "packages"]},
+    "resources": {"$ref": "#/$defs/resources"}, "checks": {"$ref": "#/$defs/checks"}
+  },
+  "$defs": {
+    "checksum": {"type": "object", "additionalProperties": false, "required": ["algorithm", "value"], "properties": {"algorithm": {"enum": ["sha256", "sha512"]}, "value": {"type": "string", "pattern": "^[0-9a-fA-F]{64,128}$"}}},
+    "resources": {"type": "object", "additionalProperties": false, "required": ["cpus", "memory_mib", "work_min_free_bytes", "max_output_bytes", "timeout_seconds"], "properties": {"cpus": {"type": "integer", "minimum": 1}, "memory_mib": {"type": "integer", "minimum": 1}, "work_min_free_bytes": {"type": "integer", "minimum": 1}, "max_output_bytes": {"type": "integer", "minimum": 1}, "timeout_seconds": {"type": "integer", "minimum": 1}}},
+    "checks": {"type": "object", "additionalProperties": false, "properties": {"required": {"type": "array", "items": {"type": ["string", "object"]}}, "optional": {"type": "array", "items": {"type": ["string", "object"]}}}}
+  }
+}

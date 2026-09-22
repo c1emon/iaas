@@ -7,8 +7,6 @@ import re
 from typing import Any, Mapping
 
 from iaas_automation.common.errors import require
-from iaas_automation.pve_template.contracts import (HELPER_PROTOCOL_VERSION, PREVIEW_VERSION,
-                                                     RECEIPT_VERSION)
 from iaas_automation.runtime_config.selection import runtime_platform
 from .state import PVE_ENV, S3_ENV
 from .pve_contracts import PLAN_METADATA_VERSION, RESULT_VERSION
@@ -41,6 +39,8 @@ OPERATIONS = {
             "read": PLAN, "plan": PLAN, "apply": APPLY, "verify": DIAGNOSE},
     "pve-template": {"check": OFFLINE, "read": DIAGNOSE, "plan": DIAGNOSE,
                      "apply": MUTATE, "verify": DIAGNOSE},
+    "image": {"check": OFFLINE, "build": Operation(network=True), "test": Operation(network=True),
+              "read": OFFLINE, "verify": OFFLINE, "clean": OFFLINE},
     "services": {"check": OFFLINE, "generate": OFFLINE},
     "foundation": {"check": OFFLINE, "generate": OFFLINE, "health": DIAGNOSE},
     "k3s": {"check": OFFLINE, "generate": OFFLINE, "render": OFFLINE,
@@ -60,8 +60,8 @@ def capabilities() -> dict[str, Any]:
     return {"interface_version": 1, "schema_versions": [1], "platforms": [runtime_platform()],
             "lifecycle_versions": {
                 "pve": {"plan": PLAN_METADATA_VERSION, "result": RESULT_VERSION},
-                "pve-template": {"preview": PREVIEW_VERSION, "receipt": RECEIPT_VERSION,
-                                 "helper": HELPER_PROTOCOL_VERSION},
+                "pve-template": {"preview": 2, "result": 2, "record": 2},
+                "image": {"artifact": 1, "build_request": 1, "test_request": 1, "test_result": 1},
             },
             "operations": {component: {name: asdict(value) for name, value in entries.items()}
                            for component, entries in OPERATIONS.items()}}
@@ -76,7 +76,7 @@ def credential_names(component: str, operation: str, render_names: tuple[str, ..
         names |= S3_ENV
     names |= {
         "pve": PVE_ENV,
-        "pve-template": set(),  # Node helper uses only explicitly mapped SSH files.
+        "pve-template": {"PVE_API_TOKEN", "PVE_API_CA", "PVE_ARTIFACT_URL"},
         "opnsense": {"OPNSENSE_API_KEY", "OPNSENSE_API_SECRET"},
         "switch": {"SWITCH_SSH_USER", "SWITCH_SSH_PASSWORD", "SWITCH_SSH_PORT"},
         "k3s": set(), "foundation": set(),

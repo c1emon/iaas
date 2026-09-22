@@ -12,7 +12,8 @@ state.
 - `ansible/` — reusable playbooks, roles, module utilities, and Ansible
   configuration.
 - `opentofu/modules/` — reusable OpenTofu modules.
-- `packer/` and `pve-node/` — reusable template-build and node-side wrappers.
+- `packer/qemu/` and `image-builder/` — pinned local image-build profiles and runtime assets.
+- `pve-node/bin/iaas-pve-snippet-upload` — the retained node-side snippet helper only.
 
 本文件只说明可复用实现层。操作步骤、参数解释、准入和
 验收仅见 [基础设施操作手册](../docs/operations/README.md)。开发者直接调用

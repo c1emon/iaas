@@ -165,7 +165,7 @@ func execute(options Options, configuration RuntimeConfig, image string, effects
 		if !exists {
 			continue
 		}
-		if name == "AWS_SHARED_CREDENTIALS_FILE" || name == "AWS_SHARED_CONFIG_FILE" || name == "AWS_CA_BUNDLE" || name == "AWS_WEB_IDENTITY_TOKEN_FILE" {
+		if name == "AWS_SHARED_CREDENTIALS_FILE" || name == "AWS_SHARED_CONFIG_FILE" || name == "AWS_CA_BUNDLE" || name == "AWS_WEB_IDENTITY_TOKEN_FILE" || name == "PVE_API_CA" {
 			logical, err := filepath.Abs(value)
 			if err != nil {
 				return err

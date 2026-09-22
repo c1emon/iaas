@@ -13,14 +13,12 @@ import re
 from typing import Any, Mapping
 from urllib.parse import urlsplit
 
-from iaas_automation.common.errors import require
+from iaas_automation.common.errors import ValidationError, require
+from iaas_automation.image.contracts import canonical_digest as image_canonical_digest
+from iaas_automation.image.contracts import validate_artifact, validate_test_result
 
 
-HELPER_PROTOCOL_VERSION = 2
-PREVIEW_VERSION = 1
-RECEIPT_VERSION = 1
 IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
-SHA512 = re.compile(r"^[0-9a-fA-F]{128}$")
 SHA256 = re.compile(r"^[0-9a-fA-F]{64}$")
 
 BUILD_FIELDS = {
@@ -32,7 +30,19 @@ BUILD_FIELDS = {
 TARGET_FIELDS = {"node", "host", "endpoint", "api_endpoint", "insecure", "tls_verify", "ssh_user", "ssh_port"}
 RECORD_TARGET_FIELDS = TARGET_FIELDS | {"storage_id", "ssh_host"}
 RUNTIME_DIGEST = re.compile(r"^(?:[^@/\s]+(?:/[^@\s]+)*)?@?sha256:[0-9a-fA-F]{64}$")
-RECIPE_FIELDS = {"name", "version", "image", "customization"}
+
+# v2 publication contracts.  The old node-build constants remain private
+# implementation history while the runtime accepts only these new functions.
+PUBLISH_PREVIEW_VERSION = 2
+TEMPLATE_RECORD_VERSION = 2
+PUBLISH_REQUEST_VERSION = 1
+PUBLISH_FIELDS = {
+    "kind", "schema_version", "artifact", "artifact_digest", "test_results", "source", "target",
+    "vmid", "version", "name", "staging_storage", "disk_storage", "cloud_init_storage", "efi_storage",
+    "hardware", "cloud_init_defaults", "requirements", "transport",
+}
+PUBLISH_TARGET_FIELDS = {"api_endpoint", "node", "tls_verify"}
+PUBLISH_HARDWARE_FIELDS = {"cpus", "memory_mib", "machine", "scsi_controller", "boot_disk", "bridge", "firmware"}
 
 
 def _mapping(value: Any, label: str) -> dict[str, Any]:
@@ -48,322 +58,320 @@ def _text(value: Any, label: str, *, pattern: re.Pattern[str] | None = None) -> 
     return value
 
 
+def _canonical_value(value: Any) -> Any:
+    if value is None or isinstance(value, (bool, str)):
+        return value
+    if type(value) is int:
+        return value
+    if isinstance(value, float):
+        raise ValueError("floating point values are not supported by the contract")
+    if isinstance(value, list):
+        return [_canonical_value(item) for item in value]
+    if isinstance(value, Mapping):
+        require(all(isinstance(key, str) for key in value), "canonical object keys must be strings")
+        return {key: _canonical_value(value[key]) for key in sorted(value)}
+    raise ValueError("unsupported value in canonical JSON")
+
+
 def canonical_digest(value: Mapping[str, Any]) -> str:
     """Return the digest used to bind a preview, request, and receipt."""
-    payload = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    payload = json.dumps(_canonical_value(value), sort_keys=True, separators=(",", ":"),
+                         ensure_ascii=False, allow_nan=False).encode("utf-8")
     return "sha256:" + hashlib.sha256(payload).hexdigest()
 
 
-def validate_target(value: Any) -> dict[str, Any]:
-    target = _mapping(value, "target")
-    require(not set(target) - TARGET_FIELDS, "target contains unsupported fields")
-    node = _text(target.get("node"), "target.node", pattern=IDENTIFIER)
-    host = _text(target.get("host", node), "target.host")
-    require(not host.startswith("-") and all(char.isprintable() and not char.isspace() for char in host),
-            "target.host contains unsafe characters")
-    require("insecure" in target, "target.insecure must be explicit")
-    require("ssh_user" in target and "ssh_port" in target, "target SSH identity must be explicit")
-    endpoint = target.get("api_endpoint", target.get("endpoint"))
-    endpoint = _text(endpoint, "target.api_endpoint")
-    parsed = urlsplit(endpoint)
-    require(parsed.scheme in {"http", "https"} and parsed.netloc and not parsed.username and
-            not parsed.password and not parsed.query and not parsed.fragment,
-            "target.api_endpoint must be a fixed URL without credentials or query data")
-    result: dict[str, Any] = {"node": node, "host": host, "api_endpoint": endpoint.rstrip("/")}
-    require(type(target["insecure"]) is bool, "target.insecure must be boolean")
-    result["insecure"] = target["insecure"]
-    if "tls_verify" in target:
-        require(type(target["tls_verify"]) is bool, "target.tls_verify must be boolean")
-        result["tls_verify"] = target["tls_verify"]
-    if "insecure" in result and "tls_verify" in result:
-        require(result["tls_verify"] is (not result["insecure"]),
-                "target.insecure and target.tls_verify conflict")
-    value = _text(target["ssh_user"], "target.ssh_user")
-    require(not value.startswith("-") and all(char.isprintable() and not char.isspace() for char in value),
-            "target.ssh_user contains unsafe characters")
-    result["ssh_user"] = value
-    require(type(target["ssh_port"]) is int and 1 <= target["ssh_port"] <= 65535,
-            "target.ssh_port must be a valid port")
-    result["ssh_port"] = target["ssh_port"]
+def _publish_url(value: Any, label: str) -> str:
+    result = _text(value, label)
+    parsed = urlsplit(result)
+    require(parsed.scheme == "https" and parsed.netloc and not parsed.username and not parsed.password and
+            not parsed.query and not parsed.fragment, f"{label} must be a fixed HTTPS URL without credentials")
+    return result.rstrip("/")
+
+
+def _source_ref(value: Any, label: str) -> str:
+    result = _text(value, label)
+    parsed = urlsplit(result)
+    if parsed.scheme == "s3":
+        require(parsed.netloc and parsed.path not in {"", "/"} and
+                not parsed.username and not parsed.password and not parsed.query and not parsed.fragment,
+                f"{label} must be a stable credential-free s3 object reference")
+        return result.rstrip("/")
+    return _publish_url(result, label)
+
+
+def _publish_storage(value: Any, label: str) -> str:
+    result = _text(value, label, pattern=IDENTIFIER)
+    require(":" not in result and "/" not in result, f"{label} must be a storage identifier")
     return result
 
 
-def _validate_admission_target(value: Any) -> dict[str, Any]:
-    """Accept the common PVE target envelope while comparing canonical fields."""
-    target = _mapping(value, "admission.target")
-    if "host" not in target and "ssh_host" in target:
-        target["host"] = target["ssh_host"]
-    allowed = {key: item for key, item in target.items() if key in TARGET_FIELDS}
-    return validate_target(allowed)
-
-
-def validate_recipe(value: Any) -> dict[str, Any]:
-    """Validate the fixed build input independently of VM/S3 declarations."""
-    recipe = _mapping(value, "recipe")
-    require(not set(recipe) - BUILD_FIELDS, "recipe contains unsupported fields")
-    require(recipe.get("schema_version") == 1, "template recipe schema_version must be 1")
-    require(recipe.get("action") == "build", "template recipe action must be build")
-    target = validate_target(recipe.get("target"))
-    vmid = recipe.get("vmid")
-    require(type(vmid) is int and 9000 <= vmid <= 9500, "template vmid must be in 9000-9500")
-    version = _text(recipe.get("version"), "version", pattern=IDENTIFIER)
-    recipe_name = _text(recipe.get("recipe", "debian-13"), "recipe", pattern=IDENTIFIER)
-    image_url = _text(recipe.get("image_url"), "image_url")
-    image_prefix = _text(recipe.get("image_url_prefix"), "image_url_prefix")
-    image_parts = urlsplit(image_url)
-    prefix_parts = urlsplit(image_prefix)
-    require(image_parts.scheme == "https" and image_parts.netloc and not image_parts.username and
-            not image_parts.password and not image_parts.fragment,
-            "image_url must be an HTTPS URL without credentials or fragments")
-    require(prefix_parts.scheme == "https" and prefix_parts.netloc and not prefix_parts.username and
-            not prefix_parts.password and not prefix_parts.fragment,
-            "image_url_prefix must be an HTTPS URL without credentials or fragments")
-    require(image_url.startswith(image_prefix), "image_url must start with image_url_prefix")
-    image_sha512 = _text(recipe.get("image_sha512"), "image_sha512", pattern=SHA512)
-    result: dict[str, Any] = {
-        "schema_version": 1, "action": "build", "recipe": recipe_name,
-        "target": target, "vmid": vmid, "version": version,
-        "image_url": image_url, "image_url_prefix": image_prefix,
-        "image_sha512": image_sha512.lower(),
-    }
-    for field in ("import_storage", "disk_storage", "build_bridge", "build_domain",
-                  "apt_mirror", "apt_security_mirror", "timezone", "locale",
-                  "ciuser", "nameserver"):
-        result[field] = _text(recipe.get(field), field)
-    for field in ("apt_mirror", "apt_security_mirror"):
-        parts = urlsplit(result[field])
-        require(parts.scheme == "https" and parts.netloc and not parts.username and
-                not parts.password and not parts.fragment, f"{field} must be an HTTPS URL")
-    require(re.fullmatch(r"[A-Za-z0-9_.-]+", result["locale"]) is not None,
-            "locale has an invalid format")
-    require(re.fullmatch(r"[A-Za-z0-9_.-]+", result["ciuser"]) is not None,
-            "ciuser has an invalid format")
-    require("\n" not in result["timezone"] and "\r" not in result["timezone"],
-            "timezone has an invalid format")
+def validate_publish_request(value: Any) -> dict[str, Any]:
+    """Normalize the controller-upload PVE publication request."""
+    request = _mapping(value, "pve template publish request")
+    require(set(request) <= PUBLISH_FIELDS and request.get("kind") == "pve-template-publish-request" and
+            type(request.get("schema_version")) is int and request.get("schema_version") == PUBLISH_REQUEST_VERSION,
+            "unsupported pve template publish request")
+    required = {"artifact", "artifact_digest", "source", "target", "vmid", "version", "name",
+                "staging_storage", "disk_storage", "cloud_init_storage", "hardware", "cloud_init_defaults",
+                "requirements", "transport"}
+    require(required <= request.keys(), "pve template publish request is incomplete")
+    artifact = validate_artifact(_mapping(request["artifact"], "publish artifact"))
+    digest = _text(request["artifact_digest"], "artifact_digest")
+    require(SHA256.fullmatch(digest.removeprefix("sha256:")) is not None and
+            canonical_digest(artifact) == digest, "artifact_digest does not match canonical artifact")
+    source = _mapping(request["source"], "publish source")
+    require(set(source) <= {"object_ref", "object_version"} and "object_ref" in source,
+            "publish source is invalid")
+    normalized_source = {"object_ref": _source_ref(source["object_ref"], "source.object_ref")}
+    if "object_version" in source:
+        normalized_source["object_version"] = _text(source["object_version"], "source.object_version", pattern=IDENTIFIER)
+    target = _mapping(request["target"], "publish target")
+    require(set(target) == PUBLISH_TARGET_FIELDS, "publish target must contain api_endpoint, node and tls_verify")
+    normalized_target = {"api_endpoint": _publish_url(target["api_endpoint"], "target.api_endpoint"),
+                         "node": _text(target["node"], "target.node", pattern=IDENTIFIER),
+                         "tls_verify": target["tls_verify"]}
+    require(target["tls_verify"] is True, "publish target tls_verify must be true")
+    vmid = request["vmid"]
+    require(type(vmid) is int and 100 <= vmid <= 999_999_999, "publish vmid is invalid")
+    version = _text(request["version"], "publish version", pattern=IDENTIFIER)
+    name = _text(request["name"], "publish name", pattern=IDENTIFIER)
+    hardware = _mapping(request["hardware"], "publish hardware")
+    require(set(hardware) == PUBLISH_HARDWARE_FIELDS, "publish hardware is incomplete")
+    for field in ("cpus", "memory_mib"):
+        require(type(hardware[field]) is int and hardware[field] > 0, f"hardware.{field} must be positive")
+    for field in ("machine", "scsi_controller", "boot_disk", "bridge", "firmware"):
+        _text(hardware[field], f"hardware.{field}", pattern=IDENTIFIER)
+    require(hardware["firmware"] in {"bios", "uefi"}, "hardware.firmware is invalid")
+    storages = {"staging_storage": _publish_storage(request["staging_storage"], "staging_storage"),
+                "disk_storage": _publish_storage(request["disk_storage"], "disk_storage"),
+                "cloud_init_storage": _publish_storage(request["cloud_init_storage"], "cloud_init_storage")}
+    if "efi_storage" in request:
+        storages["efi_storage"] = _publish_storage(request["efi_storage"], "efi_storage")
+    if hardware["firmware"] == "uefi":
+        require("efi_storage" in storages, "uefi publication requires efi_storage")
+    defaults = _mapping(request["cloud_init_defaults"], "cloud_init_defaults")
+    require(not set(defaults) - {"user", "hostname", "ssh_keys", "ip_config"},
+            "cloud_init_defaults contains unsupported fields")
+    for field in ("user", "hostname", "ip_config"):
+        if field in defaults:
+            _text(defaults[field], f"cloud_init_defaults.{field}")
+    if "ssh_keys" in defaults:
+        require(isinstance(defaults["ssh_keys"], list) and
+                all(isinstance(item, str) and item for item in defaults["ssh_keys"]),
+                "cloud_init_defaults.ssh_keys must contain nonempty strings")
+    requirements = _mapping(request["requirements"], "requirements")
+    require(set(requirements) <= {"required", "optional", "native_template_config_verify", "guest_acceptance_scope"},
+            "requirements contains unsupported fields")
+    def normalize_checks(value: Any, label: str) -> list[dict[str, str]]:
+        require(isinstance(value, list), f"requirements.{label} must be a list")
+        rows = []
+        seen: set[str] = set()
+        for item in value:
+            row = _mapping(item, f"requirements.{label} item")
+            require(set(row) == {"id", "scope"}, f"requirements.{label} item must contain id and scope")
+            check_id = _text(row["id"], f"requirements.{label}.id", pattern=IDENTIFIER)
+            require(check_id not in seen, f"requirements.{label} contains duplicate check id")
+            seen.add(check_id)
+            rows.append({"id": check_id, "scope": _text(row["scope"], f"requirements.{label}.scope", pattern=IDENTIFIER)})
+        return rows
+    required_checks = normalize_checks(requirements.get("required", []), "required")
+    optional_checks = normalize_checks(requirements.get("optional", []), "optional")
+    require({(row["id"], row["scope"]) for row in required_checks}.isdisjoint(
+        {(row["id"], row["scope"]) for row in optional_checks}),
+        "requirements required and optional selectors overlap")
+    require(requirements.get("native_template_config_verify", True) is True,
+            "native template configuration verification is mandatory")
+    require(requirements.get("guest_acceptance_scope", "caller") == "caller",
+            "guest acceptance remains caller-owned")
+    normalized_requirements = {"required": required_checks, "optional": optional_checks,
+                               "native_template_config_verify": True,
+                               "guest_acceptance_scope": "caller"}
+    require(request["transport"] == "controller-upload", "only controller-upload transport is supported")
+    result = {"kind": "pve-template-publish-request", "schema_version": 1, "artifact": artifact,
+              "artifact_digest": digest, "source": normalized_source, "target": normalized_target,
+              "vmid": vmid, "version": version, "name": name, **storages, "hardware": dict(hardware),
+              "cloud_init_defaults": dict(defaults), "requirements": normalized_requirements,
+              "transport": "controller-upload", "test_results": []}
+    if "test_results" in request:
+        require(isinstance(request["test_results"], list), "test_results must be a list")
+        result["test_results"] = [validate_test_result(_mapping(item, "test result"))
+                                   for item in request["test_results"]]
+    validate_publish_evidence(result)
     return result
 
 
-def build_preview(recipe: Mapping[str, Any], *, runtime: Mapping[str, Any] | None = None,
-                  helper: Mapping[str, Any] | None = None) -> dict[str, Any]:
-    fixed = validate_recipe(recipe)
-    runtime_value = _mapping(runtime, "preview.runtime")
-    image_digest = _text(runtime_value.get("image_digest"), "preview.runtime.image_digest")
-    require(RUNTIME_DIGEST.fullmatch(image_digest) is not None,
-            "preview.runtime.image_digest must be a resolved digest")
-    helper_value = _mapping(helper if helper is not None else {"protocol_version": HELPER_PROTOCOL_VERSION},
-                            "preview.helper")
-    require(helper_value.get("protocol_version") == HELPER_PROTOCOL_VERSION,
-            "preview.helper protocol is incompatible")
-    body: dict[str, Any] = {
-        "schema_version": PREVIEW_VERSION, "kind": "pve-template-preview",
-        "action": "build", "fixed_input": fixed,
-        "runtime": {"image_digest": image_digest},
-        "helper": {"protocol_version": HELPER_PROTOCOL_VERSION, **helper_value},
-    }
+def validate_publish_evidence(request: Mapping[str, Any]) -> dict[str, Any]:
+    """Resolve every required check before a publication can be planned.
+
+    The artifact remains the authoritative history.  A selected test can add
+    evidence for an absent, unknown, or not-performed artifact check, but it
+    cannot override a failed observation.  Test results are bound to the
+    exact disk and normalized check policy so a caller cannot silently select
+    the latest result for a different image or policy.
+    """
+    artifact = _mapping(request.get("artifact"), "publish artifact")
+    required = _mapping(request.get("requirements"), "requirements").get("required", [])
+    optional = _mapping(request.get("requirements"), "requirements").get("optional", [])
+    policy = {"required": list(required), "optional": list(optional)}
+    policy_ids = {(row["id"], row["scope"]) for row in required + optional}
+    artifact_rows = {(row["id"], row["scope"]): row for row in artifact["checks"]}
+    selected_rows: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for raw in request.get("test_results", []):
+        result = validate_test_result(raw)
+        require(result["disk_sha256"] == artifact["disk"]["sha256"],
+                "selected image test result is for a different disk")
+        require(result["test_config_digest"] == image_canonical_digest(policy),
+                "selected image test result policy does not match publication requirements")
+        require(result["phase"] == "succeeded" and result["status"] == "succeeded" and
+                result["base_unchanged"] is True and result["collection"]["status"] == "succeeded" and
+                result["cleanup"]["status"] in {"succeeded", "not_required"},
+                "selected image test result is not publishable evidence")
+        for row in result["checks"]:
+            key = (row["id"], row["scope"])
+            require(key in policy_ids, "selected image test contains a check outside publication policy")
+            selected_rows.setdefault(key, []).append(row)
+
+    for selector in required:
+        key = (selector["id"], selector["scope"])
+        artifact_row = artifact_rows.get(key)
+        artifact_status = artifact_row["status"] if artifact_row is not None else None
+        candidates = selected_rows.get(key, [])
+        statuses = {row["status"] for row in candidates}
+        require(len(statuses) <= 1, "conflicting selected image test evidence cannot be resolved")
+        selected_status = next(iter(statuses), None)
+        if artifact_status == "failed":
+            require(selected_status is None, "selected image test cannot override failed artifact evidence")
+            raise ValidationError(f"required artifact check {selector['id']} failed")
+        if artifact_status == "passed":
+            require(selected_status in {None, "passed"},
+                    "selected image test conflicts with passed artifact evidence")
+        elif selected_status == "passed":
+            artifact_status = "passed"
+        require(artifact_status == "passed", f"required image check {selector['id']} lacks passed evidence")
+    return {"required": [dict(row) for row in required], "optional": [dict(row) for row in optional]}
+
+
+def build_publish_preview(request: Mapping[str, Any], *, runtime: Mapping[str, Any],
+                          observed: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    fixed = validate_publish_request(request)
+    runtime_value = _mapping(runtime, "publish runtime")
+    image_digest = _text(runtime_value.get("image_digest"), "publish runtime.image_digest")
+    require(RUNTIME_DIGEST.fullmatch(image_digest) is not None, "publish runtime image digest is invalid")
+    body: dict[str, Any] = {"kind": "pve-template-preview", "schema_version": PUBLISH_PREVIEW_VERSION,
+                            "action": "publish", "fixed_input": fixed,
+                            "artifact_digest": fixed["artifact_digest"],
+                            "disk_sha256": fixed["artifact"]["disk"]["sha256"],
+                            "runtime": {"image_digest": image_digest},
+                            "requirements": fixed["requirements"], "observed": dict(observed or {})}
     body["preview_digest"] = canonical_digest(body)
     return body
 
 
-def validate_preview(value: Any) -> dict[str, Any]:
-    preview = _mapping(value, "preview")
-    require(preview.get("schema_version") == PREVIEW_VERSION and
-            preview.get("kind") == "pve-template-preview" and preview.get("action") == "build",
-            "unsupported template preview")
-    require(isinstance(preview.get("fixed_input"), Mapping), "template preview fixed_input is missing")
-    fixed = validate_recipe(preview["fixed_input"])
-    runtime = _mapping(preview.get("runtime"), "template preview runtime")
-    image_digest = _text(runtime.get("image_digest"), "template preview runtime.image_digest")
-    require(RUNTIME_DIGEST.fullmatch(image_digest) is not None,
-            "template preview runtime.image_digest must be a resolved digest")
-    helper = _mapping(preview.get("helper"), "template preview helper")
-    require(helper.get("protocol_version") == HELPER_PROTOCOL_VERSION,
-            "template preview helper protocol is incompatible")
-    expected = dict(preview)
-    digest = expected.pop("preview_digest", None)
-    require(isinstance(digest, str) and digest.startswith("sha256:") and
-            SHA256.fullmatch(digest.removeprefix("sha256:")) is not None,
-            "template preview digest is invalid")
-    require(canonical_digest(expected) == digest, "template preview digest does not match inputs")
-    result = dict(preview)
-    result["fixed_input"] = fixed
-    result["runtime"] = {"image_digest": image_digest}
-    result["helper"] = dict(helper)
-    return result
-
-
-def validate_cleanup_preview(value: Any) -> dict[str, Any]:
-    preview = _mapping(value, "cleanup preview")
-    require(preview.get("schema_version") == PREVIEW_VERSION and
-            preview.get("kind") == "pve-template-cleanup-preview" and
-            preview.get("action") == "cleanup", "unsupported template cleanup preview")
-    require(IDENTIFIER.fullmatch(preview.get("original_execution", "")) is not None,
-            "cleanup preview original execution is invalid")
-    require(type(preview.get("vmid")) is int and 9000 <= preview["vmid"] <= 9500,
-            "cleanup preview vmid is invalid")
-    require(preview.get("owner") == "helper" and isinstance(preview.get("volumes"), list),
-            "cleanup preview ownership is invalid")
-    target = _mapping(preview.get("target"), "cleanup preview target")
-    obj = _mapping(preview.get("object"), "cleanup preview object")
-    runtime = _mapping(preview.get("runtime"), "cleanup preview runtime")
-    image_digest = _text(runtime.get("image_digest"), "cleanup preview runtime.image_digest")
-    require(RUNTIME_DIGEST.fullmatch(image_digest) is not None,
-            "cleanup preview runtime.image_digest must be a resolved digest")
-    helper = _mapping(preview.get("helper"), "cleanup preview helper")
-    require(helper.get("protocol_version") == HELPER_PROTOCOL_VERSION,
-            "cleanup preview helper protocol is incompatible")
-    mode = preview.get("mode", "failed_build")
-    require(mode in {"failed_build", "retire"}, "cleanup preview mode is invalid")
-    digest = preview.get("preview_digest")
-    body = {"original_execution": preview["original_execution"], "vmid": preview["vmid"],
-            "volumes": preview["volumes"], "owner": preview["owner"], "mode": mode,
-            "target": target, "object": obj,
-            "runtime": {"image_digest": image_digest},
-            "helper": {"protocol_version": HELPER_PROTOCOL_VERSION}}
-    require(isinstance(digest, str) and digest == canonical_digest(body),
-            "cleanup preview digest does not match inputs")
+def validate_publish_preview(value: Any) -> dict[str, Any]:
+    preview = _mapping(value, "pve template preview")
+    require(preview.get("kind") == "pve-template-preview" and preview.get("schema_version") == PUBLISH_PREVIEW_VERSION and
+            preview.get("action") in {"publish", "cleanup", "retire"}, "unsupported pve template preview")
+    digest = _text(preview.get("preview_digest"), "preview_digest")
+    require(SHA256.fullmatch(digest.removeprefix("sha256:")) is not None, "preview_digest is invalid")
+    body = dict(preview)
+    body.pop("preview_digest", None)
+    require(canonical_digest(body) == digest, "preview_digest does not match normalized inputs")
+    runtime = _mapping(preview.get("runtime"), "publish preview runtime")
+    require(RUNTIME_DIGEST.fullmatch(_text(runtime.get("image_digest"), "runtime.image_digest")) is not None,
+            "publish preview runtime is invalid")
+    if preview["action"] == "publish":
+        fixed = validate_publish_request(preview.get("fixed_input"))
+        require(preview.get("artifact_digest") == fixed["artifact_digest"] and
+                preview.get("disk_sha256") == fixed["artifact"]["disk"]["sha256"],
+                "publish preview artifact binding is invalid")
+    elif preview["action"] == "cleanup":
+        validate_cleanup_request(preview.get("fixed_input"))
+    else:
+        validate_retire_request(preview.get("fixed_input"))
     return dict(preview)
 
 
-def validate_request(value: Any) -> dict[str, Any]:
-    """Validate the node helper JSON envelope and reject command injection fields."""
-    request = _mapping(value, "helper request")
-    require(not set(request) - {"protocol_version", "operation", "execution_id", "preview", "template",
-                                "recovery_of", "owner", "cleanup", "admission", "template_admission"},
-            "helper request contains unsupported fields")
-    require(request.get("protocol_version") == HELPER_PROTOCOL_VERSION,
-            "unsupported helper protocol version")
-    operation = request.get("operation")
-    require(operation in {"capabilities", "check", "observe", "submit", "query", "cleanup_preview", "cleanup"},
-            "unsupported helper operation")
-    if operation not in {"capabilities", "check", "observe"}:
-        execution_id = _text(request.get("execution_id"), "execution_id", pattern=IDENTIFIER)
-        request["execution_id"] = execution_id
-    if operation == "observe":
-        template = _mapping(request.get("template"), "template")
-        require(type(template.get("vmid")) is int and 9000 <= template["vmid"] <= 9500,
-                "template vmid is invalid")
-        request["template"] = template
-    if operation == "submit":
-        request["preview"] = validate_preview(request.get("preview"))
-        admission = _mapping(request.get("admission"), "admission")
-        require(admission.get("schema_version") == 1 and admission.get("approved") is True,
-                "template execution admission must be v1 and approved")
-        require(isinstance(admission.get("execution_id"), str),
-                "template execution admission execution_id is required")
-        digest = admission.get("preview_digest", admission.get("plan_digest"))
-        require(digest == request["preview"]["preview_digest"],
-                "template admission does not match preview")
-        consumption = _mapping(admission.get("consumption"), "admission.consumption")
-        pending = _mapping(admission.get("pending"), "admission.pending")
-        serialization = _mapping(admission.get("serialization"), "admission.serialization")
-        require(consumption.get("reserved") is True and IDENTIFIER.fullmatch(str(consumption.get("reservation_id", ""))) is not None,
-                "template execution admission consumption is incomplete")
-        require(IDENTIFIER.fullmatch(str(pending.get("record_id", ""))) is not None,
-                "template execution admission pending is incomplete")
-        require(serialization.get("held") is True and IDENTIFIER.fullmatch(str(serialization.get("context_id", ""))) is not None,
-                "template execution admission serialization is incomplete")
-        target = _validate_admission_target(admission.get("target"))
-        preview_target = request["preview"]["fixed_input"]["target"]
-        require(target == preview_target, "template admission target does not match preview")
-        require(admission.get("execution_id") == request["execution_id"],
-                "template admission does not match execution")
-        request["admission"] = admission
-        if "template_admission" in request:
-            template_admission = _mapping(request["template_admission"], "template_admission")
-            require(template_admission.get("status") in {"available", "pending_validation"},
-                    "template admission is revoked or invalid")
-            require(template_admission.get("object") is not None,
-                    "template admission object is required")
-    if operation in {"cleanup_preview", "cleanup"}:
-        cleanup = _mapping(request.get("cleanup"), "cleanup")
-        require(cleanup.get("vmid") is not None and type(cleanup["vmid"]) is int and
-                9000 <= cleanup["vmid"] <= 9500, "cleanup vmid is invalid")
-        require(cleanup.get("owner") in {"helper", "opentofu", "unknown"}, "cleanup owner is invalid")
-        require(cleanup.get("original_execution"), "cleanup original execution is required")
-        require(IDENTIFIER.fullmatch(cleanup["original_execution"]) is not None,
-                "cleanup original execution is invalid")
-        require(cleanup.get("management_status") in {"active", "stopped", "unknown"},
-                "cleanup management status is invalid")
-        mode = cleanup.get("mode", "failed_build")
-        require(mode in {"failed_build", "retire"}, "cleanup mode is invalid")
-        if mode == "retire":
-            require(cleanup.get("retirement_authorized") is True and
-                    cleanup.get("dependencies_resolved") is True,
-                    "cleanup retirement authorization is incomplete")
-        if operation == "cleanup":
-            admission = _mapping(request.get("admission"), "admission")
-            require(admission.get("schema_version") == 1 and admission.get("approved") is True,
-                    "cleanup execution admission must be v1 and approved")
-            require(admission.get("execution_id") == request["execution_id"],
-                    "cleanup admission does not match execution")
-            require(admission.get("plan_digest") == request["cleanup"].get("preview_digest"),
-                    "cleanup admission does not match preview")
-            require(_mapping(admission.get("target"), "admission.target") ==
-                    _mapping(request["cleanup"].get("target"), "cleanup.target"),
-                    "cleanup admission target does not match preview")
-            consumption = _mapping(admission.get("consumption"), "admission.consumption")
-            pending = _mapping(admission.get("pending"), "admission.pending")
-            serialization = _mapping(admission.get("serialization"), "admission.serialization")
-            require(consumption.get("reserved") is True and consumption.get("reservation_id"),
-                    "cleanup execution admission consumption is incomplete")
-            require(pending.get("record_id") and serialization.get("held") is True and
-                    serialization.get("context_id"),
-                    "cleanup execution admission context is incomplete")
-            require(request.get("recovery_of") == cleanup.get("original_execution"),
-                    "cleanup recovery_of must identify the original execution")
-            require(request["execution_id"] != cleanup["original_execution"],
-                    "cleanup requires a new execution identity")
-            request["admission"] = admission
-        request["cleanup"] = cleanup
-    return request
+def validate_template_record_v2(value: Any, *, complete: bool = True) -> dict[str, Any]:
+    record = _mapping(value, "pve template record")
+    required = {"kind", "schema_version", "record_id", "target", "node", "vmid", "smbios_uuid",
+                "volumes", "configuration", "origin", "execution_id", "artifact_digest", "verification"}
+    require(set(record) >= required, "pve-template-record/v2 is incomplete")
+    require(record["kind"] == "pve-template-record" and type(record["schema_version"]) is int and
+            record["schema_version"] == TEMPLATE_RECORD_VERSION,
+            "unsupported pve template record")
+    _text(record["record_id"], "record_id", pattern=IDENTIFIER)
+    target = _mapping(record["target"], "record.target")
+    require(set(target) == PUBLISH_TARGET_FIELDS and target.get("tls_verify") is True,
+            "record target must be a fixed verified HTTPS target")
+    _publish_url(target["api_endpoint"], "record.target.api_endpoint")
+    _text(target["node"], "record.target.node", pattern=IDENTIFIER)
+    _text(record["node"], "record.node", pattern=IDENTIFIER)
+    require(type(record["vmid"]) is int and record["vmid"] > 0, "record vmid is invalid")
+    _text(record["smbios_uuid"], "record.smbios_uuid")
+    require(isinstance(record["volumes"], Mapping) and record["volumes"], "record volumes are required")
+    require(isinstance(record["configuration"], Mapping), "record configuration must be a mapping")
+    require(record["origin"] in {"publication", "observation"}, "record origin is invalid")
+    if complete and record["origin"] == "publication":
+        _text(record["execution_id"], "record.execution_id", pattern=IDENTIFIER)
+        digest = record["artifact_digest"]
+        require(isinstance(digest, str) and SHA256.fullmatch(digest.removeprefix("sha256:")),
+                "publication record artifact digest is invalid")
+    verification = _mapping(record["verification"], "record.verification")
+    require(verification.get("template_config") == "passed", "record template configuration is not verified")
+    return dict(record)
 
 
-def receipt(*, execution_id: str, preview: Mapping[str, Any], status: str,
-            phases: list[Mapping[str, Any]], effects: str = "unknown",
-            recovery_of: str | None = None, record: Mapping[str, Any] | None = None) -> dict[str, Any]:
-    """Build a versioned, truthful result without implying publication."""
-    require(status in {"running", "succeeded", "failed", "unknown"}, "invalid receipt status")
-    result = {
-        "schema_version": RECEIPT_VERSION, "kind": "pve-template-receipt",
-        "execution_id": execution_id, "preview_digest": preview.get("preview_digest"),
-        "status": status, "effects": effects, "phases": list(phases),
-        "recovery_of": recovery_of, "publication": "caller_owned",
-        "clone_verification": "not_performed", "business_acceptance": "not_performed",
-    }
-    if record is not None:
-        result["record_id"] = record.get("record_id")
-        result["target"] = record.get("target")
-        result["object"] = record.get("object")
-        result["configuration"] = record.get("configuration")
-    return result
+def validate_cleanup_request(value: Any) -> dict[str, Any]:
+    request = _mapping(value, "pve template cleanup request")
+    require(set(request) == {"kind", "schema_version", "target", "original_execution_id",
+                             "original_execution_dir", "original_preview_digest", "objects", "volumes",
+                             "ownership_admission"}, "cleanup request is incomplete")
+    require(request["kind"] == "pve-template-cleanup-request" and type(request["schema_version"]) is int and
+            request["schema_version"] == 1,
+            "unsupported cleanup request")
+    target = _mapping(request["target"], "cleanup.target")
+    require(set(target) == PUBLISH_TARGET_FIELDS and target.get("tls_verify") is True,
+            "cleanup target must be a fixed verified HTTPS target")
+    _publish_url(target["api_endpoint"], "cleanup.target.api_endpoint")
+    _text(target["node"], "cleanup.target.node", pattern=IDENTIFIER)
+    for field in ("original_execution_id", "original_preview_digest"):
+        _text(request[field], f"cleanup.{field}", pattern=IDENTIFIER if field.endswith("id") else None)
+    _text(request["original_execution_dir"], "cleanup.original_execution_dir")
+    require(isinstance(request["objects"], list) and isinstance(request["volumes"], list),
+            "cleanup objects and volumes must be lists")
+    admission = _mapping(request["ownership_admission"], "cleanup.ownership_admission")
+    require(admission.get("owner") == "publisher" and _text(admission.get("reference"), "ownership reference"),
+            "cleanup ownership is not publisher-authorized")
+    return dict(request)
 
 
-def validate_template_record(value: Any, *, complete: bool = True) -> dict[str, Any]:
-    """Validate a caller-transferable template record without facility access."""
-    record = _mapping(value, "template record")
-    require(record.get("schema_version") == 1, "template record schema_version must be 1")
-    require(IDENTIFIER.fullmatch(str(record.get("record_id", ""))) is not None,
-            "template record record_id is invalid")
-    target_value = _mapping(record.get("target"), "template record target")
-    allowed = {key: value for key, value in target_value.items() if key in TARGET_FIELDS}
-    target = validate_target(allowed)
-    if "storage_id" in target_value:
-        target["storage_id"] = _text(target_value["storage_id"], "template record target.storage_id")
-    if "ssh_host" in target_value:
-        target["ssh_host"] = _text(target_value["ssh_host"], "template record target.ssh_host")
-    obj = _mapping(record.get("object"), "template record object")
-    require(IDENTIFIER.fullmatch(str(obj.get("node", ""))) is not None,
-            "template record object.node is invalid")
-    require(type(obj.get("vmid")) is int and 9000 <= obj["vmid"] <= 9500,
-            "template record object.vmid is invalid")
-    uuid = obj.get("smbios_uuid")
-    disks = obj.get("disks")
-    complete_identity = isinstance(uuid, str) and bool(uuid) and isinstance(disks, Mapping) and bool(disks)
-    if complete:
-        require(complete_identity, "template record identity is incomplete")
-    configuration = _mapping(record.get("configuration", {}), "template record configuration")
-    if complete:
-        require(bool(configuration), "template record configuration is missing")
-    result = dict(record)
-    result.update(schema_version=1, target=target, object=dict(obj), configuration=configuration)
-    return result
+def validate_retire_request(value: Any) -> dict[str, Any]:
+    request = _mapping(value, "pve template retire request")
+    require(set(request) == {"kind", "schema_version", "target", "template_record",
+                             "ownership_admission", "retirement_admission"}, "retire request is incomplete")
+    require(request["kind"] == "pve-template-retire-request" and type(request["schema_version"]) is int and
+            request["schema_version"] == 1,
+            "unsupported retire request")
+    target = _mapping(request["target"], "retire.target")
+    require(set(target) == PUBLISH_TARGET_FIELDS and target.get("tls_verify") is True,
+            "retire target must be a fixed verified HTTPS target")
+    _publish_url(target["api_endpoint"], "retire.target.api_endpoint")
+    _text(target["node"], "retire.target.node", pattern=IDENTIFIER)
+    validate_template_record_v2(request["template_record"], complete=False)
+    ownership = _mapping(request["ownership_admission"], "retire.ownership_admission")
+    retirement = _mapping(request["retirement_admission"], "retire.retirement_admission")
+    require(ownership.get("owner") == "publisher" and ownership.get("reference"),
+            "retire ownership is not publisher-authorized")
+    require(retirement.get("authorized") is True and retirement.get("dependencies_resolved") is True and
+            retirement.get("reference"), "retire admission is incomplete")
+    return dict(request)
+
+
+def build_action_preview(request: Mapping[str, Any], *, action: str,
+                         runtime: Mapping[str, Any], observed: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    require(action in {"cleanup", "retire"}, "unsupported pve template action")
+    fixed = validate_cleanup_request(request) if action == "cleanup" else validate_retire_request(request)
+    body = {"kind": "pve-template-preview", "schema_version": PUBLISH_PREVIEW_VERSION,
+            "action": action, "fixed_input": fixed, "runtime": dict(runtime), "observed": dict(observed or {})}
+    body["preview_digest"] = canonical_digest(body)
+    return body

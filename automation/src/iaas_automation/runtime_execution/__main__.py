@@ -54,7 +54,8 @@ def main(argv: list[str] | None = None) -> int:
         reader = SourceReader(mapping)
         selected = load_operation(args.environment, args.component, args.operation, args.scenario, reader)
         mutation = ((args.component == 'opnsense' and args.operation == 'apply')
-                    or (args.component in {'pve', 'pve-template'} and args.operation == 'apply'))
+                    or (args.component in {'pve', 'pve-template'} and args.operation == 'apply')
+                    or (args.component == 'image' and args.operation in {'build', 'test', 'clean', 'read'}))
         if mutation:
             require(bool(args.execution_id), f'{args.component} apply requires --execution-id')
             require(re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", args.execution_id) is not None,
@@ -93,7 +94,11 @@ def main(argv: list[str] | None = None) -> int:
         common = {"component": args.component, "operation": args.operation, "environment": selected.environment,
                   "scenario": selected.scenario, "image_digest": args.image_digest, "effects": asdict(effects),
                   "input_origins": sorted(map(str, reader.logical_sources))}
-        if args.component == "pve-template":
+        if args.component == "image":
+            from iaas_automation.image.runtime import run as run_image
+            run_image(selected, args.operation, execution, execution_id=args.execution_id,
+                      runtime_digest=args.image_digest or None)
+        elif args.component == "pve-template":
             from iaas_automation.pve_template.runtime import run as run_template
             run_template(selected, args.operation, args.scope, execution, args.image_digest,
                          execution_id=args.execution_id)

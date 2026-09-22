@@ -23,10 +23,7 @@ def run_ssh_checks(runtime: RuntimeConfig, results: list[CheckResult], runner: C
         _emit(results, "SKIP", "ssh.context", "SSH adjunct checks skipped because PVE_HOST/PVE_SSH_USER were not both provided")
         return
 
-    checks = [
-        ("ssh.wrapper.snippet-upload", "/usr/local/sbin/iaas-pve-snippet-upload --help"),
-        ("ssh.wrapper.template-build", "/usr/local/sbin/iaas-pve-template-build --help"),
-    ]
+    checks = [("ssh.wrapper.snippet-upload", "/usr/local/sbin/iaas-pve-snippet-upload --help")]
     for check_id, remote in checks:
         command = ["ssh", "-o", "BatchMode=yes", f"{runtime.ssh_user}@{runtime.ssh_host}", f"sudo -n {remote}"]
         try:

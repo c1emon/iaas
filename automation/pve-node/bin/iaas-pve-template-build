@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-printf '%s\n' 'legacy template helper retired; use iaas-pve-template with the versioned JSON protocol' >&2
-exit 2

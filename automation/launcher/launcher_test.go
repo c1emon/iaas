@@ -124,6 +124,44 @@ func TestExplicitInputAndPortableArtifacts(t *testing.T) {
 	}
 }
 
+func TestImageTaskDirectoryInputIsMountedWritableOnlyForLocalReadClean(t *testing.T) {
+	directory := t.TempDir()
+	taskDir := filepath.Join(directory, "task")
+	if err := os.Mkdir(taskDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	work := task{options: Options{Engine: "local", Component: "image", Operation: "clean"},
+		directory: taskDir, mapping: map[string]string{}}
+	if err := work.initialize(); err != nil {
+		t.Fatal(err)
+	}
+	if err := work.addInput(directory); err != nil {
+		t.Fatal(err)
+	}
+	if len(work.files) != 1 || !work.files[0].writable {
+		t.Fatal("image cleanup directory was not marked writable")
+	}
+	mounts := strings.Join(work.mounts(false), " ")
+	if strings.Contains(mounts, "readonly,src="+directory) {
+		t.Fatal("image cleanup directory was mounted read-only")
+	}
+	verify := task{options: Options{Engine: "local", Component: "image", Operation: "verify"},
+		directory: taskDir, mapping: map[string]string{}}
+	if err := verify.initialize(); err != nil {
+		t.Fatal(err)
+	}
+	if err := verify.addInput(directory); err != nil {
+		t.Fatal(err)
+	}
+	if len(verify.files) != 1 || verify.files[0].writable {
+		t.Fatal("image verification directory was not kept read-only")
+	}
+	verifyMounts := strings.Join(verify.mounts(false), " ")
+	if !strings.Contains(verifyMounts, ",dst=/inputs/files/000000,readonly") {
+		t.Fatal("image verification directory was not mounted read-only")
+	}
+}
+
 func TestRealContainerExitCodeAndPrivateDockerErrors(t *testing.T) {
 	directory := t.TempDir()
 	// A command-level substitute tests the attachment protocol without Docker.

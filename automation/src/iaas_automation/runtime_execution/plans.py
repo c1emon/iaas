@@ -24,6 +24,7 @@ from .state import S3Backend
 from .pve_contracts import (validate_execution_admission, validate_plan_metadata,
                             validate_verification_requirements, validate_result)
 from .pve_results import machine_review, expectations, verify_configuration, api_client, template_identity
+from iaas_automation.pve_template.contracts import validate_template_record_v2
 
 
 def sha256(path: Path) -> str:
@@ -73,19 +74,21 @@ def _templates(selected: SelectedConfig, dependencies: list[dict], target: dict,
     records = _json(selected.files["template_records"]).get("records", []) if dependencies else []
     bound = []
     for dependency in dependencies:
-        matches = [r for r in records if r.get("object", {}).get("node") == dependency["node"]
-                   and r.get("object", {}).get("vmid") == dependency["vmid"]]
+        matches = [r for r in records if r.get("node") == dependency["node"]
+                   and r.get("vmid") == dependency["vmid"]]
         require(len(matches) == 1, "clone dependency requires one template record")
         record = matches[0]
+        record = validate_template_record_v2(record)
         record_target = record.get("target", {})
-        endpoint = record_target.get("api_endpoint", record_target.get("endpoint"))
-        require(record.get("schema_version") == 1 and record.get("record_id")
-                and isinstance(endpoint, str) and endpoint.rstrip("/") == target["api_endpoint"].rstrip("/")
-                and record_target.get("insecure") == target["insecure"], "template record target or version mismatch")
+        endpoint = record_target.get("api_endpoint")
+        require(isinstance(endpoint, str) and endpoint.rstrip("/") == target["api_endpoint"].rstrip("/")
+                and record_target.get("tls_verify") is (not target["insecure"]), "template record target or version mismatch")
         config = api.vm_config(dependency["node"], dependency["vmid"])
         require(config.get("template") in (True, 1, "1"), "clone source is not a template")
         identity = template_identity(config)
-        require(all(record["object"].get(key) == value for key, value in identity.items()),
+        recorded_volumes = {key: str(value).split(",", 1)[0] for key, value in record.get("volumes", {}).items()}
+        require(record.get("smbios_uuid") == identity.get("smbios_uuid") and
+                recorded_volumes == identity.get("disks"),
                 "template native identity changed")
         facts = record.get("configuration")
         require(isinstance(facts, dict) and bool(facts) and _facts_match(facts, config),
@@ -108,8 +111,11 @@ def _admit_templates(metadata: dict, selected: SelectedConfig, execution_id: str
         matches = [r for r in admissions if r.get("record_id") == record["record_id"]]
         require(len(matches) == 1, "current template admission missing or ambiguous")
         admission = validate_template_admission(matches[0])
+        admitted_record = admission["template_record"]
+        require(admitted_record == record,
+                "template admission record does not match the selected current record")
         require(admission["execution_id"] == execution_id and admission["plan_digest"] == metadata["plan_digest"]
-                and admission.get("target") == metadata["target"] and admission["object"] == record["object"],
+                and admission.get("target") == metadata["target"] and admission.get("record_id") == record["record_id"],
                 "template admission association mismatch")
         if admission["status"] == "pending_validation":
             require(admission["purpose"] == "verification" and admission.get("approved") is True
@@ -119,10 +125,13 @@ def _admit_templates(metadata: dict, selected: SelectedConfig, execution_id: str
                     "pending template requires bounded validation authorization")
         else:
             require(admission["status"] == "available", "template is not currently available")
-        obj = record["object"]
-        config = api.vm_config(obj["node"], obj["vmid"])
+        config = api.vm_config(record["node"], record["vmid"])
+        identity = template_identity(config)
+        recorded_volumes = {key: str(value).split(",", 1)[0]
+                            for key, value in record.get("volumes", {}).items()}
         require(config.get("template") in (True, 1, "1")
-                and all(obj.get(k) == v for k, v in template_identity(config).items())
+                and record.get("smbios_uuid") == identity.get("smbios_uuid")
+                and recorded_volumes == identity.get("disks")
                 and _facts_match(record["configuration"], config),
                 "template object was replaced or changed")
 

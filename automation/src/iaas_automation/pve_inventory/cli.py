@@ -24,7 +24,6 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--tfvars", type=Path, help="Generated OpenTofu variables output")
     parser.add_argument("--ansible", type=Path, help="Generated Ansible inventory output")
     parser.add_argument("--docs", type=Path, help="Generated PVE documentation output")
-    parser.add_argument("--template-build-env", type=Path, help="Generated Packer environment output")
     parser.add_argument("--generate", action="store_true", help="Generate committed outputs")
     parser.add_argument("--check", action="store_true", help="Fail if committed outputs are stale")
     return parser.parse_args(argv)
@@ -39,10 +38,9 @@ def main(argv: list[str] | None = None) -> int:
         "tfvars": args.tfvars,
         "ansible": args.ansible,
         "docs": args.docs,
-        "template_build_env": args.template_build_env,
     }
     if (args.generate or args.check) and any(path is None for path in optional_output_paths.values()):
-        raise ValidationError("--tfvars, --ansible, --docs, and --template-build-env are required with --generate or --check")
+        raise ValidationError("--tfvars, --ansible, and --docs are required with --generate or --check")
 
     cluster_doc = load_yaml(args.cluster)
     cluster_state = validate_cluster(cluster_doc)

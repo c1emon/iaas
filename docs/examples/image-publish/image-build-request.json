@@ -1,0 +1,22 @@
+{
+  "kind": "image-build-request",
+  "schema_version": 1,
+  "profile": {"id": "debian-13-amd64", "version": "1"},
+  "version": "debian13-2026-09-23",
+  "base": {
+    "object_ref": "https://images.example.invalid/debian-13-genericcloud.qcow2",
+    "checksum": {"algorithm": "sha512", "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+  },
+  "guest": {"architecture": "amd64", "firmware": "bios"},
+  "customization": {
+    "apt_mirror": "https://deb.debian.org/debian",
+    "apt_security_mirror": "https://security.debian.org",
+    "packages": ["cloud-init", "qemu-guest-agent", "openssh-server"],
+    "timezone": "UTC",
+    "locale": "C.UTF-8",
+    "cloud_init": "installed",
+    "guest_agent": "installed"
+  },
+  "resources": {"cpus": 2, "memory_mib": 2048, "work_min_free_bytes": 10737418240, "max_output_bytes": 1073741824, "timeout_seconds": 3600},
+  "checks": {"required": ["format", "self-contained", "identity-cleanup"], "optional": ["first-boot"]}
+}

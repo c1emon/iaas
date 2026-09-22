@@ -1,0 +1,49 @@
+---
+- name: Configure the Debian image while it is online
+  hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    packages_list: "{{ packages_json | from_json }}"
+  tasks:
+    - name: Configure Debian sources
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/debian.sources
+        mode: "0644"
+        content: |
+          Types: deb
+          URIs: {{ apt_mirror }}
+          Suites: trixie trixie-updates
+          Components: main
+          Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+
+          Types: deb
+          URIs: {{ apt_security_mirror }}
+          Suites: trixie-security
+          Components: main
+          Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+    - name: Remove legacy sources file
+      ansible.builtin.file:
+        path: /etc/apt/sources.list
+        state: absent
+    - name: Refresh package metadata
+      ansible.builtin.apt:
+        update_cache: true
+    - name: Install requested image packages
+      ansible.builtin.apt:
+        name: "{{ packages_list + (['cloud-init'] if image_cloud_init == 'installed' else []) + (['qemu-guest-agent'] if image_guest_agent == 'installed' else []) + ['openssh-server'] }}"
+        state: present
+        install_recommends: false
+    - name: Enable requested services
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+        masked: false
+      loop: "{{ (['cloud-init'] if image_cloud_init == 'installed' else []) + (['qemu-guest-agent'] if image_guest_agent == 'installed' else []) }}"
+    - name: Set image timezone
+      community.general.timezone:
+        name: "{{ image_timezone }}"
+    - name: Configure locale
+      ansible.builtin.locale_gen:
+        name: "{{ image_locale }}"
+        state: present

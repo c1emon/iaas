@@ -25,8 +25,6 @@ RUNTIME_IMAGE ?= iaas-runtime:oci-release-test
 PYTHON ?= PYTHONPATH="$(AUTOMATION)/src" $(UV) run --directory "$(ROOT)" python
 PYTEST := PYTHONPATH="$(AUTOMATION)/src" $(UV) run --directory "$(ROOT)" pytest
 ANSIBLE_LINT_PATHS ?= $(AUTOMATION)/ansible/playbooks/pve $(AUTOMATION)/ansible/playbooks/opnsense $(AUTOMATION)/ansible/roles/vm_baseline
-PACKER_BUILD_SCRIPT ?= $(AUTOMATION)/packer/proxmox/debian-13/build-template.sh
-TEMPLATE_BUILD_ENV ?= $(GENERATED_DIR)/packer/debian-13.env
 PVE_TFVARS ?= $(GENERATED_DIR)/opentofu/pve.tfvars.json
 PVE_DOCS ?= $(GENERATED_DIR)/docs/pve-vms.md
 SERVICES_DOCS ?= $(GENERATED_DIR)/docs/services.md
@@ -86,7 +84,7 @@ require-environment:
 	@test -n "$(ENVIRONMENT_DIR)" || { printf 'error: ENVIRONMENT_DIR is required\n' >&2; exit 1; }
 	@test -d "$(ENVIRONMENT_DIR)" || { printf 'error: ENVIRONMENT_DIR must exist\n' >&2; exit 1; }
 	@test -n "$(OUTPUT_DIR)" || { printf 'error: OUTPUT_DIR is required\n' >&2; exit 1; }
-	@$(PYTHON) -m iaas_automation.runtime_paths --environment "$(ENVIRONMENT_DIR)" --implementation "$(AUTOMATION)" --output "$(OUTPUT_DIR)" --output "$(GENERATED_DIR)" --output "$(RUNTIME_DIR)" --output "$(PVE_TFVARS)" --output "$(ANSIBLE_INVENTORY)" --output "$(PVE_DOCS)" --output "$(TEMPLATE_BUILD_ENV)" --output "$(SERVICES_DOCS)" --output "$(FOUNDATION_DOCS)" --output "$(PVE_USER_DATA_DIR)" --output "$(BACKUP_DIR)"
+	@$(PYTHON) -m iaas_automation.runtime_paths --environment "$(ENVIRONMENT_DIR)" --implementation "$(AUTOMATION)" --output "$(OUTPUT_DIR)" --output "$(GENERATED_DIR)" --output "$(RUNTIME_DIR)" --output "$(PVE_TFVARS)" --output "$(ANSIBLE_INVENTORY)" --output "$(PVE_DOCS)" --output "$(SERVICES_DOCS)" --output "$(FOUNDATION_DOCS)" --output "$(PVE_USER_DATA_DIR)" --output "$(BACKUP_DIR)"
 
 require-pve-dir:
 	@test -n "$(PVE_DIR)" || { printf 'error: PVE_DIR is required\n' >&2; exit 1; }
@@ -159,10 +157,10 @@ secret-scan:
 ansible-syntax: pve-ansible-syntax
 
 pve-generate:
-	$(PYTHON) -m iaas_automation.pve_inventory.cli --cluster "$(INVENTORY_DIR)/pve-cluster.yml" --vms "$(INVENTORY_DIR)/vms.yml" --tfvars "$(PVE_TFVARS)" --ansible "$(ANSIBLE_INVENTORY)" --docs "$(PVE_DOCS)" --template-build-env "$(TEMPLATE_BUILD_ENV)" --generate
+	$(PYTHON) -m iaas_automation.pve_inventory.cli --cluster "$(INVENTORY_DIR)/pve-cluster.yml" --vms "$(INVENTORY_DIR)/vms.yml" --tfvars "$(PVE_TFVARS)" --ansible "$(ANSIBLE_INVENTORY)" --docs "$(PVE_DOCS)" --generate
 
 pve-check:
-	$(PYTHON) -m iaas_automation.pve_inventory.cli --cluster "$(INVENTORY_DIR)/pve-cluster.yml" --vms "$(INVENTORY_DIR)/vms.yml" --tfvars "$(PVE_TFVARS)" --ansible "$(ANSIBLE_INVENTORY)" --docs "$(PVE_DOCS)" --template-build-env "$(TEMPLATE_BUILD_ENV)" --check
+	$(PYTHON) -m iaas_automation.pve_inventory.cli --cluster "$(INVENTORY_DIR)/pve-cluster.yml" --vms "$(INVENTORY_DIR)/vms.yml" --tfvars "$(PVE_TFVARS)" --ansible "$(ANSIBLE_INVENTORY)" --docs "$(PVE_DOCS)" --check
 
 services-generate:
 	$(PYTHON) -m iaas_automation.services_inventory.cli --services "$(INVENTORY_DIR)/services.yml" --vms "$(INVENTORY_DIR)/vms.yml" --docs "$(SERVICES_DOCS)" --generate

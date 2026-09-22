@@ -54,13 +54,12 @@ or older plans without that field must be prepared again.
 Use `iaas capabilities --runtime-config runtime.json` to inspect operation effects.
 
 The cutover keeps these interfaces aligned: launcher capabilities/interface
-version `1`; runtime environment schema `1`; PVE plan metadata `2`; PVE result,
-template preview and template receipt `1`; and the PVE template helper protocol
-`2`. The PVE helper executables are `iaas-pve-template` and
-`iaas-pve-template-worker`; installation also includes the internal root-only
-`iaas-pve-storage-status` HTTPS probe and the snippet upload
-helper. A capability response is the compatibility gate: old PVE operation
-names are rejected instead of being silently translated.
+version `1`; runtime environment schema `1`; PVE plan metadata `2`; PVE result
+`1`; image artifact/build/test contracts `1`; and PVE template preview/result/
+record `2`. Image construction is a local QEMU capability and PVE template
+publication is a controller-side HTTPS capability. A capability response is
+the compatibility gate: old PVE operation names and combined template-build
+inputs are rejected instead of being silently translated.
 
 ## Select inputs and an operation
 
@@ -83,7 +82,7 @@ network access and forward no credentials. Online operations require `--scope`:
 | OPNsense | check, generate, diagnose, read, plan, apply, verify | One inventory host |
 | switch | check, generate, diagnose (read-only facts) | Explicit comma-separated inventory hosts |
 | PVE | check, generate, preflight, health, prepare-dependencies, read, plan, apply, verify | Cluster name for diagnostics; complete root ID for lifecycle operations |
-| PVE template | check, read, plan, apply, verify | One explicit PVE node for helper operations |
+| PVE template | check, read, plan, apply, verify | One explicit HTTPS PVE node |
 | services | check, generate | — |
 | foundation | check, generate, health | Declared environment name |
 | K3s | check, generate / render, preflight, verify, deploy, snapshot, upgrade | Explicit VM references; deploy/upgrade use the complete cluster; snapshot uses its declared source |
@@ -106,10 +105,12 @@ Online component `files` aliases are explicit:
   optional template admission and explicit SSH files. Verify uses the selected
   plan and companions plus an optional `execution_result`; missing result
   material is reported as `unknown`.
-- PVE template: `recipe` is an independent input. Build plans use the recipe;
-  apply uses a selected `template_preview`, `execution_admission` and explicit
-  SSH files; verify uses a selected `template_receipt`. The helper target names
-  one explicit node and does not use the VM root.
+- PVE template: `request` is an independent `pve-template-publish-request/v1`
+  or action-specific cleanup/retire input. Plan uses the request and optional
+  artifact evidence; apply uses a selected `template_preview`, complete
+  `execution_admission`, protected artifact locator and API CA; verify uses a
+  selected `pve-template-result/v2`. The target is one explicit HTTPS node and
+  does not use the VM root.
 - K3s: `ssh_key`, `known_hosts`; preflight/deploy/upgrade also `runtime_secrets`
   (the existing protected JSON contract); upgrade adds `observed_versions`.
   Options include explicit `preflight_mode` and `upgrade_target` when applicable.
@@ -237,14 +238,14 @@ each selected `/vms/<vmid>` path. A permission-filtered empty list or a failed
 configuration request is not evidence of absence; unavailable permissions or
 an incomplete list block planning or leave verification unknown.
 
-Template build and cleanup use the independent `pve-template` component. The
-recipe, preview, execution admission and receipt are separate from the VM root.
-Online template operations use explicitly mapped SSH key/known_hosts files and
-the fixed node helper; caller-supplied helper commands are rejected. They do
-not forward VM API or S3 credentials.
-Cleanup carries an explicit VMID, original execution, ownership and management
-status. The old `prepare-plan` and `apply-saved-plan` names are rejected with a
-migration message, as are the old Make write entrypoints.
+Image build/test/clean and template publication use independent components.
+The image artifact, publication request, preview, complete execution admission
+and result are separate from the VM root. PVE template operations use the
+HTTPS API token, CA and protected artifact locator selected for that operation;
+they do not forward node SSH or S3 credentials. Cleanup and retire carry exact
+current-object identities and caller ownership/dependency admission. The old
+`prepare-plan`, `apply-saved-plan`, combined template build, force and helper
+entrypoints are rejected with migration guidance.
 
 Results contain `generated`, `diagnostics`, `plan`, `recovery`, `work` and summaries.
 `input-provenance.json` records the environment repository revision and dirty

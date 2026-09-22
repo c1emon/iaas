@@ -64,12 +64,6 @@ def derive_expected_resources(model: dict[str, Any]) -> DerivedResources:
                 }
             )
 
-    template_build = cluster["automation"]["template_build"]
-    template_build_template = cluster["templates"][template_build["template_key"]]
-    template_build_node = template_build_template["node"]
-    add_storage(template_build_node, template_build["import_storage_role"])
-    add_storage(template_build_node, template_build["disk_storage_role"])
-
     cloud_init = cluster["automation"]["cloud_init"]
     for node in required_nodes:
         add_storage(node, cloud_init["drive_storage_role"])
@@ -85,10 +79,6 @@ def derive_expected_resources(model: dict[str, Any]) -> DerivedResources:
         add_storage(node, vm["storage"]["disk_role"])
         for mapping in vm.get("passthrough") or []:
             mappings_by_node.setdefault(node, set()).add(mapping["mapping"])
-
-    build_bridge = template_build.get("build_bridge")
-    if isinstance(build_bridge, str):
-        bridges_by_node.setdefault(template_build_node, set()).add(build_bridge)
 
     for mapping_name, mapping in cluster["pci_mappings"].items():
         declared_mapping_nodes = set(mapping.get("nodes", {}))

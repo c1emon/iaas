@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iaas.invalid/schemas/image-publish/v1/image-artifact.schema.json",
+  "title": "image-artifact/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "schema_version", "artifact_id", "version", "disk", "guest", "build", "checks"],
+  "properties": {
+    "kind": {"const": "image-artifact"}, "schema_version": {"const": 1}, "artifact_id": {"type": "string"}, "version": {"type": "string"},
+    "disk": {"type": "object", "additionalProperties": false, "required": ["path", "format", "sha256", "size_bytes", "virtual_size_bytes", "self_contained"], "properties": {"path": {"type": "string", "pattern": "^[^/]"}, "format": {"const": "qcow2"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "size_bytes": {"type": "integer", "minimum": 1}, "virtual_size_bytes": {"type": "integer", "minimum": 1}, "self_contained": {"const": true}}},
+    "guest": {"type": "object", "additionalProperties": false, "required": ["architecture", "firmware", "cloud_init", "guest_agent"], "properties": {"architecture": {"const": "amd64"}, "firmware": {"enum": ["bios", "uefi"]}, "cloud_init": {"enum": ["installed", "absent", "unknown"]}, "guest_agent": {"enum": ["installed", "absent", "unknown"]}}},
+    "build": {"type": "object", "additionalProperties": false, "properties": {"origin": {"enum": ["iaas", "external"]}, "recipe_id": {"type": ["string", "null"]}, "recipe_version": {"type": ["string", "null"]}, "runtime_digest": {"type": ["string", "null"]}, "config_digest": {"type": ["string", "null"]}, "execution_id": {"type": ["string", "null"]}}},
+    "checks": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["id", "scope", "status", "evidence_ref"], "properties": {"id": {"type": "string"}, "scope": {"type": "string"}, "status": {"enum": ["passed", "failed", "not_performed", "unknown"]}, "evidence_ref": {"type": ["string", "null"]}}}}
+  }
+}

@@ -7,6 +7,7 @@ are mapped to individual supplied files, never interpreted as daemon paths.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 from pathlib import Path
 from typing import Any, cast
 import os
@@ -18,7 +19,7 @@ from iaas_automation.common.errors import ValidationError, require
 from iaas_automation.runtime_paths import validate_paths
 
 
-COMPONENTS = {"opnsense", "switch", "pve", "pve-template", "services", "foundation", "k3s"}
+COMPONENTS = {"opnsense", "switch", "pve", "pve-template", "image", "services", "foundation", "k3s"}
 NAME = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]*$")
 
 
@@ -36,7 +37,7 @@ class SourceReader:
     sources: set[Path] = field(default_factory=set)
     logical_sources: set[Path] = field(default_factory=set)
 
-    def locate(self, logical: Path) -> Path:
+    def locate(self, logical: Path, *, allow_directory: bool = False) -> Path:
         require(logical.is_absolute(), "source paths must be absolute")
         # Do not resolve a client path against the container's filesystem.
         if self.mapping is not None:
@@ -47,7 +48,8 @@ class SourceReader:
             path = supplied.resolve()
         else:
             path = logical.resolve()
-        require(path.is_file(), "declared input must be a readable regular file")
+        require(path.is_file() or (allow_directory and path.is_dir()),
+                "declared input must be a readable regular file or supported directory")
         self.sources.add(path)
         self.logical_sources.add(logical)
         return path
@@ -55,12 +57,27 @@ class SourceReader:
     def document(self, logical: Path) -> dict[str, Any]:
         path = self.locate(logical)
         try:
-            value = yaml.safe_load(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, yaml.YAMLError):
+            contents = path.read_text(encoding="utf-8")
+            if path.suffix.lower() == ".json":
+                value = json.loads(contents, object_pairs_hook=_strict_pairs,
+                                   parse_float=lambda _: (_ for _ in ()).throw(ValueError()),
+                                   parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
+            else:
+                value = yaml.safe_load(contents)
+        except (OSError, UnicodeError, ValueError, yaml.YAMLError):
             # YAML parser errors can contain source values, including secrets.
-            raise ValidationError("declared input is not readable YAML") from None
+            format_name = "JSON" if path.suffix.lower() == ".json" else "YAML"
+            raise ValidationError(f"declared input is not readable {format_name}") from None
         require(isinstance(value, dict), "declared input must contain a mapping")
         return value
+
+
+def _strict_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        require(key not in value, "duplicate JSON object key")
+        value[key] = item
+    return value
 
 
 def _mapping(value: Any, label: str) -> dict[str, Any]:
@@ -177,6 +194,6 @@ def load_environment(
     for name, source in declared_files.items():
         require(NAME.fullmatch(name), "file name must be a logical name")
         logical = _path(source, entry)
-        files[name] = reader.locate(logical)
+        files[name] = reader.locate(logical, allow_directory=name in {"execution_dir", "artifact_root"})
     options = resolve(_mapping(selected.get("options", {}), "component options"))
     return SelectedConfig(cast(str, environment), component, scenario, documents, paths, files, options, reader, file_paths)

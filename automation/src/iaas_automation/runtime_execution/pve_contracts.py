@@ -18,7 +18,7 @@ from iaas_automation.common.errors import require
 
 PLAN_METADATA_VERSION = 2
 RESULT_VERSION = 1
-TEMPLATE_VERSION = 1
+TEMPLATE_VERSION = 2
 EXECUTION_ADMISSION_VERSION = 1
 
 _IDENTIFIER = re.compile(r"[A-Za-z0-9_.:-]{1,160}\Z")
@@ -207,14 +207,17 @@ def validate_plan_metadata(value: Any) -> dict[str, Any]:
 
 def validate_template_admission(value: Any) -> dict[str, Any]:
     document = _object(value, "template_admission")
-    _required(document, {"schema_version", "execution_id", "plan_digest", "record_id", "purpose", "status", "object"}, "template_admission")
+    _required(document, {"schema_version", "execution_id", "plan_digest", "record_id", "purpose", "status"}, "template_admission")
     require(type(document["schema_version"]) is int and document["schema_version"] == TEMPLATE_VERSION, "unsupported template admission version")
     _identifier(document["execution_id"], "template_admission.execution_id")
     _digest_value(document["plan_digest"], "template_admission.plan_digest")
     _identifier(document["record_id"], "template_admission.record_id")
     require(isinstance(document["purpose"], str) and document["purpose"], "template_admission.purpose is required")
     require(document["status"] in {"available", "pending_validation", "revoked"}, "invalid template admission status")
-    _object(document["object"], "template_admission.object")
+    require("template_record" in document and "object" not in document,
+            "template admission requires pve-template-record/v2")
+    from iaas_automation.pve_template.contracts import validate_template_record_v2
+    validate_template_record_v2(document["template_record"], complete=False)
     require(document["status"] != "revoked", "template admission is revoked")
     return deepcopy(document)
 

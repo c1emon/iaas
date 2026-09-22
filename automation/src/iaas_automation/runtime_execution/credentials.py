@@ -34,6 +34,14 @@ def prepare_file_credentials(files: dict[str, Path], home: Path, environ: dict[s
     for variable in ("AWS_SHARED_CREDENTIALS_FILE", "AWS_SHARED_CONFIG_FILE", "AWS_CA_BUNDLE", "AWS_WEB_IDENTITY_TOKEN_FILE"):
         if variable in environ:
             protected_file(Path(environ[variable]), secret=variable != "AWS_CA_BUNDLE")
+    if "api_ca" in files:
+        protected_file(files["api_ca"], secret=False)
+        environ["PVE_API_CA"] = str(files["api_ca"])
+    if "artifact_locator" in files:
+        protected_file(files["artifact_locator"])
+        locator = files["artifact_locator"].read_text(encoding="utf-8").strip()
+        require("\n" not in locator and "\r" not in locator, "artifact locator file must contain one URL")
+        environ["PVE_ARTIFACT_URL"] = locator
     if "runtime_secrets" in files:
         from iaas_automation.k3s_automation.secrets import load_protected_environment_json
         load_protected_environment_json(files["runtime_secrets"])

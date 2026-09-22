@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iaas.invalid/schemas/image-publish/v1/image-test-request.schema.json",
+  "title": "image-test-request/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "schema_version", "artifact", "artifact_root", "checks", "resources"],
+  "properties": {"kind": {"const": "image-test-request"}, "schema_version": {"const": 1}, "artifact": {"$ref": "image-artifact.schema.json"}, "artifact_root": {"type": "string", "minLength": 1}, "checks": {"$ref": "image-build-request.schema.json#/$defs/checks"}, "resources": {"$ref": "image-build-request.schema.json#/$defs/resources"}}
+}

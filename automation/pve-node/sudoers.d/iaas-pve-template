@@ -1,3 +1,0 @@
-# Allow the pve-ops account to submit and observe only fixed template helper requests.
-# The helper accepts one strict JSON document on stdin and starts a fixed worker.
-pve-ops ALL=(root) NOPASSWD: /usr/local/sbin/iaas-pve-template

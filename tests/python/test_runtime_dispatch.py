@@ -2,6 +2,7 @@ import json
 import hashlib
 from pathlib import Path
 
+import pytest
 import yaml
 
 from iaas_automation.runtime_execution.__main__ import main
@@ -17,18 +18,68 @@ REPO = Path(__file__).resolve().parents[2]
 def test_capabilities_advertise_lifecycle_contract_versions() -> None:
     assert capabilities()["lifecycle_versions"] == {
         "pve": {"plan": 2, "result": 1},
-        "pve-template": {"preview": 1, "receipt": 1, "helper": 2},
+        "pve-template": {"preview": 2, "result": 2, "record": 2},
+        "image": {"artifact": 1, "build_request": 1, "test_request": 1, "test_result": 1},
     }
 
 
 def test_template_operations_do_not_forward_api_or_state_credentials():
     from iaas_automation.runtime_execution.operations import credential_names, process_environment
     for operation in ('check', 'read', 'plan', 'apply', 'verify'):
-        assert credential_names('pve-template', operation) == set()
+        expected = set() if operation == "check" else {'PVE_API_TOKEN', 'PVE_API_CA', 'PVE_ARTIFACT_URL'}
+        assert credential_names('pve-template', operation) == expected
         assert process_environment('pve-template', operation, {
+            'PVE_API_TOKEN': 'scoped-token', 'PVE_API_CA': '/tmp/ca.pem', 'PVE_ARTIFACT_URL': 'https://objects.invalid/disk',
             'TF_VAR_pve_api_token_secret': 'must-not-pass',
             'AWS_SECRET_ACCESS_KEY': 'must-not-pass',
-            'OPNSENSE_API_SECRET': 'must-not-pass'}) == {}
+            'OPNSENSE_API_SECRET': 'must-not-pass'}) == ({
+                'PVE_API_TOKEN': 'scoped-token', 'PVE_API_CA': '/tmp/ca.pem', 'PVE_ARTIFACT_URL': 'https://objects.invalid/disk'
+            } if operation != "check" else {})
+
+
+def test_image_test_requests_persist_an_external_artifact_directory_mapping(tmp_path):
+    request_path = tmp_path / "request.yml"
+    artifact_root = tmp_path / "artifact-root"
+    artifact_root.mkdir()
+    request_path.write_text(yaml.safe_dump({"kind": "image-test-request", "artifact_root": str(artifact_root)}))
+    entry = config(tmp_path, "image", {"test": str(request_path)})
+    first = SourceReader({str(entry): str(entry), str(request_path): str(request_path)})
+    with pytest.raises(InputRequired) as missing:
+        load_operation(entry, "image", "test", None, first)
+    assert missing.value.path == artifact_root.resolve()
+    mapped = tmp_path / "mapped-artifact-root"
+    mapped.mkdir()
+    second = SourceReader({str(entry): str(entry), str(request_path): str(request_path), str(artifact_root.resolve()): str(mapped)})
+    selected = load_operation(entry, "image", "test", None, second)
+    assert selected.documents["test"]["artifact_root"] == str(mapped)
+
+
+def test_image_runtime_receives_launcher_resolved_digest(tmp_path, monkeypatch):
+    request = tmp_path / "build.yml"
+    request.write_text(yaml.safe_dump({"kind": "image-build-request", "schema_version": 1}))
+    entry = config(tmp_path, "image", {"build": str(request)})
+    received = {}
+
+    def fake_run(selected, operation, execution, *, execution_id=None, runtime_digest=None):
+        received.update(operation=operation, execution_id=execution_id, runtime_digest=runtime_digest)
+        execution.finish({"component": "image", "operation": operation, "status": "succeeded"})
+
+    import iaas_automation.image.runtime as image_runtime
+    monkeypatch.setattr(image_runtime, "run", fake_run)
+    digest = "registry.invalid/runtime@sha256:" + "e" * 64
+    assert main(["--environment", str(entry), "--component", "image", "--operation", "build",
+                 "--execution-id", "build-1", "--image-digest", digest, "--scope", "image-build",
+                 "--output", str(tmp_path / "build-1")]) == 0
+    assert received == {"operation": "build", "execution_id": "build-1", "runtime_digest": digest}
+
+
+def test_launcher_rejects_duplicate_keys_in_image_json_contract(tmp_path, capsys):
+    request = tmp_path / "request.json"
+    request.write_text('{"kind":"image-test-request","kind":"image-test-request"}\n')
+    entry = config(tmp_path, "image", {"test": str(request)})
+    assert main(["--environment", str(entry), "--component", "image", "--operation", "check",
+                 "--output", str(tmp_path / "check")]) == 2
+    assert json.loads(capsys.readouterr().out)["status"] == "failed"
 
 
 def config(tmp_path, component, inputs, files=None):

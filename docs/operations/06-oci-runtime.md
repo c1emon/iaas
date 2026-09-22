@@ -7,7 +7,8 @@ versioned lifecycle contracts consumed by callers:
 ```json
 "lifecycle_versions": {
   "pve": {"plan": 2, "result": 1},
-  "pve-template": {"preview": 1, "receipt": 1, "helper": 2}
+  "pve-template": {"preview": 2, "result": 2, "record": 2},
+  "image": {"artifact": 1, "build_request": 1, "test_request": 1, "test_result": 1}
 }
 ```
 
@@ -38,10 +39,11 @@ Keep those outputs separate from authored source and do not upload an undeclared
 directory.
 
 There is no implicit Astra selector or external state path. The old `ASTRA`
-selector, old `ASTRA_PVE_SSH_TIMEOUT_SECONDS`, and the old Make write commands
-return migration errors. The new SSH timeout variable is
-`IAAS_PVE_SSH_TIMEOUT_SECONDS`. Existing PVE hosts must finish the separate
-[helper cutover](pve-helper-cutover.md) before online helper calls.
+selector, old `ASTRA_PVE_SSH_TIMEOUT_SECONDS`, old Make write commands and
+combined template helper protocol return migration errors. PVE publication uses
+the controller HTTPS API with operation-scoped API token, CA and protected
+artifact locator; it does not require template-build SSH helpers. Existing
+snippet upload access remains a separate capability.
 
 K3s retains its explicit intent, inventory, scope and protected-secret file
 inputs. This packaging change does not qualify a cluster or repair handoff logic.

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from iaas_automation.common.errors import ValidationError
+
 from .outputs import TaskOutputs
 from .process import ProcessResult, run_protected
 
@@ -35,10 +37,12 @@ class Execution:
         if not successful:
             raise OperationFailed(f"{phase} failed; inspect protected task recovery material")
 
-    def run(self, phase: str, command: Sequence[str], cwd: Path) -> ProcessResult:
+    def run(self, phase: str, command: Sequence[str], cwd: Path, *, timeout_seconds: int | None = None,
+            max_output_bytes: int | None = None) -> ProcessResult:
         try:
             result = run_protected(command, cwd=cwd, environ=self.environ,
-                                   capture=self.outputs.path("recovery") / f"{phase}.raw")
+                                   capture=self.outputs.path("recovery") / f"{phase}.raw",
+                                   timeout_seconds=timeout_seconds, max_output_bytes=max_output_bytes)
         except ValidationError:
             self.phases.append({"phase": phase, "status": "not-started", "reason": "protected process setup failed"})
             self.outputs.summary({"status": "failed", "phases": self.phases})

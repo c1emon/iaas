@@ -34,7 +34,7 @@ def compile_documents(selected: SelectedConfig) -> dict[str, str]:
             cluster = validate_cluster(docs["cluster"])
             result = render_outputs(build_model(cluster, validate_vms(docs["vms"], cluster)))
             return {"pve.tfvars.json": result["tfvars"], "pve-inventory.yml": result["ansible"],
-                    "pve.md": result["docs"], "template-build.env": result["template_build_env"]}
+                    "pve.md": result["docs"]}
         if component == "services":
             from iaas_automation.services_inventory.validation import load_vm_names, validate_services
             from iaas_automation.services_inventory.model import build_model

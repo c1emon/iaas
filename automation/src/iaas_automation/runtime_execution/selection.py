@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 
 from iaas_automation.common.errors import require
-from iaas_automation.runtime_config import SelectedConfig, SourceReader, load_environment
+from iaas_automation.runtime_config import InputRequired, SelectedConfig, SourceReader, load_environment
 from iaas_automation.runtime_config.compile import compile_documents
 from iaas_automation.opnsense_validation import RESOURCE_FILES, validate_documents
 from .operations import operation_for
@@ -18,13 +18,41 @@ OPNSENSE_WORKFLOW_OPERATIONS = {"read", "plan", "apply", "verify"}
 _OPNSENSE_APPLY_OPTIONS = {"candidate_sha256", "execution_id", "activation_check"}
 _OPNSENSE_READ_OPTIONS = {"include_system"}
 PVE_WORKFLOW_OPERATIONS = {"read", "plan", "apply", "verify"}
-_PVE_TEMPLATE_INPUTS = {"recipe"}
+_PVE_TEMPLATE_INPUTS = {"request", "publish", "cleanup", "retire"}
+_IMAGE_INPUTS = {"request", "build", "test", "artifact"}
 _PVE_TEMPLATE_FILE_INPUTS = {
-    "read": {"execution_result", "result", "ssh_key", "known_hosts"},
-    "plan": {"ssh_key", "known_hosts"},
-    "apply": {"preview", "template_preview", "execution_admission", "ssh_key", "known_hosts"},
-    "verify": {"receipt", "template_receipt", "ssh_key", "known_hosts"},
+    "read": {"result", "template", "artifact"},
+    "plan": {"artifact", "publish_request"},
+    "apply": {"preview", "template_preview", "execution_admission", "artifact_locator", "api_ca"},
+    "verify": {"result", "template_result"},
 }
+_IMAGE_FILE_INPUTS = {
+    "read": {"execution_dir"}, "verify": {"artifact"}, "clean": {"execution_dir"},
+}
+
+
+def _map_image_external_paths(selected: SelectedConfig, operation: str) -> None:
+    """Require and bind image directories that contain task or disk material."""
+    mapping = selected.reader.mapping
+    if mapping is None:
+        return
+    if operation == "test":
+        document = selected.documents.get("test")
+        if isinstance(document, dict) and isinstance(document.get("artifact_root"), str):
+            logical = Path(document["artifact_root"]).resolve()
+            supplied = mapping.get(str(logical))
+            if supplied is None:
+                raise InputRequired(logical)
+            require(Path(supplied).is_dir(), "image artifact_root must be a supplied directory")
+            document["artifact_root"] = supplied
+    elif operation == "verify" and "artifact" in selected.files:
+        logical_artifact = selected.file_paths["artifact"]
+        logical_root = logical_artifact.resolve().parent
+        supplied = mapping.get(str(logical_root))
+        if supplied is None:
+            raise InputRequired(logical_root)
+        require(Path(supplied).is_dir(), "image artifact root must be a supplied directory")
+        selected.options["artifact_root"] = supplied
 
 
 def _declared_input_names(entry: Path, component: str, scenario: str | None,
@@ -161,6 +189,12 @@ def load_operation(entry: Path, component: str, operation: str, scenario: str | 
         inputs = declared
         files |= {name for name in _PVE_TEMPLATE_FILE_INPUTS.get(operation, set())
                   if name in metadata.file_paths}
+    elif component == "image":
+        declared = _declared_input_names(entry, component, scenario, reader)
+        require(declared <= _IMAGE_INPUTS, "unsupported image input")
+        inputs = declared
+        files |= {name for name in _IMAGE_FILE_INPUTS.get(operation, set())
+                  if name in metadata.file_paths}
     elif operation in {"prepare-dependencies", "plan", "prepare-plan"}:
         if operation == "prepare-dependencies":
             inputs = set()
@@ -191,6 +225,8 @@ def load_operation(entry: Path, component: str, operation: str, scenario: str | 
         files |= {name for name in ("aws_credentials", "aws_config", "aws_ca", "aws_web_identity")
                   if name in metadata.file_paths}
     selected = load_environment(entry, component, scenario, reader, input_names=inputs, file_names=files)
+    if component == "image":
+        _map_image_external_paths(selected, operation)
     if component == "opnsense" and operation in OPNSENSE_WORKFLOW_OPERATIONS:
         _validate_opnsense_options(selected, operation)
         if operation == "plan" and "recovery" not in selected.files:
