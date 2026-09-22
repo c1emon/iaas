@@ -138,6 +138,13 @@ def test_worker_runs_every_build_phase_and_attaches_imported_volume(tmp_path: Pa
         script = fake_bin / name
         script.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         script.chmod(0o755)
+    (fake_bin / "virt-customize").write_text(
+        "#!/usr/bin/env python3\nimport sys\n"
+        "args = sys.argv[1:]\n"
+        "assert args.index('--upload') < args.index('apt-get update') < args.index('--install')\n"
+        "assert int(args[args.index('--memsize') + 1]) >= 2048\n",
+        encoding="utf-8",
+    )
     env = os.environ | {"IAAS_PVE_QM": str(qm), "IAAS_PVE_VIRT_CUSTOMIZE": str(fake_bin / "virt-customize"),
                         "IAAS_PVE_VIRT_SYSPREP": str(fake_bin / "virt-sysprep"),
                         "IAAS_PVE_PVESH": str(pvesh), "IAAS_PVE_IP": str(ip),

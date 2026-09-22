@@ -320,9 +320,10 @@ def build(directory: Path, request: dict[str, Any], record: dict[str, Any]) -> N
         encoding="utf-8",
     )
     set_effect(record, "work", "known", directory)
-    command([VIRT_CUSTOMIZE, "-a", str(custom), "--install",
-             "cloud-init,qemu-guest-agent,openssh-server", "--upload", f"{sources}:/etc/apt/sources.list.d/debian.sources",
+    command([VIRT_CUSTOMIZE, "--memsize", "2048", "-a", str(custom),
+             "--upload", f"{sources}:/etc/apt/sources.list.d/debian.sources",
              "--run-command", "rm -f /etc/apt/sources.list", "--run-command", "apt-get update",
+             "--install", "cloud-init,qemu-guest-agent,openssh-server",
              "--run-command", "cloud-init clean --logs", "--timezone", preview["timezone"],
              "--run-command", f"locale-gen {preview['locale']}"],
             phase="customize", record=record, directory=directory)
