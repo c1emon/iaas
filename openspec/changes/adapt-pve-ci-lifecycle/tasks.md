@@ -1,6 +1,6 @@
 ## 1. 合同与入口
 
-- [ ] 1.1 实施前确认并按仓库规则进入 change 对应实现分支，检查工作树；以分支及状态记录验证，不自动处理其他未提交修改。
+- [x] 1.1 实施前确认并按仓库规则进入 change 对应实现分支，检查工作树；以分支及状态记录验证，不自动处理其他未提交修改。
 - [ ] 1.2 定义 PVE v2 plan metadata、v1 result、模板 v1 preview/receipt、execution/state/template admission、固定 verification_requirements 和 recovery_of 校验模型；用缺字段、旧版本、目标/执行身份冲突、缺消费/pending 关联及验收要求事后降级的代表性测试验证。
 - [ ] 1.3 增加 pve-template recipe 选择及独立 check/read/plan/apply/verify discovery；用不加载 VM/S3、拒绝无关凭据和未声明文件的测试验证。
 - [ ] 1.4 将 PVE 正式操作统一为 read/plan/apply/verify，扩展 launcher execution ID；移除旧 prepare-plan/apply-saved-plan 和无准入直写旁路，以 CLI 拒绝/完整交接测试验证，保留其他组件回归。

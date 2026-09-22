@@ -48,10 +48,24 @@ class S3Backend:
 
     def identity(self) -> dict[str, Any]:
         """Persist in protected plan metadata, never ordinary public logs."""
+        endpoint = self.config.get("endpoint")
+        endpoints = self.config.get("endpoints", {})
+        if endpoint is None and isinstance(endpoints, dict):
+            endpoint = endpoints.get("s3") or endpoints.get("S3")
+        path_style = self.config.get("use_path_style", self.config.get("force_path_style", False))
+        insecure = self.config.get("insecure", False)
         return {"bucket": self.config["bucket"], "key": self.config["key"],
                 "region": self.config["region"], "endpoints": self.config.get("endpoints", {}),
-                "endpoint": self.config.get("endpoint"), "workspace": self.workspace,
-                "workspace_key_prefix": self.config.get("workspace_key_prefix", "env:")}
+                "endpoint": endpoint, "workspace": self.workspace,
+                "workspace_key_prefix": self.config.get("workspace_key_prefix", "env:"),
+                "use_lockfile": self.config.get("use_lockfile") is True,
+                "tls_verify": not bool(insecure), "path_style": bool(path_style)}
+
+    def state_key(self) -> str:
+        """Return the exact workspace object key without touching the backend."""
+        from .pve_state import workspace_state_key
+
+        return workspace_state_key(self.config, self.workspace)
 
     def initialize(self, root: Path, environ: dict[str, str], recovery: Path, tofu: str = "tofu",
                    *, plugin_dir: Path | None = None) -> ProcessResult:
