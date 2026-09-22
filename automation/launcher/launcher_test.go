@@ -160,6 +160,21 @@ func TestImageTaskDirectoryInputIsMountedWritableOnlyForLocalReadClean(t *testin
 	if !strings.Contains(verifyMounts, ",dst=/inputs/files/000000,readonly") {
 		t.Fatal("image verification directory was not mounted read-only")
 	}
+	recovery := task{options: Options{Engine: "local", Component: "pve-template", Operation: "apply"},
+		directory: taskDir, mapping: map[string]string{}}
+	if err := recovery.initialize(); err != nil {
+		t.Fatal(err)
+	}
+	if err := recovery.addInput(directory); err != nil {
+		t.Fatal(err)
+	}
+	if len(recovery.files) != 1 || recovery.files[0].writable {
+		t.Fatal("PVE cleanup recovery directory was not kept read-only")
+	}
+	recoveryMounts := strings.Join(recovery.mounts(false), " ")
+	if !strings.Contains(recoveryMounts, ",dst=/inputs/files/000000,readonly") {
+		t.Fatal("PVE cleanup recovery directory was not mounted read-only")
+	}
 }
 
 func TestRealContainerExitCodeAndPrivateDockerErrors(t *testing.T) {
@@ -252,6 +267,39 @@ func TestCollectionPreservesNativeLinksWithoutFollowingThem(t *testing.T) {
 	data, _ := os.ReadFile(outstanding)
 	if string(data) != "unchanged" {
 		t.Fatal("source overwritten during result recording")
+	}
+}
+
+func TestImageLocalOutputRelocationPreservesTaskIdentity(t *testing.T) {
+	directory := t.TempDir()
+	source := filepath.Join(directory, ".iaas-task-1", "work", "output")
+	destination := filepath.Join(directory, "result")
+	if err := os.MkdirAll(source, 0700); err != nil {
+		t.Fatal(err)
+	}
+	taskFile := filepath.Join(source, "work", "image", "task.json")
+	if err := os.MkdirAll(filepath.Dir(taskFile), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(taskFile, []byte("task"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(taskFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := relocateImageOutput(source, destination, []byte("result"), []byte("provenance")); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Stat(filepath.Join(destination, "work", "image", "task.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(before, after) {
+		t.Fatal("local image collection copied instead of relocating the task workspace")
+	}
+	if _, err := os.Stat(source); !os.IsNotExist(err) {
+		t.Fatalf("source workspace remained after relocation: %v", err)
 	}
 }
 

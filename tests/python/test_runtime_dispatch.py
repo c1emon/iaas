@@ -26,7 +26,9 @@ def test_capabilities_advertise_lifecycle_contract_versions() -> None:
 def test_template_operations_do_not_forward_api_or_state_credentials():
     from iaas_automation.runtime_execution.operations import credential_names, process_environment
     for operation in ('check', 'read', 'plan', 'apply', 'verify'):
-        expected = set() if operation == "check" else {'PVE_API_TOKEN', 'PVE_API_CA', 'PVE_ARTIFACT_URL'}
+        expected = set() if operation in {"check", "verify"} else {'PVE_API_TOKEN', 'PVE_API_CA'}
+        if operation == "apply":
+            expected.add('PVE_ARTIFACT_URL')
         assert credential_names('pve-template', operation) == expected
         assert process_environment('pve-template', operation, {
             'PVE_API_TOKEN': 'scoped-token', 'PVE_API_CA': '/tmp/ca.pem', 'PVE_ARTIFACT_URL': 'https://objects.invalid/disk',
@@ -34,7 +36,9 @@ def test_template_operations_do_not_forward_api_or_state_credentials():
             'AWS_SECRET_ACCESS_KEY': 'must-not-pass',
             'OPNSENSE_API_SECRET': 'must-not-pass'}) == ({
                 'PVE_API_TOKEN': 'scoped-token', 'PVE_API_CA': '/tmp/ca.pem', 'PVE_ARTIFACT_URL': 'https://objects.invalid/disk'
-            } if operation != "check" else {})
+            } if operation == "apply" else {
+                'PVE_API_TOKEN': 'scoped-token', 'PVE_API_CA': '/tmp/ca.pem'
+            } if operation in {"read", "plan"} else {})
 
 
 def test_image_test_requests_persist_an_external_artifact_directory_mapping(tmp_path):
@@ -73,12 +77,54 @@ def test_image_runtime_receives_launcher_resolved_digest(tmp_path, monkeypatch):
     assert received == {"operation": "build", "execution_id": "build-1", "runtime_digest": digest}
 
 
+def test_pve_cleanup_recovery_directory_is_mapped_read_only_for_plan_and_apply(tmp_path):
+    recovery = tmp_path / "publish-evidence"
+    recovery.mkdir()
+    mapped = tmp_path / "mapped-publish-evidence"
+    mapped.mkdir()
+    cleanup = tmp_path / "cleanup.json"
+    cleanup.write_text(json.dumps({
+        "kind": "pve-template-cleanup-request", "schema_version": 1,
+        "original_execution_dir": str(recovery),
+    }))
+    preview = tmp_path / "preview.json"
+    preview.write_text(json.dumps({
+        "kind": "pve-template-preview", "schema_version": 2, "action": "cleanup",
+        "fixed_input": {"original_execution_dir": str(recovery)},
+    }))
+    entry = tmp_path / "environment.yml"
+    entry.write_text(yaml.safe_dump({
+        "schema_version": 1, "environment": "synthetic",
+        "components": {"pve-template": {"inputs": {"cleanup": str(cleanup)},
+                                           "files": {"preview": str(preview)},
+                                           "options": {"action": "cleanup"}}},
+    }))
+    for operation in ("plan", "apply"):
+        reader = SourceReader({str(entry): str(entry), str(cleanup): str(cleanup),
+                               str(preview): str(preview), str(recovery): str(mapped)})
+        selected = load_operation(entry, "pve-template", operation, None, reader)
+        assert selected.files["original_execution_dir"] == mapped.resolve()
+        assert selected.file_paths["original_execution_dir"] == recovery.resolve()
+
+
 def test_launcher_rejects_duplicate_keys_in_image_json_contract(tmp_path, capsys):
     request = tmp_path / "request.json"
     request.write_text('{"kind":"image-test-request","kind":"image-test-request"}\n')
     entry = config(tmp_path, "image", {"test": str(request)})
     assert main(["--environment", str(entry), "--component", "image", "--operation", "check",
                  "--output", str(tmp_path / "check")]) == 2
+    assert json.loads(capsys.readouterr().out)["status"] == "failed"
+
+
+def test_launcher_keeps_json_strictness_through_extensionless_input_mapping(tmp_path, capsys):
+    logical = tmp_path / "request.json"
+    physical = tmp_path / "mapped-input"
+    physical.write_text('{"kind":"image-test-request","kind":"image-test-request"}\n')
+    entry = config(tmp_path, "image", {"test": str(logical)})
+    mapping = tmp_path / "input-map.json"
+    mapping.write_text(json.dumps({str(entry): str(entry), str(logical): str(physical)}))
+    assert main(["--environment", str(entry), "--input-map", str(mapping), "--component", "image",
+                 "--operation", "check", "--output", str(tmp_path / "check")]) == 2
     assert json.loads(capsys.readouterr().out)["status"] == "failed"
 
 

@@ -219,7 +219,7 @@ def _run_tracked_tool(execution: Execution, directory: Path, task: dict[str, Any
     entry: dict[str, Any] = {"pid": None, "start_ticks": None, "pid_file": str(marker),
                              "state": "starting", "command": list(command), "phase": phase}
     task.setdefault("processes", []).append(entry)
-    task.setdefault("owned_resources", []).append(str(marker))
+    task.setdefault("owned_resources", []).append(_relative_resource(directory, marker))
     _write_task(directory / "task.json", task)
     tracked = [sys.executable, "-c", _TRACKER, str(marker), *command]
     exit_code: int | None = None
@@ -335,8 +335,9 @@ def _make_seed(execution: Execution, directory: Path, *, username: str, phase: s
     if task is not None:
         owned = task.setdefault("owned_resources", [])
         for item in (seed, key, Path(f"{key}.pub"), user_data, meta_data):
-            if str(item) not in owned:
-                owned.append(str(item))
+            relative = _relative_resource(directory, item)
+            if relative not in owned:
+                owned.append(relative)
         _write_task(directory / "task.json", task)
     _run_tool(execution, f"{phase}-ssh-key", ["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key)], directory)
     public_key = Path(f"{key}.pub").read_text(encoding="utf-8").strip()
@@ -518,12 +519,33 @@ def _build_result(execution_id: str, input_digest: str, runtime_digest: str, *, 
 
 def _owned_path(directory: Path, value: str | Path) -> Path:
     path = Path(value)
-    require(path.is_absolute() and path.resolve().is_relative_to(directory.resolve()),
+    require(not path.is_absolute(), "image task resource must be relative to its execution directory")
+    root = directory.resolve()
+    lexical = root / path
+    resolved = lexical.resolve()
+    require(resolved != root and resolved.is_relative_to(root),
             "image task resource is outside its execution directory")
-    return path
+    return lexical
+
+
+def _relative_resource(directory: Path, value: str | Path) -> str:
+    """Persist task-owned paths relative to the movable task directory."""
+    root = directory.resolve()
+    path = Path(value)
+    lexical = path if path.is_absolute() else root / path
+    resolved = lexical.resolve()
+    require(resolved != root and resolved.is_relative_to(root),
+            "image task resource is outside its execution directory")
+    try:
+        relative = lexical.relative_to(root)
+    except ValueError:
+        raise ValidationError("image task resource is outside its execution directory") from None
+    return relative.as_posix()
 
 
 def _remove_owned(directory: Path, task: dict[str, Any], *, preserve: set[Path]) -> tuple[list[str], list[str]]:
+    preserve = {Path(os.path.abspath(path)) for path in preserve}
+    protected = {Path(os.path.abspath(directory / "task.json")), Path(os.path.abspath(directory / "resource.lock"))}
     if _task_has_active_process(task) or _task_has_uncertain_process(task):
         failures: list[str] = []
         for raw in task.get("owned_resources", []):
@@ -532,7 +554,7 @@ def _remove_owned(directory: Path, task: dict[str, Any], *, preserve: set[Path])
             except ValidationError:
                 failures.append(str(raw))
                 continue
-            if path not in preserve and path not in {directory / "task.json", directory / "resource.lock"}:
+            if path not in preserve and path not in protected:
                 failures.append(str(path))
         task.setdefault("cleanup_errors", []).append("owned process state is active or unknown")
         return [], failures
@@ -540,7 +562,7 @@ def _remove_owned(directory: Path, task: dict[str, Any], *, preserve: set[Path])
     for raw in task.get("owned_resources", []):
         try:
             path = _owned_path(directory, raw)
-            if path in preserve or path in {directory / "task.json", directory / "resource.lock"}:
+            if path in preserve or path in protected:
                 continue
             if not path.exists() and not path.is_symlink():
                 continue
@@ -573,7 +595,8 @@ def _build(selected: Any, execution: Execution, execution_id: str, resolved_runt
         task_record = _new_task(execution_id, "build", input_digest, runtime_digest, facts)
         base, packer_output, disk = task / "base.img", task / "packer-output", task / "disk.qcow2"
         build_result_path = task / "build-result.json"
-        task_record["owned_resources"] = [str(base), str(packer_output), str(disk), str(build_result_path)]
+        task_record["owned_resources"] = [_relative_resource(task, item)
+                                           for item in (base, packer_output, disk, build_result_path)]
         _write_task(task_path, task_record)
         build_result = _build_result(execution_id, input_digest, runtime_digest, phase="running", status="unknown",
                                      checks=[], cleanup="unknown", residue=[])
@@ -589,7 +612,7 @@ def _build(selected: Any, execution: Execution, execution_id: str, resolved_runt
             if request["guest"]["firmware"] == "uefi":
                 build_vars = task / "build.VARS.fd"
                 shutil.copyfile(_find_ovmf("vars"), build_vars)
-                task_record["owned_resources"].append(str(build_vars))
+                task_record["owned_resources"].append(_relative_resource(task, build_vars))
             _write_task(task_path, task_record)
             packer = shutil.which("packer")
             if packer is None:
@@ -632,7 +655,9 @@ def _build(selected: Any, execution: Execution, execution_id: str, resolved_runt
                 statuses = [{**row, "status": boot_status.get(row["id"], row["status"])} for row in statuses]
             _finalize_artifact(task, request, runtime_digest, execution_id, statuses, info)
             task_record["artifact"] = "artifact.json"
-            task_record["owned_resources"] += [str(disk), str(task / "artifact.json"), str(task / "disk.qcow2.sha256"), str(base), str(packer_output)]
+            task_record["owned_resources"] += [_relative_resource(task, item)
+                                                for item in (disk, task / "artifact.json",
+                                                             task / "disk.qcow2.sha256", base, packer_output)]
             removed, failures = _remove_owned(task, task_record, preserve={disk, task / "artifact.json", task / "disk.qcow2.sha256", build_result_path})
             task_record["cleanup"] = {"status": "failed" if failures else "succeeded", "removed": removed, "failures": failures}
             required_ids = {item["id"] for item in request["checks"]["required"]}
@@ -734,7 +759,10 @@ def _boot_guest(execution: Execution, directory: Path, task: dict[str, Any], dis
     pid_file = directory / f"{phase}.pid"
     owned += [directory / f"{phase}.known_hosts", directory / f"{phase}.serial.log",
               directory / f"{phase}.qemu.raw", directory / f"{phase}.qga.sock", pid_file]
-    task.setdefault("owned_resources", []).extend(str(item) for item in owned if str(item) not in task.get("owned_resources", []))
+    for item in owned:
+        relative = _relative_resource(directory, item)
+        if relative not in task.get("owned_resources", []):
+            task.setdefault("owned_resources", []).append(relative)
     _write_task(directory / "task.json", task)
     _run_tool(execution, f"{phase}-overlay", [qemu_img, "create", "-f", "qcow2", "-F", "qcow2", "-b", str(disk), str(overlay)], directory)
     if firmware == "uefi":
@@ -742,8 +770,9 @@ def _boot_guest(execution: Execution, directory: Path, task: dict[str, Any], dis
         shutil.copyfile(_find_ovmf("vars"), vars_path)
     seed, key = _make_seed(execution, directory, username=username, phase=phase, task=task)
     for item in (seed, key, Path(f"{key}.pub"), directory / f"{phase}.user-data", directory / f"{phase}.meta-data"):
-        if str(item) not in task.get("owned_resources", []):
-            task.setdefault("owned_resources", []).append(str(item))
+        relative = _relative_resource(directory, item)
+        if relative not in task.get("owned_resources", []):
+            task.setdefault("owned_resources", []).append(relative)
     _write_task(directory / "task.json", task)
     port_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     port_socket.bind(("127.0.0.1", 0))

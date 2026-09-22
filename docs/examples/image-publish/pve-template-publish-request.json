@@ -71,7 +71,6 @@
   },
   "cloud_init_defaults": {
     "user": "debian",
-    "hostname": "template",
     "ssh_keys": [],
     "ip_config": "dhcp"
   },

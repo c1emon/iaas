@@ -56,9 +56,10 @@ class SourceReader:
 
     def document(self, logical: Path) -> dict[str, Any]:
         path = self.locate(logical)
+        is_json_contract = logical.suffix.lower() == ".json"
         try:
             contents = path.read_text(encoding="utf-8")
-            if path.suffix.lower() == ".json":
+            if is_json_contract:
                 value = json.loads(contents, object_pairs_hook=_strict_pairs,
                                    parse_float=lambda _: (_ for _ in ()).throw(ValueError()),
                                    parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
@@ -66,7 +67,7 @@ class SourceReader:
                 value = yaml.safe_load(contents)
         except (OSError, UnicodeError, ValueError, yaml.YAMLError):
             # YAML parser errors can contain source values, including secrets.
-            format_name = "JSON" if path.suffix.lower() == ".json" else "YAML"
+            format_name = "JSON" if is_json_contract else "YAML"
             raise ValidationError(f"declared input is not readable {format_name}") from None
         require(isinstance(value, dict), "declared input must contain a mapping")
         return value

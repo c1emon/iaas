@@ -93,7 +93,7 @@ def test_seed_paths_are_journaled_before_generation(tmp_path: Path, monkeypatch:
     with pytest.raises(ValidationError, match="controlled seed"):
         runtime._make_seed(execution, directory, username="packer", phase="build", task=task)
     recorded = json.loads((directory / "task.json").read_text(encoding="utf-8"))
-    assert {str(directory / name) for name in ("build.seed.img", "build.key", "build.key.pub", "build.user-data", "build.meta-data")} <= set(recorded["owned_resources"])
+    assert {"build.seed.img", "build.key", "build.key.pub", "build.user-data", "build.meta-data"} <= set(recorded["owned_resources"])
 
 
 def test_process_group_is_stopped_on_cancellation(tmp_path: Path) -> None:
@@ -160,7 +160,7 @@ def test_clean_rejects_active_and_unknown_resources(tmp_path: Path) -> None:
         owned.write_text("retain")
         _write_task(uncertain, {"execution_id": "uncertain", "status": "failed",
                                 "processes": [{"pid": 999999, "start_ticks": None, "state": "unknown"}],
-                                "owned_resources": [str(owned)]})
+                                "owned_resources": ["owned"]})
         with pytest.raises(ValidationError, match="unknown owned process"):
             runtime._clean(_selected({}, execution_id="uncertain", execution_dir=uncertain), execution, "uncertain")
         assert owned.exists()
@@ -281,7 +281,7 @@ def test_cleanup_failure_keeps_test_result_and_records_residue(tmp_path: Path, m
     (directory / "test-result.json").write_text(json.dumps(result) + "\n")
     validate_test_result(result)
     _write_task(directory, {"execution_id": "cleanup-fail", "status": "failed", "processes": [],
-                            "owned_resources": [str(residue)]})
+                            "owned_resources": ["owned"]})
     monkeypatch.setattr(runtime.shutil, "rmtree", lambda path: (_ for _ in ()).throw(OSError("busy")))
     runtime._clean(_selected({}, execution_id="cleanup-fail", execution_dir=directory), execution, "cleanup-fail")
     task = json.loads((directory / "task.json").read_text())
@@ -297,11 +297,74 @@ def test_automatic_cleanup_retains_unknown_owned_resources(tmp_path: Path) -> No
     owned.write_text("retain")
     task = {"execution_id": "automatic-unknown", "status": "failed",
             "processes": [{"pid": 999999, "start_ticks": None, "state": "unknown"}],
-            "owned_resources": [str(owned)]}
+            "owned_resources": ["owned"]}
 
     removed, failures = runtime._remove_owned(directory, task, preserve={directory / "task.json"})
 
     assert removed == []
-    assert failures == [str(owned)]
+    assert failures == [str(owned.resolve())]
     assert owned.exists()
     assert task["cleanup_errors"]
+
+
+def test_clean_resolves_relative_owned_resources_after_task_directory_move(tmp_path: Path) -> None:
+    execution = _execution(tmp_path)
+    original = runtime._task_dir(execution, "moved")
+    owned = original / "owned"
+    owned.write_text("remove")
+    _write_task(original, {"execution_id": "moved", "status": "failed", "processes": [],
+                           "owned_resources": ["owned"]})
+
+    moved = tmp_path / "relocated-task"
+    shutil.move(str(original), str(moved))
+    runtime._clean(_selected({}, execution_id="moved", execution_dir=moved), execution, "moved")
+
+    assert not (moved / "owned").exists()
+    record = json.loads((moved / "task.json").read_text(encoding="utf-8"))
+    assert record["cleanup"]["status"] == "succeeded"
+
+
+def test_owned_resources_reject_absolute_and_escaping_paths(tmp_path: Path) -> None:
+    directory = tmp_path / "task"
+    directory.mkdir()
+    outside = tmp_path / "outside"
+    outside.write_text("retain")
+
+    with pytest.raises(ValidationError, match="relative"):
+        runtime._owned_path(directory, outside)
+    with pytest.raises(ValidationError, match="outside"):
+        runtime._owned_path(directory, "../outside")
+
+    task = {"processes": [], "owned_resources": [str(outside)]}
+    removed, failures = runtime._remove_owned(directory, task, preserve=set())
+    assert removed == []
+    assert failures == [str(outside)]
+    assert outside.exists()
+
+
+def test_owned_symlink_cleanup_removes_link_but_keeps_target(tmp_path: Path) -> None:
+    directory = tmp_path / "task"
+    directory.mkdir()
+    target = directory / "target"
+    link = directory / "link"
+    target.write_text("keep")
+    link.symlink_to(target.name)
+    assert runtime._relative_resource(directory, link) == "link"
+    task = {"processes": [], "owned_resources": ["link"]}
+
+    removed, failures = runtime._remove_owned(directory, task, preserve=set())
+
+    assert failures == []
+    assert removed == [str(link)]
+    assert not link.exists() and not link.is_symlink()
+    assert target.read_text() == "keep"
+
+    outside = tmp_path / "outside"
+    outside.write_text("retain")
+    link.symlink_to(outside)
+    task["owned_resources"] = ["link"]
+    removed, failures = runtime._remove_owned(directory, task, preserve=set())
+    assert removed == []
+    assert failures == ["link"]
+    assert link.is_symlink()
+    assert outside.read_text() == "retain"

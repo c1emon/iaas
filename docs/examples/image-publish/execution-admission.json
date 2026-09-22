@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "execution_id": "publish-example-1",
-  "plan_digest": "2895c58153d1b121d953bcfc7886b3691f29e5187971528115094340423efbc1",
+  "plan_digest": "e3c29ed2cf025f5c17b6c287f036f945275f85b2de3f7a4adb5d235acc902210",
   "target": {
     "api_endpoint": "https://pve.example.invalid:8006",
     "node": "cohe",

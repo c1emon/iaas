@@ -1,0 +1,11 @@
+{
+  "kind": "pve-template-cleanup-request",
+  "schema_version": 1,
+  "target": {"api_endpoint": "https://pve.example.invalid:8006", "node": "cohe", "tls_verify": true},
+  "original_execution_id": "publish-example-1",
+  "original_execution_dir": "retained/publish-example-1",
+  "original_preview_digest": "sha256:e3c29ed2cf025f5c17b6c287f036f945275f85b2de3f7a4adb5d235acc902210",
+  "objects": [],
+  "volumes": [{"storage": "images", "volid": "images:import/publish-example-1.qcow2"}],
+  "ownership_admission": {"owner": "publisher", "reference": "journal/publish-example-1", "activity": "stopped"}
+}

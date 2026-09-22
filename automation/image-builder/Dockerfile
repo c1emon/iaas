@@ -21,6 +21,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN curl -fL --retry 3 "https://releases.hashicorp.com/packer/${PACKER_VERSION}/packer_${PACKER_VERSION}_linux_amd64.zip" -o /tmp/packer.zip \
  && echo "${PACKER_SHA256}  /tmp/packer.zip" | sha256sum -c - \
  && unzip -q /tmp/packer.zip -d /usr/local/bin \
+ && mkdir -p /usr/share/licenses/packer \
+ && mv /usr/local/bin/LICENSE.txt /usr/share/licenses/packer/LICENSE.txt \
  && rm /tmp/packer.zip
 
 WORKDIR /opt/iaas
@@ -42,4 +44,10 @@ RUN mkdir -p /opt/packer/plugins \
 COPY --chmod=755 automation/runtime/entrypoint.sh /usr/local/bin/iaas
 
 WORKDIR /work
+ARG OCI_SOURCE="https://github.com/c1emon/iaas"
+ARG OCI_REVISION="development"
+ARG OCI_VERSION="development"
+LABEL org.opencontainers.image.source=$OCI_SOURCE \
+      org.opencontainers.image.revision=$OCI_REVISION \
+      org.opencontainers.image.version=$OCI_VERSION
 ENTRYPOINT ["/usr/local/bin/iaas"]

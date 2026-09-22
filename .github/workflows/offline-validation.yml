@@ -105,6 +105,6 @@ jobs:
           docker run --rm --network none iaas-runtime:oci-release-test capabilities | jq -e --arg platform "$RUNTIME_PLATFORM" '.platforms == [$platform]'
           docker run --rm --network none --entrypoint uv iaas-runtime:oci-release-test --version
           docker run --rm --network none --entrypoint tofu iaas-runtime:oci-release-test version
-          docker run --rm --network none --entrypoint packer iaas-runtime:oci-release-test version
+          docker run --rm --network none --entrypoint qemu-img iaas-runtime:oci-release-test --version
       - run: make runtime-tofu-check
       - run: uv run python automation/runtime/inspect_image.py

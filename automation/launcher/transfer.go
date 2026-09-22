@@ -113,7 +113,8 @@ func (t *task) addInput(logical string) error {
 	if err != nil {
 		return errors.New("declared input is unavailable")
 	}
-	allowDirectory := t.options.Component == "image" && (t.options.Operation == "build" || t.options.Operation == "test" || t.options.Operation == "read" || t.options.Operation == "verify" || t.options.Operation == "clean")
+	allowDirectory := (t.options.Component == "image" && (t.options.Operation == "build" || t.options.Operation == "test" || t.options.Operation == "read" || t.options.Operation == "verify" || t.options.Operation == "clean")) ||
+		(t.options.Component == "pve-template" && (t.options.Operation == "plan" || t.options.Operation == "apply"))
 	if !info.Mode().IsRegular() && !(allowDirectory && info.IsDir()) {
 		return errors.New("declared input must be a readable regular file or supported image directory")
 	}

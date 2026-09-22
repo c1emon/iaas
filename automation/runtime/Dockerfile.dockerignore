@@ -13,7 +13,6 @@
 !automation/ansible/module_utils/**
 !automation/opentofu/
 !automation/opentofu/modules/**
-!automation/packer/**
 !automation/pve-node/**
 !automation/runtime/**
 **/README*

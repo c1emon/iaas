@@ -49,11 +49,11 @@ def main() -> None:
                         excluded |= str(path) in {"usr/local/bin/op", "usr/local/bin/pip", "usr/local/bin/pip3", "tmp/prune.py"}
                         if excluded:
                             forbidden.append(str(path))
-                        for name in ("uv", "opentofu", "packer", "debian"):
+                        for name in ("uv", "opentofu", "debian"):
                             if str(path).startswith(f"usr/share/licenses/{name}/") and member.isfile():
                                 notices.add(name)
     assert not forbidden, f"excluded files in published layers: {forbidden[:12]} ({len(forbidden)} total)"
-    assert notices == {"uv", "opentofu", "packer", "debian"}, "required license notices missing"
+    assert notices == {"uv", "opentofu", "debian"}, "required license notices missing"
     print("image layers: excluded content absent; required tool and OS notices retained")
 
 

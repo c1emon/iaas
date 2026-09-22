@@ -10,6 +10,10 @@ import tempfile
 
 
 VERSION = re.compile(r"v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-(?:[0-9A-Za-z-]+)(?:\.[0-9A-Za-z-]+)*)?")
+RELEASE_KINDS = {
+    "runtime": {"image_name": "iaas-runtime", "architectures": ("amd64", "arm64")},
+    "image-builder": {"image_name": "iaas-image-builder", "architectures": ("amd64",)},
+}
 
 
 def validate_event(event_name: str, event: dict) -> str:
@@ -34,13 +38,17 @@ def command(*arguments: str, **kwargs) -> str:
     return result.stdout.strip()
 
 
-def prepare(event_name: str, event: dict, repository: str) -> dict:
+def prepare(event_name: str, event: dict, repository: str, kind: str = "runtime") -> dict:
+    if kind not in RELEASE_KINDS:
+        raise ValueError(f"unsupported release kind: {kind}")
     tag = validate_event(event_name, event)
     revision = command("git", "rev-parse", f"refs/tags/{tag}^{{commit}}")
     if revision != command("git", "rev-parse", "HEAD"):
         raise ValueError("checkout must be the exact Release tag revision")
-    return {"tag": tag, "revision": revision, "source": f"https://github.com/{repository}",
-            "image": f"ghcr.io/{repository.split('/')[0].lower()}/iaas-runtime"}
+    profile = RELEASE_KINDS[kind]
+    return {"kind": kind, "architectures": list(profile["architectures"]), "tag": tag,
+            "revision": revision, "source": f"https://github.com/{repository}",
+            "image": f"ghcr.io/{repository.split('/')[0].lower()}/{profile['image_name']}"}
 
 
 def check_labels(labels: dict, metadata: dict) -> None:
@@ -50,7 +58,7 @@ def check_labels(labels: dict, metadata: dict) -> None:
             raise ValueError(f"image {name} does not match release; existing versions are never overwritten")
 
 
-ARCHITECTURES = ("amd64", "arm64")
+ARCHITECTURES = RELEASE_KINDS["runtime"]["architectures"]
 
 
 def registry_manifest(reference: str, insecure: bool = False) -> dict | None:
@@ -80,25 +88,37 @@ def verify_image(manifest: dict | None, digest: str, record: dict) -> None:
         raise ValueError("registry image differs from tested artifact; existing versions are never overwritten")
 
 
-def verify_index(index: dict, image: str, records: dict, insecure: bool = False) -> None:
+def verify_index(index: dict, image: str, records: dict, architectures: tuple[str, ...] = ARCHITECTURES,
+                 insecure: bool = False) -> None:
     manifests = index.get("manifests", [])
-    if len(manifests) != len(ARCHITECTURES) or {
+    if len(manifests) != len(architectures) or {
         (item.get("platform", {}).get("os"), item.get("platform", {}).get("architecture"))
         for item in manifests
-    } != {("linux", arch) for arch in ARCHITECTURES}:
-        raise ValueError("existing version must contain exactly linux/amd64 and linux/arm64; never overwritten")
+    } != {("linux", arch) for arch in architectures}:
+        expected = " and ".join(f"linux/{arch}" for arch in architectures)
+        raise ValueError(f"existing version must contain exactly {expected}; never overwritten")
     for item in manifests:
         architecture = item["platform"]["architecture"]
         child = registry_manifest(f"{image}@{item['digest']}", insecure)
         verify_image(child, item["digest"], records[architecture])
 
 
-def publish(metadata: dict, tested_image: str, *, insecure: bool = False) -> str:
+def publish(metadata: dict, tested_image: str, *, kind: str | None = None, insecure: bool = False) -> str:
+    selected_kind = kind or metadata.get("kind", "runtime")
+    if selected_kind not in RELEASE_KINDS:
+        raise ValueError(f"unsupported release kind: {selected_kind}")
+    profile = RELEASE_KINDS[selected_kind]
+    architectures = tuple(profile["architectures"])
+    declared_architectures = tuple(metadata.get("architectures", architectures))
+    if declared_architectures != architectures:
+        raise ValueError("release metadata architecture profile is invalid")
+    if metadata.get("kind", selected_kind) != selected_kind:
+        raise ValueError("release metadata kind does not match publication kind")
     image = metadata["image"]
     version = f"{image}:{metadata['tag']}"
     records = {}
-    # Admit both tested artifacts before writing anything to the registry.
-    for architecture in ARCHITECTURES:
+    # Admit every tested artifact before writing anything to the registry.
+    for architecture in architectures:
         record = json.loads(command("docker", "image", "inspect", "--platform", f"linux/{architecture}",
                                     f"{tested_image}-{architecture}"))[0]
         check_labels(record["Config"].get("Labels") or {}, metadata)
@@ -106,13 +126,19 @@ def publish(metadata: dict, tested_image: str, *, insecure: bool = False) -> str
             raise ValueError("tested image architecture mismatch")
         records[architecture] = record
     existing = registry_manifest(version, insecure)
+    digest: str | None = None
     if existing is not None:
-        verify_index(existing, image, records, insecure)
-        digest = pulled_digest(version, "amd64")
+        if len(architectures) == 1 and "manifests" not in existing:
+            digest = pulled_digest(version, architectures[0])
+            verify_image(existing, digest, records[architectures[0]])
+        else:
+            verify_index(existing, image, records, architectures, insecure)
+        if len(architectures) != 1 or "manifests" in existing:
+            digest = pulled_digest(version, architectures[0])
     else:
         references = []
-        for architecture in ARCHITECTURES:
-            child_tag = f"{version}-{architecture}"
+        for architecture in architectures:
+            child_tag = version if len(architectures) == 1 else f"{version}-{architecture}"
             child = registry_manifest(child_tag, insecure)
             if child is None:
                 command("docker", "tag", f"{tested_image}-{architecture}", child_tag)
@@ -122,17 +148,25 @@ def publish(metadata: dict, tested_image: str, *, insecure: bool = False) -> str
             reference = f"{image}@{child_digest}"
             verify_image(registry_manifest(reference, insecure), child_digest, records[architecture])
             references.append(reference)
-        flags = ["--insecure"] if insecure else []
-        command("docker", "manifest", "create", *flags, version, *references)
-        output = command("docker", "manifest", "push", *flags, "--purge", version)
-        digest = output.splitlines()[-1]
-        if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
-            raise RuntimeError("manifest publication did not report a digest")
+        if len(architectures) == 1:
+            digest = references[0].split("@", 1)[1]
+        else:
+            flags = ["--insecure"] if insecure else []
+            command("docker", "manifest", "create", *flags, version, *references)
+            output = command("docker", "manifest", "push", *flags, "--purge", version)
+            digest = output.splitlines()[-1]
+            if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+                raise RuntimeError("manifest publication did not report a digest")
+    if digest is None:
+        raise RuntimeError("publication did not produce a registry digest")
     reference = f"{image}@{digest}"
     published = registry_manifest(reference, insecure)
     if published is None:
         raise RuntimeError("published manifest is unavailable")
-    verify_index(published, image, records, insecure)
+    if len(architectures) == 1 and "manifests" not in published:
+        verify_image(published, digest, records[architectures[0]])
+    else:
+        verify_index(published, image, records, architectures, insecure)
     return reference
 
 
@@ -141,18 +175,21 @@ def main() -> None:
     parser.add_argument("action", choices=["prepare", "publish"])
     parser.add_argument("--metadata", default="release.json")
     parser.add_argument("--tested-image", default="iaas-runtime:release-tested")
+    parser.add_argument("--kind", choices=tuple(RELEASE_KINDS), default=None)
+    parser.add_argument("--output-key", default="digest")
     args = parser.parse_args()
     if args.action == "prepare":
-        metadata = prepare(os.environ["GITHUB_EVENT_NAME"], json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text()), os.environ["GITHUB_REPOSITORY"])
+        metadata = prepare(os.environ["GITHUB_EVENT_NAME"], json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text()),
+                           os.environ["GITHUB_REPOSITORY"], args.kind or "runtime")
         Path(args.metadata).write_text(json.dumps(metadata) + "\n")
         return
     metadata = json.loads(Path(args.metadata).read_text())
     with tempfile.TemporaryDirectory(prefix="iaas-ghcr-auth-") as config:
         os.environ["DOCKER_CONFIG"] = config
         command("docker", "login", "ghcr.io", "--username", os.environ["GITHUB_ACTOR"], "--password-stdin", input=os.environ["GITHUB_TOKEN"])
-        digest = publish(metadata, args.tested_image)
+        digest = publish(metadata, args.tested_image, kind=args.kind)
     with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-        output.write(f"digest={digest}\n")
+        output.write(f"{args.output_key}={digest}\n")
     with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
         summary.write(f"Release: {metadata['tag']}\n\nSource: {metadata['revision']}\n\nRegistry image: `{digest}`\n\nPush/existing-version verification succeeded; anonymous consumption is pending.\n")
 

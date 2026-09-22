@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
+from typing import Any, cast
 
 from iaas_automation.common.errors import require
 from iaas_automation.runtime_config import InputRequired, SelectedConfig, SourceReader, load_environment
@@ -21,10 +22,10 @@ PVE_WORKFLOW_OPERATIONS = {"read", "plan", "apply", "verify"}
 _PVE_TEMPLATE_INPUTS = {"request", "publish", "cleanup", "retire"}
 _IMAGE_INPUTS = {"request", "build", "test", "artifact"}
 _PVE_TEMPLATE_FILE_INPUTS = {
-    "read": {"result", "template", "artifact"},
-    "plan": {"artifact", "publish_request"},
+    "read": {"journal", "api_ca"},
+    "plan": {"artifact", "publish_request", "api_ca"},
     "apply": {"preview", "template_preview", "execution_admission", "artifact_locator", "api_ca"},
-    "verify": {"result", "template_result"},
+    "verify": {"result", "template_result", "preview", "template_preview"},
 }
 _IMAGE_FILE_INPUTS = {
     "read": {"execution_dir"}, "verify": {"artifact"}, "clean": {"execution_dir"},
@@ -53,6 +54,32 @@ def _map_image_external_paths(selected: SelectedConfig, operation: str) -> None:
             raise InputRequired(logical_root)
         require(Path(supplied).is_dir(), "image artifact root must be a supplied directory")
         selected.options["artifact_root"] = supplied
+
+
+def _map_pve_cleanup_directory(selected: SelectedConfig, operation: str) -> None:
+    """Bind the publisher-owned recovery directory without changing its digest input."""
+    request: dict[str, Any] | None = None
+    if operation == "plan" and selected.options.get("action") == "cleanup":
+        candidate = selected.documents.get("cleanup")
+        if isinstance(candidate, dict):
+            request = candidate
+    elif operation == "apply":
+        preview_logical = next((selected.file_paths[name] for name in ("preview", "template_preview")
+                                if name in selected.file_paths), None)
+        if preview_logical is not None:
+            preview = selected.reader.document(preview_logical)
+            if preview.get("action") == "cleanup" and isinstance(preview.get("fixed_input"), dict):
+                request = preview["fixed_input"]
+    if request is None:
+        return
+    logical_value = request.get("original_execution_dir")
+    require(isinstance(logical_value, str),
+            "cleanup original_execution_dir must be an absolute directory")
+    logical_value = cast(str, logical_value)
+    logical = Path(logical_value)
+    require(logical.is_absolute(), "cleanup original_execution_dir must be an absolute directory")
+    selected.files["original_execution_dir"] = selected.reader.locate(logical, allow_directory=True)
+    selected.file_paths["original_execution_dir"] = logical
 
 
 def _declared_input_names(entry: Path, component: str, scenario: str | None,
@@ -227,6 +254,8 @@ def load_operation(entry: Path, component: str, operation: str, scenario: str | 
     selected = load_environment(entry, component, scenario, reader, input_names=inputs, file_names=files)
     if component == "image":
         _map_image_external_paths(selected, operation)
+    if component == "pve-template":
+        _map_pve_cleanup_directory(selected, operation)
     if component == "opnsense" and operation in OPNSENSE_WORKFLOW_OPERATIONS:
         _validate_opnsense_options(selected, operation)
         if operation == "plan" and "recovery" not in selected.files:

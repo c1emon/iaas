@@ -1,18 +1,24 @@
 from __future__ import annotations
 
 import copy
+import json
+from pathlib import Path
 
 import pytest
 
 from iaas_automation.common.errors import ValidationError
 from iaas_automation.image.contracts import canonical_digest as image_canonical_digest
 from iaas_automation.pve_template.contracts import (
+    build_action_preview,
     build_publish_preview,
     canonical_digest,
+    validate_cleanup_request,
     validate_publish_preview,
     validate_publish_request,
+    validate_retire_request,
     validate_template_record_v2,
 )
+from iaas_automation.runtime_execution.pve_contracts import validate_execution_admission
 
 
 def artifact() -> dict:
@@ -76,6 +82,13 @@ def test_publish_rejects_private_endpoint_and_force_replacement() -> None:
         validate_publish_request(bad)
 
 
+def test_publish_rejects_unsupported_hostname_default() -> None:
+    bad = request()
+    bad["cloud_init_defaults"]["hostname"] = "template"
+    with pytest.raises(ValidationError, match="unsupported fields"):
+        validate_publish_request(bad)
+
+
 def test_template_record_v2_requires_configuration_verification() -> None:
     record = {"kind": "pve-template-record", "schema_version": 2, "record_id": "v1-9001",
               "target": request()["target"], "node": "cohe", "vmid": 9001, "smbios_uuid": "uuid-1",
@@ -116,3 +129,37 @@ def test_publish_rejects_test_for_another_disk() -> None:
     value["artifact_digest"] = canonical_digest(value["artifact"])
     with pytest.raises(ValidationError, match="different disk"):
         validate_publish_request(value)
+
+
+def test_cleanup_and_retire_examples_bind_preview_and_admission() -> None:
+    root = Path(__file__).parents[2] / "docs" / "examples" / "image-publish"
+    runtime = {"image_digest": "runtime@sha256:" + "a" * 64}
+    for action, validator in (("cleanup", validate_cleanup_request), ("retire", validate_retire_request)):
+        value = json.loads((root / f"pve-template-{action}-request.json").read_text())
+        normalized = validator(value)
+        preview = build_action_preview(normalized, action=action, runtime=runtime,
+                                       observed={"activity": "unobserved"})
+        assert validate_publish_preview(copy.deepcopy(preview))["preview_digest"] == preview["preview_digest"]
+        admission = {
+            "schema_version": 1, "execution_id": f"{action}-example-apply",
+            "plan_digest": preview["preview_digest"].removeprefix("sha256:"),
+            "target": normalized["target"], "approved": True,
+            "consumption": {"reserved": True, "reservation_id": f"{action}-reservation"},
+            "pending": {"record_id": f"{action}-pending"},
+            "serialization": {"held": True, "context_id": f"{action}-lock"},
+        }
+        validate_execution_admission(admission, digest=admission["plan_digest"],
+                                     execution_id=admission["execution_id"], target=normalized["target"])
+
+
+def test_cleanup_rejects_duplicate_vm_and_volume_selectors() -> None:
+    root = Path(__file__).parents[2] / "docs" / "examples" / "image-publish"
+    value = json.loads((root / "pve-template-cleanup-request.json").read_text())
+    value["objects"] = [{"vmid": 9001, "smbios_uuid": "uuid-1", "volumes": {}}] * 2
+    with pytest.raises(ValidationError, match="duplicate VM selectors"):
+        validate_cleanup_request(value)
+    value = json.loads((root / "pve-template-cleanup-request.json").read_text())
+    volume = {"storage": "images", "volid": "images:import/publish-example-1.qcow2"}
+    value["volumes"] = [volume, volume.copy()]
+    with pytest.raises(ValidationError, match="duplicate selectors"):
+        validate_cleanup_request(value)

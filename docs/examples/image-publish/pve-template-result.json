@@ -12,7 +12,7 @@
     "pve": "known",
     "staging": "known"
   },
-  "preview_digest": "sha256:2895c58153d1b121d953bcfc7886b3691f29e5187971528115094340423efbc1",
+  "preview_digest": "sha256:e3c29ed2cf025f5c17b6c287f036f945275f85b2de3f7a4adb5d235acc902210",
   "artifact_digest": "sha256:a3cc5759eb5c646c4d290bfc81f25d54ee008e3a67336864a2a4055f739eca85",
   "publication": "succeeded",
   "verification": [

@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 from urllib.parse import urlsplit
 
 from iaas_automation.common.errors import ValidationError, require
@@ -150,9 +150,9 @@ def validate_publish_request(value: Any) -> dict[str, Any]:
     if hardware["firmware"] == "uefi":
         require("efi_storage" in storages, "uefi publication requires efi_storage")
     defaults = _mapping(request["cloud_init_defaults"], "cloud_init_defaults")
-    require(not set(defaults) - {"user", "hostname", "ssh_keys", "ip_config"},
+    require(not set(defaults) - {"user", "ssh_keys", "ip_config"},
             "cloud_init_defaults contains unsupported fields")
-    for field in ("user", "hostname", "ip_config"):
+    for field in ("user", "ip_config"):
         if field in defaults:
             _text(defaults[field], f"cloud_init_defaults.{field}")
     if "ssh_keys" in defaults:
@@ -339,9 +339,8 @@ def validate_cleanup_request(value: Any) -> dict[str, Any]:
     _text(request["original_execution_dir"], "cleanup.original_execution_dir")
     require(isinstance(request["objects"], list) and isinstance(request["volumes"], list),
             "cleanup objects and volumes must be lists")
-    admission = _mapping(request["ownership_admission"], "cleanup.ownership_admission")
-    require(admission.get("owner") == "publisher" and _text(admission.get("reference"), "ownership reference"),
-            "cleanup ownership is not publisher-authorized")
+    _validate_cleanup_selectors(request["objects"], request["volumes"])
+    _validate_ownership_admission(request["ownership_admission"], "cleanup")
     return dict(request)
 
 
@@ -358,13 +357,57 @@ def validate_retire_request(value: Any) -> dict[str, Any]:
     _publish_url(target["api_endpoint"], "retire.target.api_endpoint")
     _text(target["node"], "retire.target.node", pattern=IDENTIFIER)
     validate_template_record_v2(request["template_record"], complete=False)
-    ownership = _mapping(request["ownership_admission"], "retire.ownership_admission")
+    ownership = _validate_ownership_admission(request["ownership_admission"], "retire")
     retirement = _mapping(request["retirement_admission"], "retire.retirement_admission")
     require(ownership.get("owner") == "publisher" and ownership.get("reference"),
             "retire ownership is not publisher-authorized")
     require(retirement.get("authorized") is True and retirement.get("dependencies_resolved") is True and
             retirement.get("reference"), "retire admission is incomplete")
     return dict(request)
+
+
+def _validate_ownership_admission(value: Any, action: str) -> dict[str, Any]:
+    admission = _mapping(value, f"{action}.ownership_admission")
+    require(admission.get("owner") == "publisher" and
+            _text(admission.get("reference"), f"{action} ownership reference") and
+            admission.get("activity") in {"stopped", "inactive"},
+            f"{action} ownership is not publisher-authorized and inactive")
+    return admission
+
+
+def _validate_cleanup_selectors(objects: list[Any], volumes: list[Any]) -> None:
+    vmids: set[int] = set()
+    for index, item in enumerate(objects):
+        row = _mapping(item, f"cleanup.objects[{index}]")
+        vmid = row.get("vmid")
+        require(type(vmid) is int and vmid > 0, f"cleanup.objects[{index}].vmid is invalid")
+        vmid = cast(int, vmid)
+        require(vmid not in vmids, "cleanup objects contain duplicate VM selectors")
+        vmids.add(vmid)
+        _text(row.get("smbios_uuid"), f"cleanup.objects[{index}].smbios_uuid")
+        volume_map = row.get("volumes", row.get("disks"))
+        require(isinstance(volume_map, Mapping), f"cleanup.objects[{index}] volume ownership is missing")
+        volume_map = cast(Mapping[Any, Any], volume_map)
+        for slot, volume in volume_map.items():
+            _text(slot, f"cleanup.objects[{index}] volume slot", pattern=IDENTIFIER)
+            _text(volume, f"cleanup.objects[{index}].volumes.{slot}")
+
+    selected_volumes: set[str] = set()
+    for index, item in enumerate(volumes):
+        if isinstance(item, str):
+            volid = item
+            storage, separator, _ = item.partition(":")
+        else:
+            row = _mapping(item, f"cleanup.volumes[{index}]")
+            storage = row.get("storage")
+            volid = row.get("volid", row.get("volume"))
+            separator = ":" if isinstance(volid, str) and ":" in volid else ""
+        require(isinstance(storage, str) and storage and isinstance(volid, str) and volid and separator and
+                volid.startswith(storage + ":"), f"cleanup.volumes[{index}] identity is invalid")
+        storage = cast(str, storage)
+        volid = cast(str, volid)
+        require(volid not in selected_volumes, "cleanup volumes contain duplicate selectors")
+        selected_volumes.add(volid)
 
 
 def build_action_preview(request: Mapping[str, Any], *, action: str,

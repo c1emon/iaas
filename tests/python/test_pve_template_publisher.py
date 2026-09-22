@@ -1,0 +1,134 @@
+from __future__ import annotations
+
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from iaas_automation.pve_template import contracts, runtime
+
+from test_image_publish_contracts import request as publish_request
+
+
+class Outputs:
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        root.mkdir(parents=True)
+        for name in ("diagnostics", "work"):
+            (root / name).mkdir()
+
+    def path(self, category: str) -> Path:
+        return self.root / category
+
+
+class API:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, dict | None]] = []
+        self.config = {
+            "smbios1": "uuid=template-uuid",
+            "scsihw": "virtio-scsi-single",
+            "cores": 2,
+            "memory": 2048,
+        }
+
+    def upload_file(self, path, file, filename, checksum):
+        self.calls.append(("UPLOAD", path, {"filename": filename, "checksum": checksum}))
+        return "/nodes/cohe/tasks/UPID:cohe:00000000:00000000:00000001:upload:100:root@pam:"
+
+    def request(self, method, path, *, fields=None, **kwargs):
+        self.calls.append((method, path, dict(fields) if fields else None))
+        if method == "GET" and path.endswith("/access/permissions"):
+            return {"/vms/9001": {"VM.Audit": 1}}
+        if method == "GET" and path.endswith("/cluster/resources"):
+            return []
+        if method == "GET" and path.endswith("/storage"):
+            return [{"storage": "images", "enabled": 1, "active": 1,
+                     "content": "images,import", "avail": 32 * 1024 ** 3}]
+        if method == "POST" and path.endswith("/qemu"):
+            self.config.update({key: value for key, value in fields.items() if key != "vmid"})
+            return "/nodes/cohe/tasks/UPID:cohe:00000000:00000000:00000002:create:100:root@pam:"
+        if method == "POST" and path.endswith("/config"):
+            self.config.update(fields)
+            self.config["scsi0"] = "images:vm-9001-disk-0,size=8G"
+            self.config["ide2"] = "images:vm-9001-cloudinit,media=cdrom"
+            return "/nodes/cohe/tasks/UPID:cohe:00000000:00000000:00000003:config:100:root@pam:"
+        if method == "POST" and path.endswith("/template"):
+            self.config["template"] = 1
+            self.config["scsi0"] = "images:base-9001-disk-0,size=8G"
+            return "/nodes/cohe/tasks/UPID:cohe:00000000:00000000:00000004:template:100:root@pam:"
+        if method == "GET" and path.endswith("/status"):
+            return {"status": "stopped", "exitstatus": "OK"}
+        if method == "GET" and path.endswith("/config"):
+            return dict(self.config)
+        if method == "GET" and path.endswith("/content"):
+            return []
+        raise AssertionError((method, path, fields))
+
+
+def test_publish_uses_config_import_from_and_remote_residue_check(tmp_path, monkeypatch):
+    request = publish_request()
+    preview = contracts.build_publish_preview(
+        request,
+        runtime={"image_digest": "registry.invalid/runtime@sha256:" + "a" * 64},
+        observed={"vmid_free": True},
+    )
+    api = API()
+    outputs = Outputs(tmp_path / "outputs")
+    execution = SimpleNamespace(outputs=outputs, environ={"PVE_ARTIFACT_URL": request["source"]["object_ref"]})
+    selected = SimpleNamespace()
+
+    def download(locator, destination, digest, size):
+        destination.write_bytes(b"qcow2-placeholder")
+
+    monkeypatch.setattr(runtime, "_client", lambda selected, execution, target: api)
+    monkeypatch.setattr(runtime, "_download", download)
+    monkeypatch.setattr(runtime, "_verify_qcow2", lambda path, artifact: None)
+
+    result = runtime._publish(selected, execution, contracts.validate_publish_request(request), preview, "exec-1")
+
+    config_calls = [call for call in api.calls if call[0] == "POST" and call[1].endswith("/config")]
+    assert len(config_calls) == 1
+    fields = config_calls[0][2]
+    assert fields is not None
+    assert fields["scsi0"] == "images:0,import-from=images:import/exec-1-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.qcow2"
+    assert "template" not in fields
+    assert "hostname" not in fields
+    assert not any("importdisk" in call[1] for call in api.calls)
+    config_index = next(i for i, call in enumerate(api.calls) if call[1].endswith("/config") and call[0] == "POST")
+    template_index = next(i for i, call in enumerate(api.calls) if call[1].endswith("/template"))
+    assert config_index < template_index
+    assert result["publication"] == "succeeded"
+    assert result["template_record"]["volumes"]["scsi0"] == "images:base-9001-disk-0"
+    assert "scsihw" not in result["template_record"]["volumes"]
+    assert "efidisk0" not in result["template_record"]["volumes"]
+    assert "ide2" not in result["template_record"]["volumes"]
+    assert result["template_record"]["configuration"]["scsihw"] == "virtio-scsi-single"
+    assert (outputs.path("diagnostics") / "publish-intent.json").is_file()
+
+
+def test_upid_requires_valid_identity_and_explicit_ok_exitstatus() -> None:
+    class StatusAPI:
+        def request(self, method, path, **kwargs):
+            return {"status": "stopped"}
+
+    with pytest.raises(Exception, match="valid UPID"):
+        runtime._upid(StatusAPI(), "UPID:short", "create", node="cohe")
+    valid = "UPID:cohe:00000000:00000000:00000001:create:100:root@pam:"
+    with pytest.raises(Exception, match="did not finish successfully"):
+        runtime._upid(StatusAPI(), valid, "create", node="cohe")
+
+
+def test_observed_storage_with_shared_staging_and_images_requires_both_capabilities() -> None:
+    request = contracts.validate_publish_request(publish_request())
+
+    class StorageAPI:
+        def request(self, method, path, *, fields=None):
+            if path.endswith("/access/permissions"):
+                return {"/vms/9001": {"VM.Audit": 1}}
+            if path.endswith("/cluster/resources"):
+                return []
+            return [{"storage": "images", "enabled": 1, "active": 1, "avail": 2**40,
+                     "content": "import"}]
+
+    with pytest.raises(Exception, match="does not support images content"):
+        runtime._observed(None, StorageAPI(), request["target"], request)

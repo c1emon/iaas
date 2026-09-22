@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iaas.invalid/schemas/image-publish/v1/pve-template-cleanup-request.schema.json",
+  "title": "pve-template-cleanup-request/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "schema_version", "target", "original_execution_id", "original_execution_dir", "original_preview_digest", "objects", "volumes", "ownership_admission"],
+  "properties": {
+    "kind": {"const": "pve-template-cleanup-request"}, "schema_version": {"const": 1},
+    "target": {"$ref": "#/$defs/target"},
+    "original_execution_id": {"$ref": "#/$defs/id"},
+    "original_execution_dir": {"type": "string", "minLength": 1},
+    "original_preview_digest": {"type": "string", "minLength": 1},
+    "objects": {"type": "array"}, "volumes": {"type": "array"},
+    "ownership_admission": {"$ref": "#/$defs/ownership"}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+    "target": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_endpoint", "node", "tls_verify"],
+      "properties": {
+        "api_endpoint": {"type": "string", "pattern": "^https://[^/?#]+$"},
+        "node": {"$ref": "#/$defs/id"}, "tls_verify": {"const": true}
+      }
+    },
+    "ownership": {
+      "type": "object", "additionalProperties": false, "required": ["owner", "reference", "activity"],
+      "properties": {"owner": {"const": "publisher"}, "reference": {"type": "string", "minLength": 1}, "activity": {"enum": ["stopped", "inactive"]}}
+    }
+  }
+}

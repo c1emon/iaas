@@ -224,29 +224,33 @@ func execute(options Options, configuration RuntimeConfig, image string, effects
 	validReport := json.Unmarshal(data, &report) == nil
 	// Incomplete recovery cannot be upgraded to complete by a successful copy.
 	t.retained = report.RetainStorage || !validReport
-	if err := os.Mkdir(options.Output, 0700); err != nil {
-		t.retained = true
-		return errors.New("output destination changed or cannot be created; execution results retained")
-	}
-	if options.Engine == "local" {
-		// Native provider caches contain symlinks. Preserve links without
-		// following them; saved-plan input admission remains stricter.
-		err = copyTaskTree(filepath.Join(t.directory, "work/output"), options.Output, true)
+	provenance, _ := json.Marshal(inputProvenance(options.Environment))
+	relocate := options.Engine == "local" && options.Component == "image" &&
+		(options.Operation == "build" || options.Operation == "test") && !t.retained
+	if relocate {
+		err = relocateImageOutput(filepath.Join(t.directory, "work/output"), options.Output, data, provenance)
 	} else {
-		_, err = docker.call("cp", "-a", t.container+":/task/output/.", options.Output)
+		if err := os.Mkdir(options.Output, 0700); err != nil {
+			t.retained = true
+			return errors.New("output destination changed or cannot be created; execution results retained")
+		}
+		if options.Engine == "local" {
+			// Native provider caches contain symlinks. Preserve links without
+			// following them; saved-plan input admission remains stricter.
+			err = copyTaskTree(filepath.Join(t.directory, "work/output"), options.Output, true)
+		} else {
+			_, err = docker.call("cp", "-a", t.container+":/task/output/.", options.Output)
+		}
+		if err == nil {
+			err = writeNewPrivate(filepath.Join(options.Output, "launcher-result.json"), data)
+		}
+		if err == nil {
+			err = writeNewPrivate(filepath.Join(options.Output, "input-provenance.json"), provenance)
+		}
 	}
 	if err != nil {
 		t.retained = true
-		return errors.New("result collection failed; container and task storage retained")
-	}
-	if err := writeNewPrivate(filepath.Join(options.Output, "launcher-result.json"), data); err != nil {
-		t.retained = true
-		return errors.New("result recording failed; task storage retained")
-	}
-	provenance, _ := json.Marshal(inputProvenance(options.Environment))
-	if err := writeNewPrivate(filepath.Join(options.Output, "input-provenance.json"), provenance); err != nil {
-		t.retained = true
-		return errors.New("input provenance recording failed; task storage retained")
+		return errors.New("result collection or recording failed; task storage retained")
 	}
 	fmt.Printf("Results: %s\n", options.Output)
 	if code != 0 {
@@ -259,6 +263,21 @@ func execute(options Options, configuration RuntimeConfig, image string, effects
 		return errors.New("runtime did not confirm successful execution")
 	}
 	return nil
+}
+
+func relocateImageOutput(source, destination string, result, provenance []byte) error {
+	if _, err := os.Lstat(destination); err == nil {
+		return errors.New("output destination already exists")
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if err := writeNewPrivate(filepath.Join(source, "launcher-result.json"), result); err != nil {
+		return err
+	}
+	if err := writeNewPrivate(filepath.Join(source, "input-provenance.json"), provenance); err != nil {
+		return err
+	}
+	return os.Rename(source, destination)
 }
 
 func replaceEnvironment(environment []string, name, value string) []string {

@@ -38,7 +38,7 @@ OPERATIONS = {
             "health": DIAGNOSE, "prepare-dependencies": DIAGNOSE,
             "read": PLAN, "plan": PLAN, "apply": APPLY, "verify": DIAGNOSE},
     "pve-template": {"check": OFFLINE, "read": DIAGNOSE, "plan": DIAGNOSE,
-                     "apply": MUTATE, "verify": DIAGNOSE},
+                     "apply": MUTATE, "verify": OFFLINE},
     "image": {"check": OFFLINE, "build": Operation(network=True), "test": Operation(network=True),
               "read": OFFLINE, "verify": OFFLINE, "clean": OFFLINE},
     "services": {"check": OFFLINE, "generate": OFFLINE},
@@ -76,7 +76,7 @@ def credential_names(component: str, operation: str, render_names: tuple[str, ..
         names |= S3_ENV
     names |= {
         "pve": PVE_ENV,
-        "pve-template": {"PVE_API_TOKEN", "PVE_API_CA", "PVE_ARTIFACT_URL"},
+        "pve-template": {"PVE_API_TOKEN", "PVE_API_CA"} | ({"PVE_ARTIFACT_URL"} if operation == "apply" else set()),
         "opnsense": {"OPNSENSE_API_KEY", "OPNSENSE_API_SECRET"},
         "switch": {"SWITCH_SSH_USER", "SWITCH_SSH_PASSWORD", "SWITCH_SSH_PORT"},
         "k3s": set(), "foundation": set(),

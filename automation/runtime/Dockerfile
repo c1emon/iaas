@@ -22,25 +22,14 @@ RUN case "$TARGETARCH" in \
  && curl -fL --retry 3 "https://github.com/opentofu/opentofu/releases/download/v1.12.6/tofu_1.12.6_linux_${TARGETARCH}.zip" -o tofu.zip \
  && echo "$checksum  tofu.zip" | sha256sum -c - \
  && unzip tofu.zip -d tofu
-RUN case "$TARGETARCH" in \
-      amd64) checksum=5edcd14ab59b535040c512dbecd6ec9ef976a000b073c19d93e4c431c948581e ;; \
-      arm64) checksum=cf18f03460d92265d49b56befff333e80641d845822799eab04357c39f75b5d7 ;; \
-      *) exit 2 ;; \
-    esac \
- && curl -fL --retry 3 "https://releases.hashicorp.com/packer/1.16.0/packer_1.16.0_linux_${TARGETARCH}.zip" -o packer.zip \
- && echo "$checksum  packer.zip" | sha256sum -c - \
- && unzip packer.zip -d packer
-
 FROM python:3.12.12-slim-bookworm@sha256:593bd06efe90efa80dc4eee3948be7c0fde4134606dd40d8dd8dbcade98e669c AS dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    make=4.3-4.1 openssh-client=1:9.2p1-2+deb12u10 ca-certificates=20250419~deb12u1 \
+    make=4.3-4.1 openssh-client=1:9.2p1-2+deb12u10 ca-certificates=20250419~deb12u1 qemu-utils \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=tools /downloads/uv /usr/local/bin/uv
 COPY --from=tools /downloads/tofu/tofu /usr/local/bin/tofu
-COPY --from=tools /downloads/packer/packer /usr/local/bin/packer
 COPY --from=tools /downloads/uv-licenses/ /usr/share/licenses/uv/
 COPY --from=tools /downloads/tofu/LICENSE* /usr/share/licenses/opentofu/
-COPY --from=tools /downloads/packer/LICENSE* /usr/share/licenses/packer/
 WORKDIR /opt/iaas
 COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev --group runtime --no-install-project --python /usr/local/bin/python3.12
@@ -67,7 +56,6 @@ COPY automation/ansible/plugins/ automation/ansible/plugins/
 COPY automation/ansible/filter_plugins/ automation/ansible/filter_plugins/
 COPY automation/ansible/module_utils/ automation/ansible/module_utils/
 COPY automation/opentofu/modules/ automation/opentofu/modules/
-COPY automation/packer/ automation/packer/
 COPY automation/pve-node/ automation/pve-node/
 COPY --chmod=755 automation/runtime/entrypoint.sh /usr/local/bin/iaas
 COPY automation/runtime/NOTICE /usr/share/licenses/iaas-runtime/NOTICE

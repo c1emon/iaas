@@ -1,0 +1,18 @@
+{
+  "kind": "image-build-result",
+  "schema_version": 1,
+  "execution_id": "build-example-1",
+  "component": "image",
+  "operation": "build",
+  "runtime_digest": "registry.invalid/iaas-runtime@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "input_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "phase": "succeeded",
+  "status": "succeeded",
+  "effects": {"source": "known", "guest": "known"},
+  "verification": [
+    {"id": "format", "scope": "static", "status": "passed", "evidence_ref": "build-result.json"},
+    {"id": "identity-cleanup", "scope": "post-cleanup", "status": "passed", "evidence_ref": "build-result.json"}
+  ],
+  "collection": {"status": "succeeded"},
+  "cleanup": {"status": "succeeded", "residue": []}
+}
