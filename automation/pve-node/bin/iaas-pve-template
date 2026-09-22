@@ -1,0 +1,651 @@
+#!/usr/bin/env python3
+"""Restricted node-side PVE template lifecycle helper.
+
+The only public input is one JSON document on stdin.  Long-running work is
+submitted to a fixed systemd worker after its execution record is durable.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shlex
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+from typing import Any
+
+
+PROTOCOL = 2
+ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
+ROOT = Path(os.environ.get("IAAS_PVE_TEMPLATE_ROOT", "/var/lib/iaas/pve-template"))
+EXECUTIONS = ROOT / "executions"
+SUBMIT_LOCK = ROOT / "submit.lock"
+NODE_LOCK = Path(os.environ.get("IAAS_PVE_TEMPLATE_LOCK", "/run/lock/iaas-pve-template-build.lock"))
+LOCK_TIMEOUT = float(os.environ.get("IAAS_PVE_TEMPLATE_LOCK_TIMEOUT", "30"))
+WORKER = "/usr/local/sbin/iaas-pve-template-worker"
+QM = os.environ.get("IAAS_PVE_QM", "/usr/sbin/qm")
+PVESH = os.environ.get("IAAS_PVE_PVESH", "/usr/sbin/pvesh")
+
+
+class HelperError(Exception):
+    pass
+
+
+def fail(message: str, code: int = 2) -> None:
+    print(json.dumps({"status": "error", "reason": message}, sort_keys=True))
+    raise SystemExit(code)
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise HelperError(message)
+
+
+def local_node_name() -> str:
+    return socket.gethostname().split(".", 1)[0]
+
+
+def require_local_node(node: Any) -> None:
+    require(isinstance(node, str) and ID.fullmatch(node) is not None and
+            node == local_node_name(), "template target node does not match this PVE node")
+
+
+def read_request() -> dict[str, Any]:
+    try:
+        value = json.loads(sys.stdin.read())
+    except (json.JSONDecodeError, UnicodeError):
+        raise HelperError("stdin must contain one JSON object") from None
+    require(isinstance(value, dict), "stdin must contain one JSON object")
+    require(value.get("protocol_version") == PROTOCOL, "unsupported helper protocol version")
+    require(set(value) <= {"protocol_version", "operation", "execution_id", "preview",
+                           "recovery_of", "owner", "cleanup", "admission", "template"},
+            "helper request contains unsupported fields")
+    operation = value.get("operation")
+    require(operation in {"capabilities", "check", "observe", "submit", "query", "cleanup_preview", "cleanup"},
+            "unsupported helper operation")
+    if operation not in {"capabilities", "check", "observe"}:
+        execution_id = value.get("execution_id")
+        require(isinstance(execution_id, str) and ID.fullmatch(execution_id) is not None,
+                "execution_id is invalid")
+    if operation in {"capabilities", "check"}:
+        require(set(value) in ({"protocol_version", "operation"}, {"protocol_version", "operation", "preview"}),
+                "helper request contains unsupported fields")
+        if operation == "check" and "preview" in value:
+            preview = value["preview"]
+            require(isinstance(preview, dict) and preview.get("kind") == "pve-template-preview" and
+                    isinstance(preview.get("fixed_input"), dict), "template preview is invalid")
+            validate_fixed_input(preview["fixed_input"])
+    if operation == "observe":
+        require(set(value) == {"protocol_version", "operation", "template"},
+                "observe requires a complete template object")
+        template = value.get("template")
+        require(isinstance(template, dict) and type(template.get("vmid")) is int and
+                9000 <= template["vmid"] <= 9500, "template observation identity is invalid")
+        require_local_node(template.get("node"))
+    if operation == "query":
+        require(set(value) == {"protocol_version", "operation", "execution_id"},
+                "query request contains unsupported fields")
+    if operation == "submit":
+        require(set(value) <= {"protocol_version", "operation", "execution_id", "preview",
+                               "recovery_of", "admission"},
+                "submit request contains unsupported fields")
+    if operation == "submit":
+        preview = value.get("preview")
+        require(isinstance(preview, dict) and preview.get("kind") == "pve-template-preview",
+                "submit requires a template preview")
+        preview_digest = preview.get("preview_digest")
+        require(isinstance(preview_digest, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", preview_digest),
+                "template preview digest is invalid")
+        preview_body = {key: value for key, value in preview.items() if key != "preview_digest"}
+        require(digest(preview_body) == preview_digest, "template preview digest does not match content")
+        fixed = preview.get("fixed_input")
+        require(isinstance(fixed, dict) and type(fixed.get("vmid")) is int and
+                9000 <= fixed["vmid"] <= 9500, "template preview fixed_input is invalid")
+        validate_fixed_input(fixed)
+        admission = value.get("admission")
+        require(isinstance(admission, dict), "template execution admission is incomplete")
+        require(admission.get("schema_version") == 1 and admission.get("approved") is True and
+                isinstance(admission.get("consumption"), dict) and
+                admission["consumption"].get("reserved") is True and
+                isinstance(admission["consumption"].get("reservation_id"), str) and
+                isinstance(admission.get("pending"), dict) and
+                isinstance(admission["pending"].get("record_id"), str) and
+                isinstance(admission.get("serialization"), dict) and
+                admission["serialization"].get("held") is True and
+                isinstance(admission["serialization"].get("context_id"), str) and
+                admission.get("plan_digest") == preview_digest,
+                "template execution admission is incomplete")
+        require(admission.get("execution_id") == value["execution_id"],
+                "template execution admission is incomplete")
+        if isinstance(admission.get("target"), dict):
+            for key in ("node", "api_endpoint", "endpoint"):
+                if key in admission["target"]:
+                    expected = preview["fixed_input"]["target"].get("api_endpoint" if key == "endpoint" else key)
+                    require(admission["target"][key] == expected,
+                            "template execution admission target does not match preview")
+        target = admission.get("target")
+        require(isinstance(target, dict) and
+                target.get("node") == preview["fixed_input"]["target"].get("node") and
+                target.get("api_endpoint", target.get("endpoint")) ==
+                preview["fixed_input"]["target"].get("api_endpoint", preview["fixed_input"]["target"].get("endpoint")),
+                "template execution admission target is incomplete")
+    if operation in {"cleanup_preview", "cleanup"}:
+        allowed = {"protocol_version", "operation", "execution_id", "cleanup"}
+        if operation == "cleanup":
+            allowed.add("admission")
+            allowed.add("recovery_of")
+        require(set(value) <= allowed, "cleanup request contains unsupported fields")
+        cleanup = value.get("cleanup")
+        require(isinstance(cleanup, dict), "cleanup requires a cleanup object")
+        require(type(cleanup.get("vmid")) is int and 9000 <= cleanup["vmid"] <= 9500,
+                "cleanup vmid is invalid")
+        require(cleanup.get("owner") in {"helper", "opentofu", "unknown"}, "cleanup owner is invalid")
+        require(cleanup.get("management_status") in {"active", "stopped", "unknown"},
+                "cleanup management status is invalid")
+        require(cleanup.get("mode", "failed_build") in {"failed_build", "retire"},
+                "cleanup mode is invalid")
+        if cleanup.get("mode", "failed_build") == "retire":
+            require(cleanup.get("retirement_authorized") is True and
+                    cleanup.get("dependencies_resolved") is True,
+                    "template retirement authorization or dependency disposition is incomplete")
+        if operation == "cleanup":
+            require(value.get("recovery_of") == cleanup.get("original_execution"),
+                    "cleanup recovery_of must identify the original execution")
+    return value
+
+
+def digest(value: Any) -> str:
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def validate_fixed_input(fixed: dict[str, Any]) -> None:
+    allowed = {"schema_version", "action", "recipe", "target", "vmid", "version",
+               "image_url", "image_url_prefix", "image_sha512", "import_storage",
+               "disk_storage", "build_bridge", "build_domain", "apt_mirror",
+               "apt_security_mirror", "timezone", "locale", "ciuser", "nameserver"}
+    require(set(fixed) == allowed, "template fixed_input fields are incomplete or unsupported")
+    require(fixed.get("schema_version", 1) == 1 and fixed.get("action", "build") == "build",
+            "template fixed_input schema is invalid")
+    require(isinstance(fixed.get("version"), str) and ID.fullmatch(fixed["version"]) is not None,
+            "template version is invalid")
+    target = fixed.get("target")
+    require(isinstance(target, dict) and not set(target) -
+            {"node", "host", "api_endpoint", "endpoint", "insecure", "tls_verify", "ssh_user", "ssh_port"},
+            "template target fields are unsupported")
+    require(isinstance(target, dict) and isinstance(target.get("node"), str) and
+            ID.fullmatch(target["node"]) is not None and
+            isinstance(target.get("api_endpoint", target.get("endpoint")), str) and
+            target.get("api_endpoint", target.get("endpoint")).startswith(("https://", "http://")) and
+            not any(char in target.get("api_endpoint", target.get("endpoint")) for char in "@?#\r\n"),
+            "template target is invalid")
+    require(type(target.get("insecure")) is bool, "template target TLS mode is invalid")
+    if "tls_verify" in target:
+        require(type(target["tls_verify"]) is bool and
+                target["tls_verify"] is (not target["insecure"]),
+                "template target TLS settings conflict")
+    host = target.get("host", target.get("node")) if isinstance(target, dict) else None
+    require(isinstance(host, str) and host and not host.startswith("-") and
+            all(char.isprintable() and not char.isspace() for char in host),
+            "template target host is invalid")
+    image = fixed.get("image_url", "")
+    prefix = fixed.get("image_url_prefix", "")
+    require(isinstance(image, str) and image.startswith("https://") and isinstance(prefix, str) and
+            image.startswith(prefix) and "\n" not in image and "\r" not in image,
+            "template image URL is invalid")
+    require(re.fullmatch(r"[0-9a-fA-F]{128}", str(fixed.get("image_sha512", ""))) is not None,
+            "template image checksum is invalid")
+    for name in ("import_storage", "disk_storage", "build_bridge", "build_domain", "timezone", "ciuser", "nameserver"):
+        item = fixed.get(name)
+        require(isinstance(item, str) and item and not item.startswith("-") and
+                all(char.isprintable() and char not in "\r\n" for char in item),
+                f"template input {name} is invalid")
+    for name in ("import_storage", "disk_storage", "build_bridge", "build_domain", "ciuser"):
+        require(re.fullmatch(r"[A-Za-z0-9_.:-]+", fixed[name]) is not None,
+                f"template input {name} has an invalid format")
+    locale = fixed.get("locale")
+    require(isinstance(locale, str) and re.fullmatch(r"[A-Za-z0-9_.@+-]+", locale) is not None,
+            "template input locale is invalid")
+    for name in ("apt_mirror", "apt_security_mirror"):
+        item = fixed.get(name)
+        require(isinstance(item, str) and item.startswith("https://") and
+                all(char.isprintable() and char not in "\r\n" for char in item),
+                f"template input {name} is invalid")
+
+
+def execution_dir(execution_id: str) -> Path:
+    require(ID.fullmatch(execution_id) is not None, "execution_id is invalid")
+    return EXECUTIONS / execution_id
+
+
+def atomic_json(path: Path, value: Any, mode: int = 0o600) -> None:
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path.parent.chmod(0o700)
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(value, handle, sort_keys=True, indent=2)
+            handle.write("\n")
+        os.chmod(temporary, mode)
+        os.replace(temporary, path)
+        os.chmod(path, mode)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(temporary)
+
+
+def load(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        raise HelperError("execution record is unavailable") from None
+    require(isinstance(value, dict), "execution record is invalid")
+    return value
+
+
+def lock(path: Path, *, blocking: bool = True):
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path.parent.chmod(0o700)
+    handle = path.open("a+")
+    if blocking:
+        deadline = time.monotonic() + LOCK_TIMEOUT
+        while True:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    handle.close()
+                    raise TimeoutError("template lock wait exceeded bound") from None
+                time.sleep(0.1)
+    else:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            handle.close()
+            raise
+    return handle
+
+
+def capabilities() -> dict[str, Any]:
+    return {"protocol_version": PROTOCOL, "operations": ["capabilities", "check", "observe", "submit",
+            "query", "cleanup_preview", "cleanup"], "worker": WORKER,
+            "execution_root": str(EXECUTIONS), "node_lock": str(NODE_LOCK),
+            "automatic_restart": False}
+
+
+def observe_template(request: dict[str, Any]) -> dict[str, Any]:
+    template = request["template"]
+    require_local_node(template.get("node"))
+    vmid = str(template["vmid"])
+    result = subprocess.run([QM, "config", vmid], capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        return {"status": "unknown", "reason": "template configuration is unavailable", "vmid": int(vmid)}
+    configuration: dict[str, str] = {}
+    disks: dict[str, str] = {}
+    smbios_uuid = None
+    for line in result.stdout.splitlines():
+        key, separator, value = line.partition(":")
+        if not separator:
+            continue
+        key, value = key.strip(), value.strip()
+        configuration[key] = value
+        if re.fullmatch(r"(?:scsi|virtio|sata|ide)\d+", key) and "media=cdrom" not in value:
+            disks[key] = value.split(",", 1)[0]
+        match = re.search(r"(?:^|,)uuid=([0-9a-fA-F-]{36})(?:,|$)", value)
+        if key == "smbios1" and match:
+            smbios_uuid = match.group(1).lower()
+    is_template = configuration.get("template") in {"1", "true", "yes"}
+    return {"status": "observed" if is_template else "unknown", "template": {"node": template.get("node"), "vmid": int(vmid),
+            "smbios_uuid": smbios_uuid, "disks": disks, "configuration": configuration,
+            "template": is_template}, "build_history": "unknown", "cleaning_history": "unknown"}
+
+
+def check_preview(preview: dict[str, Any]) -> dict[str, Any]:
+    fixed = preview.get("fixed_input")
+    require(isinstance(fixed, dict), "template preview fixed_input is missing")
+    require(type(fixed.get("vmid")) is int and 9000 <= fixed["vmid"] <= 9500,
+            "template preview vmid is invalid")
+    validate_fixed_input(fixed)
+    require_local_node(fixed["target"]["node"])
+    required = [os.environ.get("IAAS_PVE_CURL", "/usr/bin/curl"),
+                os.environ.get("IAAS_PVE_VIRT_CUSTOMIZE", "/usr/bin/virt-customize"),
+                os.environ.get("IAAS_PVE_VIRT_SYSPREP", "/usr/bin/virt-sysprep"),
+                os.environ.get("IAAS_PVE_QM", "/usr/sbin/qm"), PVESH, "/usr/bin/flock"]
+    missing = [path for path in required if not os.access(path, os.X_OK)]
+    require(not missing, "required template helper tools are unavailable")
+    status = subprocess.run([PVESH, "get", "/cluster/resources", "--type", "vm", "--output-format", "json"],
+                            capture_output=True, text=True, check=False)
+    require(status.returncode == 0, "unable to determine template VMID availability")
+    try:
+        rows = json.loads(status.stdout)
+    except json.JSONDecodeError:
+        raise HelperError("template VMID availability result is invalid") from None
+    if isinstance(rows, dict):
+        rows = rows.get("data")
+    require(isinstance(rows, list), "template VMID availability result is invalid")
+    require(not any(isinstance(row, dict) and int(row.get("vmid", -1)) == fixed["vmid"] for row in rows),
+            "template VMID is occupied")
+    ip = os.environ.get("IAAS_PVE_IP", "/usr/sbin/ip")
+    pvesh = PVESH
+    require(os.access(pvesh, os.X_OK) and os.access(ip, os.X_OK),
+            "storage and bridge capability tools are unavailable")
+    node = fixed["target"]["node"]
+    storage_probe = subprocess.run([pvesh, "get", f"/nodes/{node}/storage", "--output-format", "json"],
+                                   capture_output=True, text=True, check=False)
+    require(storage_probe.returncode == 0, "required storage capability is unavailable")
+    try:
+        storage_rows = json.loads(storage_probe.stdout)
+    except json.JSONDecodeError:
+        raise HelperError("storage capability result is invalid") from None
+    if isinstance(storage_rows, dict):
+        storage_rows = storage_rows.get("data")
+    require(isinstance(storage_rows, list), "storage capability result is invalid")
+    for storage in (fixed["import_storage"], fixed["disk_storage"]):
+        row = next((item for item in storage_rows if isinstance(item, dict) and item.get("storage") == storage), None)
+        require(row is not None, "required storage capability is unavailable")
+        try:
+            require(int(row["avail"]) >= int(os.environ.get("IAAS_PVE_MIN_FREE_BYTES", "1073741824")),
+                    "required storage free space is insufficient")
+        except (KeyError, TypeError, ValueError):
+            raise HelperError("required storage free space is unknown") from None
+    bridge = subprocess.run([ip, "link", "show", fixed["build_bridge"]], capture_output=True, check=False)
+    require(bridge.returncode == 0, "required build bridge is unavailable")
+    return {"vmid": fixed["vmid"], "tools": "available", "vmid_status": "free",
+            "storage": {"import": fixed["import_storage"], "disk": fixed["disk_storage"]},
+            "bridge": fixed["build_bridge"]}
+
+
+def submit(request: dict[str, Any]) -> dict[str, Any]:
+    execution_id = request["execution_id"]
+    directory = execution_dir(execution_id)
+    preview = request.get("preview")
+    require(isinstance(preview, dict) and preview.get("kind") == "pve-template-preview",
+            "submit requires a template preview")
+    request_digest = digest(request)
+    ROOT.mkdir(mode=0o700, parents=True, exist_ok=True)
+    ROOT.chmod(0o700)
+    EXECUTIONS.mkdir(mode=0o700, parents=True, exist_ok=True)
+    EXECUTIONS.chmod(0o700)
+    with lock(SUBMIT_LOCK):
+        if directory.exists():
+            existing = load(directory / "record.json")
+            if existing.get("request_digest") == request_digest:
+                return {"status": "existing", "execution": existing}
+            raise HelperError("execution_id already exists with different fixed inputs")
+        directory.mkdir(mode=0o700, parents=True)
+        record = {"schema_version": 1, "kind": "pve-template-execution",
+                  "execution_id": execution_id, "request_digest": request_digest,
+                  "preview_digest": preview.get("preview_digest"), "state": "admitted",
+                  "unit": f"iaas-pve-template-{execution_id}.service", "phases": [],
+                  "effects": "none", "objects": [], "native_execution": None,
+                  "recovery_of": request.get("recovery_of"), "owner": "helper",
+                  "target": preview["fixed_input"]["target"], "object": None}
+        # This record is written before systemd-run.  A failed submit therefore
+        # remains queryable and cannot be mistaken for an absent operation.
+        atomic_json(directory / "request.json", request)
+        atomic_json(directory / "record.json", record)
+        logs = directory / "logs"
+        logs.mkdir(mode=0o700, exist_ok=True)
+        logs.chmod(0o700)
+        worker_log = logs / "worker.log"
+        unit = record["unit"]
+        base = os.environ.get("IAAS_PVE_TEMPLATE_SYSTEMD_RUN", "systemd-run")
+        command = shlex.split(base) if base else ["systemd-run"]
+        command += ["--quiet", "--unit", unit, "--property=Restart=no", "--collect",
+                    "--service-type=exec", f"--property=StandardOutput=append:{worker_log}",
+                    f"--property=StandardError=append:{worker_log}", WORKER,
+                    "--execution-dir", str(directory)]
+        try:
+            completed = subprocess.run(command, capture_output=True, text=True, check=False)
+        except OSError:
+            completed = subprocess.CompletedProcess(command, 127, "", "systemd unavailable")
+        if completed.returncode != 0:
+            latest = load(directory / "record.json")
+            if latest.get("state") == "admitted":
+                latest.update(state="unknown", effects="unknown", submit="failed",
+                              reason="worker could not be submitted")
+                atomic_json(directory / "record.json", latest)
+            raise HelperError("worker submission failed; execution remains queryable")
+    return {"status": "accepted", "execution": load(directory / "record.json")}
+
+
+def query(request: dict[str, Any]) -> dict[str, Any]:
+    directory = execution_dir(request["execution_id"])
+    record = load(directory / "record.json")
+    unit = record.get("unit")
+    if record.get("state") in {"admitted", "running"} and isinstance(unit, str):
+        try:
+            probe = subprocess.run(["systemctl", "show", unit,
+                                    "--property=LoadState,ActiveState,SubState,ExecMainStatus"],
+                                   capture_output=True, text=True, check=False)
+        except OSError:
+            probe = None
+        values = {}
+        if probe is not None and probe.returncode == 0:
+            values = dict(line.split("=", 1) for line in probe.stdout.splitlines() if "=" in line)
+        if probe is None or probe.returncode != 0 or values.get("LoadState") in {"not-found", "bad-setting", "error"}:
+            record["state"] = "unknown"
+            record["effects"] = "unknown"
+            record["remote_activity"] = "unknown"
+        else:
+            record["remote_activity"] = "running" if values.get("ActiveState") == "active" else "stopped"
+            if record.get("state") == "admitted" and values.get("ActiveState") == "active":
+                record["state"] = "running"
+    result: dict[str, Any] = {"status": "observed", "execution": record}
+    receipt = directory / "receipt.json"
+    if receipt.exists():
+        result["receipt"] = load(receipt)
+    record_file = directory / "template-record.json"
+    if record_file.exists():
+        result["template_record"] = load(record_file)
+    return result
+
+
+def native_object(vmid: int) -> dict[str, Any]:
+    result = subprocess.run([QM, "config", str(vmid)], capture_output=True, text=True, check=False)
+    require(result.returncode == 0, "current template configuration is unavailable")
+    configuration: dict[str, str] = {}
+    disks: dict[str, str] = {}
+    smbios_uuid = None
+    for line in result.stdout.splitlines():
+        key, separator, value = line.partition(":")
+        if not separator:
+            continue
+        key, value = key.strip(), value.strip()
+        configuration[key] = value
+        if re.fullmatch(r"(?:scsi|virtio|sata|ide)\d+", key) and "media=cdrom" not in value:
+            disks[key] = value.split(",", 1)[0]
+        match = re.search(r"(?:^|,)uuid=([0-9a-fA-F-]{36})(?:,|$)", value)
+        if key == "smbios1" and match:
+            smbios_uuid = match.group(1).lower()
+    require(smbios_uuid is not None, "current object has no stable SMBIOS UUID")
+    is_template = configuration.get("template") in {"1", "true", "yes"}
+    return {"vmid": vmid, "smbios_uuid": smbios_uuid, "disks": disks,
+            "configuration": configuration, "template": is_template}
+
+
+def unit_is_stopped(unit: Any, *, terminal: bool = False) -> None:
+    require(isinstance(unit, str) and ID.fullmatch(unit.removesuffix(".service")) is not None,
+            "cleanup service identity is invalid")
+    try:
+        probe = subprocess.run(["systemctl", "show", unit,
+                                "--property=LoadState,ActiveState,SubState"],
+                               capture_output=True, text=True, check=False)
+    except OSError:
+        raise HelperError("cleanup task state is unavailable") from None
+    require(probe.returncode == 0, "cleanup task state is unavailable")
+    values = dict(line.split("=", 1) for line in probe.stdout.splitlines() if "=" in line)
+    if terminal and values.get("LoadState") == "not-found":
+        return
+    require(values.get("LoadState") not in {None, "not-found", "error"} and
+            values.get("ActiveState") in {"inactive", "failed"},
+            "cleanup task is still active or unknown")
+
+
+def cleanup(request: dict[str, Any], *, preview_only: bool) -> dict[str, Any]:
+    cleanup_request = request.get("cleanup")
+    require(isinstance(cleanup_request, dict), "cleanup requires a cleanup object")
+    vmid = cleanup_request.get("vmid")
+    require(type(vmid) is int and 9000 <= vmid <= 9500, "cleanup vmid is invalid")
+    require(cleanup_request.get("owner") == "helper", "cleanup ownership is not helper")
+    require(cleanup_request.get("management_status") == "stopped", "cleanup activity is not confirmed stopped")
+    original = cleanup_request.get("original_execution")
+    original_record = load(execution_dir(original) / "record.json")
+    require(original_record.get("state") in {"failed", "succeeded"},
+            "originating execution is still active")
+    require(original_record.get("owner") == "helper", "originating execution is not helper-managed")
+    original_target = original_record.get("target")
+    require(isinstance(original_target, dict), "originating execution target is unavailable")
+    require_local_node(original_target.get("node"))
+    unit_is_stopped(original_record.get("unit"), terminal=True)
+    mode = cleanup_request.get("mode", "failed_build")
+    if original_record.get("state") == "succeeded":
+        require(mode == "retire" and cleanup_request.get("retirement_authorized") is True and
+                cleanup_request.get("dependencies_resolved") is True,
+                "completed template retirement requires current authorization and dependency disposition")
+    else:
+        require(mode == "failed_build", "failed build cleanup cannot use retirement mode")
+    original_object = original_record.get("object") or original_record.get("planned_object")
+    require(isinstance(original_object, dict) and original_object.get("vmid") == vmid,
+            "cleanup object is not associated with the original execution")
+    volumes = cleanup_request.get("volumes", [])
+    require(isinstance(volumes, list) and all(isinstance(item, str) and re.fullmatch(r"[A-Za-z0-9_.:-]+", item) for item in volumes),
+            "cleanup volumes are invalid")
+    known_volumes = set((original_object.get("disks") or {}).values())
+    if known_volumes:
+        require(set(volumes) == known_volumes, "cleanup volume set does not match the recorded object")
+    runtime = cleanup_request.get("runtime")
+    helper = cleanup_request.get("helper")
+    require(isinstance(runtime, dict) and isinstance(runtime.get("image_digest"), str) and
+            isinstance(helper, dict) and helper.get("protocol_version") == PROTOCOL,
+            "cleanup runtime/helper identity is incomplete")
+    preview_body = {"original_execution": original, "vmid": vmid, "volumes": list(volumes),
+                    "owner": "helper", "mode": mode,
+                    "target": original_record.get("target"), "object": original_object,
+                    "runtime": {"image_digest": runtime["image_digest"]},
+                    "helper": {"protocol_version": PROTOCOL}}
+    expected_preview_digest = digest(preview_body)
+    require(cleanup_request.get("state_owner") == "helper" and
+            cleanup_request.get("state_ref_absent") is True and
+            cleanup_request.get("preview_digest") in {None, request.get("preview_digest"), expected_preview_digest},
+            "cleanup current owner or state reference is not confirmed")
+    preview = {"schema_version": 1, "kind": "pve-template-cleanup-preview", "action": "cleanup",
+               "original_execution": original, "vmid": vmid, "volumes": list(volumes),
+               "owner": "helper", "mode": mode,
+               "target": original_record.get("target"), "object": original_object,
+               "runtime": {"image_digest": runtime["image_digest"]},
+               "helper": {"protocol_version": PROTOCOL},
+               "preview_digest": expected_preview_digest}
+    if preview_only:
+        return {"status": "ready", "preview": preview}
+    admission = request.get("admission")
+    require(isinstance(admission, dict) and admission.get("schema_version") == 1 and
+            admission.get("approved") is True and admission.get("plan_digest") == preview["preview_digest"] and
+            admission.get("execution_id") == request["execution_id"] and
+            isinstance(admission.get("consumption"), dict) and admission["consumption"].get("reserved") is True and
+            isinstance(admission["consumption"].get("reservation_id"), str) and
+            isinstance(admission.get("pending"), dict) and
+            isinstance(admission["pending"].get("record_id"), str) and
+            isinstance(admission.get("serialization"), dict) and
+            admission["serialization"].get("held") is True and
+            isinstance(admission["serialization"].get("context_id"), str) and
+            admission.get("target") == original_record.get("target"),
+            "cleanup execution admission is incomplete")
+    cleanup_id = request["execution_id"]
+    cleanup_dir = execution_dir(cleanup_id)
+    require(not cleanup_dir.exists(), "cleanup execution already exists")
+    cleanup_dir.mkdir(mode=0o700, parents=True)
+    cleanup_record = {"schema_version": 1, "kind": "pve-template-cleanup-execution",
+                      "execution_id": cleanup_id, "recovery_of": original,
+                      "preview_digest": preview["preview_digest"], "state": "admitted",
+                      "owner": "helper", "effects": "none", "phases": [],
+                      "target": original_record.get("target"), "object": original_object}
+    atomic_json(cleanup_dir / "request.json", request)
+    atomic_json(cleanup_dir / "record.json", cleanup_record)
+    with lock(NODE_LOCK):
+        # Recheck inside the lifecycle lock to close the worker/cleanup race.
+        latest = load(execution_dir(original) / "record.json")
+        require(latest.get("state") in {"failed", "succeeded"}, "originating execution became active")
+        unit_is_stopped(latest.get("unit"), terminal=True)
+        current = native_object(vmid)
+        expected_uuid = original_object.get("smbios_uuid")
+        require(current.get("smbios_uuid") == expected_uuid and
+                (not original_object.get("disks") or
+                 current.get("disks") == original_object.get("disks")) and
+                (bool(original_object.get("disks")) or set(volumes) == set(current.get("disks", {}).values())) and
+                (mode == "failed_build" or current.get("template") is True),
+                "current template identity or disks do not match the recorded object")
+        cleanup_record.update(state="running", effects="unknown")
+        cleanup_record["phases"].append({"phase": "lock", "status": "acquired"})
+        atomic_json(cleanup_dir / "record.json", cleanup_record)
+        try:
+            result = subprocess.run([QM, "destroy", str(vmid), "--purge", "1"],
+                                    capture_output=True, text=True, check=False)
+        except OSError:
+            result = subprocess.CompletedProcess([QM, "destroy"], 127, "", "cleanup command unavailable")
+        log_dir = cleanup_dir / "logs"
+        log_dir.mkdir(mode=0o700, exist_ok=True)
+        (log_dir / "destroy.log").write_text((result.stdout or "") + (result.stderr or ""), encoding="utf-8")
+        os.chmod(log_dir / "destroy.log", 0o600)
+        if result.returncode != 0:
+            cleanup_record.update(state="failed", effects="unknown")
+            cleanup_record["phases"].append({"phase": "destroy", "status": "failed", "exit_code": result.returncode})
+            atomic_json(cleanup_dir / "record.json", cleanup_record)
+            atomic_json(cleanup_dir / "receipt.json", {"schema_version": 1, "kind": "pve-template-cleanup-receipt",
+                         "execution_id": cleanup_id, "recovery_of": original, "status": "failed",
+                         "effects": "unknown", "preview_digest": preview["preview_digest"]})
+            raise HelperError("cleanup failed; retain execution evidence")
+        cleanup_record.update(state="succeeded", effects="known")
+        cleanup_record["phases"].append({"phase": "destroy", "status": "complete", "exit_code": 0})
+        atomic_json(cleanup_dir / "record.json", cleanup_record)
+        atomic_json(cleanup_dir / "receipt.json", {"schema_version": 1, "kind": "pve-template-cleanup-receipt",
+                     "execution_id": cleanup_id, "recovery_of": original, "status": "succeeded",
+                     "effects": "known", "preview_digest": preview["preview_digest"]})
+        work = execution_dir(original) / "work"
+        if work.exists():
+            shutil.rmtree(work)
+    return {"status": "succeeded", "preview": preview, "effects": "known",
+            "execution": cleanup_record, "receipt": load(cleanup_dir / "receipt.json")}
+
+
+def main() -> int:
+    try:
+        request = read_request()
+        operation = request["operation"]
+        if operation == "capabilities":
+            print(json.dumps(capabilities(), sort_keys=True))
+        elif operation == "check":
+            preview = request.get("preview")
+            if isinstance(preview, dict):
+                prerequisites = check_preview(preview)
+                print(json.dumps({"status": "ready", **capabilities(), "prerequisites": prerequisites}, sort_keys=True))
+            else:
+                print(json.dumps({"status": "ready", **capabilities()}, sort_keys=True))
+        elif operation == "observe":
+            print(json.dumps(observe_template(request), sort_keys=True))
+        elif operation == "submit":
+            print(json.dumps(submit(request), sort_keys=True))
+        elif operation == "query":
+            print(json.dumps(query(request), sort_keys=True))
+        elif operation == "cleanup_preview":
+            print(json.dumps(cleanup(request, preview_only=True), sort_keys=True))
+        else:
+            print(json.dumps(cleanup(request, preview_only=False), sort_keys=True))
+        return 0
+    except (HelperError, OSError) as exc:
+        fail(str(exc))
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

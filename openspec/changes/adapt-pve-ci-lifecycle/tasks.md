@@ -7,12 +7,12 @@
 
 ## 2. 模板远端执行
 
-- [ ] 2.1 扩展节点 helper 版本、严格 JSON 数据入口与能力查询，交付受限 sudo/安装资产；用恶意路径/命令参数拒绝测试、shell/Ansible 静态检查验证，不安装真实节点。
-- [ ] 2.2 实现先持久记录再提交 systemd transient worker、固定 worker 参数、私有日志，区分短期提交锁和 worker 全程节点锁；用提交中断、同 ID 查询、ID 冲突、不同 ID 并发及 cleanup 竞争、锁后重检、连接断开与禁用自动重启的服务管理替身测试验证。
-- [ ] 2.3 将现有镜像校验、customize/sysprep、创建/导入/转换步骤接入阶段记录，移除 force 和忽略必需清理失败的路径；用 checksum/VMID/helper/存储前提失败及阶段故障测试验证。
-- [ ] 2.4 实现 execution 查询及有界轮询，保留远端 running/unknown、节点重启和未完成 receipt 的真实语义；用断线重连、不自动重放和失去终态证据的测试验证。
-- [ ] 2.5 实现模板配置 verify、SMBIOS UUID/磁盘引用关联、历史观察记录和 private export；用新建与历史模板、缺身份、同 VMID 重建及缺清理证据场景验证。
-- [ ] 2.6 实现 cleanup preview/apply、原 execution/recovery_of 关联、停止与当前管理归属检查；用失败构建精确清理、仍在运行、归属未知、已导入 state 和发布退役约束测试验证。
+- [x] 2.1 扩展节点 helper 版本、严格 JSON 数据入口与能力查询，交付受限 sudo/安装资产；用恶意路径/命令参数拒绝测试、shell/Ansible 静态检查验证，不安装真实节点。
+- [x] 2.2 实现先持久记录再提交 systemd transient worker、固定 worker 参数、私有日志，区分短期提交锁和 worker 全程节点锁；用提交中断、同 ID 查询、ID 冲突、不同 ID 并发及 cleanup 竞争、锁后重检、连接断开与禁用自动重启的服务管理替身测试验证。
+- [x] 2.3 将现有镜像校验、customize/sysprep、创建/导入/转换步骤接入阶段记录，移除 force 和忽略必需清理失败的路径；用 checksum/VMID/helper/存储前提失败及阶段故障测试验证。
+- [x] 2.4 实现 execution 查询及有界轮询，保留远端 running/unknown、节点重启和未完成 receipt 的真实语义；用断线重连、不自动重放和失去终态证据的测试验证。
+- [x] 2.5 实现模板配置 verify、SMBIOS UUID/磁盘引用关联、历史观察记录和 private export；用新建与历史模板、缺身份、同 VMID 重建及缺清理证据场景验证。
+- [x] 2.6 实现 cleanup preview/apply、原 execution/recovery_of 关联、停止与当前管理归属检查；用失败构建精确清理、仍在运行、归属未知、已导入 state 和发布退役约束测试验证。
 
 ## 3. VM 目标、凭据和 state 准入
 

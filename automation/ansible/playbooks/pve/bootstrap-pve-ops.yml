@@ -8,18 +8,20 @@
     pve_bootstrap_user: pve-ops
     pve_bootstrap_authorized_key: ""
     pve_bootstrap_sudo_commands:
-      - /usr/local/sbin/iaas-pve-template-build
+      - /usr/local/sbin/iaas-pve-template
       - /usr/local/sbin/iaas-pve-snippet-upload
     pve_bootstrap_template_wrapper_sudoers_src: >-
-      {{ playbook_dir }}/../../../pve-node/sudoers.d/iaas-pve-template-build
+      {{ playbook_dir }}/../../../pve-node/sudoers.d/iaas-pve-template
     pve_bootstrap_snippet_wrapper_sudoers_src: >-
       {{ playbook_dir }}/../../../pve-node/sudoers.d/iaas-pve-snippet-upload
-    pve_bootstrap_wrapper_src: "{{ playbook_dir }}/../../../pve-node/bin/iaas-pve-template-build"
+    pve_bootstrap_wrapper_src: "{{ playbook_dir }}/../../../pve-node/bin/iaas-pve-template"
+    pve_bootstrap_worker_src: "{{ playbook_dir }}/../../../pve-node/bin/iaas-pve-template-worker"
     pve_bootstrap_snippet_wrapper_src: "{{ playbook_dir }}/../../../pve-node/bin/iaas-pve-snippet-upload"
-    pve_bootstrap_wrapper_dest: /usr/local/sbin/iaas-pve-template-build
+    pve_bootstrap_wrapper_dest: /usr/local/sbin/iaas-pve-template
+    pve_bootstrap_worker_dest: /usr/local/sbin/iaas-pve-template-worker
     pve_bootstrap_snippet_wrapper_dest: /usr/local/sbin/iaas-pve-snippet-upload
     pve_bootstrap_default_sudo_commands:
-      - /usr/local/sbin/iaas-pve-template-build
+      - /usr/local/sbin/iaas-pve-template
       - /usr/local/sbin/iaas-pve-snippet-upload
 
   tasks:
@@ -57,7 +59,7 @@
 
     - name: Install the template build sudoers rule
       ansible.builtin.copy:
-        dest: /etc/sudoers.d/iaas-pve-template-build
+        dest: /etc/sudoers.d/iaas-pve-template
         src: "{{ pve_bootstrap_template_wrapper_sudoers_src }}"
         remote_src: false
         owner: root
@@ -79,6 +81,14 @@
       ansible.builtin.copy:
         src: "{{ pve_bootstrap_wrapper_src }}"
         dest: "{{ pve_bootstrap_wrapper_dest }}"
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Deploy the fixed template worker
+      ansible.builtin.copy:
+        src: "{{ pve_bootstrap_worker_src }}"
+        dest: "{{ pve_bootstrap_worker_dest }}"
         owner: root
         group: root
         mode: "0750"
@@ -111,6 +121,21 @@
           - pve_bootstrap_wrapper_stat.stat.mode == '0750'
         fail_msg: "Wrapper is missing or has the wrong ownership/mode"
 
+    - name: Verify worker file is installed
+      ansible.builtin.stat:
+        path: "{{ pve_bootstrap_worker_dest }}"
+      register: pve_bootstrap_worker_stat
+
+    - name: Validate worker ownership and permissions
+      ansible.builtin.assert:
+        that:
+          - pve_bootstrap_worker_stat.stat.exists
+          - pve_bootstrap_worker_stat.stat.isreg
+          - pve_bootstrap_worker_stat.stat.pw_name == 'root'
+          - pve_bootstrap_worker_stat.stat.gr_name == 'root'
+          - pve_bootstrap_worker_stat.stat.mode == '0750'
+        fail_msg: "Worker is missing or has the wrong ownership/mode"
+
     - name: Validate snippet wrapper ownership and permissions
       ansible.builtin.assert:
         that:
@@ -126,7 +151,7 @@
         argv:
           - /usr/sbin/visudo
           - -cf
-          - /etc/sudoers.d/iaas-pve-template-build
+          - /etc/sudoers.d/iaas-pve-template
       register: pve_bootstrap_sudoers_check
       changed_when: false
 

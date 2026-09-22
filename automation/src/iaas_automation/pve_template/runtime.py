@@ -138,7 +138,7 @@ def _poll_remote(selected: Any, execution: Any, execution_id: str, initial: Mapp
     state = initial.get("execution", {}).get("state") if isinstance(initial.get("execution"), Mapping) else None
     latest = dict(initial)
     deadline = time.monotonic() + float(_options(selected).get("poll_timeout", 60))
-    while state in {"admitted", "running"}:
+    while state in {"admitted", "running"} or (state == "succeeded" and not isinstance(latest.get("receipt"), Mapping)):
         if time.monotonic() >= deadline:
             return {"status": "unknown", "execution": latest.get("execution", latest),
                     "reason": "bounded observation window elapsed"}
@@ -438,12 +438,15 @@ def run(selected: Any, operation: str, scope: str, execution: Any,
                                     "admission": dict(admission)})
         response = _invoke_helper(selected, execution, request, "cleanup")
         require(response.get("status") == "succeeded", "template cleanup did not complete")
-        cleanup_receipt = response.get("receipt") if isinstance(response.get("receipt"), Mapping) else {
-            "schema_version": 1, "kind": "pve-template-cleanup-receipt",
-            "execution_id": execution_id, "recovery_of": preview["original_execution"],
-            "status": response.get("status"), "effects": response.get("effects", "unknown"),
-            "preview_digest": preview["preview_digest"],
-        }
+        cleanup_receipt = response.get("receipt")
+        require(isinstance(cleanup_receipt, Mapping)
+                and cleanup_receipt.get("schema_version") == 1
+                and cleanup_receipt.get("kind") == "pve-template-cleanup-receipt"
+                and cleanup_receipt.get("execution_id") == execution_id
+                and cleanup_receipt.get("preview_digest") == preview["preview_digest"]
+                and cleanup_receipt.get("recovery_of") == preview["original_execution"]
+                and cleanup_receipt.get("status") == "succeeded",
+                "remote cleanup receipt is missing or conflicts with this execution")
         _write_json(execution.outputs.path("diagnostics") / "receipt.json", cleanup_receipt, secure=True)
         execution.finish({"component": "pve-template", "operation": operation, "action": "cleanup",
                           "execution_id": execution_id, "recovery_of": preview["original_execution"],
@@ -458,23 +461,23 @@ def run(selected: Any, operation: str, scope: str, execution: Any,
                                 **({"template_admission": template_admission} if template_admission else {})})
     response = _invoke_helper(selected, execution, request, "submit")
     response = _poll_remote(selected, execution, execution_id, response)
-    receipt_value = response.get("receipt") if isinstance(response.get("receipt"), Mapping) else response
+    _write_json(execution.outputs.path("diagnostics") / "remote-observation.json", response, secure=True)
+    receipt_value = response.get("receipt")
     execution_state = response.get("execution", {}).get("state") if isinstance(response.get("execution"), Mapping) else None
-    if response.get("status") in {"unknown", "failed"} or execution_state not in {None, "succeeded"}:
+    if response.get("status") in {"unknown", "failed"} or execution_state != "succeeded":
         raise OperationFailed("remote template execution did not reach a confirmed success")
+    require(isinstance(receipt_value, Mapping)
+            and receipt_value.get("schema_version") == 1
+            and receipt_value.get("kind") == "pve-template-receipt"
+            and receipt_value.get("execution_id") == execution_id
+            and receipt_value.get("preview_digest") == preview["preview_digest"]
+            and receipt_value.get("target") == preview["fixed_input"]["target"]
+            and receipt_value.get("status") == "succeeded",
+            "remote template receipt is missing or conflicts with this execution")
     records = _record_bundle(response, target=preview["fixed_input"]["target"], complete=True)
     require(records["records"], "remote template execution returned no complete template records")
     _write_json(execution.outputs.path("generated") / "template-records.json", records, secure=True)
-    bare_receipt = {key: value for key, value in receipt_value.items()
-                    if key not in {"execution", "template_record", "receipt"}}
-    bare_receipt.update(schema_version=1, kind="pve-template-receipt", execution_id=execution_id,
-                        preview_digest=preview["preview_digest"], status="succeeded",
-                        target=preview["fixed_input"]["target"],
-                        record_id=records["records"][0]["record_id"],
-                        object=records["records"][0]["object"],
-                        configuration=records["records"][0]["configuration"],
-                        cleaning_history="unknown")
-    _write_json(execution.outputs.path("diagnostics") / "receipt.json", bare_receipt, secure=True)
+    _write_json(execution.outputs.path("diagnostics") / "receipt.json", receipt_value, secure=True)
     execution.finish({"component": "pve-template", "operation": operation,
                       "execution_id": execution_id, "preview_digest": preview["preview_digest"],
                       "records": len(records["records"]), "effects": "known", "status": "succeeded"})
