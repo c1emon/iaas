@@ -7,7 +7,7 @@ operations. This software change does not install or remove anything on hosts.
 
 1. Stop template-build and snippet-upload jobs. Confirm no old helper process
    or template-build lock owner remains.
-2. Install `iaas-pve-template` and `iaas-pve-template-worker` from
+2. Install `iaas-pve-template`, `iaas-pve-template-worker` and `iaas-pve-storage-status` from
    `automation/pve-node/bin/`, together with the matching
    `automation/pve-node/sudoers.d/iaas-pve-template` policy. Validate sudoers
    with `visudo -cf` and retain the existing dedicated `pve-ops` identity and

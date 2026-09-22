@@ -80,6 +80,9 @@ sudo install -m 750 -o root -g root \
 sudo install -m 750 -o root -g root \
   automation/pve-node/bin/iaas-pve-template-worker \
   /usr/local/sbin/iaas-pve-template-worker
+sudo install -m 750 -o root -g root \
+  automation/pve-node/bin/iaas-pve-storage-status \
+  /usr/local/sbin/iaas-pve-storage-status
 # 先复制 sudoers 文件到临时路径，以 visudo 校验后再以 root:root / 0440 安装。
 sudo visudo -cf <temporary-sudoers-file>
 ```
@@ -96,6 +99,17 @@ ssh <existing-admin-login>@<pve-node> \
 printf '%s\n' '{"protocol_version":2,"operation":"capabilities"}' | \
   ssh pve-ops@<pve-node> 'sudo -n /usr/local/sbin/iaas-pve-template'
 ```
+
+存储预检查和 worker 获锁后的复查通过本机 `127.0.0.1:8006` HTTPS API
+读取目标存储的 `content/enabled/active/avail`，不解析 `pvesh` 的存储 stdout。
+新增的 `iaas-pve-storage-status` 必须与 wrapper/worker 一起安装，但不增加 sudoers 入口。
+它使用节点既有 root 权限，在内存中生成 PVE ticket；不接收控制端 token，也不落盘认证材料。
+认证只读取现有签名密钥，不调用可能触发集群密钥轮换的高层认证函数。
+TLS 校验使用本机 `/etc/pve/local/pveproxy-ssl.pem`（存在时优先）或 `pve-ssl.pem`：
+验证证书链/有效期，并在发送认证前匹配服务端叶证书；固定连接 loopback，不跟随重定向或环境代理。
+因此 pveproxy 必须监听本机 loopback，证书文件必须与服务中实际证书一致；不一致、API 不可达、
+认证失败或数据无效均阻断构建，不回退到 CLI。cache/work 空间仍按节点实际文件系统检查。
+API 内部仍可能查询其他存储；HTTPS 隔离输出通道，不保证隔离其他插件的异常或超时。
 
 ## 3.4 `pve-cluster.yml` 参数
 

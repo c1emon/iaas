@@ -16,9 +16,11 @@
       {{ playbook_dir }}/../../../pve-node/sudoers.d/iaas-pve-snippet-upload
     pve_bootstrap_wrapper_src: "{{ playbook_dir }}/../../../pve-node/bin/iaas-pve-template"
     pve_bootstrap_worker_src: "{{ playbook_dir }}/../../../pve-node/bin/iaas-pve-template-worker"
+    pve_bootstrap_storage_probe_src: "{{ playbook_dir }}/../../../pve-node/bin/iaas-pve-storage-status"
     pve_bootstrap_snippet_wrapper_src: "{{ playbook_dir }}/../../../pve-node/bin/iaas-pve-snippet-upload"
     pve_bootstrap_wrapper_dest: /usr/local/sbin/iaas-pve-template
     pve_bootstrap_worker_dest: /usr/local/sbin/iaas-pve-template-worker
+    pve_bootstrap_storage_probe_dest: /usr/local/sbin/iaas-pve-storage-status
     pve_bootstrap_snippet_wrapper_dest: /usr/local/sbin/iaas-pve-snippet-upload
     pve_bootstrap_default_sudo_commands:
       - /usr/local/sbin/iaas-pve-template
@@ -76,6 +78,14 @@
         group: root
         mode: "0440"
         validate: /usr/sbin/visudo -cf %s
+
+    - name: Deploy the internal local HTTPS storage probe
+      ansible.builtin.copy:
+        src: "{{ pve_bootstrap_storage_probe_src }}"
+        dest: "{{ pve_bootstrap_storage_probe_dest }}"
+        owner: root
+        group: root
+        mode: "0750"
 
     - name: Deploy the audited template build wrapper
       ansible.builtin.copy:

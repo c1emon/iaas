@@ -57,7 +57,8 @@ The cutover keeps these interfaces aligned: launcher capabilities/interface
 version `1`; runtime environment schema `1`; PVE plan metadata `2`; PVE result,
 template preview and template receipt `1`; and the PVE template helper protocol
 `2`. The PVE helper executables are `iaas-pve-template` and
-`iaas-pve-template-worker`; installation also includes the snippet upload
+`iaas-pve-template-worker`; installation also includes the internal root-only
+`iaas-pve-storage-status` HTTPS probe and the snippet upload
 helper. A capability response is the compatibility gate: old PVE operation
 names are rejected instead of being silently translated.
 

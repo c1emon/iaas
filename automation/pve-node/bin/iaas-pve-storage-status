@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""Root-only, fixed GET of local PVE storage status over HTTPS.
+
+Keep plugin stdout outside the JSON transport. Authentication stays in memory;
+no caller-supplied endpoint, credentials, redirects or proxy configuration.
+"""
+
+import http.client
+import json
+import os
+from pathlib import Path
+import re
+import socket
+import ssl
+import subprocess
+import sys
+
+
+TIMEOUT = 5
+MAX_RESPONSE = 65536
+ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
+CERTIFICATES = (Path("/etc/pve/local/pveproxy-ssl.pem"), Path("/etc/pve/local/pve-ssl.pem"))
+
+
+def storage_status(node: str, storage: str) -> dict:
+    if os.geteuid() != 0 or not ID.fullmatch(node) or not ID.fullmatch(storage):
+        raise RuntimeError("local storage probe identity is invalid")
+    if node != socket.gethostname().split(".", 1)[0]:
+        raise RuntimeError("storage probe target is not the local node")
+    try:
+        certificate = next(path for path in CERTIFICATES if path.exists())
+        pem = certificate.read_text().split("-----END CERTIFICATE-----", 1)[0] + "-----END CERTIFICATE-----\n"
+        expected_certificate = ssl.PEM_cert_to_DER_cert(pem)
+        context = ssl.create_default_context(cafile=str(certificate))
+        # Connect only to loopback. Authenticate by exact local leaf certificate,
+        # with chain/expiry verification, instead of a DNS name for 127.0.0.1.
+        context.check_hostname = False
+        context.verify_flags |= ssl.VERIFY_X509_PARTIAL_CHAIN
+    except (OSError, ValueError, StopIteration, ssl.SSLError):
+        raise RuntimeError("local PVE TLS certificate is unavailable") from None
+    connection = http.client.HTTPSConnection("127.0.0.1", 8006, timeout=TIMEOUT, context=context)
+    try:
+        connection.connect()
+        if connection.sock is None or connection.sock.getpeercert(binary_form=True) != expected_certificate:
+            raise RuntimeError("local PVE TLS certificate mismatch")
+        # Use the helper's existing node-root authority. Never write the ticket
+        # into argv, environment, execution records, or diagnostics.
+        try:
+            auth = subprocess.run(
+                # AccessControl::assemble_ticket can rotate the cluster auth
+                # key. Read the existing key and use the pure ticket signer so
+                # this GET probe never initiates that unrelated mutation.
+                ["/usr/bin/perl", "-MPVE::Ticket", "-MCrypt::OpenSSL::RSA", "-e",
+                 'open my $fh, "<", "/etc/pve/priv/authkey.key" or die "auth key unavailable"; '
+                 'local $/; my $key = Crypt::OpenSSL::RSA->new_private_key(<$fh>); close $fh; '
+                 'print PVE::Ticket::assemble_rsa_ticket($key, "PVE", "root@pam");'],
+                capture_output=True, text=True, check=False, timeout=TIMEOUT,
+                env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C"},
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            raise RuntimeError("local PVE authentication unavailable") from None
+        ticket = auth.stdout.strip()
+        if auth.returncode or not re.fullmatch(r"PVE:root@pam:[^\s;]+", ticket):
+            raise RuntimeError("local PVE authentication unavailable")
+        connection.request("GET", f"/api2/json/nodes/{node}/storage/{storage}/status",
+                           headers={"Cookie": f"PVEAuthCookie={ticket}", "Accept": "application/json"})
+        response = connection.getresponse()
+        if response.status != 200:
+            raise RuntimeError(f"local PVE storage API returned HTTP {response.status}")
+        if response.getheader("Content-Type", "").split(";", 1)[0].strip().lower() != "application/json":
+            raise RuntimeError("local PVE storage API did not return JSON")
+        payload = response.read(MAX_RESPONSE + 1)
+        if len(payload) > MAX_RESPONSE:
+            raise RuntimeError("local PVE storage API response is too large")
+        try:
+            envelope = json.loads(payload)
+        except (ValueError, UnicodeError):
+            raise RuntimeError("local PVE storage API returned invalid JSON") from None
+        if not isinstance(envelope, dict) or not isinstance(envelope.get("data"), dict):
+            raise RuntimeError("local PVE storage API data is invalid")
+        # Emit only prerequisite fields, never arbitrary plugin response data.
+        return {key: envelope["data"][key] for key in ("type", "content", "enabled", "active", "avail")
+                if key in envelope["data"]}
+    except (OSError, http.client.HTTPException):
+        raise RuntimeError("local PVE storage HTTPS request failed") from None
+    finally:
+        connection.close()
+
+
+def main() -> int:
+    try:
+        if len(sys.argv) != 3:
+            raise RuntimeError("expected local node and storage ID")
+        result = storage_status(*sys.argv[1:])
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

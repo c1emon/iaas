@@ -19,6 +19,13 @@ The system SHALL expose offline validation and online read/plan/apply/verify for
 - **AND** cache and work writes SHALL be reported separately from VM changes
 - **AND** insufficient or unknown required facts SHALL stop dependent phases without claiming future storage availability
 
+#### Scenario: Storage plugin writes CLI logs
+- **WHEN** template preflight or the locked worker checks storage prerequisites
+- **THEN** storage facts SHALL come from the local PVE HTTPS storage-status API rather than plugin-contaminated CLI stdout
+- **AND** the node-root probe SHALL authenticate only to loopback after validating the locally configured server certificate, with authentication material retained only in memory
+- **AND** authentication, TLS, HTTP and malformed response failures SHALL block dependent work without a CLI fallback
+- **AND** actual cache/work filesystem checks SHALL remain local and the worker SHALL repeat storage checks after taking its node mutation lock
+
 ### Requirement: Durable remotely queryable template execution
 The node executor SHALL persist execution identity and fixed-input association before facility mutation, and SHALL preserve queryable phase and object evidence independently of the controller connection.
 

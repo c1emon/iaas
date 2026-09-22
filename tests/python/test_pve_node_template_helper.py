@@ -131,6 +131,12 @@ def test_worker_runs_every_build_phase_and_attaches_imported_volume(tmp_path: Pa
     pvesh.write_text("#!/bin/sh\ncase \"$2\" in /cluster/resources) printf '[]\\n';; */storage) printf '[{\\\"storage\\\":\\\"local\\\",\\\"content\\\":\\\"images\\\",\\\"enabled\\\":1,\\\"active\\\":1,\\\"avail\\\":\\\"999999999999\\\"},{\\\"storage\\\":\\\"local-lvm\\\",\\\"content\\\":\\\"images\\\",\\\"enabled\\\":1,\\\"active\\\":1,\\\"avail\\\":\\\"999999999999\\\"}]\\n';; esac\n",
                      encoding="utf-8")
     pvesh.chmod(0o755)
+    # A plugin may contaminate pvesh storage output. Storage checks must use the
+    # fixed HTTPS probe instead, both before submission and in the worker.
+    pvesh.write_text("#!/bin/sh\ncase \"$2\" in /cluster/resources) printf '[]\\n';; *) printf 'plugin stdout pollution\\n'; exit 2;; esac\n")
+    storage_status = fake_bin / "iaas-pve-storage-status"
+    storage_status.write_text("#!/usr/bin/env python3\nimport json\nprint(json.dumps({'content':'images','enabled':1,'active':1,'avail':999999999999}))\n")
+    storage_status.chmod(0o755)
     ip = fake_bin / "ip"
     ip.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     ip.chmod(0o755)
@@ -148,6 +154,7 @@ def test_worker_runs_every_build_phase_and_attaches_imported_volume(tmp_path: Pa
     env = os.environ | {"IAAS_PVE_QM": str(qm), "IAAS_PVE_VIRT_CUSTOMIZE": str(fake_bin / "virt-customize"),
                         "IAAS_PVE_VIRT_SYSPREP": str(fake_bin / "virt-sysprep"),
                         "IAAS_PVE_PVESH": str(pvesh), "IAAS_PVE_IP": str(ip),
+                        "IAAS_PVE_STORAGE_STATUS": str(storage_status),
                         "IAAS_PVE_MIN_FREE_BYTES": "1",
                         "IAAS_PVE_TEMPLATE_LOCK": str(tmp_path / "node.lock"), "QM_LOG": str(tmp_path / "qm.log")}
     result = subprocess.run(["python3", str(worker), "--execution-dir", str(execution)], env=env,
@@ -512,8 +519,8 @@ def test_node_prechecks_reject_unusable_storage_before_build(tmp_path, monkeypat
         calls.append(argv)
         if "/cluster/resources" in argv:
             return subprocess.CompletedProcess(argv, 0, "[]", "")
-        if any(str(arg).endswith("/storage") for arg in argv):
-            return subprocess.CompletedProcess(argv, 0, json.dumps([row]), "")
+        if str(argv[0]).endswith("iaas-pve-storage-status"):
+            return subprocess.CompletedProcess(argv, 0, json.dumps(row), "")
         raise AssertionError(f"unexpected mutation/probe: {argv}")
     monkeypatch.setattr(subprocess, "run", run)
     monkeypatch.setattr(os, "access", lambda *args: True)

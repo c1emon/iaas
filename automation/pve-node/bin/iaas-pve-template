@@ -34,6 +34,7 @@ LOCK_TIMEOUT = float(os.environ.get("IAAS_PVE_TEMPLATE_LOCK_TIMEOUT", "30"))
 WORKER = "/usr/local/sbin/iaas-pve-template-worker"
 QM = os.environ.get("IAAS_PVE_QM", "/usr/sbin/qm")
 PVESH = os.environ.get("IAAS_PVE_PVESH", "/usr/bin/pvesh")
+STORAGE_STATUS = os.environ.get("IAAS_PVE_STORAGE_STATUS", "/usr/local/sbin/iaas-pve-storage-status")
 
 
 def valid_volume_id(value: Any) -> bool:
@@ -360,7 +361,7 @@ def check_preview(preview: dict[str, Any]) -> dict[str, Any]:
     required = [os.environ.get("IAAS_PVE_CURL", "/usr/bin/curl"),
                 os.environ.get("IAAS_PVE_VIRT_CUSTOMIZE", "/usr/bin/virt-customize"),
                 os.environ.get("IAAS_PVE_VIRT_SYSPREP", "/usr/bin/virt-sysprep"),
-                os.environ.get("IAAS_PVE_QM", "/usr/sbin/qm"), PVESH, "/usr/bin/flock"]
+                os.environ.get("IAAS_PVE_QM", "/usr/sbin/qm"), PVESH, STORAGE_STATUS, "/usr/bin/flock"]
     missing = [path for path in required if not os.access(path, os.X_OK)]
     require(not missing, "required template helper tools are unavailable")
     status = subprocess.run([PVESH, "get", "/cluster/resources", "--type", "vm", "--output-format", "json"],
@@ -380,19 +381,18 @@ def check_preview(preview: dict[str, Any]) -> dict[str, Any]:
     require(os.access(pvesh, os.X_OK) and os.access(ip, os.X_OK),
             "storage and bridge capability tools are unavailable")
     node = fixed["target"]["node"]
-    storage_probe = subprocess.run([pvesh, "get", f"/nodes/{node}/storage", "--output-format", "json"],
-                                   capture_output=True, text=True, check=False)
-    require(storage_probe.returncode == 0, "required storage capability is unavailable")
-    try:
-        storage_rows = json.loads(storage_probe.stdout)
-    except json.JSONDecodeError:
-        raise HelperError("storage capability result is invalid") from None
-    if isinstance(storage_rows, dict):
-        storage_rows = storage_rows.get("data")
-    require(isinstance(storage_rows, list), "storage capability result is invalid")
-    for storage in (fixed["import_storage"], fixed["disk_storage"]):
-        row = next((item for item in storage_rows if isinstance(item, dict) and item.get("storage") == storage), None)
-        require(row is not None, "required storage capability is unavailable")
+    for storage in dict.fromkeys((fixed["import_storage"], fixed["disk_storage"])):
+        try:
+            storage_probe = subprocess.run([STORAGE_STATUS, node, storage],
+                                           capture_output=True, text=True, check=False, timeout=15)
+        except subprocess.TimeoutExpired:
+            raise HelperError("required storage HTTPS capability timed out") from None
+        require(storage_probe.returncode == 0, "required storage HTTPS capability is unavailable")
+        try:
+            row = json.loads(storage_probe.stdout)
+        except json.JSONDecodeError:
+            raise HelperError("storage capability result is invalid") from None
+        require(isinstance(row, dict), "storage capability result is invalid")
         try:
             check_storage_row(row, int(os.environ.get("IAAS_PVE_MIN_FREE_BYTES", "1073741824")))
         except RuntimeError as exc:

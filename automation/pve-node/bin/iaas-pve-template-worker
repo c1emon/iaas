@@ -28,6 +28,7 @@ QM = os.environ.get("IAAS_PVE_QM", "/usr/sbin/qm")
 VIRT_CUSTOMIZE = os.environ.get("IAAS_PVE_VIRT_CUSTOMIZE", "/usr/bin/virt-customize")
 VIRT_SYSPREP = os.environ.get("IAAS_PVE_VIRT_SYSPREP", "/usr/bin/virt-sysprep")
 PVESH = os.environ.get("IAAS_PVE_PVESH", "/usr/bin/pvesh")
+STORAGE_STATUS = os.environ.get("IAAS_PVE_STORAGE_STATUS", "/usr/local/sbin/iaas-pve-storage-status")
 IP = os.environ.get("IAAS_PVE_IP", "/usr/sbin/ip")
 MIN_FREE_BYTES = int(os.environ.get("IAAS_PVE_MIN_FREE_BYTES", "1073741824"))
 VM_PHASES = {"create", "import", "configure", "template"}
@@ -199,7 +200,7 @@ def command(argv: list[str], *, phase: str, record: dict[str, Any], directory: P
 
 def _json_command(argv: list[str], *, phase: str, record: dict[str, Any], directory: Path) -> Any:
     """Run a fixed read-only probe and fail closed on unavailable/malformed output."""
-    result = subprocess.run(argv, capture_output=True, text=True, check=False)
+    result = subprocess.run(argv, capture_output=True, text=True, check=False, timeout=15)
     logs = directory / "logs"
     logs.mkdir(mode=0o700, exist_ok=True)
     (logs / f"{phase}.log").write_text((result.stdout or "") + (result.stderr or ""), encoding="utf-8")
@@ -233,16 +234,11 @@ def prerequisites(directory: Path, request: dict[str, Any], record: dict[str, An
         if occupied:
             raise RuntimeError("template VMID is occupied")
         storage_rows: dict[str, Any] = {}
-        for storage in (fixed["import_storage"], fixed["disk_storage"]):
-            rows = _json_command([PVESH, "get", f"/nodes/{node}/storage", "--output-format", "json"],
-                                 phase=f"prerequisites-storage-{storage}", record=record, directory=directory)
-            if isinstance(rows, dict):
-                rows = rows.get("data")
-            if not isinstance(rows, list):
-                raise RuntimeError("storage status result is not a list")
-            selected = next((row for row in rows if isinstance(row, dict) and row.get("storage") == storage), None)
-            if selected is None:
-                raise RuntimeError(f"storage {storage} is unavailable")
+        for storage in dict.fromkeys((fixed["import_storage"], fixed["disk_storage"])):
+            selected = _json_command([STORAGE_STATUS, node, storage],
+                                     phase=f"prerequisites-storage-{storage}", record=record, directory=directory)
+            if not isinstance(selected, dict):
+                raise RuntimeError("storage status result is not an object")
             available = check_storage_row(selected, MIN_FREE_BYTES)
             storage_rows[storage] = {"avail": available}
         check_local_space(directory, MIN_FREE_BYTES)
