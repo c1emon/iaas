@@ -53,7 +53,7 @@ def storage_status(node: str, storage: str) -> dict:
                 ["/usr/bin/perl", "-MPVE::Ticket", "-MCrypt::OpenSSL::RSA", "-e",
                  'open my $fh, "<", "/etc/pve/priv/authkey.key" or die "auth key unavailable"; '
                  'local $/; my $key = Crypt::OpenSSL::RSA->new_private_key(<$fh>); close $fh; '
-                 'print PVE::Ticket::assemble_rsa_ticket($key, "PVE", "root@pam");'],
+                 "print PVE::Ticket::assemble_rsa_ticket($key, 'PVE', 'root@pam');"],
                 capture_output=True, text=True, check=False, timeout=TIMEOUT,
                 env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C"},
             )

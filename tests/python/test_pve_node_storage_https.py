@@ -15,6 +15,7 @@ import pytest
 
 PROBE = Path(__file__).resolve().parents[2] / "automation/pve-node/bin/iaas-pve-storage-status"
 TICKET = "PVE:root@pam:synthetic-ticket"
+RUN = subprocess.run
 
 
 @pytest.fixture
@@ -66,6 +67,11 @@ def probe(tmp_path, monkeypatch):
         assert TICKET not in str(argv) and TICKET not in str(kwargs)
         assert "PVE::AccessControl" not in str(argv)  # Its getter can rotate auth keys.
         assert 'open my $fh, "<", "/etc/pve/priv/authkey.key"' in argv[-1]
+        # Exercise Perl interpolation using the exact signer argument, without
+        # requiring PVE libraries or reading a real authentication key.
+        argument = argv[-1].rsplit(", ", 1)[1].removesuffix(");")
+        identity = RUN(["perl", "-e", f"print {argument};"], capture_output=True, text=True, check=True)
+        assert identity.stdout == "root@pam"
         assert kwargs["timeout"] == 5 and "PERL5OPT" not in kwargs["env"]
         return subprocess.CompletedProcess(argv, state.get("auth_exit", 0), state.get("ticket", TICKET), "private diagnostic")
 
