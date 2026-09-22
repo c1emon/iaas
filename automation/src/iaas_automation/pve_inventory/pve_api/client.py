@@ -102,6 +102,10 @@ class ReadOnlyPveApi:
     def cluster_vm_resources(self) -> Any:
         return self._call("cluster/resources?type=vm", lambda: self._prox.cluster.resources.get(type="vm"))
 
+    def effective_permissions(self, path: str) -> Any:
+        """Read the authenticated token's effective permissions at one ACL path."""
+        return self._call("access/permissions", lambda: self._prox.access.permissions.get(path=path))
+
     def vms(self, node: str) -> Any:
         return self._call(f"nodes/{node}/qemu", lambda: self._prox.nodes(node).qemu.get())
 

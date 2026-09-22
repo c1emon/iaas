@@ -90,8 +90,11 @@ def test_update_delete_without_clone_does_not_check_publication():
 def test_state_ownership_allows_drift_but_markers_do_not_authorize_vmid():
     from iaas_automation.runtime_execution.plans import _check_declared_conflicts
 
-    api = SimpleNamespace(cluster_vm_resources=lambda: [
-        {'vmid': 501, 'name': 'changed-on-device', 'tags': 'managed-by-opentofu'}])
+    api = SimpleNamespace(
+        effective_permissions=lambda path: {path: {'VM.Audit': 1}},
+        cluster_vm_resources=lambda: [
+            {'vmid': 501, 'node': 'n1', 'type': 'qemu',
+             'name': 'changed-on-device', 'tags': 'managed-by-opentofu'}])
     state = {'resources': [{'type': 'proxmox_virtual_environment_vm', 'name': 'vm',
                             'instances': [{'attributes': {'node_name': 'n1', 'vm_id': 501}}]}]}
     _check_declared_conflicts([{'vmid': 501, 'name': 'desired'}], state, api)

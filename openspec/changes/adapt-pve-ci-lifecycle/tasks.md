@@ -42,5 +42,6 @@
 
 - 初次实施已实际构建本地 Linux ARM64 runtime，并通过容器 smoke、操作发现、离线模板 check、SDK 导入和镜像内容检查；launcher 的 Linux amd64 / Darwin arm64 构建通过。
 - 复核修复补齐 launcher 与真实 Python discovery 的接合测试、native plan JSON 传输、固定模板 helper、receipt 历史读取、state 对象关联和创建 VM 前失败清理；相关验证为本机软件与节点命令替身，不替代新版镜像或现场验收。
+- 上游语义复核修正 VM 缺失判断、目录型卷 ID 和存储预检：以目标 VMID 的有效读取权限及清单确认缺失，构建/清理覆盖目录卷，并在变更前检查 datastore 能力、状态和 cache/work 文件系统空间。
 - S3 使用真实 boto3 对本地合成 HTTP 服务验证；PVE API、SSH、systemd/节点命令和 DinD 编排采用代表性替身。未进行共享 CI 或 PVE 实机资格验收。
 - 未安装节点、写入真实设施、迁移 state、执行来宾/业务验收或发布 tag/镜像。原执行事实与当前配置核验保持独立。

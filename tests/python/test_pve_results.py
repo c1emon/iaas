@@ -27,6 +27,12 @@ def snapshot(item, deposed=False):
 
 
 class API:
+    def effective_permissions(self, path):
+        return {path: {"VM.Audit": 0}}
+
+    def cluster_vm_resources(self):
+        return [{"vmid": 101, "node": "n1", "type": "qemu"}]
+
     def node_status(self, node):
         return {"status": "online"}
 
@@ -125,7 +131,7 @@ def test_deposed_state_and_permission_failure_do_not_pass():
     assert verify_configuration(expectations([item], snapshot(item, True)), API())["status"] == "failed"
 
     class Denied(API):
-        def vm_config(self, node, vmid):
+        def effective_permissions(self, path):
             raise PermissionError("private diagnostic")
 
     deleted = change(["delete"])

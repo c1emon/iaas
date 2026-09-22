@@ -33,6 +33,46 @@ MIN_FREE_BYTES = int(os.environ.get("IAAS_PVE_MIN_FREE_BYTES", "1073741824"))
 VM_PHASES = {"create", "import", "configure", "template"}
 
 
+def valid_volume_id(value: Any) -> bool:
+    """Accept storage-qualified IDs, including directory-backed image names."""
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]*:[A-Za-z0-9_.:/-]+", value):
+        return False
+    volume = value.partition(":")[2]
+    return all(part not in {"", ".", ".."} for part in volume.split("/"))
+
+
+def check_local_space(directory: Path, minimum: int) -> None:
+    """Check a minimum image budget for cache and work on their real filesystems."""
+    if minimum <= 0:
+        raise RuntimeError("minimum free space must be positive")
+    budgets: dict[int, tuple[Path, int]] = {}
+    for name in ("cache", "work"):
+        path = directory / name
+        while not path.exists():
+            path = path.parent
+        device = path.stat().st_dev
+        previous = budgets.get(device, (path, 0))
+        budgets[device] = (path, previous[1] + minimum)
+    for path, required in budgets.values():
+        if shutil.disk_usage(path).free < required:
+            raise RuntimeError("local cache/work free space is insufficient")
+
+
+def check_storage_row(row: dict[str, Any], minimum: int) -> int:
+    content = row.get("content")
+    if not isinstance(content, str) or "images" not in content.split(","):
+        raise RuntimeError("required storage does not support images")
+    if any(type(row.get(key)) not in (int, bool) or row[key] != 1 for key in ("enabled", "active")):
+        raise RuntimeError("required storage enabled/active status is unavailable")
+    try:
+        available = int(row["avail"])
+    except (KeyError, TypeError, ValueError):
+        raise RuntimeError("required storage free space is unknown") from None
+    if minimum <= 0 or available < minimum:
+        raise RuntimeError("required storage free space is insufficient")
+    return available
+
+
 def atomic(path: Path, value: dict[str, Any]) -> None:
     fd, name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
@@ -130,7 +170,7 @@ def imported_volume(vmid: str, directory: Path) -> str:
     for line in result.stdout.splitlines():
         if line.startswith("unused0:"):
             value = line.partition(":")[2].strip().split(",", 1)[0]
-            if re.fullmatch(r"[A-Za-z0-9_.:-]+", value):
+            if valid_volume_id(value):
                 return value
     raise RuntimeError("imported volume was not reported as unused0")
 
@@ -203,13 +243,9 @@ def prerequisites(directory: Path, request: dict[str, Any], record: dict[str, An
             selected = next((row for row in rows if isinstance(row, dict) and row.get("storage") == storage), None)
             if selected is None:
                 raise RuntimeError(f"storage {storage} is unavailable")
-            try:
-                available = int(selected["avail"])
-            except (KeyError, TypeError, ValueError):
-                raise RuntimeError(f"storage {storage} free space is unknown") from None
-            if available < MIN_FREE_BYTES:
-                raise RuntimeError(f"storage {storage} has insufficient free space")
+            available = check_storage_row(selected, MIN_FREE_BYTES)
             storage_rows[storage] = {"avail": available}
+        check_local_space(directory, MIN_FREE_BYTES)
         bridge = subprocess.run([IP, "link", "show", fixed["build_bridge"]], capture_output=True,
                                 text=True, check=False)
         (directory / "logs" / "prerequisites-bridge.log").write_text(

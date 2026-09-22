@@ -236,14 +236,19 @@ IOMMU/VFIO/设备绑定。`make pve-preflight` 会只读检查 mapping，不会�
 导入磁盘和转为 template；不将 VM 专用 IP、hostname、SSH host key 或应用秘密
 写入模板。
 
-构建过程使用生成的 `$GENERATED_DIR/packer/debian-13.env`；直接
-调用 helper 时必须显式设置 `TEMPLATE_BUILD_ENV`。`PVE_HOST` 始终是明确的 build
-node SSH host/IP。远端缓存位于 `/var/cache/iaas/packer`，模板命名为
-`debian-13-tmpl-YYYYMMDD`。wrapper 会写临时 deb822 source、删除旧
+正式构建消费独立 recipe 及已审阅的 preview，SSH 目标固定为 recipe 中的节点。
+缓存和工作镜像位于 `/var/lib/iaas/pve-template/executions/<execution-id>/cache`
+与 `work`。下载前会检查实际文件系统空间，并核对两个 PVE datastore 均已启用、
+可访问且支持 `images`；PVE datastore 剩余空间不能替代本地工作盘空间检查。
+空间检查采用节点端 `IAAS_PVE_MIN_FREE_BYTES` 最低门槛（默认 1 GiB），cache
+和 work 在同一文件系统时合并为两份预算；这不是空间预留或镜像实际容量保证。
+worker 会写临时 deb822 source、删除旧
 `/etc/apt/sources.list`、执行 APT 更新、安装 cloud-init、清理 cloud-init logs 并
 通过 virt-sysprep 移除机器特有状态；这些仅发生在模板构建机/镜像内，不能代替
 已有 VM 的 egress policy。对 OVMF/q35，模板有显式 4 MiB EFI disk；`qm importdisk`
 会以实际 VM config 报告的 imported volume 附着，无法确定时失败而不是猜测。
+目录型存储使用如 `local:9003/vm-9003-disk-0.qcow2` 的卷 ID；导入和清理使用
+相同校验规则，保留目录分隔符并拒绝路径穿越。
 
 正式写入入口统一使用 [`iaas run` 启动器](../runtime-launcher.md) 的
 `pve-template` 或 PVE `read` / `plan` / `apply` / `verify`。调用方通过

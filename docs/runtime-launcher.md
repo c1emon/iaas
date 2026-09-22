@@ -230,6 +230,12 @@ persistence and collection facts remain separate, and the original result is
 never rewritten. Required caller-owned guest/business acceptance remains a
 separate gate.
 
+Creation conflict checks and deletion verification confirm VMID absence through
+the cluster resource list after checking the token's effective `VM.Audit` on
+each selected `/vms/<vmid>` path. A permission-filtered empty list or a failed
+configuration request is not evidence of absence; unavailable permissions or
+an incomplete list block planning or leave verification unknown.
+
 Template build and cleanup use the independent `pve-template` component. The
 recipe, preview, execution admission and receipt are separate from the VM root.
 Online template operations use explicitly mapped SSH key/known_hosts files and

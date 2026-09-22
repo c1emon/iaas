@@ -36,6 +36,46 @@ QM = os.environ.get("IAAS_PVE_QM", "/usr/sbin/qm")
 PVESH = os.environ.get("IAAS_PVE_PVESH", "/usr/sbin/pvesh")
 
 
+def valid_volume_id(value: Any) -> bool:
+    """Accept storage-qualified IDs, including directory-backed image names."""
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]*:[A-Za-z0-9_.:/-]+", value):
+        return False
+    volume = value.partition(":")[2]
+    return all(part not in {"", ".", ".."} for part in volume.split("/"))
+
+
+def check_local_space(directory: Path, minimum: int) -> None:
+    """Check a minimum image budget for cache and work on their real filesystems."""
+    if minimum <= 0:
+        raise RuntimeError("minimum free space must be positive")
+    budgets: dict[int, tuple[Path, int]] = {}
+    for name in ("cache", "work"):
+        path = directory / name
+        while not path.exists():
+            path = path.parent
+        device = path.stat().st_dev
+        previous = budgets.get(device, (path, 0))
+        budgets[device] = (path, previous[1] + minimum)
+    for path, required in budgets.values():
+        if shutil.disk_usage(path).free < required:
+            raise RuntimeError("local cache/work free space is insufficient")
+
+
+def check_storage_row(row: dict[str, Any], minimum: int) -> int:
+    content = row.get("content")
+    if not isinstance(content, str) or "images" not in content.split(","):
+        raise RuntimeError("required storage does not support images")
+    if any(type(row.get(key)) not in (int, bool) or row[key] != 1 for key in ("enabled", "active")):
+        raise RuntimeError("required storage enabled/active status is unavailable")
+    try:
+        available = int(row["avail"])
+    except (KeyError, TypeError, ValueError):
+        raise RuntimeError("required storage free space is unknown") from None
+    if minimum <= 0 or available < minimum:
+        raise RuntimeError("required storage free space is insufficient")
+    return available
+
+
 class HelperError(Exception):
     pass
 
@@ -354,10 +394,13 @@ def check_preview(preview: dict[str, Any]) -> dict[str, Any]:
         row = next((item for item in storage_rows if isinstance(item, dict) and item.get("storage") == storage), None)
         require(row is not None, "required storage capability is unavailable")
         try:
-            require(int(row["avail"]) >= int(os.environ.get("IAAS_PVE_MIN_FREE_BYTES", "1073741824")),
-                    "required storage free space is insufficient")
-        except (KeyError, TypeError, ValueError):
-            raise HelperError("required storage free space is unknown") from None
+            check_storage_row(row, int(os.environ.get("IAAS_PVE_MIN_FREE_BYTES", "1073741824")))
+        except RuntimeError as exc:
+            raise HelperError(str(exc)) from None
+    try:
+        check_local_space(EXECUTIONS, int(os.environ.get("IAAS_PVE_MIN_FREE_BYTES", "1073741824")))
+    except (RuntimeError, OSError) as exc:
+        raise HelperError(str(exc)) from None
     bridge = subprocess.run([ip, "link", "show", fixed["build_bridge"]], capture_output=True, check=False)
     require(bridge.returncode == 0, "required build bridge is unavailable")
     return {"vmid": fixed["vmid"], "tools": "available", "vmid_status": "free",
@@ -519,7 +562,7 @@ def cleanup(request: dict[str, Any], *, preview_only: bool) -> dict[str, Any]:
     require(isinstance(original_object, dict) and original_object.get("vmid") == vmid,
             "cleanup object is not associated with the original execution")
     volumes = cleanup_request.get("volumes", [])
-    require(isinstance(volumes, list) and all(isinstance(item, str) and re.fullmatch(r"[A-Za-z0-9_.:-]+", item) for item in volumes),
+    require(isinstance(volumes, list) and all(valid_volume_id(item) for item in volumes),
             "cleanup volumes are invalid")
     known_volumes = set((original_object.get("disks") or {}).values())
     if known_volumes:

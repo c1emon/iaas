@@ -10,6 +10,8 @@ from pathlib import Path
 import socket
 import subprocess
 
+import pytest
+
 from iaas_automation.pve_template.contracts import build_preview
 
 
@@ -98,7 +100,8 @@ def test_submit_persists_before_worker_and_deduplicates(tmp_path: Path) -> None:
     assert "different fixed inputs" in conflict.stdout
 
 
-def test_worker_runs_every_build_phase_and_attaches_imported_volume(tmp_path: Path) -> None:
+@pytest.mark.parametrize("volume", ["local-lvm:vm-9003-disk-0", "local:9003/vm-9003-disk-0.qcow2"])
+def test_worker_runs_every_build_phase_and_attaches_imported_volume(tmp_path: Path, volume: str) -> None:
     worker = ROOT / "automation/pve-node/bin/iaas-pve-template-worker"
     execution = tmp_path / "execution"
     (execution / "cache").mkdir(parents=True)
@@ -122,9 +125,10 @@ def test_worker_runs_every_build_phase_and_attaches_imported_volume(tmp_path: Pa
                   "printf '%s\\n' \"$*\" >> \"$QM_LOG\"\n"
                   "case \"$1\" in config) printf 'unused0: local-lvm:vm-9003-disk-0\\n'; printf 'smbios1: uuid=11111111-1111-4111-8111-111111111111\\n'; printf 'scsi0: local-lvm:vm-9003-disk-0,size=8G\\n'; printf 'scsihw: virtio-scsi-single\\n'; printf 'ide2: local-lvm:cloudinit,media=cdrom\\n'; printf 'template: 1\\n'; exit 0;; create) [ \"$QM_FAIL\" = create ] && exit 9; exit 0;; importdisk|set|template) exit 0;; *) exit 2;; esac\n",
                   encoding="utf-8")
+    qm.write_text(qm.read_text().replace("local-lvm:vm-9003-disk-0", volume))
     qm.chmod(0o755)
     pvesh = fake_bin / "pvesh"
-    pvesh.write_text("#!/bin/sh\ncase \"$2\" in /cluster/resources) printf '[]\\n';; */storage) printf '[{\\\"storage\\\":\\\"local\\\",\\\"avail\\\":\\\"999999999999\\\"},{\\\"storage\\\":\\\"local-lvm\\\",\\\"avail\\\":\\\"999999999999\\\"}]\\n';; esac\n",
+    pvesh.write_text("#!/bin/sh\ncase \"$2\" in /cluster/resources) printf '[]\\n';; */storage) printf '[{\\\"storage\\\":\\\"local\\\",\\\"content\\\":\\\"images\\\",\\\"enabled\\\":1,\\\"active\\\":1,\\\"avail\\\":\\\"999999999999\\\"},{\\\"storage\\\":\\\"local-lvm\\\",\\\"content\\\":\\\"images\\\",\\\"enabled\\\":1,\\\"active\\\":1,\\\"avail\\\":\\\"999999999999\\\"}]\\n';; esac\n",
                      encoding="utf-8")
     pvesh.chmod(0o755)
     ip = fake_bin / "ip"
@@ -146,10 +150,10 @@ def test_worker_runs_every_build_phase_and_attaches_imported_volume(tmp_path: Pa
     phases = [item["phase"] for item in record["phases"]]
     assert {"customize", "sysprep", "create", "import", "import-observation", "configure", "template"} <= set(phases)
     assert record["object"]["smbios_uuid"] == "11111111-1111-4111-8111-111111111111"
-    assert record["object"]["disks"] == {"scsi0": "local-lvm:vm-9003-disk-0"}
+    assert record["object"]["disks"] == {"scsi0": volume}
     assert record["object"]["configuration"]["scsihw"] == "virtio-scsi-single"
     assert record["object"]["configuration"]["ide2"].endswith("media=cdrom")
-    assert "--scsi0 local-lvm:vm-9003-disk-0" in (tmp_path / "qm.log").read_text(encoding="utf-8")
+    assert f"--scsi0 {volume}" in (tmp_path / "qm.log").read_text(encoding="utf-8")
     qm_log = (tmp_path / "qm.log").read_text(encoding="utf-8")
     assert "--efidisk0 local-lvm:0,efitype=4m,format=raw" in qm_log
     assert any(item["phase"] == "prerequisites" and item["status"] == "complete"
@@ -428,3 +432,91 @@ def test_created_vm_cleanup_storage_failure_can_retry_before_destroy(tmp_path, m
     assert sum("destroy" in call for call in calls) == 1
     assert not (original / "work").exists()
     assert not (original / "cache").exists()
+
+
+def test_node_volume_ids_support_directory_storage_and_reject_path_escape(tmp_path, monkeypatch):
+    import runpy
+    for script in (HELPER, HELPER.with_name("iaas-pve-template-worker")):
+        namespace = runpy.run_path(str(script))
+        valid = namespace["valid_volume_id"]
+        for value in ("local:9003/vm-9003-disk-0.qcow2", "local-lvm:vm-9003-disk-0",
+                      "local.ssd:9003/vm-9003-disk-0.qcow2"):
+            assert valid(value), (script, value)
+        for value in ("local:/etc/passwd", "local:9003/../disk", "local:./disk", "local:9003//disk",
+                      "local:9003/disk,media=cdrom", "local:9003/disk\n", "local:", "../local:disk"):
+            assert not valid(value), (script, value)
+    imported = namespace["imported_volume"]
+    monkeypatch.setattr(subprocess, "run", lambda argv, **kw: subprocess.CompletedProcess(
+        argv, 0, "unused0: local:9003/vm-9003-disk-0.qcow2\n", ""))
+    assert imported("9003", tmp_path) == "local:9003/vm-9003-disk-0.qcow2"
+
+
+def test_node_storage_requires_images_enabled_active_and_known_capacity():
+    import runpy
+    import pytest
+    for script in (HELPER, HELPER.with_name("iaas-pve-template-worker")):
+        check = runpy.run_path(str(script))["check_storage_row"]
+        good = {"content": "images,rootdir", "enabled": 1, "active": 1, "avail": 100}
+        assert check(good, 10) == 100
+        for change in ({"content": "iso"}, {"content": None}, {"enabled": 0}, {"active": 0},
+                       {"active": "1"}, {"enabled": None}, {"avail": None}, {"avail": 9}):
+            with pytest.raises(RuntimeError):
+                check(good | change, 10)
+
+
+def test_node_local_space_checks_existing_filesystems_and_combined_budget(tmp_path, monkeypatch):
+    import runpy
+    import pytest
+    from types import SimpleNamespace
+    for script in (HELPER, HELPER.with_name("iaas-pve-template-worker")):
+        check = runpy.run_path(str(script))["check_local_space"]
+        paths = []
+        def usage(path):
+            assert path.exists()
+            paths.append(path)
+            return SimpleNamespace(free=19)
+        monkeypatch.setattr(shutil := check.__globals__["shutil"], "disk_usage", usage)
+        with pytest.raises(RuntimeError, match="cache/work"):
+            check(tmp_path / "not-created/execution", 10)
+        assert paths == [tmp_path]
+        assert not (tmp_path / "not-created").exists()
+        monkeypatch.setattr(shutil, "disk_usage", lambda path: SimpleNamespace(free=20))
+        check(tmp_path / "not-created/execution", 10)
+
+
+def test_cleanup_preview_accepts_directory_volume(tmp_path, monkeypatch):
+    cleanup, request, original, _, calls, _ = _cleanup_case(tmp_path, monkeypatch)
+    record_path = original / "record.json"
+    record = json.loads(record_path.read_text())
+    volume = "local:9003/vm-9003-disk-0.qcow2"
+    record["object"] = record["planned_object"] | {"disks": {"scsi0": volume}}
+    record_path.write_text(json.dumps(record))
+    request["cleanup"]["volumes"] = [volume]
+    assert cleanup(request, preview_only=True)["preview"]["volumes"] == [volume]
+
+
+@pytest.mark.parametrize("change", [{"content": "iso"}, {"enabled": 0}, {"active": 0}])
+def test_node_prechecks_reject_unusable_storage_before_build(tmp_path, monkeypatch, change):
+    import runpy
+    row = {"storage": "local", "content": "images", "enabled": 1, "active": 1,
+           "avail": 999999999999} | change
+    calls = []
+    def run(argv, **kwargs):
+        calls.append(argv)
+        if "/cluster/resources" in argv:
+            return subprocess.CompletedProcess(argv, 0, "[]", "")
+        if any(str(arg).endswith("/storage") for arg in argv):
+            return subprocess.CompletedProcess(argv, 0, json.dumps([row]), "")
+        raise AssertionError(f"unexpected mutation/probe: {argv}")
+    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(os, "access", lambda *args: True)
+    helper = runpy.run_path(str(HELPER))
+    with pytest.raises(helper["HelperError"]):
+        helper["check_preview"](_preview())
+    worker = runpy.run_path(str(HELPER.with_name("iaas-pve-template-worker")))
+    record = {"phases": []}
+    with pytest.raises(RuntimeError):
+        worker["prerequisites"](tmp_path, {"preview": _preview()}, record)
+    assert record["phases"] == [{"phase": "prerequisites", "status": "failed"}]
+    assert not (tmp_path / "cache").exists()
+    assert not (tmp_path / "work").exists()

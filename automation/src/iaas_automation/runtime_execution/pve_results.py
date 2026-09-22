@@ -12,13 +12,43 @@ from typing import Any
 
 from iaas_automation.common.errors import require
 from iaas_automation.pve_inventory.pve_api import (
-    ReadOnlyPveApi, PveApiRuntimeConfig, PveApiNotConfiguredError,
+    ReadOnlyPveApi, PveApiRuntimeConfig,
 )
 
 VM_TYPE = "proxmox_virtual_environment_vm"
 HA_TYPE = "proxmox_virtual_environment_haresource"
 ACTIONS = {("no-op",), ("create",), ("update",), ("delete",),
            ("delete", "create"), ("create", "delete"), ("read",)}
+
+
+def observed_vmids(api: Any, vmids: set[int]) -> set[int]:
+    """Read a cluster list proven complete for the requested VMIDs.
+
+    PVE filters cluster resources by VM.Audit. Check each exact ACL path using
+    the current token (including privilege separation and ACL overrides), since
+    a grant on /vms alone cannot prove visibility of all its children.
+    """
+    for vmid in sorted(vmids):
+        require(type(vmid) is int and vmid > 0, "invalid VMID for existence observation")
+        path = f"/vms/{vmid}"
+        permissions = api.effective_permissions(path)
+        grants = permissions.get(path) if isinstance(permissions, dict) else None
+        require(isinstance(grants, dict) and type(grants.get("VM.Audit")) in {int, bool}
+                and grants["VM.Audit"] in (0, 1),
+                "VM existence observation requires effective VM.Audit on each selected VMID")
+    if not vmids:
+        return set()
+    inventory = api.cluster_vm_resources()
+    require(isinstance(inventory, list), "PVE resource observation is incomplete")
+    occupied: set[int] = set()
+    for row in inventory:
+        require(isinstance(row, dict) and type(row.get("vmid")) is int and row["vmid"] > 0
+                and row.get("type") in {"qemu", "lxc"}
+                and isinstance(row.get("node"), str) and bool(row["node"]),
+                "PVE resource observation is incomplete")
+        require(row["vmid"] not in occupied, "PVE resource observation has duplicate VMIDs")
+        occupied.add(row["vmid"])
+    return occupied & vmids
 
 
 def _unknown(value: Any) -> bool:
@@ -258,16 +288,13 @@ def verify_configuration(expected: list[dict], api: Any) -> dict:
             elif not isinstance(wanted.get("vmid"), int) or not wanted.get("node"):
                 checks["identity"] = "unknown"
             else:
-                try:
-                    config = api.vm_config(wanted["node"], wanted["vmid"])
-                except PveApiNotConfiguredError:
+                if wanted["absent"]:
                     api.node_status(wanted["node"])
-                    checks["existence"] = "passed" if wanted["absent"] else "failed"
+                    occupied = observed_vmids(api, {wanted["vmid"]})
+                    checks["existence"] = "failed" if occupied else "passed"
                 else:
-                    if wanted["absent"]:
-                        checks["existence"] = "failed"
-                    else:
-                        checks = _vm_fields(wanted, config, api.vm_status(wanted["node"], wanted["vmid"]))
+                    config = api.vm_config(wanted["node"], wanted["vmid"])
+                    checks = _vm_fields(wanted, config, api.vm_status(wanted["node"], wanted["vmid"]))
                 if wanted.get("deposed") or wanted.get("state_absent") is False:
                     checks["state_residual"] = "failed"
         except Exception:

@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 import shutil
 import sys
-from typing import Any
+from typing import Any, cast
 
 from iaas_automation.common.errors import require
 from iaas_automation.common.io import write_text
@@ -257,7 +257,7 @@ def _state_transition(prior: dict, current: dict, *, allow_initialization: bool 
 
 
 def _check_resource_conflicts(changes: list[dict], state: dict | None, api: Any) -> None:
-    from .pve_results import state_instances, VM_TYPE
+    from .pve_results import state_instances, observed_vmids, VM_TYPE
     managed = {(i.get("attributes", {}).get("node_name"), i.get("attributes", {}).get("vm_id"))
                for rows in state_instances(state or {}).values() for i in rows}
     for item in changes:
@@ -270,21 +270,14 @@ def _check_resource_conflicts(changes: list[dict], state: dict | None, api: Any)
         require(isinstance(node, str) and type(vmid) is int, "plan requires known VM placement")
         if (node, vmid) in managed:
             continue
-        from iaas_automation.pve_inventory.pve_api import PveApiNotConfiguredError
-        try:
-            api.vm_config(node, vmid)
-        except PveApiNotConfiguredError:
-            continue
-        require(False, "VMID is occupied outside selected state")
+        require(not observed_vmids(api, {cast(int, vmid)}), "VMID is occupied outside selected state")
 
 
 def _check_declared_conflicts(vms: list[dict], state: dict | None, api: Any) -> None:
-    from .pve_results import state_instances
+    from .pve_results import state_instances, observed_vmids
     managed = {i.get("attributes", {}).get("vm_id")
                for rows in state_instances(state or {}).values() for i in rows}
-    inventory = api.cluster_vm_resources()
-    require(isinstance(inventory, list), "PVE resource observation is incomplete")
-    occupied = {int(row["vmid"]) for row in inventory if row.get("vmid") is not None}
+    occupied = observed_vmids(api, {vm["vmid"] for vm in vms} - managed)
     require(not ({vm["vmid"] for vm in vms} & occupied) - managed,
             "declared VMID is occupied outside selected state")
 

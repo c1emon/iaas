@@ -31,7 +31,8 @@ def setup_plan(tmp_path, monkeypatch):
     monkeypatch.setattr(pve_provider, "verify_ssh_trust", lambda *a, **k: None, raising=False)
     monkeypatch.setattr(pve_provider, "verify_helper_trust", lambda *a: None)
     from types import SimpleNamespace
-    monkeypatch.setattr(plans, "api_client", lambda *a: SimpleNamespace(cluster_vm_resources=lambda: []))
+    monkeypatch.setattr(plans, "api_client", lambda *a: SimpleNamespace(
+        cluster_vm_resources=lambda: [], effective_permissions=lambda path: {path: {"VM.Audit": 1}}))
     monkeypatch.setattr(pve_state, "observe_state", lambda backend, env: StateObservation(
         "present", backend.config["bucket"], backend.state_key(), backend.workspace, None,
         lineage="synthetic-lineage", serial=1, empty=True,
