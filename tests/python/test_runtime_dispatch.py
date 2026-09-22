@@ -6,12 +6,29 @@ import yaml
 
 from iaas_automation.runtime_execution.__main__ import main
 from iaas_automation.runtime_execution.execution import Execution
-from iaas_automation.runtime_execution.operations import operation_for
+from iaas_automation.runtime_execution.operations import capabilities, operation_for
 from iaas_automation.runtime_execution.selection import load_operation
 from iaas_automation.runtime_config import InputRequired, SourceReader
 
 
 REPO = Path(__file__).resolve().parents[2]
+
+
+def test_capabilities_advertise_lifecycle_contract_versions() -> None:
+    assert capabilities()["lifecycle_versions"] == {
+        "pve": {"plan": 2, "result": 1},
+        "pve-template": {"preview": 1, "receipt": 1, "helper": 2},
+    }
+
+
+def test_template_operations_do_not_forward_api_or_state_credentials():
+    from iaas_automation.runtime_execution.operations import credential_names, process_environment
+    for operation in ('check', 'read', 'plan', 'apply', 'verify'):
+        assert credential_names('pve-template', operation) == set()
+        assert process_environment('pve-template', operation, {
+            'TF_VAR_pve_api_token_secret': 'must-not-pass',
+            'AWS_SECRET_ACCESS_KEY': 'must-not-pass',
+            'OPNSENSE_API_SECRET': 'must-not-pass'}) == {}
 
 
 def config(tmp_path, component, inputs, files=None):
@@ -80,11 +97,13 @@ def test_partial_k3s_deploy_is_rejected_before_execution(tmp_path, monkeypatch, 
 
 def test_selected_online_file_closure_does_not_read_current_saved_plan_inputs(tmp_path):
     entry = config(tmp_path, "pve", {"cluster": "missing.yml", "vms": "missing-vms.yml"},
-                   {"backend": "backend", "ssh_key": "key", "known_hosts": "hosts", "dependencies": "unused"})
-    for name in ["backend", "key", "hosts"]:
+                   {"backend": "backend", "ssh_key": "key", "known_hosts": "hosts",
+                    "state_admission": "state", "execution_admission": "execution", "dependencies": "unused"})
+    for name in ["backend", "key", "hosts", "state", "execution"]:
         (tmp_path / name).write_text("synthetic")
-    selected = load_operation(entry, "pve", "apply-saved-plan", None, SourceReader())
-    assert not selected.documents and set(selected.files) == {"backend", "ssh_key", "known_hosts"}
+    selected = load_operation(entry, "pve", "apply", None, SourceReader())
+    assert not selected.documents and set(selected.files) == {"backend", "ssh_key", "known_hosts",
+                                                               "state_admission", "execution_admission"}
 
 
 def test_opnsense_workflow_file_and_effect_selection(tmp_path):

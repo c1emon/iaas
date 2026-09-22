@@ -51,6 +51,12 @@ func TestExecutionIDBindsApplyToFreshOutputIdentity(t *testing.T) {
 	if err := validateExecutionID(valid); err != nil {
 		t.Fatal(err)
 	}
+	for _, component := range []string{"pve", "pve-template"} {
+		valid = Options{Component: component, Operation: "apply", Output: "/tmp/execution-42", ExecutionID: "execution-42"}
+		if err := validateExecutionID(valid); err != nil {
+			t.Fatalf("%s apply did not accept execution identity: %v", component, err)
+		}
+	}
 	for _, invalid := range []Options{
 		{Component: "opnsense", Operation: "apply", Output: "/tmp/result"},
 		{Component: "opnsense", Operation: "apply", Output: "/tmp/other", ExecutionID: "execution-42"},

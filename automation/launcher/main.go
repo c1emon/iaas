@@ -68,6 +68,9 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
+	if options.Component == "pve" && (options.Operation == "prepare-plan" || options.Operation == "apply-saved-plan") {
+		return errors.New("prepare-plan/apply-saved-plan were removed; use PVE plan/apply")
+	}
 	docker := Docker{}
 	if command == "prepare" {
 		if _, err = docker.call("pull", "--platform", configuration.Platform, configuration.Image); err != nil {
@@ -109,8 +112,9 @@ func run(args []string) error {
 	if _, err = os.Lstat(options.Output); !os.IsNotExist(err) {
 		return errors.New("output must be a new directory")
 	}
-	if options.Operation == "apply-saved-plan" && (options.Plan == "" || options.Companions == "") {
-		return errors.New("saved apply requires --plan and --companions")
+	if options.Component == "pve" && (options.Operation == "apply" || options.Operation == "verify") &&
+		(options.Plan == "" || options.Companions == "") {
+		return errors.New("PVE apply/verify requires --plan and --companions")
 	}
 	if err := validateExecutionID(options); err != nil {
 		return err
@@ -121,17 +125,20 @@ func run(args []string) error {
 }
 
 func validateExecutionID(options Options) error {
+	mutation := (options.Component == "opnsense" && options.Operation == "apply") ||
+		(options.Component == "pve" && options.Operation == "apply") ||
+		(options.Component == "pve-template" && options.Operation == "apply")
 	if options.ExecutionID == "" {
-		if options.Component == "opnsense" && options.Operation == "apply" {
-			return errors.New("OPNsense apply requires --execution-id")
+		if mutation {
+			return errors.New("mutation apply requires --execution-id")
 		}
 		return nil
 	}
 	if !executionIDPattern.MatchString(options.ExecutionID) {
 		return errors.New("execution-id must be a bounded identifier")
 	}
-	if options.Component != "opnsense" || options.Operation != "apply" {
-		return errors.New("execution-id is only supported for OPNsense apply")
+	if !mutation {
+		return errors.New("execution-id is only supported for apply")
 	}
 	if filepath.Base(options.Output) != options.ExecutionID {
 		return errors.New("output directory basename must equal execution-id")

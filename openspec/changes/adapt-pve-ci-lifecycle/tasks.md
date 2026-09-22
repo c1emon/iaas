@@ -1,9 +1,9 @@
 ## 1. 合同与入口
 
 - [x] 1.1 实施前确认并按仓库规则进入 change 对应实现分支，检查工作树；以分支及状态记录验证，不自动处理其他未提交修改。
-- [ ] 1.2 定义 PVE v2 plan metadata、v1 result、模板 v1 preview/receipt、execution/state/template admission、固定 verification_requirements 和 recovery_of 校验模型；用缺字段、旧版本、目标/执行身份冲突、缺消费/pending 关联及验收要求事后降级的代表性测试验证。
-- [ ] 1.3 增加 pve-template recipe 选择及独立 check/read/plan/apply/verify discovery；用不加载 VM/S3、拒绝无关凭据和未声明文件的测试验证。
-- [ ] 1.4 将 PVE 正式操作统一为 read/plan/apply/verify，扩展 launcher execution ID；移除旧 prepare-plan/apply-saved-plan 和无准入直写旁路，以 CLI 拒绝/完整交接测试验证，保留其他组件回归。
+- [x] 1.2 定义 PVE v2 plan metadata、v1 result、模板 v1 preview/receipt、execution/state/template admission、固定 verification_requirements 和 recovery_of 校验模型；用缺字段、旧版本、目标/执行身份冲突、缺消费/pending 关联及验收要求事后降级的代表性测试验证。
+- [x] 1.3 增加 pve-template recipe 选择及独立 check/read/plan/apply/verify discovery；用不加载 VM/S3、拒绝无关凭据和未声明文件的测试验证。
+- [x] 1.4 将 PVE 正式操作统一为 read/plan/apply/verify，扩展 launcher execution ID；移除旧 prepare-plan/apply-saved-plan 和无准入直写旁路，以 CLI 拒绝/完整交接测试验证，保留其他组件回归。
 
 ## 2. 模板远端执行
 
@@ -16,19 +16,19 @@
 
 ## 3. VM 目标、凭据和 state 准入
 
-- [ ] 3.1 定义受支持的单 PVE provider root 合同并核对 plan JSON 中实际 endpoint/TLS 与固定 target；用 SSH 相同但 API 不同、多 provider/动态目标拒绝测试验证。
-- [ ] 3.2 提供采用 ephemeral 认证变量的合成 root 和受控环境/文件映射，provider/helper 显式 SSH 可用且不依赖宿主 agent；首次 plan 前从静态声明/state 确定 SSH 目标、plan 后绑定并在 apply 前重验 trust，用无已有 plan 的首次规划、非默认端口、缺 host 信任/未知节点拒绝、错误 key、plan 后更新凭据仍消费原计划、旧普通认证变量 root 拒绝和日志脱敏测试验证。
-- [ ] 3.3 实现只读 S3 对象观察、first_use/existing/reconciled_empty 准入及初始化前后 lineage 关联；用 default/非 default workspace 路径与 backend 目标一致、缺对象/缺 bucket/拒绝访问区分、未支持加密拒绝、观察无 state/lock 写入、意外缺失/身份变化拒绝、首次初始化产生相符空 state 及资源冲突场景验证。
-- [ ] 3.4 修正 preflight 名称/tags 仅表示声明匹配的报告，不将其作为 root/state 纳管证据；用已纳管 VM 改名/配置漂移仍可规划的正例，以及标记相同但不属于所选 state 的反例验证，保留只读检查范围。
-- [ ] 3.5 从私有原生 plan 生成安全机器摘要和确定的 clone 依赖，将模板记录与新 metadata 绑定；用 create/update/delete/replace/no-op、unknown、替换顺序和敏感资源 key 测试验证。
-- [ ] 3.6 在首个设施副作用前核对当前 template admission 和实际对象，保持调用方串行化交接；用撤销、缺当前准入、同 VMID 重建、待发布验证用途及无模板依赖的更新/删除测试验证。
+- [x] 3.1 定义受支持的单 PVE provider root 合同并核对 plan JSON 中实际 endpoint/TLS 与固定 target；用 SSH 相同但 API 不同、多 provider/动态目标拒绝测试验证。
+- [x] 3.2 提供采用 ephemeral 认证变量的合成 root 和受控环境/文件映射，provider/helper 显式 SSH 可用且不依赖宿主 agent；首次 plan 前从静态声明/state 确定 SSH 目标、plan 后绑定并在 apply 前重验 trust，用无已有 plan 的首次规划、非默认端口、缺 host 信任/未知节点拒绝、错误 key、plan 后更新凭据仍消费原计划、旧普通认证变量 root 拒绝和日志脱敏测试验证。
+- [x] 3.3 实现只读 S3 对象观察、first_use/existing/reconciled_empty 准入及初始化前后 lineage 关联；用 default/非 default workspace 路径与 backend 目标一致、缺对象/缺 bucket/拒绝访问区分、未支持加密拒绝、观察无 state/lock 写入、意外缺失/身份变化拒绝、首次初始化产生相符空 state 及资源冲突场景验证。
+- [x] 3.4 修正 preflight 名称/tags 仅表示声明匹配的报告，不将其作为 root/state 纳管证据；用已纳管 VM 改名/配置漂移仍可规划的正例，以及标记相同但不属于所选 state 的反例验证，保留只读检查范围。
+- [x] 3.5 从私有原生 plan 生成安全机器摘要和确定的 clone 依赖，将模板记录与新 metadata 绑定；用 create/update/delete/replace/no-op、unknown、替换顺序和敏感资源 key 测试验证。
+- [x] 3.6 在首个设施副作用前核对当前 template admission 和实际对象，保持调用方串行化交接；用撤销、缺当前准入、同 VMID 重建、待发布验证用途及无模板依赖的更新/删除测试验证。
 
 ## 4. 执行结果与核验
 
-- [ ] 4.1 为 PVE 执行持久化绑定结果并独立记录阶段、副作用、native apply、state 写回及 collection；用部分 snippet 上传、空 diff 上传、native stale-plan 和 state 写回失败测试验证，禁止自动 retry/push/unlock。
-- [ ] 4.2 实现原计划关联的只读配置 verify 和执行后私有 state/资源结果快照，覆盖关键配置、删除及同/异 VMID 替换的最终期望；用未转发 root outputs、缺原始快照、期望停止、旧/deposed 对象残留、权限不足、未知必需字段、空范围和必需来宾证据缺失测试验证，禁止以当前设备自设期望。
-- [ ] 4.3 提供只读结果关联/恢复观察，完整原材料可供补登记，缺结果时不反推历史成功；用原结果不变、设备/state 不一致、关联冲突、read/verify 无写入及人工核清不恢复旧计划消费资格的合同测试验证。
-- [ ] 4.4 保留私有 capture、errored state、远端 receipt 和导出失败后的唯一存储；用现有恢复测试与 controller 无最终结果、结果收集失败场景验证，不将任务失败改写为成功。
+- [x] 4.1 为 PVE 执行持久化绑定结果并独立记录阶段、副作用、native apply、state 写回及 collection；用部分 snippet 上传、空 diff 上传、native stale-plan 和 state 写回失败测试验证，禁止自动 retry/push/unlock。
+- [x] 4.2 实现原计划关联的只读配置 verify 和执行后私有 state/资源结果快照，覆盖关键配置、删除及同/异 VMID 替换的最终期望；用未转发 root outputs、缺原始快照、期望停止、旧/deposed 对象残留、权限不足、未知必需字段、空范围和必需来宾证据缺失测试验证，禁止以当前设备自设期望。
+- [x] 4.3 提供只读结果关联/恢复观察，完整原材料可供补登记，缺结果时不反推历史成功；用原结果不变、设备/state 不一致、关联冲突、read/verify 无写入及人工核清不恢复旧计划消费资格的合同测试验证。
+- [x] 4.4 保留私有 capture、errored state、远端 receipt 和导出失败后的唯一存储；用现有恢复测试与 controller 无最终结果、结果收集失败场景验证，不将任务失败改写为成功。
 
 ## 5. 软件集成与交接
 

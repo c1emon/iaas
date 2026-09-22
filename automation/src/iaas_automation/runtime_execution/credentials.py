@@ -44,7 +44,11 @@ def prepare_file_credentials(files: dict[str, Path], home: Path, environ: dict[s
     ssh.mkdir(mode=0o700)
     shutil.copyfile(files["known_hosts"], ssh / "known_hosts")
     (ssh / "known_hosts").chmod(0o600)
-    config = f"Host *\n    StrictHostKeyChecking yes\n    UserKnownHostsFile {json.dumps(str(ssh / 'known_hosts'))}\n"
+    # A caller supplied key and known_hosts file define the complete SSH
+    # identity/trust channel.  Never let a host or agent socket silently add a
+    # second identity to an online operation.
+    config = (f"Host *\n    IdentityAgent none\n    StrictHostKeyChecking yes\n"
+              f"    UserKnownHostsFile {json.dumps(str(ssh / 'known_hosts'))}\n")
     if "ssh_key" in files:
         protected_file(files["ssh_key"])
         shutil.copyfile(files["ssh_key"], ssh / "id_runtime")

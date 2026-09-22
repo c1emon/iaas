@@ -40,7 +40,11 @@ def resolve_ssh_timeout(arg_timeout: float | None) -> float:
 
 def run_ssh_snippet_command(snippet: CloudInitSnippet, args: Namespace, command: list[str], input_text: str | None = None) -> None:
     remote = f"{args.ssh_user}@{args.pve_host}"
-    ssh_argv = ["ssh", remote, _quote_remote_command(command)]
+    config = getattr(args, "ssh_config", None)
+    port = getattr(args, "ssh_port", 22)
+    require(type(port) is int and 1 <= port <= 65535, "invalid SSH port")
+    ssh_argv = ["ssh", *(["-F", str(config)] if config else []),
+                "-p", str(port), "-o", "BatchMode=yes", remote, _quote_remote_command(command)]
     timeout = resolve_ssh_timeout(getattr(args, "ssh_timeout", None))
     try:
         subprocess.run(

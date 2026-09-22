@@ -67,7 +67,7 @@ func (t *task) discover() (discovery, error) {
 }
 
 func (t *task) savedPlan() ([]string, error) {
-	if t.options.Operation != "apply-saved-plan" {
+	if t.options.Component != "pve" || (t.options.Operation != "apply" && t.options.Operation != "verify") {
 		return nil, nil
 	}
 	bundle, err := filepath.EvalSymlinks(t.options.Companions)

@@ -45,13 +45,19 @@ def test_fact_alias_only_reads_selected_field(tmp_path, field):
     ("aws_ca", "AWS_CA_BUNDLE"), ("aws_web_identity", "AWS_WEB_IDENTITY_TOKEN_FILE"),
 ])
 def test_discovery_excludes_overridden_host_aws_file(tmp_path, capsys, monkeypatch, alias, variable):
-    files = {name: name for name in ("backend", "ssh_key", "known_hosts", alias)}
+    files = {name: name for name in ("backend", "ssh_key", "known_hosts", "state_admission",
+                                     "execution_admission", alias)}
     for name in files:
         (tmp_path / name).write_text("synthetic")
+    plan = tmp_path / "plan.tfplan"
+    companions = tmp_path / "companions"
+    plan.write_text("synthetic")
+    companions.mkdir()
     entry = write(tmp_path / "environment.yml", {"schema_version": 1, "environment": "lab",
                   "components": {"pve": {"files": files}}})
     monkeypatch.setenv(variable, str(tmp_path / "missing-host-file"))
-    args = ["--environment", str(entry), "--component", "pve", "--operation", "apply-saved-plan", "--discover"]
+    args = ["--environment", str(entry), "--component", "pve", "--operation", "apply", "--discover",
+            "--execution-id", "run-42", "--plan", str(plan), "--companions", str(companions)]
     assert main(args) == 0
     ready = json.loads(capsys.readouterr().out)
     assert variable not in ready["credential_names"]

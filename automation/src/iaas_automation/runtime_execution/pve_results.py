@@ -249,6 +249,7 @@ def verify_configuration(expected: list[dict], api: Any) -> dict:
                 try:
                     config = api.vm_config(wanted["node"], wanted["vmid"])
                 except PveApiNotConfiguredError:
+                    api.node_status(wanted["node"])
                     checks["existence"] = "passed" if wanted["absent"] else "failed"
                 else:
                     if wanted["absent"]:

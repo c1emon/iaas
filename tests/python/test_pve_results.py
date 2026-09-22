@@ -27,6 +27,9 @@ def snapshot(item, deposed=False):
 
 
 class API:
+    def node_status(self, node):
+        return {"status": "online"}
+
     def vm_config(self, node, vmid):
         if vmid == 100:
             raise PveApiNotConfiguredError("absent", status_code=404)
@@ -99,3 +102,24 @@ def test_deposed_state_and_permission_failure_do_not_pass():
 
 def test_empty_scope_is_explicit():
     assert verify_configuration([], API()) == {"status": "passed", "scope": "empty", "objects": []}
+
+
+def test_missing_node_is_not_successful_deletion():
+    class MissingNode(API):
+        def node_status(self, node):
+            raise PveApiNotConfiguredError("node missing", status_code=404)
+
+    deleted = change(["delete"])
+    assert verify_configuration(expectations([deleted], {"resources": []}), MissingNode())["status"] == "unknown"
+
+
+@pytest.mark.parametrize("attachment", [{"scsi1": "local:vm-101-disk-1,size=8G"},
+                                        {"net1": "virtio=AA:BB:CC:DD:EE:00,bridge=vmbr0"},
+                                        {"unused0": "local:vm-101-disk-2"}])
+def test_unexpected_attachments_fail(attachment):
+    class Extra(API):
+        def vm_config(self, node, vmid):
+            return super().vm_config(node, vmid) | attachment
+
+    item = change()
+    assert verify_configuration(expectations([item], snapshot(item)), Extra())["status"] == "failed"

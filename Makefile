@@ -194,7 +194,8 @@ pve-health:
 	$(PYTHON) -m iaas_automation.pve_inventory.health --cluster "$(INVENTORY_DIR)/pve-cluster.yml" --vms "$(INVENTORY_DIR)/vms.yml"
 
 pve-packer-build:
-	TEMPLATE_BUILD_ENV="$(TEMPLATE_BUILD_ENV)" bash "$(PACKER_BUILD_SCRIPT)"
+	@printf '%s\n' 'error: pve-packer-build was removed; use the pve-template plan/apply lifecycle with explicit admission' >&2
+	@exit 2
 
 require-storage-id:
 	@test -n "$(STORAGE_ID)" || { printf 'error: STORAGE_ID is required\n' >&2; exit 1; }
@@ -207,7 +208,8 @@ render-cloud-init: require-storage-id
 	$(PYTHON) -m iaas_automation.pve_inventory.cloud_init render --tfvars "$(PVE_TFVARS)" --output-dir "$(PVE_USER_DATA_DIR)" --storage-id "$(STORAGE_ID)"
 
 upload-cloud-init: require-pve-target
-	$(PYTHON) -m iaas_automation.pve_inventory.cloud_init upload --tfvars "$(PVE_TFVARS)" --output-dir "$(PVE_USER_DATA_DIR)" --storage-id "$(STORAGE_ID)" --pve-host "$(PVE_HOST)" --ssh-user "$(PVE_SSH_USER)"
+	@printf '%s\n' 'error: upload-cloud-init was removed as a direct write path; use PVE apply with an admitted native plan' >&2
+	@exit 2
 
 verify-cloud-init: require-pve-target
 	$(PYTHON) -m iaas_automation.pve_inventory.cloud_init verify --tfvars "$(PVE_TFVARS)" --output-dir "$(PVE_USER_DATA_DIR)" --storage-id "$(STORAGE_ID)" --pve-host "$(PVE_HOST)" --ssh-user "$(PVE_SSH_USER)"
@@ -217,24 +219,16 @@ pve-backup-state:
 	@stamp="$$(date +%Y%m%dT%H%M%S)_$$$$"; phase="$${BACKUP_PHASE:-snapshot}"; if [ -f "$(PVE_DIR)/terraform.tfstate" ]; then cp "$(PVE_DIR)/terraform.tfstate" "$(BACKUP_DIR)/$${stamp}-$${phase}-terraform.tfstate"; fi
 
 pve-plan:
-	$(MAKE) -f "$(RUNTIME_MAKEFILE)" pve-check
-	$(MAKE) -f "$(RUNTIME_MAKEFILE)" render-cloud-init
-	$(MAKE) -f "$(RUNTIME_MAKEFILE)" pve-backup-state BACKUP_PHASE=before
-	$(TOFU) -chdir="$(PVE_DIR)" plan -var-file="$(PVE_TFVARS)"
+	@printf '%s\n' 'error: pve-plan was removed; use the runtime launcher PVE plan operation' >&2
+	@exit 2
 
 pve-apply:
-	$(MAKE) -f "$(RUNTIME_MAKEFILE)" pve-check
-	$(MAKE) -f "$(RUNTIME_MAKEFILE)" render-cloud-init
-	$(MAKE) -f "$(RUNTIME_MAKEFILE)" upload-cloud-init
-	$(MAKE) -f "$(RUNTIME_MAKEFILE)" verify-cloud-init
-	$(MAKE) -f "$(RUNTIME_MAKEFILE)" pve-backup-state BACKUP_PHASE=before
-	$(TOFU) -chdir="$(PVE_DIR)" apply -var-file="$(PVE_TFVARS)"
-	$(MAKE) -f "$(RUNTIME_MAKEFILE)" pve-backup-state BACKUP_PHASE=after
+	@printf '%s\n' 'error: pve-apply was removed; use the runtime launcher PVE apply with an admitted native plan' >&2
+	@exit 2
 
 pve-destroy:
-	$(MAKE) -f "$(RUNTIME_MAKEFILE)" pve-backup-state BACKUP_PHASE=before
-	$(TOFU) -chdir="$(PVE_DIR)" destroy -var-file="$(PVE_TFVARS)"
-	$(MAKE) -f "$(RUNTIME_MAKEFILE)" pve-backup-state BACKUP_PHASE=after
+	@printf '%s\n' 'error: pve-destroy was removed; use a reviewed PVE plan/apply lifecycle' >&2
+	@exit 2
 
 pve-verify-guests:
 	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(ANSIBLE_INVENTORY)" "$(ANSIBLE_PLAYBOOK)"

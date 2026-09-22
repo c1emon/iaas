@@ -7,8 +7,11 @@ import re
 from typing import Any, Mapping
 
 from iaas_automation.common.errors import require
+from iaas_automation.pve_template.contracts import (HELPER_PROTOCOL_VERSION, PREVIEW_VERSION,
+                                                     RECEIPT_VERSION)
 from iaas_automation.runtime_config.selection import runtime_platform
 from .state import PVE_ENV, S3_ENV
+from .pve_contracts import PLAN_METADATA_VERSION, RESULT_VERSION
 
 
 @dataclass(frozen=True)
@@ -35,7 +38,9 @@ OPERATIONS = {
     "switch": {"check": OFFLINE, "generate": OFFLINE, "diagnose": DIAGNOSE},
     "pve": {"check": OFFLINE, "generate": OFFLINE, "preflight": DIAGNOSE,
             "health": DIAGNOSE, "prepare-dependencies": DIAGNOSE,
-            "plan": PLAN, "prepare-plan": PLAN, "apply-saved-plan": APPLY},
+            "read": PLAN, "plan": PLAN, "apply": APPLY, "verify": DIAGNOSE},
+    "pve-template": {"check": OFFLINE, "read": DIAGNOSE, "plan": DIAGNOSE,
+                     "apply": MUTATE, "verify": DIAGNOSE},
     "services": {"check": OFFLINE, "generate": OFFLINE},
     "foundation": {"check": OFFLINE, "generate": OFFLINE, "health": DIAGNOSE},
     "k3s": {"check": OFFLINE, "generate": OFFLINE, "render": OFFLINE,
@@ -45,12 +50,19 @@ OPERATIONS = {
 
 
 def operation_for(component: str, operation: str) -> Operation:
+    if component == "pve" and operation in {"prepare-plan", "apply-saved-plan"}:
+        require(False, "prepare-plan/apply-saved-plan were removed; use PVE plan/apply")
     require(component in OPERATIONS and operation in OPERATIONS[component], "unsupported component/operation combination")
     return OPERATIONS[component][operation]
 
 
 def capabilities() -> dict[str, Any]:
     return {"interface_version": 1, "schema_versions": [1], "platforms": [runtime_platform()],
+            "lifecycle_versions": {
+                "pve": {"plan": PLAN_METADATA_VERSION, "result": RESULT_VERSION},
+                "pve-template": {"preview": PREVIEW_VERSION, "receipt": RECEIPT_VERSION,
+                                 "helper": HELPER_PROTOCOL_VERSION},
+            },
             "operations": {component: {name: asdict(value) for name, value in entries.items()}
                            for component, entries in OPERATIONS.items()}}
 
@@ -64,11 +76,12 @@ def credential_names(component: str, operation: str, render_names: tuple[str, ..
         names |= S3_ENV
     names |= {
         "pve": PVE_ENV,
+        "pve-template": set(),  # Node helper uses only explicitly mapped SSH files.
         "opnsense": {"OPNSENSE_API_KEY", "OPNSENSE_API_SECRET"},
         "switch": {"SWITCH_SSH_USER", "SWITCH_SSH_PASSWORD", "SWITCH_SSH_PORT"},
         "k3s": set(), "foundation": set(),
     }.get(component, set())
-    if operation in {"plan", "prepare-plan"}:
+    if operation in {"plan"}:
         for name in render_names:
             require(re.fullmatch(r"[A-Z][A-Z0-9_]*", name) is not None
                     and not name.startswith(("OP_", "AWS_", "DOCKER_", "TF_"))
