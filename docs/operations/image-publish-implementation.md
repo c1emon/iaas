@@ -20,7 +20,7 @@ infra-ops 原有 `docs/operations/README.md` 修改与未跟踪的 `pve-ci-iaas-
 | --- | --- | --- |
 | 实施分支 | 已完成 | 两仓已从原 HEAD 创建对应分支，工作树修改保留 |
 | iaas 前置规格归档及软件实现 | 已完成软件阶段 | 主流程、失败恢复、隔离及发布接入已实现；全量软件检查通过 |
-| infra-ops 软件接入 | 已完成软件接入 | 当前阶段提交 `5336515`；站点启用仍未执行 |
+| infra-ops 软件接入 | 已完成软件接入 | 当前阶段提交 `5944fbf`；站点启用仍未执行 |
 | 跨仓实际入口联调 | 软件范围通过 | Astra check、请求规范化、完整准入及发布/清理替身入口已验证；最终 runtime pin 和现场写入尚待完成 |
 | amd64/KVM 构建及来宾检查 | 待执行 | 本机不符合执行器条件；专用执行器尚待确定 |
 | PVE 发布、临时 VM 与清理 | 待执行 | HTTPS 服务已修复并只读验证；现场窗口尚未安排 |
@@ -42,6 +42,8 @@ infra-ops 原有 `docs/operations/README.md` 修改与未跟踪的 `pve-ci-iaas-
 最终复核补齐了原始 UPID 历史保留、完整 VM 附件绑定、创建前固定 SMBIOS UUID，以及完整模板只允许 retire 的边界。使用实际 `_publish` 产出的失败 journal 验证后续 cleanup，并覆盖模板已完成但首次暂存区观察失败时的 staging-only 恢复。当前对象 read 无需构建材料；verify 被动检查结果与原 preview 的绑定，不能通过新观察补造历史成功。
 
 release 软件流程已接入同一 tag 的普通 runtime（amd64/arm64）和 image-builder（amd64），沿用已测镜像、不覆盖已有版本及匿名按摘要消费检查。本地最终两个镜像均已刷新成功；尚未触发真实 release、推送镜像或取得可供站点使用的发布摘要。
+
+后续跨仓交接修正已提交至 infra-ops `5944fbf`：PVE token 使用完整 `user@realm!token_id=secret` 格式，私有 CA 路径在环境搬运后保持原声明位置，读取各操作实际输出文件，并显式选择独立 image-builder runtime。28 项定向检查与接入当前 IaaS 校验器的 286 项 infra-ops 回归通过。站点 launcher 仍固定在 `v0.1.0-rc.12`，`runtime/image-builder.json` 尚无真实发布 pin；构建 workflow 会在缺少该配置时停止。这些材料尚不能当作已启用的新版本站点。
 
 本阶段最终验证：`uv run pytest -q` 为 **1639 passed**（一条既有 crypt 弃用警告）；launcher `go test ./...`、完整 pyright、相应 Ruff 规则、OpenSpec strict 与 staged diff 检查通过。GitNexus 完整变更分析覆盖 224 个符号、18 条执行流，无 partial/truncated；整体风险为 critical，主要涉及 launcher 输入/输出、发布及清理入口，不以图查询代替以上测试。最终构建器在禁网容器中确认 Packer 1.16.0、qemu-img、OVMF 与 runtime 导入可用；其临时目录需可写，不能把整个容器只读且不给 `/tmp`。本次未运行 KVM 来宾。
 
