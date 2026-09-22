@@ -45,9 +45,13 @@ Help and results SHALL distinguish offline checks, generation, dependency prepar
 - **AND** Ansible check mode, device validation and OpenTofu plans SHALL NOT be reported as equivalent guarantees
 
 #### Scenario: Expose the first-release component operations
-- **WHEN** the launcher publishes its supported component operations
-- **THEN** it SHALL provide selected-input offline checks and supported non-sensitive generation, OPNsense diagnostics and explicit configuration read/plan/apply/verify, switch readonly facts, PVE preflight/health and saved-plan preparation/application, services/foundation generation/checks and foundation health, and existing K3s preflight/verify/deploy/snapshot/upgrade
-- **AND** PVE dependency preparation SHALL remain explicit, K3s snapshot SHALL be classified as a remote write, and existing operation prerequisites SHALL remain enforced
+- **WHEN** the launcher publishes supported component operations
+- **THEN** it SHALL retain selected-input offline checks/generation, OPNsense diagnostics and read/plan/apply/verify, switch readonly facts, services/foundation checks/generation, foundation health and existing K3s operations
+- **AND** PVE SHALL expose preflight/health, explicit dependency preparation and read/plan/apply/verify, with apply exclusively consuming a selected native plan
+- **AND** pve-template SHALL expose independent check/read/plan/apply/verify for build and explicit cleanup previews, without requiring VM declarations or S3
+- **AND** PVE configuration verify SHALL be read-only without implicit backend initialization, while PVE state observations SHALL declare state access
+- **AND** native PVE planning SHALL disclose backend locking and explicitly admitted empty-state initialization separately from read-only observation and VM mutation
+- **AND** snapshot and template build/cleanup apply SHALL be classified as remote writes
 - **AND** help and representative dispatch tests SHALL reflect supported operations without arbitrary command passthrough
 
 #### Scenario: OPNsense online plan is not a native state plan
@@ -95,13 +99,19 @@ The launcher SHALL accept only the resolved credentials and protected files requ
 - **AND** its output SHALL be retained as a sensitive artifact, separate from ordinary generated configuration
 
 ### Requirement: Task lifecycle and truthful exit status
-The launcher SHALL isolate task-owned resources, propagate execution failures and interruption, and collect persistent results and recovery artifacts before removing their storage.
+The launcher SHALL isolate task-owned resources, propagate available execution failures and interruption evidence, and collect persistent results and recovery artifacts before removing their storage.
 
 #### Scenario: Normal completion and cancellation
-- **WHEN** a task completes, fails or is cancelled
-- **THEN** the caller SHALL receive the actual failure, cancellation or successful outcome
-- **AND** completed/failed phases and known side effects SHALL be reported without secrets
+- **WHEN** a task completes, fails or handles cancellation
+- **THEN** the caller SHALL receive the observed local outcome and any known remote outcome separately
+- **AND** completed/failed phases and known or unknown side effects SHALL be reported without secrets
 - **AND** cleanup SHALL NOT affect another task or shared state
+
+#### Scenario: Controller is lost while a remote task may continue
+- **WHEN** termination prevents final local reporting or disconnects a remote template worker
+- **THEN** absence of a final result SHALL NOT imply remote stop or success
+- **AND** callers SHALL be able to query available retained evidence using the original execution identity
+- **AND** the launcher SHALL NOT promise delivery from a terminated controller or automatically replay remote work
 
 #### Scenario: Recovery or result collection fails
 - **WHEN** a task contains a unique recovery state or required persistent artifact that cannot be collected
@@ -122,3 +132,23 @@ Outputs SHALL distinguish non-sensitive generated configuration, diagnostics, se
 - **THEN** the output SHALL include a concise selected-input and runtime-version summary using available standard metadata
 - **AND** absent Git metadata or uncommitted inputs SHALL NOT be misrepresented as an exact clean revision
 - **AND** sensitive plans, state and temporary data SHALL NOT be included in ordinary generated exports or automatically committed
+
+### Requirement: Versioned PVE execution identity and entrypoint cutover
+The launcher SHALL discover and enforce PVE plan/result and template helper compatibility, bind each mutation to an explicit execution identity, and reject obsolete execution paths rather than bypass new admission.
+
+#### Scenario: Invoke PVE lifecycle with matching contracts
+- **WHEN** a caller provides a supported runtime/helper and fresh mutation execution ID
+- **THEN** discovery, selected inputs and retained results SHALL associate that same execution with its exact reviewed plan or preview
+- **AND** local Docker and DinD SHALL preserve identical associations, permissions and credential requirements
+
+#### Scenario: Admit a caller-reserved mutation
+- **WHEN** a VM or template mutation is submitted
+- **THEN** before the first facility side effect the runtime SHALL require caller execution admission bound to the selected plan or preview digest, target and execution ID
+- **AND** that admission SHALL declare prior approval, durable consumption reservation and pending record, and the held complete-workflow serialization context
+- **AND** missing or inconsistent associations SHALL reject execution; fresh execution IDs alone SHALL NOT replace this admission
+- **AND** persistent one-time consumption and prevention of replay across runners SHALL remain caller responsibilities, without a second IaaS deployment ledger
+
+#### Scenario: Invoke a legacy or incompatible write entrypoint
+- **WHEN** a caller requests prepare-plan/apply-saved-plan, an old helper protocol or a repository legacy direct-write path lacking the new contract
+- **THEN** it SHALL fail with migration guidance or delegate exclusively to the new contract with all required explicit inputs
+- **AND** it SHALL NOT silently translate old saved artifacts, inject missing approvals or fall back to force replacement
