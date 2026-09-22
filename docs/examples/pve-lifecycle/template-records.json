@@ -1,0 +1,29 @@
+{
+  "records": [
+    {
+      "schema_version": 1,
+      "record_id": "synthetic-template-record-001",
+      "target": {
+        "node": "synthetic-node",
+        "host": "synthetic-node.example.invalid",
+        "api_endpoint": "https://pve.example.invalid:8006",
+        "insecure": false,
+        "storage_id": "synthetic-images",
+        "ssh_host": "synthetic-node.example.invalid",
+        "ssh_user": "pve-ops",
+        "ssh_port": 2222
+      },
+      "object": {
+        "node": "synthetic-node",
+        "vmid": 9001,
+        "smbios_uuid": "synthetic-template-uuid",
+        "disks": {"scsi0": "synthetic-disks:base-9001-disk-0"}
+      },
+      "configuration": {
+        "template": 1,
+        "smbios1": "uuid=synthetic-template-uuid",
+        "scsi0": "synthetic-disks:base-9001-disk-0,discard=on,size=20G"
+      }
+    }
+  ]
+}

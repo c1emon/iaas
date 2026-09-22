@@ -130,6 +130,80 @@ launcher also binds the execution ID to the new output directory basename and
 checks the runtime discovery response. The caller must choose a fresh execution ID
 and maintain serialization through activation; this is not a distributed lock or replay registry.
 
+## PVE lifecycle and template selection
+
+PVE uses four lifecycle operations: `read`, `plan`, `apply` and `verify`.
+`read` selects the caller-owned `backend` and can select one inline
+`execution_result`; it checks `options.root.id` and observes state without
+materializing the root. `plan` selects every file named by
+`options.root.files`, the `state_admission`, and the explicit SSH/trust files.
+`apply` selects `backend`, `execution_admission`, `state_admission` and any
+template admission plus `ssh_key` and `known_hosts`. `verify` selects an
+optional `execution_result`; missing material is retained as `unknown`.
+
+```yaml
+components:
+  pve:
+    inputs:
+      cluster: ./cluster.yml
+      vms: ./vms.yml
+    files:
+      backend: ./backend.json
+      state_admission: ./state-admission.json
+      execution_admission: ./execution-admission.json
+      execution_result: ./execution-result.json
+      ssh_key: ./ssh_key
+      known_hosts: ./known_hosts
+      root_main: ./root/main.tf
+      root_provider: ./root/main.tf.json
+      root_lock: ./root/.terraform.lock.hcl
+    options:
+      root:
+        id: synthetic-root
+        directory: .
+        files:
+          main.tf: root_main
+          main.tf.json: root_provider
+          .terraform.lock.hcl: root_lock
+      pve:
+        storage_id: synthetic-images
+        ssh_host: pve-node.example.invalid
+        ssh_user: pve-ops
+        ssh_port: 22
+        api_endpoint: https://pve.example.invalid:8006
+        insecure: false
+      destroy: false
+```
+
+The root provider is a single `proxmox` provider with a fixed endpoint and
+explicit TLS mode. If it uses SSH, the node, port, username, private key and
+`agent: false` are explicit. API token fields and SSH credential variables are
+both `sensitive` and `ephemeral`; their values arrive through the selected
+runtime credential channels and never belong in YAML or ordinary generated
+files. `options.destroy: true` changes the normal `plan` into a delete plan;
+there is no direct destroy operation. Apply still requires a newly issued
+execution admission bound to the reviewed plan.
+
+Template recipes are independent from VM roots:
+
+```yaml
+components:
+  pve-template:
+    inputs:
+      recipe: ./template/recipe.yml
+    files:
+      template_preview: ./template-preview.json
+      template_receipt: ./template-receipt.json
+      execution_admission: ./template-admission.json
+      ssh_key: ./ssh_key
+      known_hosts: ./known_hosts
+```
+
+The helper target must select one explicit node. Template apply consumes the
+exact preview and admission; verify consumes the retained receipt. Cleanup is a
+separate recipe action carrying the VMID, original execution, ownership and
+management status.
+
 ## S3 and protected process results
 
 The state execution layer consumes a caller-supplied JSON file with `workspace`

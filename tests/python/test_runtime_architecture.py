@@ -1,6 +1,8 @@
 """Platform selection must follow the executable and never silently emulate."""
 
 from pathlib import Path
+import importlib.util
+import re
 import subprocess
 
 import pytest
@@ -47,3 +49,23 @@ def test_ci_checks_both_architectures_serially():
     assert job["strategy"]["max-parallel"] == 1
     assert {item["arch"] for item in job["strategy"]["matrix"]["include"]} == {"amd64", "arm64"}
     assert any("runtime-tofu-check" in step.get("run", "") for step in job["steps"])
+
+
+def test_runtime_pruning_preserves_only_sdk_documentation_packages():
+    dockerfile = (ROOT / "automation/runtime/Dockerfile").read_text()
+    dependency_stage = dockerfile.split(" AS dependencies", 1)[1]
+    workdir = re.search(r"^WORKDIR (.+)$", dependency_stage, re.MULTILINE)
+    python_version = re.search(r"^FROM python:(\d+\.\d+)", dockerfile, re.MULTILINE)
+    assert workdir is not None and python_version is not None
+    site_packages = f"{workdir.group(1).lstrip('/')}/.venv/lib/python{python_version.group(1)}/site-packages"
+
+    inspect_path = ROOT / "automation/runtime/inspect_image.py"
+    spec = importlib.util.spec_from_file_location("runtime_inspect_image", inspect_path)
+    assert spec is not None and spec.loader is not None
+    inspect_image = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(inspect_image)
+
+    preserved = inspect_image._is_preserved_package_doc
+    assert preserved(inspect_image.PurePosixPath(f"{site_packages}/boto3/docs"))
+    assert preserved(inspect_image.PurePosixPath(f"{site_packages}/botocore/docs/bcdoc/restdoc.py"))
+    assert not preserved(inspect_image.PurePosixPath(f"{site_packages}/other/docs"))

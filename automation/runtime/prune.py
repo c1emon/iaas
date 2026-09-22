@@ -4,6 +4,12 @@ from pathlib import Path
 import shutil
 
 
+_PRESERVED_PACKAGE_DOCS = {
+    Path('/opt/iaas/.venv/lib/python3.12/site-packages/boto3/docs'),
+    Path('/opt/iaas/.venv/lib/python3.12/site-packages/botocore/docs'),
+}
+
+
 def remove(path: Path) -> None:
     if path.is_symlink() or path.is_file():
         path.unlink()
@@ -22,7 +28,7 @@ for root in [Path('/opt/iaas'), Path('/usr/local/lib/python3.12'), Path('/etc'),
         # doc_fragments and plugin/module source are required Ansible resources.
         if path.name in {'test', 'tests'} and path.parent.name == 'plugins':
             continue
-        if path.name in {'tests', 'test', '__pycache__', 'docs', 'examples', 'fixtures', 'openspec', '.github', '.git', '.gitnexus'}:
+        if path.name in {'tests', 'test', '__pycache__', 'docs', 'examples', 'fixtures', 'openspec', '.github', '.git', '.gitnexus'} and path not in _PRESERVED_PACKAGE_DOCS:
             remove(path)
         elif path.name.lower().startswith(('readme', 'changelog')) or path.name == 'AGENTS.md' or path.suffix == '.pyc':
             remove(path)

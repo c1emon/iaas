@@ -75,21 +75,26 @@ uv run ansible-playbook -i '<pve-node>,' -u <existing-admin-login> --become \
 
 ```bash
 sudo install -m 750 -o root -g root \
-  automation/pve-node/bin/iaas-pve-template-build \
-  /usr/local/sbin/iaas-pve-template-build
+  automation/pve-node/bin/iaas-pve-template \
+  /usr/local/sbin/iaas-pve-template
+sudo install -m 750 -o root -g root \
+  automation/pve-node/bin/iaas-pve-template-worker \
+  /usr/local/sbin/iaas-pve-template-worker
 # 先复制 sudoers 文件到临时路径，以 visudo 校验后再以 root:root / 0440 安装。
 sudo visudo -cf <temporary-sudoers-file>
 ```
 
-PVE 节点需具备 `curl`、`shasum`、`cp`、`virt-customize`、`virt-sysprep`、`qm`
-和 `flock`；安装 `libguestfs-tools` 可提供两个 `virt-*` 工具。wrapper 与 sudoers
+PVE 节点需具备 Python 3、`curl`、`virt-customize`、`virt-sysprep`、`qm`、`pvesh`、
+`ip`、`flock`，以及运行中的 systemd（`systemd-run`、`systemctl`）；安装
+`libguestfs-tools` 可提供两个 `virt-*` 工具。wrapper、worker 与 sudoers
 必须保持 root-owned，`pve-ops` 仅能无密码执行
-`/usr/local/sbin/iaas-pve-template-build`。可用下列只读 smoke 验证安装：
+`/usr/local/sbin/iaas-pve-template`。可用下列只读 smoke 验证安装：
 
 ```bash
 ssh <existing-admin-login>@<pve-node> \
-  'sudo -n visudo -cf /etc/sudoers.d/iaas-pve-template-build'
-ssh pve-ops@<pve-node> 'sudo -n /usr/local/sbin/iaas-pve-template-build --help'
+  'sudo -n visudo -cf /etc/sudoers.d/iaas-pve-template'
+printf '%s\n' '{"protocol_version":2,"operation":"capabilities"}' | \
+  ssh pve-ops@<pve-node> 'sudo -n /usr/local/sbin/iaas-pve-template'
 ```
 
 ## 3.4 `pve-cluster.yml` 参数
@@ -148,7 +153,7 @@ APT 镜像只用于模板构建，不能替代 [VM bootstrap](04-vm-bootstrap.md
 | `TIMEZONE`、`LOCALE`、`CIUSER`、`NAMESERVER` | 模板初始时区、locale、cloud-init 默认用户和 resolver。 | 不含密码；仍应由源 YAML 统一变更。 |
 | `BUILD_BRIDGE` | 模板构建时临时网卡附着的既有 PVE bridge。 | helper 不创建 bridge；在线构建前确认其实际存在和 egress。 |
 | `PVE_HOST`、`PVE_USER` | 本次 SSH transport 的 build node 和用户。 | `PVE_HOST` 必填且必须明确；`PVE_USER` 默认 `pve-ops`。 |
-| `FORCE_REPLACE` | 为 `true` 时允许 wrapper 替换已有 template。 | 破坏性开关；默认 `false`，只能在已核对 VMID、备份与恢复路径后临时设置。 |
+| 旧同步 Packer trigger | 已退役。 | 模板构建必须通过 `pve-template` 的 reviewed preview、execution admission 和新 helper；不存在原地替换旁路。 |
 | `TEMPLATE_DEBUG` 或 `DEBUG` | 输出 wrapper 调试信息。 | 默认 `false`；禁止让调试输出携带运行时秘密。 |
 
 `cluster.automation.cloud_init` 的关键字段如下：
@@ -240,60 +245,44 @@ node SSH host/IP。远端缓存位于 `/var/cache/iaas/packer`，模板命名为
 已有 VM 的 egress policy。对 OVMF/q35，模板有显式 4 MiB EFI disk；`qm importdisk`
 会以实际 VM config 报告的 imported volume 附着，无法确定时失败而不是猜测。
 
+正式写入入口统一使用 [`iaas run` 启动器](../runtime-launcher.md) 的
+`pve-template` 或 PVE `read` / `plan` / `apply` / `verify`。调用方通过
+`runtime.json` 固定镜像 digest、通过环境文件选择 root、S3 backend、SSH
+key/known_hosts、state admission 和 execution admission。模板 recipe 独立于
+VM root，并将目标节点写入 recipe；helper 使用
+`/usr/local/sbin/iaas-pve-template`，不接受旧命令行参数。
+
 ```bash
-# 需显式的 PVE runtime context，以及经确认的 PVE_HOST。
-op run --env-file "$PVE_ENV_TEMPLATE" -- \
-  make pve-packer-build PVE_HOST=<pve-management-host-or-ip>
+iaas run --runtime-config runtime.json --environment environment.yml \
+  --engine local --component pve --operation read \
+  --scope <root-id> --output ./pve-read
 
-# 以下 op run 示例仅用于调用方选择 1Password 的情况。
-# 在线只读：分别用于健康与 apply 前置条件。
-op run --env-file "$PVE_ENV_TEMPLATE" -- make pve-health
-op run --env-file "$PVE_ENV_TEMPLATE" -- make pve-preflight
+iaas run --runtime-config runtime.json --environment environment.yml \
+  --engine local --component pve --operation plan \
+  --scope <root-id> --output ./pve-plan
 
-# 调用方设置 PVE_SNIPPET_STORAGE 为 inventory 声明的 snippet datastore ID。
-# 变更前计划；STORAGE_ID 指 snippet upload 与验证所需的目标存储。
-op run --env-file "$PVE_ENV_TEMPLATE" -- \
-  make pve-plan STORAGE_ID="$PVE_SNIPPET_STORAGE"
+iaas run --runtime-config runtime.json --environment environment.yml \
+  --engine local --component pve --operation apply \
+  --scope <root-id> --execution-id <execution-id> \
+  --plan ./pve-plan/plan/plan.tfplan --companions ./pve-plan/plan \
+  --output ./<execution-id>
+
+iaas run --runtime-config runtime.json --environment environment.yml \
+  --engine local --component pve --operation verify \
+  --scope <root-id> --plan ./pve-plan/plan/plan.tfplan \
+  --companions ./pve-plan/plan --output ./pve-verify
 ```
-
-传统 Secret 调用方在注入相同环境变量后，直接运行 `make pve-health`、
-`make pve-preflight` 或经授权的 `make pve-plan STORAGE_ID="$PVE_SNIPPET_STORAGE"`，省略 `op run`。
-以上命令仍继承本章开头的四个目录变量；IaaS 不接收 1Password 服务 token。
 
 审查计划时逐项确认 clone 源、VMID、节点、storage、NIC bridge/MAC、cloud-init
-snippet、long-lived destroy protection、启动策略与 passthrough。仅在这些项目和
-恢复路径都明确后执行：
+snippet、long-lived destroy protection、启动策略与 passthrough。删除通过
+`components.pve.options.destroy: true` 生成普通 delete plan，仍需新的
+execution admission 和显式 apply；`make pve-plan`、`make pve-apply`、
+`make pve-destroy`、`make pve-packer-build` 和 `make upload-cloud-init` 已关闭，
+调用时返回迁移错误。旧本地 state、旧 helper 路径和旧写入命令不会自动迁移。
 
-```bash
-op run --env-file "$PVE_ENV_TEMPLATE" -- \
-  make pve-apply STORAGE_ID="$PVE_SNIPPET_STORAGE"
-```
-
-`pve-plan` 和 `pve-apply` 先检查生成输入与当前 inventory 一致；过期时先显式
-执行 `pve-generate` 并审查结果。可以从其他目录用 `make -f /path/to/iaas/Makefile`
-调用，递归步骤会保留该 Makefile。`pve-apply` 即使继承并行 MAKEFLAGS，也按顺序
-渲染、上传、验证 cloud-init snippets，失败即停止后续步骤；共享同一输出目录的
-多次运行仍须由调用方串行执行。单独 upload/verify 会用现有 manifest 的源 hash
-核对当前显式 tfvars，缺失或不匹配时不会连接 SSH。主机 helper 必须由 `pvesm`
-成功解析存储路径，不能再依赖猜测的 `/mnt/pve` 回退路径。
-
-以下 `make pve-apply` 描述保留的旧本地 state 流程。新的
-[`iaas run` 启动器](../runtime-launcher.md)使用调用方注入的 S3 backend、
-原生 S3 锁及 `prepare-plan` / `apply-saved-plan`，并保留写回失败的恢复材料。
-旧 state 的迁移必须另行审查，不随入口切换自动执行；S3 配置与 bucket 由调用方维护。
-
-`pve-apply` 在 apply 前后备份本地
-OpenTofu state 到`$OUTPUT_DIR/runtime/tofu-state-backups/`。state 位于
-`$PVE_DIR/terraform.tfstate`，是单操作者本地状态；不得
-提交、复制到 issue 或用删除 state 的方式修复漂移。
-
-同样受保护的本地路径包括 `$OUTPUT_DIR/runtime/pve-cloud-init/user-data/`（cloud-init 渲染
-输出和 manifest/checksum）及调用方选定的 Packer cache。它们是
-可删除重建的运行数据，但不得在仍有相关工作流运行时自动清理，也不得作为新
-PVE root 的隐式 state 输入。
-
-`make pve-destroy` 是显式破坏性命令。即使目标是 ephemeral VM，也必须单独核对
-实际 VMID、state、备份、服务依赖和销毁范围；long-lived 保护不是授权绕过。
+`pve-verify-guests` 可作为来宾侧只读检查，但不能替代运行时的 native plan
+verification、PVE API 读回或 caller acceptance。模板构建/清理的具体命令与
+synthetic root 见 [PVE 生命周期示例](../examples/pve-lifecycle/README.md)。
 
 创建后运行：
 

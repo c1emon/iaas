@@ -8,6 +8,16 @@ import tarfile
 import tempfile
 
 
+_PRESERVED_PACKAGE_DOCS = (
+    PurePosixPath("opt/iaas/.venv/lib/python3.12/site-packages/boto3/docs"),
+    PurePosixPath("opt/iaas/.venv/lib/python3.12/site-packages/botocore/docs"),
+)
+
+
+def _is_preserved_package_doc(path: PurePosixPath) -> bool:
+    return any(path == root or root in path.parents for root in _PRESERVED_PACKAGE_DOCS)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", default="iaas-runtime:oci-release-test")
@@ -31,7 +41,8 @@ def main() -> None:
                         parts = path.parts
                         if not parts:
                             continue
-                        excluded = any(part in {"docs", "examples", "fixtures", "openspec", ".git", ".github", "__pycache__"} for part in parts)
+                        excluded = any(part in {"examples", "fixtures", "openspec", ".git", ".github", "__pycache__"} for part in parts)
+                        excluded |= "docs" in parts and not _is_preserved_package_doc(path)
                         excluded |= any(part in {"test", "tests"} and (index < len(parts) - 1 or member.isdir()) and (index == 0 or parts[index - 1] != "plugins") for index, part in enumerate(parts))
                         excluded |= path.name.lower().startswith("readme") or path.name.startswith("._")
                         excluded |= str(path).startswith(("opt/iaas/environments/", "usr/share/man/", "usr/share/info/"))

@@ -1,0 +1,10 @@
+schema_version: 1
+environment: synthetic-pve-template-read
+components:
+  pve-template:
+    inputs:
+      recipe: ./template/recipe.yml
+    files:
+      execution_result: ./template/template-receipt.json
+      ssh_key: ./template/ssh_key.example
+      known_hosts: ./template/known_hosts.example

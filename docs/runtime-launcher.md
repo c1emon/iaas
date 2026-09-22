@@ -20,8 +20,18 @@ and put it on PATH. These changes do not themselves publish a release. Developer
 can build both binaries with Go 1.27.1:
 
 ```sh
-sh automation/launcher/build.sh /tmp/iaas-launcher-build development
+build_dir="$(mktemp -d)"
+sh automation/launcher/build.sh "$build_dir" development
+(cd "$build_dir" && sha256sum -c SHA256SUMS)
+test -x "$build_dir/iaas-linux-amd64" -a -x "$build_dir/iaas-darwin-arm64"
 ```
+
+The release artifact set is exactly `iaas-linux-amd64`,
+`iaas-darwin-arm64` and `SHA256SUMS`. Runtime image artifacts are built and
+tested by the Release workflow as separate `amd64` and `arm64` images, then
+assembled into one versioned manifest; the tested image archive is transferred
+to publication without rebuilding. These checks do not create a tag, publish a
+release or qualify a real PVE environment.
 
 Keep a separate caller-owned `runtime.json`:
 
@@ -43,6 +53,14 @@ Saved plans also bind the runtime architecture; plans from another architecture
 or older plans without that field must be prepared again.
 Use `iaas capabilities --runtime-config runtime.json` to inspect operation effects.
 
+The cutover keeps these interfaces aligned: launcher capabilities/interface
+version `1`; runtime environment schema `1`; PVE plan metadata `2`; PVE result,
+template preview and template receipt `1`; and the PVE template helper protocol
+`2`. The PVE helper executables are `iaas-pve-template` and
+`iaas-pve-template-worker`; installation also includes the snippet upload
+helper. A capability response is the compatibility gate: old PVE operation
+names are rejected instead of being silently translated.
+
 ## Select inputs and an operation
 
 The [environment schema](runtime-configuration.md) selects component input files,
@@ -63,7 +81,8 @@ network access and forward no credentials. Online operations require `--scope`:
 | --- | --- | --- |
 | OPNsense | check, generate, diagnose, read, plan, apply, verify | One inventory host |
 | switch | check, generate, diagnose (read-only facts) | Explicit comma-separated inventory hosts |
-| PVE | check, generate, preflight, health, prepare-dependencies, plan / prepare-plan, apply-saved-plan | Cluster name for diagnostics; complete root ID for dependency/state operations |
+| PVE | check, generate, preflight, health, prepare-dependencies, read, plan, apply, verify | Cluster name for diagnostics; complete root ID for lifecycle operations |
+| PVE template | check, read, plan, apply, verify | One explicit PVE node for helper operations |
 | services | check, generate | — |
 | foundation | check, generate, health | Declared environment name |
 | K3s | check, generate / render, preflight, verify, deploy, snapshot, upgrade | Explicit VM references; deploy/upgrade use the complete cluster; snapshot uses its declared source |
@@ -71,14 +90,25 @@ network access and forward no credentials. Online operations require `--scope`:
 K3s deploy, snapshot and upgrade write remote infrastructure. PVE apply also
 writes infrastructure. Plan accesses state and uses its native lock. Supported
 effects appear before execution and in the result. The new interface does not
-accept arbitrary commands, direct apply, destroy or template builds. Existing
-Make/container commands retain their previous interfaces.
+accept arbitrary commands or direct destroy. PVE deletion is an ordinary
+`plan` with `options.destroy: true`, followed by the same reviewed `apply`;
+template builds use the independent `pve-template` component. Legacy write
+entrypoints return migration errors.
 
 Online component `files` aliases are explicit:
 
-- PVE state: `backend`; saved apply also `ssh_key`, `known_hosts`. Root file
-  mappings, `dependencies` and PVE target options are described in the saved-plan
-  section of the environment guide.
+- PVE read: `backend` and optional `execution_result`; the declared root ID is
+  checked from options but the root is not materialized. PVE plan adds every
+  declared root file, `state_admission`, and any declared `ssh_key`,
+  `known_hosts`, `dependencies`, `template_records` and `template_admission`.
+  PVE apply consumes `backend`, `execution_admission`, `state_admission`,
+  optional template admission and explicit SSH files. Verify uses the selected
+  plan and companions plus an optional `execution_result`; missing result
+  material is reported as `unknown`.
+- PVE template: `recipe` is an independent input. Build plans use the recipe;
+  apply uses a selected `template_preview`, `execution_admission` and explicit
+  SSH files; verify uses a selected `template_receipt`. The helper target names
+  one explicit node and does not use the VM root.
 - K3s: `ssh_key`, `known_hosts`; preflight/deploy/upgrade also `runtime_secrets`
   (the existing protected JSON contract); upgrade adds `observed_versions`.
   Options include explicit `preflight_mode` and `upgrade_target` when applicable.
@@ -158,29 +188,55 @@ The launcher uses the caller's Docker context or `DOCKER_HOST`. Never overlap
 state/snippet workflows: CI must serialize the complete plan/apply sequence, and
 local callers must avoid simultaneous runs against the same target.
 
-## Saved apply and recovery
+## PVE read, plan, apply, verify and recovery
 
 ```sh
 iaas run --runtime-config runtime.json --environment environment.yml \
-  --engine local --component pve --operation prepare-plan \
-  --scope ROOT_ID --output ./prepared
+  --engine local --component pve --operation read \
+  --scope ROOT_ID --output ./pve-read
 
 iaas run --runtime-config runtime.json --environment environment.yml \
-  --engine local --component pve --operation apply-saved-plan \
-  --scope ROOT_ID --plan ./prepared/plan/plan.tfplan \
-  --companions ./prepared/plan --output ./applied
+  --engine local --component pve --operation plan \
+  --scope ROOT_ID --output ./planned
+
+iaas run --runtime-config runtime.json --environment environment.yml \
+  --engine local --component pve --operation apply \
+  --scope ROOT_ID --plan ./planned/plan/plan.tfplan \
+  --companions ./planned/plan --execution-id pve-apply-001 \
+  --output ./pve-apply-001
+
+iaas run --runtime-config runtime.json --environment environment.yml \
+  --engine local --component pve --operation verify \
+  --scope ROOT_ID --plan ./planned/plan/plan.tfplan \
+  --companions ./planned/plan --output ./pve-verify
 ```
 
 Review the private `plan/review.txt` and select the native plan explicitly. Retain
 its complete companion directory. `summary.json` records `companion_files` for
-the original declared root files (including helper scripts) and any supplied
-dependency archive. Admission checks their presence before backend initialization
-or SSH writes, using the saved list rather than current input declarations.
-Plans without this list must be prepared again; do not reconstruct the list from
-an incomplete directory. Existing plan, lockfile and snippet digest checks remain.
-Upgrading the runtime invalidates saved plans
-from another image digest; prepare a new plan explicitly. Changing the runtime
-selection or adding an environment entry does not migrate source files/state.
+the original declared root files and any supplied dependency archive. Admission
+checks their presence before backend initialization or SSH writes, using the
+saved list rather than current input declarations. Plans without this list must
+be prepared again; do not reconstruct it from an incomplete directory. Existing
+plan, lockfile and snippet digest checks remain. Upgrading the runtime invalidates
+saved plans from another image digest; prepare a new plan explicitly. Changing
+the runtime selection or adding an environment entry does not migrate source
+files/state. Set `components.pve.options.destroy: true` for a reviewed delete
+plan; it still travels through the ordinary `plan` and `apply` operations.
+
+Independent `verify` reports current configuration against the retained plan
+expectation. Its success does not change an earlier failed execution or prove
+that a replacement completed: `original_phase`, native execution, state
+persistence and collection facts remain separate, and the original result is
+never rewritten. Required caller-owned guest/business acceptance remains a
+separate gate.
+
+Template build and cleanup use the independent `pve-template` component. The
+recipe, preview, execution admission and receipt are separate from the VM root.
+Online template operations use explicitly mapped SSH key/known_hosts files and
+do not forward VM API or S3 credentials.
+Cleanup carries an explicit VMID, original execution, ownership and management
+status. The old `prepare-plan` and `apply-saved-plan` names are rejected with a
+migration message, as are the old Make write entrypoints.
 
 Results contain `generated`, `diagnostics`, `plan`, `recovery`, `work` and summaries.
 `input-provenance.json` records the environment repository revision and dirty

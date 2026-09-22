@@ -1,0 +1,13 @@
+schema_version: 1
+environment: synthetic-pve-template-apply
+components:
+  pve-template:
+    inputs:
+      recipe: ./template/recipe.yml
+    files:
+      ssh_key: ./template/ssh_key.example
+      known_hosts: ./template/known_hosts.example
+      template_preview: ./template/template-preview.json
+      execution_admission: ./template-execution-admission.json
+    options:
+      preview_digest: sha256:9458e51ceaa9a0fb074a1604b6db981335dd23458c1d798c46db956e1bfd453b

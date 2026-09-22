@@ -154,7 +154,7 @@ def load_operation(entry: Path, component: str, operation: str, scenario: str | 
                       if name in metadata.file_paths}
         else:
             inputs = set()
-            files.add("execution_result")
+            files |= {"execution_result"} if "execution_result" in metadata.file_paths else set()
     elif component == "pve-template" and operation in OPNSENSE_WORKFLOW_OPERATIONS:
         declared = _declared_input_names(entry, component, scenario, reader)
         require(declared <= _PVE_TEMPLATE_INPUTS, "unsupported pve-template input")

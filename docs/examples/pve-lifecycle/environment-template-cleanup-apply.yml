@@ -1,0 +1,14 @@
+schema_version: 1
+environment: synthetic-pve-template-cleanup-apply
+components:
+  pve-template:
+    inputs:
+      recipe: ./template/recipe.yml
+    files:
+      ssh_key: ./template/ssh_key.example
+      known_hosts: ./template/known_hosts.example
+      template_preview: ./template-cleanup-preview.json
+      execution_admission: ./template-cleanup-admission.json
+    options:
+      action: cleanup
+      preview_digest: sha256:b1ce5307653a2906a2b986dba1c87ac02bd10843772422c99afd37b7dd9fce54

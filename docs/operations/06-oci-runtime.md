@@ -1,8 +1,18 @@
 # OCI runtime
 
 The [native launcher](../runtime-launcher.md) requires a runtime image exposing
-interface version 1 through `capabilities`. Select a published version compatible
-with that interface and pin its repository digest. Historical `v0.1.0-rc.2`
+interface version 1 through `capabilities`. The same response advertises the
+versioned lifecycle contracts consumed by callers:
+
+```json
+"lifecycle_versions": {
+  "pve": {"plan": 2, "result": 1},
+  "pve-template": {"preview": 1, "receipt": 1, "helper": 2}
+}
+```
+
+Select a published version compatible with the launcher interface and these
+component contracts, then pin its repository digest. Historical `v0.1.0-rc.2`
 provides only the legacy Make interface and is not launcher-compatible.
 
 Builds support Linux amd64 and arm64; the Release workflow publishes both under
@@ -13,37 +23,39 @@ workflow configuration alone does not prove publication. See
 
 ## Directory and command interface
 
-Both checkout and container commands select their environment explicitly:
+The native launcher selects its environment and operation explicitly:
 
 ```sh
-make pve-generate ENVIRONMENT_DIR=/absolute/environment OUTPUT_DIR=/absolute/output
+iaas run --runtime-config runtime.json --environment environment.yml \
+  --engine local --component pve --operation plan \
+  --scope synthetic-root --output ./pve-plan
 ```
 
-`ENVIRONMENT_DIR` contains authored `inventory/` and `ansible/` inputs.
-`OUTPUT_DIR/generated/` receives generated Ansible, OpenTofu, Packer and document
-files; `OUTPUT_DIR/runtime/` owns cloud-init, review files and state backups.
-`GENERATED_DIR` can explicitly select an existing generated-only subtree, including
-the selected environment's committed generated directory. It cannot overlap
-authored input directories. Quote arguments containing spaces.
+The selected environment owns authored cluster/VM inputs, an explicit OpenTofu
+root and caller-owned backend/admission files. Runtime outputs contain generated
+inputs, review, native plan, snippets, recovery material and protected results.
+Keep those outputs separate from authored source and do not upload an undeclared
+directory.
 
-`PVE_DIR` selects an independent external OpenTofu working root for init, plan,
-apply or destroy. There is no implicit Astra selection. The old `ASTRA` selector
-and `ASTRA_PVE_SSH_TIMEOUT_SECONDS` fail with migration messages. The new SSH
-timeout variable is `IAAS_PVE_SSH_TIMEOUT_SECONDS`. Existing PVE hosts must finish
-the separate [helper cutover](pve-helper-cutover.md) before online helper calls.
+There is no implicit Astra selector or external state path. The old `ASTRA`
+selector, old `ASTRA_PVE_SSH_TIMEOUT_SECONDS`, and the old Make write commands
+return migration errors. The new SSH timeout variable is
+`IAAS_PVE_SSH_TIMEOUT_SECONDS`. Existing PVE hosts must finish the separate
+[helper cutover](pve-helper-cutover.md) before online helper calls.
 
 K3s retains its explicit intent, inventory, scope and protected-secret file
 inputs. This packaging change does not qualify a cluster or repair handoff logic.
 
-Example offline invocation with readonly inputs and caller-owned outputs:
+Example offline capability invocation with readonly inputs and caller-owned
+outputs:
 
 ```sh
 docker run --rm --network none --read-only \
   --user "$(id -u):$(id -g)" --tmpfs /tmp:rw,mode=1777 \
   -v /absolute/environment:/environment:ro \
   -v /absolute/output:/output \
-  -e ENVIRONMENT_DIR=/environment -e OUTPUT_DIR=/output \
-  'ghcr.io/<owner>/iaas-runtime@sha256:<digest>' pve-generate
+  -e RUNTIME_CONFIG=/environment/runtime.json \
+  'ghcr.io/<owner>/iaas-runtime@sha256:<digest>' capabilities
 ```
 
 Create the output directory as the invoking user first. Startup creates a private
@@ -86,19 +98,19 @@ backend, persistent state, locking and deployment authorization. Public build
 jobs need none of those credentials; GHCR publication uses its separate temporary
 `GITHUB_TOKEN` only in the publish job.
 
-## External OpenTofu root
+## Caller-owned OpenTofu root
 
 The module source inside the image is the literal path
 `/opt/iaas/automation/opentofu/modules/pve-cloudinit-vm`. Pinning the image digest
 pins that module. See the [synthetic root](../../tests/fixtures/runtime-root/main.tf)
 and its committed provider lock for a backend-disabled example.
 
-The caller owns its root and `.terraform.lock.hcl`. Mount the working root
-separately and invoke `docker run ... --entrypoint tofu IMAGE -chdir=/work/pve
-init -backend=false -lockfile=readonly -input=false`, then `validate`. Provider
-downloads require networking; these checks do not require API credentials or
-state access. Actual deployment needs persistent state outside the container;
-no backend or state migration is supplied here.
+The caller owns the root and `.terraform.lock.hcl`; the runtime materializes only
+the explicit `options.root.files` mapping into its private task workspace. The
+root must declare one supported Proxmox provider, fixed API/TLS selection and
+ephemeral sensitive credential variables. Provider downloads belong to the
+separate dependency preparation operation. Actual deployment uses the selected
+S3 backend and native lock; local state migration is not supplied.
 
 ## Build and validation
 

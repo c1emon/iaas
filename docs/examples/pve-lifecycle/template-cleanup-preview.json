@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "kind": "pve-template-cleanup-preview",
+  "action": "cleanup",
+  "original_execution": "template-synthetic-build-001",
+  "vmid": 9001,
+  "volumes": [
+    "synthetic-disks:base-9001-disk-0"
+  ],
+  "owner": "helper",
+  "mode": "failed_build",
+  "target": {
+    "node": "synthetic-node",
+    "host": "synthetic-node.example.invalid",
+    "api_endpoint": "https://pve.example.invalid:8006",
+    "insecure": false,
+    "ssh_user": "pve-ops",
+    "ssh_port": 2222
+  },
+  "object": {
+    "node": "synthetic-node",
+    "vmid": 9001,
+    "smbios_uuid": "synthetic-template-uuid",
+    "disks": {
+      "scsi0": "synthetic-disks:base-9001-disk-0"
+    }
+  },
+  "runtime": {
+    "image_digest": "ghcr.io/example/iaas-runtime@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "helper": {
+    "protocol_version": 2
+  },
+  "preview_digest": "sha256:b1ce5307653a2906a2b986dba1c87ac02bd10843772422c99afd37b7dd9fce54",
+  "state_owner": "helper",
+  "state_ref_absent": true
+}

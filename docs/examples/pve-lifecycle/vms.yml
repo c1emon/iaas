@@ -1,0 +1,23 @@
+---
+schema_version: 1
+vms:
+  - name: synthetic-vm
+    vmid: 500
+    lifecycle_class: ephemeral_lab
+    node: synthetic-node
+    nics:
+      - name: mgmt0
+        role: management
+        network: lab
+        macaddr: "52:54:00:01:02:03"
+        static_ip: 192.0.2.20/24
+        gateway: 192.0.2.1
+        default_route: true
+        ansible_connection: true
+        dns: [192.0.2.1]
+    ansible_groups: [lab]
+    tags: [synthetic]
+    pool: null
+    boot: {started: false, on_boot: false}
+    ha: {enabled: false, group: null, state: null}
+    passthrough: null

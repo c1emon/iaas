@@ -32,8 +32,14 @@
 
 ## 5. 软件集成与交接
 
-- [ ] 5.1 验证本地 Docker 与 DinD 的操作发现、文件传输、权限、执行身份和结果保留一致性，复用现有 runner/合成 backend 测试；报告替身和实际容器覆盖差异，不接入真实 PVE。
-- [ ] 5.2 提供模板 build/观察/清理与 VM plan/apply/verify 的合成调用示例，以及独立验证 root 的创建/删除材料；验证示例 schema、命令参数和离线生成，不执行设施写入。
-- [ ] 5.3 更新 runtime、PVE 操作与 helper cutover 文档，列明 API/SSH 权限、systemd 前提、旧接口/旧计划拒绝和调用方责任；用文档链接及示例一致性检查验证，明确未做现场验收。
-- [ ] 5.4 运行与实际修改相符的 Python/Go/Ansible/shell 检查及现有 PVE/OPNsense runtime 回归、OpenSpec strict 校验；汇总覆盖和限制，按仓库要求在提交前完成 GitNexus 变更分析。
-- [ ] 5.5 更新本仓库发行兼容说明和构建检查，验证 launcher/runtime/helper 版本发现及产物完整；实际 tag/镜像发布另按授权执行，infra-ops adapter、现场安装/state 迁移和实机验收不作为本任务执行项。
+- [x] 5.1 验证本地 Docker 与 DinD 的操作发现、文件传输、权限、执行身份和结果保留一致性，复用现有 runner/合成 backend 测试；报告替身和实际容器覆盖差异，不接入真实 PVE。
+- [x] 5.2 提供模板 build/观察/清理与 VM plan/apply/verify 的合成调用示例，以及独立验证 root 的创建/删除材料；验证示例 schema、命令参数和离线生成，不执行设施写入。
+- [x] 5.3 更新 runtime、PVE 操作与 helper cutover 文档，列明 API/SSH 权限、systemd 前提、旧接口/旧计划拒绝和调用方责任；用文档链接及示例一致性检查验证，明确未做现场验收。
+- [x] 5.4 运行与实际修改相符的 Python/Go/Ansible/shell 检查及现有 PVE/OPNsense runtime 回归、OpenSpec strict 校验；汇总覆盖和限制，按仓库要求在提交前完成 GitNexus 变更分析。
+- [x] 5.5 更新本仓库发行兼容说明和构建检查，验证 launcher/runtime/helper 版本发现及产物完整；实际 tag/镜像发布另按授权执行，infra-ops adapter、现场安装/state 迁移和实机验收不作为本任务执行项。
+
+## 实施验证边界
+
+- 本轮已实际构建本地 Linux ARM64 runtime，并通过容器 smoke、操作发现、离线模板 check、SDK 导入和镜像内容检查；launcher 的 Linux amd64 / Darwin arm64 构建通过。
+- S3 使用真实 boto3 对本地合成 HTTP 服务验证；PVE API、SSH、systemd/节点命令和 DinD 编排采用代表性替身。未进行共享 CI 或 PVE 实机资格验收。
+- 未安装节点、写入真实设施、迁移 state、执行来宾/业务验收或发布 tag/镜像。原执行事实与当前配置核验保持独立。

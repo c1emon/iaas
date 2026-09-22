@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "root_id": "synthetic-root",
+  "backend": {
+    "bucket": "synthetic-state",
+    "key": "pve/root.tfstate",
+    "region": "us-east-1",
+    "endpoint": "https://s3.example.invalid",
+    "tls_verify": true,
+    "path_style": true,
+    "use_lockfile": true,
+    "workspace": "review",
+    "workspace_key_prefix": "env:"
+  },
+  "workspace": "review",
+  "mode": "first_use",
+  "initialization_ref": "approved-initialization-example"
+}

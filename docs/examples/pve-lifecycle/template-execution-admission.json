@@ -1,0 +1,25 @@
+{
+  "execution_id": "template-synthetic-apply-001",
+  "schema_version": 1,
+  "approved": true,
+  "plan_digest": "sha256:9458e51ceaa9a0fb074a1604b6db981335dd23458c1d798c46db956e1bfd453b",
+  "target": {
+    "node": "synthetic-node",
+    "host": "synthetic-node.example.invalid",
+    "api_endpoint": "https://pve.example.invalid:8006",
+    "insecure": false,
+    "ssh_user": "pve-ops",
+    "ssh_port": 2222
+  },
+  "consumption": {
+    "reserved": true,
+    "reservation_id": "synthetic-template-consume-001"
+  },
+  "pending": {
+    "record_id": "synthetic-template-pending-001"
+  },
+  "serialization": {
+    "held": true,
+    "context_id": "synthetic-template-lock-001"
+  }
+}
