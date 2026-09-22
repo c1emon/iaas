@@ -33,7 +33,7 @@ NODE_LOCK = Path(os.environ.get("IAAS_PVE_TEMPLATE_LOCK", "/run/lock/iaas-pve-te
 LOCK_TIMEOUT = float(os.environ.get("IAAS_PVE_TEMPLATE_LOCK_TIMEOUT", "30"))
 WORKER = "/usr/local/sbin/iaas-pve-template-worker"
 QM = os.environ.get("IAAS_PVE_QM", "/usr/sbin/qm")
-PVESH = os.environ.get("IAAS_PVE_PVESH", "/usr/sbin/pvesh")
+PVESH = os.environ.get("IAAS_PVE_PVESH", "/usr/bin/pvesh")
 
 
 def valid_volume_id(value: Any) -> bool:
