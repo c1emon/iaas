@@ -64,7 +64,7 @@ if sys.argv[1] == 'plan':
     path = next(arg[5:] for arg in sys.argv if arg.startswith('-out='))
     Path(path).write_text(os.environ.get('PLAN_LABEL','plan-A'))
 elif sys.argv[1] == 'show':
-    print('{}' if '-json' in sys.argv else 'sensitive review')
+    print(os.environ.get('NATIVE_PLAN_JSON', '{}') if '-json' in sys.argv else 'sensitive review')
 elif sys.argv[1] == 'apply':
     assert not any(arg.startswith('-var-file') for arg in sys.argv)
     if os.environ.get('STATE_WRITE_FAIL'):
@@ -285,6 +285,92 @@ def test_native_state_write_failure_keeps_emergency_state(setup_plan):
     assert result["collection"]["status"] == "not_attempted"
     assert (apply.outputs.path("recovery") / "errored.tfstate").read_text() == "private recovery state"
     assert (apply.outputs.path("plan") / "selected/workspace/errored.tfstate").exists()
+
+
+@pytest.fixture
+def first_use_plan(setup_plan, monkeypatch):
+    from dataclasses import replace
+    from types import SimpleNamespace
+    from iaas_automation.runtime_execution import plans, pve_state
+    selected, backend, tofu, execution = setup_plan
+    empty = pve_state.observe_state(backend, {})
+    absent = replace(empty, status="absent", lineage=None, serial=None, empty=None, raw=None)
+    values = {"node_name": "synthetic-node", "vm_id": 799, "cpu": [{"cores": 1}],
+              "memory": [{"dedicated": 1024}], "started": False, "smbios": [{"uuid": "synthetic-uuid"}],
+              "disk": [{"interface": "scsi0", "datastore_id": "synthetic", "size": 8}]}
+    populated = replace(empty, empty=False, serial=2, raw={
+        **empty.raw, "serial": 2, "resources": [{"type": "proxmox_virtual_environment_vm", "name": "test",
+            "instances": [{"attributes": values}]}]})
+    admission = json.loads(selected.files["state_admission"].read_text())
+    admission.pop("lineage")
+    admission.update(mode="first_use", initialization_ref="synthetic-first-use")
+    selected.files["state_admission"].write_text(json.dumps(admission))
+    monkeypatch.setattr(pve_state, "observe_state", lambda *a: absent)
+    monkeypatch.setattr(plans, "api_client", lambda *a: SimpleNamespace(
+        cluster_vm_resources=lambda: [], effective_permissions=lambda path: {path: {"VM.Audit": 1}},
+        vm_config=lambda *a: {"cores": 1, "memory": 1024, "smbios1": "uuid=synthetic-uuid",
+                              "scsi0": "synthetic:799/vm-799-disk-0.qcow2,size=8G"},
+        vm_status=lambda *a: {"status": "stopped"}))
+    native = {"resource_changes": [{"address": "proxmox_virtual_environment_vm.test",
+        "type": "proxmox_virtual_environment_vm", "change": {"actions": ["create"], "after": values}}]}
+    plan = prepare_plan(selected, execution("prepare", NATIVE_PLAN_JSON=json.dumps(native)),
+                        backend, "complete-root", IMAGE, tofu)
+    return selected, backend, tofu, execution, plan, absent, empty, populated
+
+
+@pytest.mark.parametrize("outcome", ["present", "absent", "error", "native_failure", "recovery_state"])
+def test_first_use_apply_collects_only_after_complete_native_success(first_use_plan, monkeypatch, outcome):
+    from dataclasses import replace
+    from iaas_automation.runtime_execution import pve_state
+    selected, backend, tofu, execution, plan, absent, _, populated = first_use_plan
+    observations = iter([absent, absent, populated if outcome == "present" else replace(absent, status=outcome)])
+    reads = []
+
+    def observe(*args):
+        reads.append(1)
+        return next(observations)
+
+    monkeypatch.setattr(pve_state, "observe_state", observe)
+    changes = {"APPLY_EXIT": "1"} if outcome == "native_failure" else {"STATE_WRITE_FAIL": "1"} if outcome == "recovery_state" else {}
+    apply = execution("apply", **changes)
+    if outcome == "present":
+        apply_saved_plan(plan, plan.parent, selected, apply, backend, "complete-root", IMAGE, tofu)
+    else:
+        with pytest.raises(OperationFailed if outcome == "native_failure" else ValidationError):
+            apply_saved_plan(plan, plan.parent, selected, apply, backend, "complete-root", IMAGE, tofu)
+    result = json.loads((apply.outputs.root / "pve-result.json").read_text())
+    assert result["native_execution"]["status"] == ("failed" if outcome == "native_failure" else "success")
+    if outcome == "present":
+        assert result["snapshot"] == populated.raw
+        assert result["collection"]["status"] == result["verification"]["status"] == "passed"
+        assert result["phase"] == "succeeded"
+    else:
+        assert result["phase"] == "failed"
+        assert result["collection"]["status"] != "passed"
+        assert "snapshot" not in result
+    assert len(reads) == (2 if outcome in {"native_failure", "recovery_state"} else 3)
+
+
+@pytest.mark.parametrize("stage", ["before_apply", "initialization", "lineage_change"])
+def test_first_use_does_not_admit_unexpected_state(first_use_plan, monkeypatch, stage):
+    from dataclasses import replace
+    from iaas_automation.runtime_execution import pve_state
+    selected, backend, tofu, execution, plan, absent, empty, populated = first_use_plan
+    observations = iter({
+        "before_apply": [populated],
+        "initialization": [absent, populated],
+        "lineage_change": [absent, empty, replace(populated, lineage="other-lineage")],
+    }[stage])
+    monkeypatch.setattr(pve_state, "observe_state", lambda *a: next(observations))
+    apply = execution("apply")
+    with pytest.raises(ValidationError, match="unassociated state|changed lineage"):
+        apply_saved_plan(plan, plan.parent, selected, apply, backend, "complete-root", IMAGE, tofu)
+    if stage != "lineage_change":
+        assert not any(item["phase"] in {"upload-snippets", "apply"} for item in apply.phases)
+    else:
+        result = json.loads((apply.outputs.root / "pve-result.json").read_text())
+        assert result["native_execution"]["status"] == "success"
+        assert result["collection"]["status"] == "unknown"
 
 
 def test_missing_saved_helper_fails_before_any_execution(setup_plan, tmp_path):

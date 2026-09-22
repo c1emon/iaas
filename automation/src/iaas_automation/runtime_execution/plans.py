@@ -372,7 +372,11 @@ def apply_saved_plan(plan: Path, bundle: Path, selected: SelectedConfig, executi
         result["collection"] = {"status": "unknown"}
         _write(result_path, result)
         snapshot = observe_state(backend, execution.environ)
-        _state_transition(initialized.to_dict(), snapshot.to_dict())
+        # A first-use apply can create the first, already populated state object.
+        # This exception is only valid after complete native success, never at
+        # plan admission or initialization, and does not waive existing lineage.
+        if initialized.status != "absent" or state_admission["mode"] != "first_use":
+            _state_transition(initialized.to_dict(), snapshot.to_dict())
         require(snapshot.status == "present", "post-apply state collection failed")
         result["state_after"] = snapshot.to_dict()
         result["snapshot"] = snapshot.raw
