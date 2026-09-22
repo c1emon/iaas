@@ -6,6 +6,9 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from iaas_automation.pve_template import runtime as template_runtime
+from iaas_automation.runtime_execution.execution import Execution
+from iaas_automation.runtime_execution.outputs import TaskOutputs
 from iaas_automation.pve_template.contracts import (validate_preview, validate_recipe,
                                                      validate_cleanup_preview,
                                                      validate_request, validate_template_record)
@@ -53,7 +56,7 @@ def test_synthetic_delete_root_and_independent_template_contracts() -> None:
     records = json.loads((ROOT / "template-records.json").read_text())
     assert validate_template_record(records["records"][0])["object"]["smbios_uuid"]
     assert receipt["kind"] == "pve-template-receipt"
-    assert receipt["preview_digest"] == preview["preview_digest"].removeprefix("sha256:")
+    assert receipt["preview_digest"] == preview["preview_digest"]
 
 
 def test_template_read_apply_cleanup_entries_and_cli_discovery() -> None:
@@ -82,3 +85,32 @@ def test_template_read_apply_cleanup_entries_and_cli_discovery() -> None:
     assert main(["--environment", str(ROOT / "environment-template-apply.yml"),
                  "--component", "pve-template", "--operation", "apply", "--scope", "synthetic-node",
                  "--execution-id", "template-synthetic-apply-001", "--discover"]) == 0
+
+
+def test_synthetic_template_receipt_supports_historical_read_and_verify(tmp_path, monkeypatch):
+    receipt = json.loads((ROOT / "template/template-receipt.json").read_text())
+    record = receipt["template_record"]
+    requests = []
+
+    def invoke(_selected, _execution, request, _phase):
+        assert request["operation"] == "observe"
+        assert request["template"]["vmid"] == receipt["object"]["vmid"]
+        requests.append(request)
+        return {"status": "observed", "template": {**record["object"],
+                "configuration": record["configuration"]}}
+
+    monkeypatch.setattr(template_runtime, "_invoke_helper", invoke)
+    for operation, environment in [("read", "environment-template-read.yml"),
+                                   ("verify", "environment-template.yml")]:
+        selected = load_operation(ROOT / environment, "pve-template", operation, None, SourceReader())
+        outputs = TaskOutputs.create(tmp_path / operation, tmp_path / "implementation", [])
+        template_runtime.run(selected, operation, "synthetic-node", Execution(outputs, {}),
+                             "sha256:" + "b" * 64)
+        if operation == "read":
+            result = json.loads((outputs.path("diagnostics") / "observation.json").read_text())
+            assert result["records"]["records"][0]["object"]["vmid"] == record["object"]["vmid"]
+            assert result["build_history"] == "unknown"
+        else:
+            result = json.loads((outputs.path("diagnostics") / "verification.json").read_text())
+            assert result["status"] == "passed"
+    assert len(requests) == 2

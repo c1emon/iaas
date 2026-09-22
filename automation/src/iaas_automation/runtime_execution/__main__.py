@@ -64,9 +64,6 @@ def main(argv: list[str] | None = None) -> int:
                         "execution identity does not match selected options")
         else:
             require(not args.execution_id, 'execution identity is only supported for apply')
-        if args.component == "pve" and args.operation in {"apply", "verify"}:
-            require(args.plan is not None and args.companions is not None,
-                    f"PVE {args.operation} requires --plan and --companions")
         render_names = rendering_credentials(selected, args.operation)
         allowed = credential_names(args.component, args.operation, render_names)
         # Explicit aliases win over host file channels, before the launcher
@@ -77,6 +74,11 @@ def main(argv: list[str] | None = None) -> int:
                               "sources": sorted(map(str, reader.logical_sources)),
                               "execution_id": args.execution_id or None}))
             return 0
+        # Discovery resolves caller inputs before the launcher stages saved
+        # artifacts. Require them only at execution, before creating outputs.
+        if args.component == "pve" and args.operation in {"apply", "verify"}:
+            require(args.plan is not None and args.companions is not None,
+                    f"PVE {args.operation} requires --plan and --companions")
         require(args.output is not None, "operation requires an explicit output directory")
         require(not effects.network or bool(args.scope), "online operation requires explicit scope")
         protected = list(reader.sources)

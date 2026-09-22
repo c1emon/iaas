@@ -572,48 +572,82 @@ def cleanup(request: dict[str, Any], *, preview_only: bool) -> dict[str, Any]:
                       "target": original_record.get("target"), "object": original_object}
     atomic_json(cleanup_dir / "request.json", request)
     atomic_json(cleanup_dir / "record.json", cleanup_record)
-    with lock(NODE_LOCK):
-        # Recheck inside the lifecycle lock to close the worker/cleanup race.
-        latest = load(execution_dir(original) / "record.json")
-        require(latest.get("state") in {"failed", "succeeded"}, "originating execution became active")
-        unit_is_stopped(latest.get("unit"), terminal=True)
-        current = native_object(vmid)
-        expected_uuid = original_object.get("smbios_uuid")
-        require(current.get("smbios_uuid") == expected_uuid and
-                (not original_object.get("disks") or
-                 current.get("disks") == original_object.get("disks")) and
-                (bool(original_object.get("disks")) or set(volumes) == set(current.get("disks", {}).values())) and
-                (mode == "failed_build" or current.get("template") is True),
-                "current template identity or disks do not match the recorded object")
-        cleanup_record.update(state="running", effects="unknown")
-        cleanup_record["phases"].append({"phase": "lock", "status": "acquired"})
-        atomic_json(cleanup_dir / "record.json", cleanup_record)
-        try:
-            result = subprocess.run([QM, "destroy", str(vmid), "--purge", "1"],
-                                    capture_output=True, text=True, check=False)
-        except OSError:
-            result = subprocess.CompletedProcess([QM, "destroy"], 127, "", "cleanup command unavailable")
-        log_dir = cleanup_dir / "logs"
-        log_dir.mkdir(mode=0o700, exist_ok=True)
-        (log_dir / "destroy.log").write_text((result.stdout or "") + (result.stderr or ""), encoding="utf-8")
-        os.chmod(log_dir / "destroy.log", 0o600)
-        if result.returncode != 0:
-            cleanup_record.update(state="failed", effects="unknown")
-            cleanup_record["phases"].append({"phase": "destroy", "status": "failed", "exit_code": result.returncode})
+    try:
+        with lock(NODE_LOCK):
+            # Recheck inside the lifecycle lock to close the worker/cleanup race.
+            latest = load(execution_dir(original) / "record.json")
+            require(latest.get("state") in {"failed", "succeeded"}, "originating execution became active")
+            require(latest.get("target") == original_target and
+                    (latest.get("object") or latest.get("planned_object")) == original_object,
+                    "originating execution identity changed")
+            unit_is_stopped(latest.get("unit"), terminal=True)
+            local_only = (latest.get("state") == "failed" and latest.get("vm_effects") == "none" and
+                          not any(item.get("phase") in {"create", "import", "configure", "template"}
+                                  for item in latest.get("phases", [])))
+            cleanup_record["phases"].append({"phase": "lock", "status": "acquired"})
+            if local_only:
+                require(not volumes and not original_object.get("disks"),
+                        "pre-VM cleanup cannot include volumes")
+                probe = subprocess.run([PVESH, "get", "/cluster/resources", "--type", "vm",
+                                        "--output-format", "json"], capture_output=True,
+                                       text=True, check=False)
+                require(probe.returncode == 0, "cleanup VM absence is unavailable")
+                try:
+                    rows = json.loads(probe.stdout)
+                except (ValueError, TypeError):
+                    raise HelperError("cleanup VM absence is unavailable") from None
+                require(isinstance(rows, list) and
+                        all(isinstance(row, dict) and str(row.get("vmid", "")).isdigit()
+                            for row in rows), "cleanup VM listing is invalid")
+                require(not any(int(row["vmid"]) == vmid for row in rows),
+                        "pre-VM cleanup VMID is occupied")
+                cleanup_record["phases"].append({"phase": "vm-absence", "status": "confirmed"})
+            else:
+                current = native_object(vmid)
+                expected_uuid = original_object.get("smbios_uuid")
+                require(current.get("smbios_uuid") == expected_uuid and
+                        (not original_object.get("disks") or
+                         current.get("disks") == original_object.get("disks")) and
+                        (bool(original_object.get("disks")) or set(volumes) == set(current.get("disks", {}).values())) and
+                        (mode == "failed_build" or current.get("template") is True),
+                        "current template identity or disks do not match the recorded object")
+            # Only fixed helper-owned directories are eligible; never follow symlinks.
+            original_dir = execution_dir(original)
+            paths = [original_dir / name for name in ("cache", "work")]
+            require(not original_dir.is_symlink() and
+                    all(not path.is_symlink() and (not path.exists() or path.is_dir()) for path in paths),
+                    "cleanup storage path is not a helper directory")
+            cleanup_record.update(state="running", effects="unknown")
+            atomic_json(cleanup_dir / "record.json", cleanup_record)
+            # Preserve the verified VM identity if storage cleanup fails so a
+            # fresh admitted execution can safely retry the remaining cleanup.
+            for path in paths:
+                if path.exists():
+                    shutil.rmtree(path)
+            cleanup_record["phases"].append({"phase": "cleanup-storage", "status": "complete"})
+            atomic_json(cleanup_dir / "record.json", cleanup_record)
+            if not local_only:
+                result = subprocess.run([QM, "destroy", str(vmid), "--purge", "1"],
+                                        capture_output=True, text=True, check=False)
+                log_dir = cleanup_dir / "logs"
+                log_dir.mkdir(mode=0o700, exist_ok=True)
+                (log_dir / "destroy.log").write_text((result.stdout or "") + (result.stderr or ""), encoding="utf-8")
+                os.chmod(log_dir / "destroy.log", 0o600)
+                cleanup_record["phases"].append({"phase": "destroy",
+                    "status": "complete" if result.returncode == 0 else "failed", "exit_code": result.returncode})
+                require(result.returncode == 0, "cleanup failed; retain execution evidence")
+            cleanup_record.update(state="succeeded", effects="known")
             atomic_json(cleanup_dir / "record.json", cleanup_record)
             atomic_json(cleanup_dir / "receipt.json", {"schema_version": 1, "kind": "pve-template-cleanup-receipt",
-                         "execution_id": cleanup_id, "recovery_of": original, "status": "failed",
-                         "effects": "unknown", "preview_digest": preview["preview_digest"]})
-            raise HelperError("cleanup failed; retain execution evidence")
-        cleanup_record.update(state="succeeded", effects="known")
-        cleanup_record["phases"].append({"phase": "destroy", "status": "complete", "exit_code": 0})
+                         "execution_id": cleanup_id, "recovery_of": original, "status": "succeeded",
+                         "effects": "known", "preview_digest": preview["preview_digest"]})
+    except (HelperError, OSError) as exc:
+        cleanup_record["state"] = "failed"
         atomic_json(cleanup_dir / "record.json", cleanup_record)
         atomic_json(cleanup_dir / "receipt.json", {"schema_version": 1, "kind": "pve-template-cleanup-receipt",
-                     "execution_id": cleanup_id, "recovery_of": original, "status": "succeeded",
-                     "effects": "known", "preview_digest": preview["preview_digest"]})
-        work = execution_dir(original) / "work"
-        if work.exists():
-            shutil.rmtree(work)
+                     "execution_id": cleanup_id, "recovery_of": original, "status": "failed",
+                     "effects": cleanup_record["effects"], "preview_digest": preview["preview_digest"]})
+        raise HelperError("cleanup failed; retain execution evidence") from exc
     return {"status": "succeeded", "preview": preview, "effects": "known",
             "execution": cleanup_record, "receipt": load(cleanup_dir / "receipt.json")}
 

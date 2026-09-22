@@ -69,7 +69,7 @@ def validate_target(value: Any) -> dict[str, Any]:
     require(parsed.scheme in {"http", "https"} and parsed.netloc and not parsed.username and
             not parsed.password and not parsed.query and not parsed.fragment,
             "target.api_endpoint must be a fixed URL without credentials or query data")
-    result = {"node": node, "host": host, "api_endpoint": endpoint.rstrip("/")}
+    result: dict[str, Any] = {"node": node, "host": host, "api_endpoint": endpoint.rstrip("/")}
     require(type(target["insecure"]) is bool, "target.insecure must be boolean")
     result["insecure"] = target["insecure"]
     if "tls_verify" in target:

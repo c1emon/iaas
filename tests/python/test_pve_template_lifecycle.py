@@ -130,7 +130,7 @@ def test_cleanup_preview_and_admission_share_helper_digest() -> None:
     assert validate_request(request)["admission"]["execution_id"] == "cleanup-42"
 
 
-def test_runtime_subprocess_records_and_live_verify(tmp_path) -> None:
+def test_runtime_subprocess_records_and_live_verify(tmp_path, monkeypatch) -> None:
     helper = tmp_path / "helper.py"
     helper.write_text(
         "import hashlib, json, os, sys\n"
@@ -163,10 +163,10 @@ def test_runtime_subprocess_records_and_live_verify(tmp_path) -> None:
                          "disks": {"scsi0": "local-lvm:vm-9002-disk-0"}},
               "configuration": {"template": 1, "scsi0": "local-lvm:vm-9002-disk-0,size=8G"}}
     record_path.write_text(json.dumps(record), encoding="utf-8")
-    command = [sys.executable, str(helper)]
+    monkeypatch.setattr(runtime, "_helper_command", lambda *_: [sys.executable, str(helper)])
     env = {"FAKE_RECORD": str(record_path)}
     digest = "sha256:" + "b" * 64
-    selected = SimpleNamespace(documents={"recipe": recipe()}, files={}, options={"helper_command": command})
+    selected = SimpleNamespace(documents={"recipe": recipe()}, files={}, options={})
 
     def execute(tmp_name, *, files=None, options=None):
         outputs = TaskOutputs.create(tmp_path / tmp_name, tmp_path / "implementation", [])
@@ -183,7 +183,7 @@ def test_runtime_subprocess_records_and_live_verify(tmp_path) -> None:
                  "serialization": {"held": True, "context_id": "lock-live-1"}}
     apply_selected = SimpleNamespace(documents={"recipe": recipe()},
                                      files={"template_preview": preview_path},
-                                     options={"helper_command": command, "preview_digest": preview["preview_digest"],
+                                     options={"preview_digest": preview["preview_digest"],
                                               "admission": admission})
     apply_execution, apply_outputs = execute("apply")
     runtime.run(apply_selected, "apply", "node-a", apply_execution, digest, "build-live-1")
@@ -202,7 +202,7 @@ def test_runtime_subprocess_records_and_live_verify(tmp_path) -> None:
     assert (missing_outputs.path("diagnostics") / "remote-observation.json").exists()
 
     verify_selected = SimpleNamespace(documents={"recipe": recipe()}, files={"receipt": receipt_path},
-                                      options={"helper_command": command})
+                                      options={})
     verify_execution, _ = execute("verify")
     runtime.run(verify_selected, "verify", "node-a", verify_execution, digest, "")
     record["object"]["smbios_uuid"] = "uuid-recreated"
@@ -213,7 +213,7 @@ def test_runtime_subprocess_records_and_live_verify(tmp_path) -> None:
         runtime.run(verify_selected, "verify", "node-a", failed_execution, digest, "")
 
     cleanup_plan_selected = SimpleNamespace(documents={"recipe": recipe()}, files={},
-                                            options={"helper_command": command, "action": "cleanup",
+                                            options={"action": "cleanup",
                                                      "cleanup": {"vmid": 9002, "owner": "helper",
                                                                  "original_execution": "build-live-1",
                                                                  "management_status": "stopped",
@@ -231,7 +231,7 @@ def test_runtime_subprocess_records_and_live_verify(tmp_path) -> None:
                          "serialization": {"held": True, "context_id": "lock-cleanup-1"}}
     cleanup_selected = SimpleNamespace(documents={"recipe": recipe()},
                                        files={"template_preview": cleanup_preview_path},
-                                       options={"helper_command": command, "action": "cleanup",
+                                       options={"action": "cleanup",
                                                 "preview_digest": cleanup_preview["preview_digest"],
                                                 "admission": cleanup_admission})
     cleanup_execution, cleanup_outputs = execute("cleanup-apply")
@@ -239,8 +239,9 @@ def test_runtime_subprocess_records_and_live_verify(tmp_path) -> None:
     assert json.loads((cleanup_outputs.path("diagnostics") / "receipt.json").read_text())["status"] == "succeeded"
 
 
-def test_runtime_actual_helper_cleanup_subprocess(tmp_path) -> None:
+def test_runtime_actual_helper_cleanup_subprocess(tmp_path, monkeypatch) -> None:
     helper = Path(__file__).resolve().parents[2] / "automation/pve-node/bin/iaas-pve-template"
+    monkeypatch.setattr(runtime, "_helper_command", lambda *_: [sys.executable, str(helper)])
     state = tmp_path / "state"
     original = state / "executions/build-clean-1"
     original.mkdir(parents=True)
@@ -263,7 +264,7 @@ def test_runtime_actual_helper_cleanup_subprocess(tmp_path) -> None:
     systemctl = fake_bin / "systemctl"
     systemctl.write_text("#!/bin/sh\nprintf 'LoadState=loaded\\nActiveState=inactive\\nSubState=dead\\n'\n", encoding="utf-8")
     systemctl.chmod(0o755)
-    selected = SimpleNamespace(documents={"recipe": local_recipe}, files={}, options={"helper_command": [sys.executable, str(helper)],
+    selected = SimpleNamespace(documents={"recipe": local_recipe}, files={}, options={
                                                                                      "action": "cleanup", "cleanup": {
                                                                                          "vmid": 9002, "owner": "helper",
                                                                                          "original_execution": "build-clean-1",
@@ -291,9 +292,69 @@ def test_runtime_actual_helper_cleanup_subprocess(tmp_path) -> None:
                  "pending": {"record_id": "pending-actual-1"},
                  "serialization": {"held": True, "context_id": "lock-actual-1"}}
     apply_selected = SimpleNamespace(documents={"recipe": local_recipe}, files={"template_preview": preview_path},
-                                     options={"helper_command": [sys.executable, str(helper)], "action": "cleanup",
+                                     options={ "action": "cleanup",
                                               "preview_digest": preview["preview_digest"], "admission": admission})
     apply_execution, outputs = execute("actual-cleanup-apply")
     runtime.run(apply_selected, "apply", target["node"], apply_execution, digest, "cleanup-actual-1")
     assert (tmp_path / "destroyed").is_file()
     assert json.loads((outputs.path("diagnostics") / "receipt.json").read_text())["status"] == "succeeded"
+
+
+@pytest.mark.parametrize("operation", ["check", "read", "plan", "apply", "verify"])
+def test_runtime_rejects_caller_helper_command(operation):
+    selected = SimpleNamespace(documents={"recipe": recipe()}, files={},
+                               options={"helper_command": ["untrusted-program"]})
+    with pytest.raises(ValidationError, match="unknown.*option"):
+        runtime.run(selected, operation, "node-a", None, "sha256:" + "b" * 64)
+
+
+def test_helper_environment_override_cannot_bypass_ssh_credentials(monkeypatch):
+    monkeypatch.setenv("IAAS_PVE_TEMPLATE_HELPER", "untrusted-program")
+    selected = SimpleNamespace(documents={"recipe": recipe()}, files={}, options={})
+    with pytest.raises(ValidationError, match="explicit SSH"):
+        runtime._helper_command(selected, "read")
+    selected.files = {"ssh_key": "/private/key", "known_hosts": "/private/known-hosts"}
+    command = runtime._helper_command(selected, "read")
+    assert command[0] == "ssh"
+    assert command[-3:] == ["sudo", "-n", "/usr/local/sbin/iaas-pve-template"]
+    assert "IdentityAgent=none" in command
+    assert "StrictHostKeyChecking=yes" in command
+    assert "untrusted-program" not in command
+
+
+@pytest.mark.parametrize("shape", ["receipt", "bundle", "nested_bundle", "object"])
+def test_historical_read_accepts_worker_receipt_and_record_bundles(tmp_path, monkeypatch, shape):
+    obj = {"node": "node-a", "vmid": 9002, "smbios_uuid": "uuid-1",
+           "disks": {"scsi0": "local-lvm:vm-9002-disk-0"}}
+    record = {"schema_version": 1, "record_id": "template-build-1", "target": recipe()["target"],
+              "object": obj, "configuration": {"template": 1}}
+    documents = {"receipt": {"kind": "pve-template-receipt", "template_record": record, "object": obj},
+                 "bundle": {"records": [record]},
+                 "nested_bundle": {"template_record": {"records": [record]}}, "object": {"object": obj}}
+    historical = tmp_path / "receipt.json"
+    historical.write_text(json.dumps(documents[shape]))
+    selected = SimpleNamespace(documents={"recipe": recipe()}, files={"execution_result": historical}, options={})
+    requests = []
+    def invoke(_selected, _execution, request, phase):
+        requests.append(request)
+        return {"status": "observed", "template": {**obj, "configuration": {"template": 1}}}
+    monkeypatch.setattr(runtime, "_invoke_helper", invoke)
+    outputs = TaskOutputs.create(tmp_path / "out", tmp_path / "implementation", [])
+    runtime.run(selected, "read", "node-a", Execution(outputs, {}), "sha256:" + "b" * 64)
+    assert requests[0]["template"] == obj
+    observation = json.loads((outputs.path("diagnostics") / "observation.json").read_text())
+    assert observation["records"]["records"][0]["object"] == obj
+    assert observation["build_history"] == "unknown"
+
+
+@pytest.mark.parametrize("historical", [
+    {"template_record": {}}, {"template_record": None, "object": {"node": "node-a", "vmid": 9002}},
+    {"records": []},
+    {"template_record": {"object": {"node": "node-a", "vmid": 9002}},
+     "object": {"node": "node-a", "vmid": 9999}},
+])
+def test_historical_read_rejects_missing_or_conflicting_record_identity(historical, monkeypatch):
+    selected = SimpleNamespace(documents={"recipe": recipe()}, files={}, options={"template": historical})
+    monkeypatch.setattr(runtime, "_invoke_helper", lambda *_: pytest.fail("must reject before network"))
+    with pytest.raises(ValidationError):
+        runtime.run(selected, "read", "node-a", None, "sha256:" + "b" * 64)

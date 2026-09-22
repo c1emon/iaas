@@ -19,6 +19,14 @@ jobs:
           go-version: "1.27.1"
           cache: false
       - run: sh automation/launcher/build.sh "$RUNNER_TEMP/iaas-launcher"
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          version: "0.12.9"
+          python-version: "3.12"
+      - run: uv sync --locked --dev
+      - name: Verify launcher and runtime integration
+        working-directory: automation/launcher
+        run: go test -tags runtime_integration ./...
 
   check:
     runs-on: ubuntu-latest

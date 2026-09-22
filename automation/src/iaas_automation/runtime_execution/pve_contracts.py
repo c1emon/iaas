@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 import re
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 
 from iaas_automation.common.errors import require
 
@@ -62,7 +62,7 @@ def validate_verification_requirements(value: Any) -> dict[str, Any]:
     require(isinstance(requirements, list) and requirements, "verification_requirements must include configuration")
     normalized: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for index, item in enumerate(requirements):
+    for index, item in enumerate(cast(list[Any], requirements)):
         row = _object(item, f"verification_requirements.requirements[{index}]")
         _required(row, {"category", "scope", "required", "responsibility"}, f"verification_requirements.requirements[{index}]")
         category = _identifier(row["category"], f"verification_requirements.requirements[{index}].category")
@@ -156,6 +156,7 @@ def validate_target(value: Any, name: str = "target") -> dict[str, Any]:
     target = _object(value, name)
     endpoint = target.get("api_endpoint", target.get("endpoint"))
     require(isinstance(endpoint, str) and endpoint, f"{name}.api_endpoint is required")
+    endpoint = cast(str, endpoint)
     require("@" not in endpoint and "?" not in endpoint and "#" not in endpoint, f"{name}.api_endpoint must not contain credentials or query data")
     if "root_id" in target:
         require(isinstance(target["root_id"], str) and target["root_id"], f"{name}.root_id must be nonempty")

@@ -8,11 +8,10 @@ interrupted.
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
 import subprocess
 import time
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 
 from iaas_automation.common.errors import ValidationError, require
 from iaas_automation.common.io import load_json, write_text
@@ -31,7 +30,7 @@ def _document(selected: Any) -> dict[str, Any]:
     require(isinstance(documents, Mapping), "pve-template documents must be a mapping")
     recipe = documents.get("recipe", documents.get("template", documents.get("build")))
     require(isinstance(recipe, Mapping), "pve-template requires an independent recipe input")
-    return dict(recipe)
+    return dict(cast(Mapping[str, Any], recipe))
 
 
 def _path(selected: Any, *names: str) -> Path | None:
@@ -63,43 +62,27 @@ def _write_json(path: Path, value: Mapping[str, Any], *, secure: bool = False) -
 
 
 def _helper_command(selected: Any, operation: str) -> list[str]:
-    options = _options(selected)
-    configured = options.get("helper_command") or os.environ.get("IAAS_PVE_TEMPLATE_HELPER")
-    constructed = configured is None
-    if configured is None:
-        documents = getattr(selected, "documents", {})
-        recipe = documents.get("recipe", documents.get("template", documents.get("build", {})))
-        target = recipe.get("target", {}) if isinstance(recipe, Mapping) else options.get("target", {})
-        require(isinstance(target, Mapping), "pve-template helper target is required")
-        host = target.get("host")
-        user = target.get("ssh_user", "pve-ops")
-        require(isinstance(host, str) and host and isinstance(user, str) and user and
-                not host.startswith("-") and not user.startswith("-") and
-                all(char.isprintable() and not char.isspace() for char in host) and
-                all(char.isprintable() and not char.isspace() for char in user),
-                "pve-template helper SSH target is invalid")
-        known_hosts = getattr(selected, "files", {}).get("known_hosts")
-        ssh_key = getattr(selected, "files", {}).get("ssh_key")
-        require(known_hosts is not None and ssh_key is not None,
-                "pve-template online operation requires explicit SSH key and known_hosts")
-        port = target.get("ssh_port", 22)
-        require(type(port) is int and 1 <= port <= 65535, "pve-template SSH port is invalid")
-        configured = ["ssh", "-T", "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes",
-                      "-o", "IdentityAgent=none", "-o", "StrictHostKeyChecking=yes",
-                      "-o", f"UserKnownHostsFile={known_hosts}", "-p", str(port), "-i", str(ssh_key),
-                      f"{user}@{host}", "sudo", "-n", "/usr/local/sbin/iaas-pve-template"]
-    if isinstance(configured, str):
-        command = [configured]
-    else:
-        require(isinstance(configured, list) and all(isinstance(item, str) for item in configured),
-                "pve-template helper_command must be a command list")
-        command = list(configured)
-    # No caller-supplied command flags are accepted.  The operation travels in
-    # the validated JSON document on stdin.
-    if not constructed:
-        require(all(item and not item.startswith("-") for item in command),
-                "pve-template helper command may not contain flags")
-    return command
+    documents = getattr(selected, "documents", {})
+    recipe = documents.get("recipe", documents.get("template", documents.get("build", {})))
+    target = recipe.get("target", {}) if isinstance(recipe, Mapping) else {}
+    require(isinstance(target, Mapping), "pve-template helper target is required")
+    host = target.get("host")
+    user = target.get("ssh_user", "pve-ops")
+    require(isinstance(host, str) and host and isinstance(user, str) and user and
+            not host.startswith("-") and not user.startswith("-") and
+            all(char.isprintable() and not char.isspace() for char in host) and
+            all(char.isprintable() and not char.isspace() for char in user),
+            "pve-template helper SSH target is invalid")
+    known_hosts = getattr(selected, "files", {}).get("known_hosts")
+    ssh_key = getattr(selected, "files", {}).get("ssh_key")
+    require(known_hosts is not None and ssh_key is not None,
+            "pve-template online operation requires explicit SSH key and known_hosts")
+    port = target.get("ssh_port", 22)
+    require(type(port) is int and 1 <= port <= 65535, "pve-template SSH port is invalid")
+    return ["ssh", "-T", "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes",
+                  "-o", "IdentityAgent=none", "-o", "StrictHostKeyChecking=yes",
+                  "-o", f"UserKnownHostsFile={known_hosts}", "-p", str(port), "-i", str(ssh_key),
+                  f"{user}@{host}", "sudo", "-n", "/usr/local/sbin/iaas-pve-template"]
 
 
 def _invoke_helper(selected: Any, execution: Any, request: Mapping[str, Any], phase: str) -> dict[str, Any]:
@@ -236,10 +219,10 @@ def run(selected: Any, operation: str, scope: str, execution: Any,
             "unsupported pve-template operation")
     options = _options(selected)
     allowed = {
-        "check": {"helper_command"}, "read": {"helper_command", "template", "execution_id"},
-        "plan": {"helper_command", "action", "admission", "recovery_of", "cleanup", "execution_id"},
-        "apply": {"helper_command", "preview_digest", "admission", "action", "recovery_of", "poll_timeout", "template_admission"},
-        "verify": {"helper_command", "receipt", "execution_id", "template"},
+        "check": set(), "read": {"template", "execution_id"},
+        "plan": {"action", "admission", "recovery_of", "cleanup", "execution_id"},
+        "apply": {"preview_digest", "admission", "action", "recovery_of", "poll_timeout", "template_admission"},
+        "verify": {"receipt", "execution_id", "template"},
     }[operation]
     require(not set(options) - allowed, "unknown pve-template operation option")
     if "poll_timeout" in options:
@@ -280,6 +263,7 @@ def run(selected: Any, operation: str, scope: str, execution: Any,
         else:
             cleanup = options.get("cleanup")
             require(isinstance(cleanup, Mapping), "cleanup plan requires cleanup input")
+            cleanup = cast(Mapping[str, Any], cleanup)
             cleanup_execution_id = execution_id or options.get("execution_id", "cleanup-preview")
             cleanup_request = {**dict(cleanup), "runtime": _runtime(image_digest),
                                "helper": {"protocol_version": HELPER_PROTOCOL_VERSION}}
@@ -308,11 +292,18 @@ def run(selected: Any, operation: str, scope: str, execution: Any,
         if not execution_id and not isinstance(options.get("execution_id"), str):
             historical = options.get("template") or _file_mapping(selected, "execution_result", "result")
             require(isinstance(historical, Mapping), "pve-template read requires execution_id or template observation")
-            if isinstance(historical.get("template_record"), Mapping):
-                records = historical["template_record"].get("records", [])
-                identity = records[0].get("object", {}) if records and isinstance(records[0], Mapping) else {}
-            elif isinstance(historical.get("records"), list) and historical["records"]:
-                identity = historical["records"][0].get("object", {})
+            historical = cast(Mapping[str, Any], historical)
+            if "template_record" in historical or "records" in historical:
+                if "template_record" in historical:
+                    require(isinstance(historical["template_record"], Mapping),
+                            "template observation record must be a mapping")
+                bundle = _record_bundle(historical, target=recipe_for_scope["target"])
+                require(len(bundle["records"]) == 1,
+                        "template observation requires exactly one record")
+                identity = bundle["records"][0]["object"]
+                if isinstance(historical.get("object"), Mapping):
+                    require(dict(historical["object"]) == identity,
+                            "template observation contains conflicting object identities")
             else:
                 identity = historical.get("template", historical.get("object", historical))
             require(isinstance(identity, Mapping), "template observation identity is missing")
@@ -389,7 +380,7 @@ def run(selected: Any, operation: str, scope: str, execution: Any,
             complete = (isinstance(receipt_object, Mapping) and all(receipt_object.get(field) not in (None, {}, "")
                                                                      for field in identity_fields)
                         and all(current.get(field) not in (None, {}, "") for field in identity_fields))
-            if complete and all(current.get(field) == receipt_object.get(field) for field in identity_fields) \
+            if complete and all(current.get(field) == cast(Mapping[str, Any], receipt_object).get(field) for field in identity_fields) \
                     and isinstance(expected_configuration, Mapping) and bool(expected_configuration) \
                     and all(current_configuration.get(key) == value for key, value in expected_configuration.items()):
                 verified = "passed"
@@ -414,7 +405,7 @@ def run(selected: Any, operation: str, scope: str, execution: Any,
     # or infer admission from a fresh execution ID.
     source = _path(selected, "preview", "template_preview")
     require(source is not None, "pve-template apply requires a selected preview")
-    raw_preview = load_json(source)
+    raw_preview = load_json(cast(Path, source))
     require(isinstance(raw_preview, Mapping), "pve-template preview must be a mapping")
     is_cleanup = raw_preview.get("kind") == "pve-template-cleanup-preview"
     preview = validate_cleanup_preview(raw_preview) if is_cleanup else validate_preview(raw_preview)
@@ -435,7 +426,7 @@ def run(selected: Any, operation: str, scope: str, execution: Any,
         request = validate_request({"protocol_version": HELPER_PROTOCOL_VERSION, "operation": "cleanup",
                                     "execution_id": execution_id, "recovery_of": preview["original_execution"],
                                     "cleanup": {**preview, "management_status": "stopped"},
-                                    "admission": dict(admission)})
+                                    "admission": dict(cast(Mapping[str, Any], admission))})
         response = _invoke_helper(selected, execution, request, "cleanup")
         require(response.get("status") == "succeeded", "template cleanup did not complete")
         cleanup_receipt = response.get("receipt")
@@ -447,7 +438,7 @@ def run(selected: Any, operation: str, scope: str, execution: Any,
                 and cleanup_receipt.get("recovery_of") == preview["original_execution"]
                 and cleanup_receipt.get("status") == "succeeded",
                 "remote cleanup receipt is missing or conflicts with this execution")
-        _write_json(execution.outputs.path("diagnostics") / "receipt.json", cleanup_receipt, secure=True)
+        _write_json(execution.outputs.path("diagnostics") / "receipt.json", cast(Mapping[str, Any], cleanup_receipt), secure=True)
         execution.finish({"component": "pve-template", "operation": operation, "action": "cleanup",
                           "execution_id": execution_id, "recovery_of": preview["original_execution"],
                           "effects": "known", "status": "succeeded"})
@@ -477,7 +468,7 @@ def run(selected: Any, operation: str, scope: str, execution: Any,
     records = _record_bundle(response, target=preview["fixed_input"]["target"], complete=True)
     require(records["records"], "remote template execution returned no complete template records")
     _write_json(execution.outputs.path("generated") / "template-records.json", records, secure=True)
-    _write_json(execution.outputs.path("diagnostics") / "receipt.json", receipt_value, secure=True)
+    _write_json(execution.outputs.path("diagnostics") / "receipt.json", cast(Mapping[str, Any], receipt_value), secure=True)
     execution.finish({"component": "pve-template", "operation": operation,
                       "execution_id": execution_id, "preview_digest": preview["preview_digest"],
                       "records": len(records["records"]), "effects": "known", "status": "succeeded"})

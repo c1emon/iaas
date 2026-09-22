@@ -74,7 +74,7 @@ func (t *task) savedPlan() ([]string, error) {
 	if err != nil {
 		return nil, errors.New("saved companion directory is unavailable")
 	}
-	for _, name := range []string{"summary.json", "inputs.tfvars.json", "snippets/manifest.json"} {
+	for _, name := range []string{"summary.json", "native-plan.json", "inputs.tfvars.json", "snippets/manifest.json"} {
 		if info, err := os.Stat(filepath.Join(bundle, name)); err != nil || !info.Mode().IsRegular() {
 			return nil, errors.New("saved companion artifacts are incomplete")
 		}
@@ -85,7 +85,7 @@ func (t *task) savedPlan() ([]string, error) {
 	}
 	// Only the saved-plan contract's files/directories are transferred, not the
 	// arbitrary parent directory of a selected native plan.
-	for _, name := range []string{"summary.json", "inputs.tfvars.json", "snippets", "workspace", "dependencies.tar.gz"} {
+	for _, name := range []string{"summary.json", "native-plan.json", "inputs.tfvars.json", "snippets", "workspace", "dependencies.tar.gz"} {
 		source := filepath.Join(bundle, name)
 		if _, err := os.Stat(source); os.IsNotExist(err) && name == "dependencies.tar.gz" {
 			continue

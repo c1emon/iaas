@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 from urllib.parse import urlsplit
 
 from iaas_automation.common.errors import ValidationError, require
@@ -202,4 +202,4 @@ def verify_ssh_trust(provider: Mapping, files: Mapping[str, Path], environ: Mapp
     user = environ.get('TF_VAR_pve_ssh_username')
     require(isinstance(user, str) and bool(user), 'provider SSH username missing')
     for node in provider['ssh_nodes']:
-        _ssh_connect(node['host'], node['port'], user, files)
+        _ssh_connect(node['host'], node['port'], cast(str, user), files)

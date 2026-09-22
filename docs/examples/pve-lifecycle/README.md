@@ -121,6 +121,9 @@ protocol. Build planning records a fixed recipe in `template-preview.json`;
 apply accepts that exact preview and an admission bound to its digest. The
 target always names one explicit node:
 
+Online operations use the fixed SSH helper with explicit key and known_hosts
+files. Caller-supplied helper commands are not supported.
+
 ```sh
 iaas run --runtime-config runtime.json \
   --environment environment-template.yml --engine local \
@@ -181,6 +184,12 @@ iaas run --runtime-config runtime.json \
 `template-cleanup-admission.json` is bound to that exact cleanup preview and
 new execution identity. A real caller must issue a fresh admission after
 reviewing the generated preview.
+
+If a build failed before creating a VM, cleanup can remove that execution's
+cache/work only when its record confirms no VM effects and a fresh node
+observation confirms the VMID is absent. Unknown effects or a reused VMID
+block this path. Original execution records, receipts and logs are retained;
+cleanup writes its own success or failure receipt.
 
 The example is a contract and transport fixture. It covers launcher discovery,
 file selection, schema validation, synthetic state and helper substitutions.

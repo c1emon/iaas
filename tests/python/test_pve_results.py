@@ -61,6 +61,40 @@ def test_stopped_vm_and_no_root_outputs_verify():
     assert result["status"] == "passed"
 
 
+@pytest.mark.parametrize("actions,wrong_identity", [
+    (["create"], {"vm_id": 999}),
+    (["update"], {"node_name": "wrong"}),
+    (["delete", "create"], {"node_name": "wrong", "vm_id": 999}),
+])
+def test_snapshot_identity_must_match_plan_before_api_observation(actions, wrong_identity):
+    item = change(actions)
+    state = snapshot(item)
+    state["resources"][0]["instances"][0]["attributes"].update(wrong_identity)
+    # No API is needed to reject the wrong new-object association. A
+    # coincidentally matching live VM must not rescue this snapshot.
+    report = verify_configuration(expectations([item], state), None)
+    assert report["status"] == "failed"
+    assert report["objects"][0]["checks"] == {"snapshot_identity": "failed"}
+
+
+def test_missing_snapshot_identity_stays_unknown():
+    item = change()
+    state = snapshot(item)
+    del state["resources"][0]["instances"][0]["attributes"]["vm_id"]
+    report = verify_configuration(expectations([item], state), API())
+    assert report["status"] == "unknown"
+    assert report["objects"][0]["checks"] == {"snapshot_identity": "unknown"}
+
+
+def test_unknown_planned_identity_resolves_only_from_original_snapshot():
+    item = change()
+    state = snapshot(item)
+    item["change"]["after"].update(node_name=None, vm_id=None)
+    item["change"]["after_unknown"].update(node_name=True, vm_id=True)
+    assert verify_configuration(expectations([item], state), API())["status"] == "passed"
+    assert verify_configuration(expectations([item], None), API())["status"] == "unknown"
+
+
 def test_unknown_values_only_resolve_from_original_snapshot():
     item = change()
     state = snapshot(item)

@@ -233,7 +233,8 @@ separate gate.
 Template build and cleanup use the independent `pve-template` component. The
 recipe, preview, execution admission and receipt are separate from the VM root.
 Online template operations use explicitly mapped SSH key/known_hosts files and
-do not forward VM API or S3 credentials.
+the fixed node helper; caller-supplied helper commands are rejected. They do
+not forward VM API or S3 credentials.
 Cleanup carries an explicit VMID, original execution, ownership and management
 status. The old `prepare-plan` and `apply-saved-plan` names are rejected with a
 migration message, as are the old Make write entrypoints.

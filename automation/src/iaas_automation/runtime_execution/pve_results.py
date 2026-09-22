@@ -124,9 +124,16 @@ def expectations(changes: list[dict], snapshot: dict | None) -> list[dict]:
             expected.append({"kind": "vm", **identity(before), "absent": True,
                              "state_absent": not current, "snapshot_complete": snapshot is not None})
             continue
+        # An address match alone does not bind the snapshot to this VM. Only
+        # borrow computed values/native identity from the planned object.
+        snapshot_identity = "unknown"
+        if isinstance(actual.get("node_name"), str) and actual["node_name"] \
+                and type(actual.get("vm_id")) is int and actual["vm_id"] > 0:
+            snapshot_identity = "passed" if identity(actual) == identity(after) else "failed"
         expected.append({"kind": "vm", **identity(after), "absent": False, "values": after,
                          "native_identity": actual.get("smbios", []),
                          "snapshot_complete": snapshot is not None and len(live) == 1,
+                         "snapshot_identity": snapshot_identity,
                          "deposed": any(i.get("deposed") for i in current),
                          "replacement": "delete" in action,
                          "before_identity": before.get("smbios", [])})
@@ -231,6 +238,11 @@ def verify_configuration(expected: list[dict], api: Any) -> dict:
         checks: dict[str, str] = {}
         if not wanted.get("snapshot_complete"):
             items.append({"status": "unknown", "checks": {"original_snapshot": "unknown"}})
+            continue
+        if wanted["kind"] == "vm" and not wanted["absent"] \
+                and wanted.get("snapshot_identity") != "passed":
+            status = "failed" if wanted.get("snapshot_identity") == "failed" else "unknown"
+            items.append({"status": status, "checks": {"snapshot_identity": status}})
             continue
         try:
             if wanted["kind"] == "ha":

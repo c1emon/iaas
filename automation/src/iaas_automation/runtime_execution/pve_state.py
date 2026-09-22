@@ -15,7 +15,7 @@ import json
 import os
 import posixpath
 import re
-from typing import Any, Mapping, Protocol, TYPE_CHECKING
+from typing import Any, Mapping, Protocol, TYPE_CHECKING, cast
 from urllib.parse import urlsplit
 
 from iaas_automation.common.errors import ValidationError, require
@@ -57,7 +57,7 @@ class BotoS3ReadTransport:
 
     def __init__(self, environ: Mapping[str, str] | None = None):
         try:
-            import boto3  # type: ignore[import-not-found]
+            import boto3.session
             from botocore.config import Config  # type: ignore[import-not-found]
         except ImportError:
             raise ValidationError("read-only S3 observation requires the runtime S3 transport") from None
@@ -171,7 +171,7 @@ def _backend_values(backend: S3Backend) -> tuple[str, str, str, str | None]:
         parsed = urlsplit(endpoint)
         require(parsed.scheme in {"http", "https"} and parsed.hostname and not parsed.username and not parsed.password,
                 "S3 endpoint must be an explicit HTTP(S) URL")
-    return bucket, workspace_state_key(config, backend.workspace), region, endpoint
+    return cast(str, bucket), workspace_state_key(config, backend.workspace), cast(str, region), cast(str | None, endpoint)
 
 
 def _error_details(exc: BaseException) -> tuple[int | None, str | None]:

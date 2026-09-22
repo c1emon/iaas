@@ -257,3 +257,174 @@ def test_cleanup_rejects_running_original_execution(tmp_path: Path) -> None:
     result = _run(tmp_path, request)
     assert result.returncode != 0
     assert "still active" in result.stdout
+
+
+def _cleanup_case(tmp_path, monkeypatch):
+    import runpy
+    namespace = runpy.run_path(str(HELPER))
+    cleanup = namespace["cleanup"]
+    globals_ = cleanup.__globals__
+    executions = tmp_path / "executions"
+    monkeypatch.setitem(globals_, "EXECUTIONS", executions)
+    monkeypatch.setitem(globals_, "NODE_LOCK", tmp_path / "node.lock")
+    original = executions / "build-failed"
+    original.mkdir(parents=True)
+    for name in ("cache", "work"):
+        (original / name).mkdir()
+        (original / name / "image").write_bytes(b"partial image")
+    record = {"execution_id": "build-failed", "owner": "helper", "state": "failed",
+              "target": _recipe()["target"], "unit": "iaas-pve-template-build-failed.service",
+              "vm_effects": "none", "storage_effects": {"cache": "unknown", "work": "known"},
+              "planned_object": {"vmid": 9003, "smbios_uuid": "11111111-1111-4111-8111-111111111111"},
+              "phases": [{"phase": "download", "status": "failed"}]}
+    (original / "record.json").write_text(json.dumps(record))
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        if argv[0] == "systemctl":
+            return subprocess.CompletedProcess(argv, 0, "LoadState=not-found\n", "")
+        if argv[0] == globals_["PVESH"]:
+            return subprocess.CompletedProcess(argv, 0, "[]", "")
+        raise OSError("no VM was created")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    request = {"execution_id": "cleanup-1", "cleanup": {
+        "original_execution": "build-failed", "vmid": 9003, "owner": "helper",
+        "management_status": "stopped", "state_owner": "helper", "state_ref_absent": True,
+        "volumes": [], "runtime": {"image_digest": "sha256:" + "b" * 64},
+        "helper": {"protocol_version": 2}}}
+    preview = cleanup(request, preview_only=True)["preview"]
+    request["admission"] = _admission({"preview_digest": preview["preview_digest"],
+                                        "fixed_input": {"target": record["target"]}}, "cleanup-1")
+    return cleanup, request, original, record, calls, run
+
+
+def test_pre_vm_cleanup_removes_only_owned_storage(tmp_path, monkeypatch):
+    cleanup, request, original, record, calls, _ = _cleanup_case(tmp_path, monkeypatch)
+    result = cleanup(request, preview_only=False)
+    assert result["receipt"]["status"] == "succeeded"
+    assert not (original / "cache").exists()
+    assert not (original / "work").exists()
+    assert json.loads((original / "record.json").read_text()) == record
+    assert not any("destroy" in call or "config" in call for call in calls)
+
+
+def test_cleanup_unknown_vm_failure_has_terminal_receipt(tmp_path, monkeypatch):
+    import pytest
+    cleanup, request, original, record, calls, _ = _cleanup_case(tmp_path, monkeypatch)
+    record["vm_effects"] = "unknown"
+    (original / "record.json").write_text(json.dumps(record))
+    with pytest.raises(cleanup.__globals__["HelperError"], match="retain execution evidence"):
+        cleanup(request, preview_only=False)
+    output = original.parent / "cleanup-1"
+    assert json.loads((output / "record.json").read_text())["state"] == "failed"
+    assert json.loads((output / "receipt.json").read_text())["effects"] == "none"
+    assert (original / "work/image").exists()
+    assert not any("destroy" in call for call in calls)
+
+
+def test_pre_vm_cleanup_rejects_reused_vmid(tmp_path, monkeypatch):
+    import pytest
+    cleanup, request, original, _, calls, run = _cleanup_case(tmp_path, monkeypatch)
+
+    def occupied(argv, **kwargs):
+        if "/cluster/resources" in argv:
+            return subprocess.CompletedProcess(argv, 0, '[{"vmid":9003}]', "")
+        return run(argv, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", occupied)
+    with pytest.raises(cleanup.__globals__["HelperError"], match="retain execution evidence"):
+        cleanup(request, preview_only=False)
+    assert (original / "cache/image").exists()
+    assert json.loads((original.parent / "cleanup-1/receipt.json").read_text())["status"] == "failed"
+    assert not any("destroy" in call for call in calls)
+
+
+def test_cleanup_storage_failure_cannot_report_success(tmp_path, monkeypatch):
+    import pytest
+    cleanup, request, original, _, _, _ = _cleanup_case(tmp_path, monkeypatch)
+
+    def fail_removal(path):
+        raise OSError("storage unavailable")
+
+    monkeypatch.setattr(cleanup.__globals__["shutil"], "rmtree", fail_removal)
+    with pytest.raises(cleanup.__globals__["HelperError"], match="retain execution evidence"):
+        cleanup(request, preview_only=False)
+    receipt = json.loads((original.parent / "cleanup-1/receipt.json").read_text())
+    assert receipt["status"] == "failed"
+    assert receipt["effects"] == "unknown"
+
+
+def test_pre_vm_cleanup_rejects_unavailable_listing_and_storage_symlink(tmp_path, monkeypatch):
+    import pytest
+    cleanup, request, original, _, _, run = _cleanup_case(tmp_path, monkeypatch)
+
+    def unavailable(argv, **kwargs):
+        if "/cluster/resources" in argv:
+            return subprocess.CompletedProcess(argv, 1, "[]", "unavailable")
+        return run(argv, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", unavailable)
+    with pytest.raises(cleanup.__globals__["HelperError"], match="retain execution evidence"):
+        cleanup(request, preview_only=False)
+    assert (original / "work/image").exists()
+    request["execution_id"] = "cleanup-2"
+    request["admission"]["execution_id"] = "cleanup-2"
+    monkeypatch.setattr(subprocess, "run", run)
+    (original / "work/image").unlink()
+    (original / "work").rmdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "keep").write_text("keep")
+    (original / "work").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(cleanup.__globals__["HelperError"], match="retain execution evidence"):
+        cleanup(request, preview_only=False)
+    assert (outside / "keep").read_text() == "keep"
+    assert (original / "cache/image").exists()
+    assert json.loads((original.parent / "cleanup-2/receipt.json").read_text())["status"] == "failed"
+
+
+def test_created_vm_cleanup_storage_failure_can_retry_before_destroy(tmp_path, monkeypatch):
+    import pytest
+    cleanup, request, original, record, calls, run = _cleanup_case(tmp_path, monkeypatch)
+    record["vm_effects"] = "unknown"
+    record["phases"].append({"phase": "create", "status": "failed"})
+    (original / "record.json").write_text(json.dumps(record))
+
+    def native(argv, **kwargs):
+        if "config" in argv:
+            calls.append(argv)
+            return subprocess.CompletedProcess(argv, 0,
+                "smbios1: uuid=11111111-1111-4111-8111-111111111111\n", "")
+        if "destroy" in argv:
+            calls.append(argv)
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        return run(argv, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", native)
+    shutil = cleanup.__globals__["shutil"]
+    original_rmtree = shutil.rmtree
+
+    def fail_work(path):
+        if path.name == "work":
+            raise OSError("storage unavailable")
+        original_rmtree(path)
+
+    monkeypatch.setattr(shutil, "rmtree", fail_work)
+    with pytest.raises(cleanup.__globals__["HelperError"], match="retain execution evidence"):
+        cleanup(request, preview_only=False)
+    assert not any("destroy" in call for call in calls)
+    assert not (original / "cache").exists()
+    assert (original / "work/image").exists()
+    receipt = json.loads((original.parent / "cleanup-1/receipt.json").read_text())
+    assert receipt["status"] == "failed" and receipt["effects"] == "unknown"
+    monkeypatch.setattr(shutil, "rmtree", original_rmtree)
+    request["execution_id"] = "cleanup-2"
+    request["admission"] = _admission({"preview_digest": request["admission"]["plan_digest"],
+        "fixed_input": {"target": record["target"]}}, "cleanup-2")
+    result = cleanup(request, preview_only=False)
+    assert result["receipt"]["status"] == "succeeded"
+    assert sum("destroy" in call for call in calls) == 1
+    assert not (original / "work").exists()
+    assert not (original / "cache").exists()
