@@ -524,6 +524,18 @@ def _owned_path(directory: Path, value: str | Path) -> Path:
 
 
 def _remove_owned(directory: Path, task: dict[str, Any], *, preserve: set[Path]) -> tuple[list[str], list[str]]:
+    if _task_has_active_process(task) or _task_has_uncertain_process(task):
+        failures: list[str] = []
+        for raw in task.get("owned_resources", []):
+            try:
+                path = _owned_path(directory, raw)
+            except ValidationError:
+                failures.append(str(raw))
+                continue
+            if path not in preserve and path not in {directory / "task.json", directory / "resource.lock"}:
+                failures.append(str(path))
+        task.setdefault("cleanup_errors", []).append("owned process state is active or unknown")
+        return [], failures
     removed, failures = [], []
     for raw in task.get("owned_resources", []):
         try:

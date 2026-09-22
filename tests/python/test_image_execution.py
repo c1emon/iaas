@@ -241,7 +241,9 @@ def test_test_boot_uses_fresh_uefi_vars_and_preserves_source_hash(tmp_path: Path
     monkeypatch.setattr(runtime.shutil, "which", lambda name: "/usr/bin/tool")
     def fake_tool(exe: Execution, phase: str, command: list[str], cwd: Path) -> None:
         if command[0] == "ssh-keygen":
-            key = Path(command[-1]); key.write_text("private\n"); Path(str(key) + ".pub").write_text("public\n")
+            key = Path(command[-1])
+            key.write_text("private\n")
+            Path(str(key) + ".pub").write_text("public\n")
         elif command[0] == "cloud-localds":
             Path(command[1]).write_bytes(b"seed")
     monkeypatch.setattr(runtime, "_run_tool", fake_tool)
@@ -286,3 +288,20 @@ def test_cleanup_failure_keeps_test_result_and_records_residue(tmp_path: Path, m
     assert task["cleanup"]["status"] == "failed"
     assert (directory / "test-result.json").is_file()
     assert residue.is_dir()
+
+
+def test_automatic_cleanup_retains_unknown_owned_resources(tmp_path: Path) -> None:
+    execution = _execution(tmp_path)
+    directory = runtime._task_dir(execution, "automatic-unknown")
+    owned = directory / "owned"
+    owned.write_text("retain")
+    task = {"execution_id": "automatic-unknown", "status": "failed",
+            "processes": [{"pid": 999999, "start_ticks": None, "state": "unknown"}],
+            "owned_resources": [str(owned)]}
+
+    removed, failures = runtime._remove_owned(directory, task, preserve={directory / "task.json"})
+
+    assert removed == []
+    assert failures == [str(owned)]
+    assert owned.exists()
+    assert task["cleanup_errors"]
