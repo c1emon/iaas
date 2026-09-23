@@ -35,6 +35,17 @@ def test_qemu_profile_keeps_system_disk_when_adding_seed_and_uefi() -> None:
     assert "PKR_VAR_seed_image" not in runtime
 
 
+def test_image_builder_installs_and_syntax_checks_customize_collections() -> None:
+    dockerfile = (PROFILE.parents[3] / "image-builder" / "Dockerfile").read_text(encoding="utf-8")
+    customize = PROFILE.parent / "ansible" / "customize.yml"
+    playbook = customize.read_text(encoding="utf-8")
+    assert "ansible-galaxy collection install --no-deps community.general:13.4.0" in dockerfile
+    assert "ansible-playbook --syntax-check -i localhost," in dockerfile
+    assert "community.general.timezone" in playbook
+    assert "community.general.locale_gen" in playbook
+    assert "ansible.builtin.locale_gen" not in playbook
+
+
 @pytest.mark.parametrize("firmware", ["bios", "uefi"])
 def test_packer_command_capture_keeps_system_disk_and_boot_media(tmp_path: Path, firmware: str,
                                                                 monkeypatch: pytest.MonkeyPatch) -> None:

@@ -70,7 +70,18 @@ COPY automation/src/ automation/src/
 COPY automation/ansible/ansible.cfg automation/ansible/ansible.cfg
 COPY automation/ansible/collections/ automation/ansible/collections/
 COPY automation/packer/qemu/ automation/packer/qemu/
-RUN mkdir -p /opt/packer/plugins \
+RUN ansible-galaxy collection install --no-deps community.general:13.4.0 \
+      -p /opt/iaas/automation/ansible/collections \
+ && ansible-playbook --syntax-check -i localhost, \
+      automation/packer/qemu/debian-13/ansible/customize.yml \
+      -e apt_mirror=https://deb.debian.org/debian \
+      -e apt_security_mirror=https://security.debian.org/debian-security \
+      -e packages_json='[]' \
+      -e image_timezone=UTC \
+      -e image_locale=C.UTF-8 \
+      -e image_cloud_init=installed \
+      -e image_guest_agent=installed \
+ && mkdir -p /opt/packer/plugins \
  && packer init automation/packer/qemu/debian-13 \
  && chmod -R a+rX /opt/packer
 COPY --chmod=755 automation/runtime/entrypoint.sh /usr/local/bin/iaas

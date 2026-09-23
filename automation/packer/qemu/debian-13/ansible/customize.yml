@@ -44,6 +44,6 @@
       community.general.timezone:
         name: "{{ image_timezone }}"
     - name: Configure locale
-      ansible.builtin.locale_gen:
+      community.general.locale_gen:
         name: "{{ image_locale }}"
         state: present
