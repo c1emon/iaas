@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.error import HTTPError
 
 import pytest
 
@@ -132,3 +133,32 @@ def test_observed_storage_with_shared_staging_and_images_requires_both_capabilit
 
     with pytest.raises(Exception, match="does not support images content"):
         runtime._observed(None, StorageAPI(), request["target"], request)
+
+
+def test_storage_content_does_not_send_invalid_combined_content_filter() -> None:
+    calls: list[dict | None] = []
+
+    class StrictContentAPI:
+        def request(self, method, path, *, fields=None):
+            calls.append(fields)
+            if fields == {"content": "import,images"}:
+                raise runtime.OperationFailed("PVE API HTTP 400 errors.content invalid content type")
+            return [{"volid": "images:import/example.qcow2"}]
+
+    content = runtime._storage_content(StrictContentAPI(), "cohe", "images")
+    assert content == [{"volid": "images:import/example.qcow2"}]
+    assert calls == [None]
+
+
+def test_pve_http_error_preserves_status_without_response_body() -> None:
+    client = runtime.PveHttpsClient("https://pve.example.invalid:8006", "user!token=secret")
+
+    class FailingOpener:
+        def open(self, *args, **kwargs):
+            raise HTTPError("https://pve.example.invalid/private", 400, "invalid content", {}, None)
+
+    client.opener = FailingOpener()
+    with pytest.raises(runtime.OperationFailed, match=r"PVE API GET request failed \(HTTP 400\)") as error:
+        client.request("GET", "/api2/json/nodes/cohe/storage/images/content")
+    assert "invalid content" not in str(error.value)
+    assert "private" not in str(error.value)

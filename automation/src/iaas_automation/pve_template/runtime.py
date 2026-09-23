@@ -182,7 +182,9 @@ class PveHttpsClient:
             with self.opener.open(Request(url, data=body, method=method, headers=headers), timeout=self.timeout) as response:
                 value = json.loads(response.read().decode("utf-8"))
                 return value.get("data", value) if isinstance(value, Mapping) else value
-        except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError):
+        except HTTPError as exc:
+            raise OperationFailed(f"PVE API {method} request failed (HTTP {exc.code})") from None
+        except (URLError, TimeoutError, OSError, json.JSONDecodeError):
             raise OperationFailed(f"PVE API {method} request failed; inspect protected recovery material") from None
 
     def upload_file(self, upload_path: str, path: Path, filename: str, checksum: str) -> Any:
@@ -420,8 +422,11 @@ def _failure_result(intent: Mapping[str, Any], execution_id: str, preview_digest
 
 
 def _storage_content(client: PveHttpsClient, node: str, storage: str) -> list[Mapping[str, Any]]:
-    value = client.request("GET", f"/api2/json/nodes/{quote(node, safe='')}/storage/{quote(storage, safe='')}/content",
-                          fields={"content": "import,images"})
+    # PVE accepts one content enum value per request; an apparently natural
+    # comma-separated filter is rejected with HTTP 400.  The unfiltered
+    # listing is bounded to this storage path, and callers select the exact
+    # volid they own locally.
+    value = client.request("GET", f"/api2/json/nodes/{quote(node, safe='')}/storage/{quote(storage, safe='')}/content")
     require(isinstance(value, list) and all(isinstance(item, Mapping) for item in value),
             "PVE storage content observation is incomplete")
     return list(value)
@@ -612,8 +617,9 @@ def _observe_original_tasks(client: PveHttpsClient, journal: Mapping[str, Any], 
                 "original publish journal event is invalid")
         history.setdefault(event["phase"], []).append(event)
     outcomes: dict[str, str] = {}
+    local_phases = {"download", "artifact-verify", "upload-target", "local-cleanup"}
     for phase, entries in history.items():
-        if phase == "local-cleanup":
+        if phase in local_phases:
             continue
         event = entries[-1]
         status = event.get("status")
