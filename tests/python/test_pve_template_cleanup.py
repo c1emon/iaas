@@ -239,8 +239,16 @@ def test_cleanup_rejects_reused_vmid_or_extra_volume(tmp_path: Path, monkeypatch
 def test_cleanup_does_not_delete_volume_already_removed_by_vm_purge(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     original = tmp_path / "original"
     _journal(original, template_status="failed", result=False)
-    api = CleanupAPI(config={"template": 0, "smbios1": "uuid=template-uuid", "scsi0": DISK},
-                     volumes={DISK}, failed_task=True)
+
+    class NoDeletePermissionAPI(CleanupAPI):
+        def request(self, method: str, path: str, *, fields: dict | None = None, **kwargs: object) -> object:
+            if method == "GET" and path.endswith("/access/permissions"):
+                if fields and isinstance(fields.get("path"), str) and fields["path"].startswith("/storage/"):
+                    return {fields["path"]: {"Datastore.Audit": 1}}
+            return super().request(method, path, fields=fields, **kwargs)
+
+    api = NoDeletePermissionAPI(config={"template": 0, "smbios1": "uuid=template-uuid", "scsi0": DISK},
+                                volumes={DISK}, failed_task=True)
     execution = _execution(tmp_path)
     monkeypatch.setattr(runtime, "_client", lambda selected, execution, target: api)
     fixed = _fixed(objects=[_object()], volumes=[DISK])
@@ -491,3 +499,33 @@ def test_retire_rejects_current_config_lock(tmp_path: Path, monkeypatch: pytest.
         runtime._delete_action(SimpleNamespace(files={}, options={}), execution, fixed,
                                _preview(fixed, action="retire"), "retire-1")
     assert api.deletes == []
+
+
+def test_retire_does_not_require_storage_delete_permission(tmp_path: Path,
+                                                           monkeypatch: pytest.MonkeyPatch) -> None:
+    record = {"kind": "pve-template-record", "schema_version": 2, "record_id": "v1-9001",
+              "target": TARGET, "node": "cohe", "vmid": 9001, "smbios_uuid": "template-uuid",
+              "volumes": {"scsi0": DISK}, "configuration": {"scsi0": DISK}, "origin": "publication",
+              "execution_id": EXECUTION_ID, "artifact_digest": "sha256:" + "c" * 64,
+              "verification": {"template_config": "passed"}}
+    fixed = {"target": TARGET, "template_record": record,
+             "ownership_admission": {"owner": "publisher", "reference": "record", "activity": "stopped"},
+             "retirement_admission": {"authorized": True, "dependencies_resolved": True, "reference": "review"}}
+
+    class NoDeletePermissionAPI(CleanupAPI):
+        def request(self, method: str, path: str, *, fields: dict | None = None, **kwargs: object) -> object:
+            if method == "GET" and path.endswith("/access/permissions"):
+                if fields and isinstance(fields.get("path"), str) and fields["path"].startswith("/storage/"):
+                    return {fields["path"]: {"Datastore.Audit": 1}}
+            return super().request(method, path, fields=fields, **kwargs)
+
+    api = NoDeletePermissionAPI(config={"template": 1, "smbios1": "uuid=template-uuid", "scsi0": DISK},
+                                volumes=set())
+    execution = _execution(tmp_path)
+    monkeypatch.setattr(runtime, "_client", lambda selected, execution, target: api)
+
+    result = runtime._delete_action(SimpleNamespace(files={}, options={}), execution, fixed,
+                                    _preview(fixed, action="retire"), "retire-1")
+
+    assert result["status"] == "succeeded"
+    assert len([path for _, path in api.deletes if "/qemu/" in path]) == 1

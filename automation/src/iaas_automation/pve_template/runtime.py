@@ -970,11 +970,25 @@ def _delete_action(selected: Any, execution: Execution, request: Mapping[str, An
             require(volid == evidence["upload_volid"] or volid in admitted_volumes,
                    "cleanup volume is not bound to an admitted VM record")
             volume_specs.append((storage, volid))
-        for storage in {storage for storage, _ in volume_specs}:
-            _assert_storage_permissions(client, storage, {"Datastore.Allocate"})
         if evidence["completed"]:
             require(all(volid == evidence["upload_volid"] for _, volid in volume_specs),
                     "completed publication cleanup may only remove its staging upload")
+        delete_specs: list[tuple[str, str]] = []
+        absent_specs: list[tuple[str, str]] = []
+        deferred_specs: list[tuple[str, str]] = []
+        for storage, volid in volume_specs:
+            if volid in admitted_volumes:
+                deferred_specs.append((storage, volid))
+                continue
+            content = _storage_content(client, target["node"], storage)
+            if any(row.get("volid") == volid for row in content):
+                delete_specs.append((storage, volid))
+            else:
+                absent_specs.append((storage, volid))
+        checked_storages: set[str] = set()
+        for storage in {storage for storage, _ in delete_specs}:
+            _assert_storage_permissions(client, storage, {"Datastore.Allocate"})
+            checked_storages.add(storage)
         for vmid, expected_uuid in observed_objects:
             journal("cleanup-vm", "intent", vmid=vmid, smbios_uuid=expected_uuid)
             value = client.request("DELETE", f"/api2/json/nodes/{node}/qemu/{vmid}", fields={"purge": 1})
@@ -982,11 +996,18 @@ def _delete_action(selected: Any, execution: Execution, request: Mapping[str, An
             phase = _upid(client, value, "cleanup-vm", node=target["node"])
             phases.append(phase)
             journal("cleanup-vm", "succeeded", vmid=vmid, upid=phase["upid"])
-        for storage, volid in volume_specs:
+        for storage, volid in deferred_specs:
             content = _storage_content(client, target["node"], storage)
-            if not any(row.get("volid") == volid for row in content):
-                journal("cleanup-volume", "succeeded", volid=volid, already_absent=True)
-                continue
+            if any(row.get("volid") == volid for row in content):
+                delete_specs.append((storage, volid))
+            else:
+                absent_specs.append((storage, volid))
+        for storage in {storage for storage, _ in delete_specs}:
+            if storage not in checked_storages:
+                _assert_storage_permissions(client, storage, {"Datastore.Allocate"})
+        for _, volid in absent_specs:
+            journal("cleanup-volume", "succeeded", volid=volid, already_absent=True)
+        for storage, volid in delete_specs:
             journal("cleanup-volume", "intent", volid=volid)
             try:
                 value = client.request("DELETE", f"/api2/json/nodes/{node}/storage/{quote(storage, safe='')}/content/{quote(volid, safe='')}")
@@ -1036,9 +1057,6 @@ def _delete_action(selected: Any, execution: Execution, request: Mapping[str, An
     require(set(actual_attachments) >= set(expected_volumes) and
             all(actual_attachments[slot] == volume for slot, volume in expected_volumes.items()),
             "retire VM volumes do not exactly match admitted template record")
-    for volume in expected_volumes.values():
-        storage, _ = _cleanup_volume_identity(volume)
-        _assert_storage_permissions(client, storage, {"Datastore.Allocate"})
     journal("retire-template", "observed", vmid=vmid, smbios_uuid=record["smbios_uuid"],
             volumes=sorted(expected_volumes.values()))
     journal("retire-template", "intent", vmid=vmid, smbios_uuid=record["smbios_uuid"])
