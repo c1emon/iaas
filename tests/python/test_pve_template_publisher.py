@@ -162,3 +162,78 @@ def test_pve_http_error_preserves_status_without_response_body() -> None:
         client.request("GET", "/api2/json/nodes/cohe/storage/images/content")
     assert "invalid content" not in str(error.value)
     assert "private" not in str(error.value)
+
+
+def test_upload_multipart_uses_quoted_headers_and_pve_field_order(tmp_path, monkeypatch) -> None:
+    disk = tmp_path / "image.qcow2"
+    disk.write_bytes(b"qcow2")
+    sent: list[bytes] = []
+
+    class Response:
+        status = 200
+
+        def read(self):
+            return b'{"data":"UPID:cohe:task"}'
+
+    class Connection:
+        def putrequest(self, *args, **kwargs):
+            pass
+
+        def putheader(self, *args, **kwargs):
+            pass
+
+        def endheaders(self):
+            pass
+
+        def send(self, data):
+            sent.append(data)
+
+        def getresponse(self):
+            return Response()
+
+        def close(self):
+            pass
+
+    connection = Connection()
+    client = runtime.PveHttpsClient("https://pve.example.invalid:8006", "user!token=secret")
+    monkeypatch.setattr(runtime.http.client, "HTTPSConnection", lambda *args, **kwargs: connection)
+    client.upload_file("/api2/json/upload", disk, disk.name, "a" * 64)
+    body = b"".join(sent)
+    content = body.index(b'name="content"')
+    checksum_algorithm = body.index(b'name="checksum-algorithm"')
+    checksum = body.index(b'name="checksum"')
+    filename = body.index(b'name="filename"; filename="image.qcow2"')
+    assert content < checksum_algorithm < checksum < filename
+    assert b"name=filename; filename=image.qcow2" not in body
+
+
+@pytest.mark.parametrize("failure, expected", [("http", "HTTP 507"), ("brokenpipe", "os-error-32")])
+def test_upload_file_preserves_safe_failure_category(tmp_path, monkeypatch, failure, expected) -> None:
+    disk = tmp_path / "image.qcow2"
+    disk.write_bytes(b"qcow2")
+
+    class Connection:
+        def putrequest(self, *args, **kwargs):
+            pass
+
+        def putheader(self, *args, **kwargs):
+            pass
+
+        def endheaders(self):
+            pass
+
+        def send(self, data):
+            if failure == "brokenpipe":
+                raise BrokenPipeError(32, "peer closed")
+
+        def getresponse(self):
+            return SimpleNamespace(status=507, read=lambda: b"")
+
+        def close(self):
+            pass
+
+    client = runtime.PveHttpsClient("https://pve.example.invalid:8006", "user!token=secret")
+    monkeypatch.setattr(runtime.http.client, "HTTPSConnection", lambda *args, **kwargs: Connection())
+    with pytest.raises(runtime.OperationFailed, match=expected) as error:
+        client.upload_file("/api2/json/upload", disk, disk.name, "a" * 64)
+    assert "secret" not in str(error.value)

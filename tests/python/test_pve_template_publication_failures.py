@@ -60,10 +60,29 @@ def test_upload_response_loss_retains_write_intent_and_unknown_effects(tmp_path,
         runtime._publish(SimpleNamespace(), execution, request, preview, "publish-1")
     intent = json.loads((execution.outputs.path("diagnostics") / "publish-intent.json").read_text())
     assert intent["target"] == request["target"]
-    assert intent["events"][-1]["phase"] == "upload" and intent["events"][-1]["status"] == "intent"
+    upload_events = [event for event in intent["events"] if event["phase"] == "upload"]
+    assert [event["status"] for event in upload_events] == ["intent", "failed"]
+    assert upload_events[-1]["reason"] == "upload-request-failed"
     result = runtime._failure_result(intent, "publish-1", preview["preview_digest"], request["artifact_digest"])
     assert result["effects"]["pve"] == "unknown" and result["publication"] == "unknown"
     assert result["collection"]["status"] == "succeeded"
+
+
+def test_upload_enospc_journals_safe_category_and_unknown_effects(tmp_path, monkeypatch):
+    class NoSpace(API):
+        def upload_file(self, *args, **kwargs):
+            raise runtime.OperationFailed("PVE API upload request failed (os-error-28)")
+
+    request, preview, execution = publish_setup(tmp_path, monkeypatch, NoSpace())
+    with pytest.raises(runtime.OperationFailed):
+        runtime._publish(SimpleNamespace(), execution, request, preview, "publish-1")
+    intent = json.loads((execution.outputs.path("diagnostics") / "publish-intent.json").read_text())
+    upload_failed = [event for event in intent["events"]
+                     if event["phase"] == "upload" and event["status"] == "failed"]
+    assert upload_failed[0]["reason"] == "upload-os-error-28"
+    assert intent["status"] == "unknown"
+    result = runtime._failure_result(intent, "publish-1", preview["preview_digest"], request["artifact_digest"])
+    assert result["effects"]["pve"] == "unknown"
 
 
 @pytest.mark.parametrize("available", [0, None])

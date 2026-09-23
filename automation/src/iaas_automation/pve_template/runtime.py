@@ -194,9 +194,9 @@ class PveHttpsClient:
         require(upload_path.startswith("/") and ".." not in upload_path.split("/"), "invalid PVE upload path")
         boundary = "iaas-" + hashlib.sha256(filename.encode()).hexdigest()[:24]
         def field(name: str, value: str) -> bytes:
-            return (f"--{boundary}\r\nContent-Disposition: form-data; name={name}\r\n\r\n{value}\r\n").encode()
-        prefix = field("content", "import") + field("checksum", checksum) + field("checksum-algorithm", "sha256")
-        prefix += (f"--{boundary}\r\nContent-Disposition: form-data; name=filename; filename={filename}\r\n"
+            return (f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n").encode()
+        prefix = field("content", "import") + field("checksum-algorithm", "sha256") + field("checksum", checksum)
+        prefix += (f"--{boundary}\r\nContent-Disposition: form-data; name=\"filename\"; filename=\"{filename}\"\r\n"
                    "Content-Type: application/octet-stream\r\n\r\n").encode()
         suffix = f"\r\n--{boundary}--\r\n".encode()
         target = upload_path
@@ -217,11 +217,20 @@ class PveHttpsClient:
             connection.send(suffix)
             response = connection.getresponse()
             if response.status >= 300:
-                raise OperationFailed("PVE API upload request failed; inspect protected recovery material")
+                raise OperationFailed(f"PVE API upload request failed (HTTP {response.status})")
             value = json.loads(response.read().decode("utf-8"))
             return value.get("data", value) if isinstance(value, Mapping) else value
-        except (OSError, http.client.HTTPException, TimeoutError, json.JSONDecodeError):
-            raise OperationFailed("PVE API upload request failed; inspect protected recovery material") from None
+        except OperationFailed:
+            raise
+        except TimeoutError:
+            raise OperationFailed("PVE API upload request failed (timeout)") from None
+        except OSError as exc:
+            category = f"os-error-{exc.errno}" if exc.errno is not None else "os-error"
+            raise OperationFailed(f"PVE API upload request failed ({category})") from None
+        except http.client.HTTPException:
+            raise OperationFailed("PVE API upload request failed (http-error)") from None
+        except json.JSONDecodeError:
+            raise OperationFailed("PVE API upload request failed (invalid-response)") from None
         finally:
             if connection is not None:
                 connection.close()
@@ -356,6 +365,17 @@ def _phase_failure_reason(phase: str, error: Exception) -> str:
         if isinstance(error, ValidationError):
             return "upload-target-rejected"
         return "upload-target-observation-failed"
+    if phase == "upload":
+        message = str(error)
+        http_status = re.search(r"\bHTTP ([1-5][0-9]{2})\b", message)
+        if http_status is not None:
+            return f"upload-http-{http_status.group(1)}"
+        os_error = re.search(r"\bos-error-([0-9]+)\b", message)
+        if os_error is not None:
+            return f"upload-os-error-{os_error.group(1)}"
+        if "timeout" in message.lower():
+            return "upload-timeout"
+        return "upload-request-failed"
     return "publication-phase-failed"
 
 
@@ -707,9 +727,13 @@ def _publish(selected: Any, execution: Execution, request: Mapping[str, Any], pr
             raise
         journal("upload-target", "succeeded", volid=upload_volid)
         journal("upload", "intent", volid=upload_volid)
-        upload = client.upload_file(
-            f"/api2/json/nodes/{node}/storage/{quote(request['staging_storage'], safe='')}/upload",
-            disk, disk.name, artifact["disk"]["sha256"])
+        try:
+            upload = client.upload_file(
+                f"/api2/json/nodes/{node}/storage/{quote(request['staging_storage'], safe='')}/upload",
+                disk, disk.name, artifact["disk"]["sha256"])
+        except Exception as exc:
+            journal("upload", "failed", reason=_phase_failure_reason("upload", exc), volid=upload_volid)
+            raise
         journal("upload", "submitted", upid=upload, volid=upload_volid)
         upload_result = _upid(client, upload, "upload", node=node_name)
         journal("upload", "succeeded", upid=upload_result.get("upid"), volid=upload_volid)
