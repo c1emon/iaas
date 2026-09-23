@@ -486,11 +486,19 @@ def _identity_cleanup_status(disk: Path) -> str:
         return "failed"
     if results["ssh"].returncode != 0 or any(line.startswith("ssh_host_") for line in results["ssh"].stdout.splitlines()):
         return "failed"
-    if results["home"].returncode == 0 and any(line.strip() == "packer" for line in results["home"].stdout.splitlines()):
+    if results["home"].returncode != 0:
+        return "failed"
+    if any(line.strip() == "packer" for line in results["home"].stdout.splitlines()):
         return "failed"
     if results["keys"].returncode == 0 and any(line.strip() == "authorized_keys" for line in results["keys"].stdout.splitlines()):
         return "failed"
-    if results["sudoers"].returncode == 0 and any(line.strip() in {"packer", "90-packer"} for line in results["sudoers"].stdout.splitlines()):
+    if results["sudoers"].returncode != 0:
+        return "failed"
+    sudoer_entries = {line.strip().rstrip("/").rsplit("/", 1)[-1]
+                      for line in results["sudoers"].stdout.splitlines() if line.strip()}
+    if sudoer_entries.intersection({"packer", "90-packer"}):
+        return "failed"
+    if "90-cloud-init-users" in sudoer_entries and results["cloud-init-sudoers"].returncode != 0:
         return "failed"
     if results["cloud-init-sudoers"].returncode == 0 and _has_packer_sudo_rule(results["cloud-init-sudoers"].stdout):
         return "failed"

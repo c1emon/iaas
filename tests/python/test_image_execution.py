@@ -122,6 +122,34 @@ def test_offline_cleanup_uses_supported_sysprep_and_clears_cloud_state(
     assert not runtime._has_packer_sudo_rule("# User rules for packer\n")
 
 
+def test_identity_cleanup_fails_closed_on_required_directory_reads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    disk = tmp_path / "disk.qcow2"
+    monkeypatch.setattr(runtime.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    def probe(fail_target: str | None = None, *, cloud_file: bool = False):
+        def run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+            target = command[-1]
+            if target == fail_target:
+                return subprocess.CompletedProcess(command, 1, stdout="", stderr="read failed")
+            if target == "/etc/sudoers.d":
+                output = "90-cloud-init-users\n" if cloud_file else ""
+                return subprocess.CompletedProcess(command, 0, stdout=output, stderr="")
+            if target == "/etc/sudoers.d/90-cloud-init-users" and not cloud_file:
+                return subprocess.CompletedProcess(command, 1, stdout="", stderr="missing")
+            output = "iaas-test\n" if target == "/home" else "syslog\n" if target == "/var/log" else ""
+            return subprocess.CompletedProcess(command, 0, stdout=output, stderr="")
+        return run
+
+    for required_directory in ("/home", "/etc/sudoers.d"):
+        monkeypatch.setattr(runtime.subprocess, "run", probe(required_directory))
+        assert runtime._identity_cleanup_status(disk) == "failed"
+
+    monkeypatch.setattr(runtime.subprocess, "run", probe("/etc/sudoers.d/90-cloud-init-users", cloud_file=True))
+    assert runtime._identity_cleanup_status(disk) == "failed"
+
+
 def test_process_group_is_stopped_on_cancellation(tmp_path: Path) -> None:
     child_file = tmp_path / "child.pid"
     process = subprocess.Popen([sys.executable, "-c",
