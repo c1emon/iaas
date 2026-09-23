@@ -19,7 +19,9 @@ AWS_FILE_VARIABLES = {"aws_credentials": "AWS_SHARED_CREDENTIALS_FILE", "aws_con
 
 def protected_file(path: Path, *, secret: bool = True) -> None:
     info = path.stat()
-    require(stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid(), "protected file must be owned by the execution user")
+    owner_ok = info.st_uid == os.getuid() or (not secret and info.st_uid == 0)
+    require(stat.S_ISREG(info.st_mode) and owner_ok,
+            "protected file must be owned by the execution user (or root for public trust files)")
     require(not info.st_mode & (0o077 if secret else 0o022), "protected file permissions are too broad")
     require(info.st_size > 0, "protected file is empty")
 
