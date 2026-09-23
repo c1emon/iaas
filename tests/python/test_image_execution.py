@@ -96,6 +96,32 @@ def test_seed_paths_are_journaled_before_generation(tmp_path: Path, monkeypatch:
     assert {"build.seed.img", "build.key", "build.key.pub", "build.user-data", "build.meta-data"} <= set(recorded["owned_resources"])
 
 
+def test_offline_cleanup_uses_supported_sysprep_and_clears_cloud_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    execution = _execution(tmp_path)
+    commands: list[tuple[str, list[str]]] = []
+    monkeypatch.setattr(runtime.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(runtime, "_run_tool",
+                        lambda _execution, phase, command, _cwd: commands.append((phase, command)))
+
+    runtime._offline_cleanup(execution, tmp_path / "disk.qcow2", tmp_path)
+
+    sysprep = next(command for phase, command in commands if phase == "offline-sysprep")
+    assert sysprep[-1] == ",".join(runtime.OFFLINE_SYSPREP_OPERATIONS)
+    assert "cloud-init" not in sysprep[-1]
+    cleanup = next(command for phase, command in commands if phase == "offline-builder-clean")
+    cleanup_text = " ".join(cleanup)
+    for path in ("/var/lib/cloud/instance", "/var/lib/cloud/instances", "/var/lib/cloud/sem",
+                 "/var/lib/cloud/data", "/var/lib/cloud/seed", "/var/lib/cloud/handlers",
+                 "/var/lib/cloud/scripts", "/var/log/cloud-init.log", "/var/log/cloud-init-output.log"):
+        assert path in cleanup_text
+    assert "/etc/sudoers.d/90-cloud-init-users" in cleanup_text
+    assert "mkdir -p /var/lib/cloud" in cleanup_text
+    assert runtime._has_packer_sudo_rule("# User rules for packer\npacker ALL=(ALL) NOPASSWD:ALL\n")
+    assert not runtime._has_packer_sudo_rule("# User rules for packer\n")
+
+
 def test_process_group_is_stopped_on_cancellation(tmp_path: Path) -> None:
     child_file = tmp_path / "child.pid"
     process = subprocess.Popen([sys.executable, "-c",

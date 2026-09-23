@@ -49,6 +49,14 @@ TEST_USER = "iaas-test"
 DYNAMIC_CHECKS = {"cloud-init", "guest-agent", "first-boot"}
 STATIC_CHECKS = SUPPORTED_CHECKS - DYNAMIC_CHECKS
 PROCESS_GRACE_SECONDS = 10
+OFFLINE_SYSPREP_OPERATIONS = (
+    "machine-id",
+    "ssh-hostkeys",
+    "logfiles",
+    "tmp-files",
+    "package-manager-cache",
+    "net-hwaddr",
+)
 _TRACKER = (
     "import os, pathlib, sys; "
     "pid=os.getpid(); proc=pathlib.Path(f'/proc/{pid}/stat'); "
@@ -428,15 +436,28 @@ def _offline_cleanup(execution: Execution, disk: Path, cwd: Path) -> None:
     if sysprep is None or customize is None:
         raise ValidationError("image build requires libguestfs virt-sysprep and virt-customize")
     _run_tool(execution, "offline-sysprep", [sysprep, "-a", str(disk), "--operations",
-                                              "machine-id,ssh-hostkeys,cloud-init,logfiles,tmp-files,package-manager-cache,net-hwaddr"], cwd)
+                                              ",".join(OFFLINE_SYSPREP_OPERATIONS)], cwd)
     _run_tool(execution, "offline-builder-clean", [customize, "-a", str(disk),
                                                     "--run-command", "rm -f /home/packer/.ssh/authorized_keys",
                                                     "--run-command", "if getent passwd packer >/dev/null; then userdel -r packer; fi",
                                                     "--run-command", "rm -f /etc/sudoers.d/packer /etc/sudoers.d/90-packer",
-                                                    "--run-command", "rm -rf /var/lib/cloud/instances /var/lib/cloud/instance",
+                                                    "--run-command", "if [ -f /etc/sudoers.d/90-cloud-init-users ]; then sed -i -E '/^[[:space:]]*%?packer[[:space:]]+ALL[[:space:]]*=/d' /etc/sudoers.d/90-cloud-init-users; if ! grep -qE '^[[:space:]]*[^#[:space:]]' /etc/sudoers.d/90-cloud-init-users; then rm -f /etc/sudoers.d/90-cloud-init-users; fi; fi",
+                                                    "--run-command", "rm -rf /var/lib/cloud/instance /var/lib/cloud/instances /var/lib/cloud/sem /var/lib/cloud/data /var/lib/cloud/seed /var/lib/cloud/handlers /var/lib/cloud/scripts && mkdir -p /var/lib/cloud",
+                                                    "--run-command", "rm -f /var/log/cloud-init.log /var/log/cloud-init-output.log",
                                                     "--run-command", "rm -f /etc/network/interfaces.d/packer /etc/netplan/99-packer.yaml",
                                                     "--run-command", "rm -f /etc/ssh/ssh_host_*",
                                                     "--run-command", "truncate -s 0 /etc/machine-id"], cwd)
+
+
+def _has_packer_sudo_rule(content: str) -> bool:
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        fields = stripped.split(None, 1)
+        if fields and any(principal in {"packer", "%packer"} for principal in fields[0].split(",")):
+            return True
+    return False
 
 
 def _identity_cleanup_status(disk: Path) -> str:
@@ -449,6 +470,9 @@ def _identity_cleanup_status(disk: Path) -> str:
         ([virt_ls, "-a", str(disk), "/home"], "home"),
         ([virt_ls, "-a", str(disk), "/home/packer/.ssh"], "keys"),
         ([virt_ls, "-a", str(disk), "/etc/sudoers.d"], "sudoers"),
+        ([virt_cat, "-a", str(disk), "/etc/sudoers.d/90-cloud-init-users"], "cloud-init-sudoers"),
+        ([virt_ls, "-a", str(disk), "/var/lib/cloud"], "cloud"),
+        ([virt_ls, "-a", str(disk), "/var/log"], "logs"),
     ]
     results: dict[str, subprocess.CompletedProcess[str]] = {}
     try:
@@ -467,6 +491,18 @@ def _identity_cleanup_status(disk: Path) -> str:
     if results["keys"].returncode == 0 and any(line.strip() == "authorized_keys" for line in results["keys"].stdout.splitlines()):
         return "failed"
     if results["sudoers"].returncode == 0 and any(line.strip() in {"packer", "90-packer"} for line in results["sudoers"].stdout.splitlines()):
+        return "failed"
+    if results["cloud-init-sudoers"].returncode == 0 and _has_packer_sudo_rule(results["cloud-init-sudoers"].stdout):
+        return "failed"
+    cloud_entries = {line.strip().rstrip("/").rsplit("/", 1)[-1]
+                     for line in results["cloud"].stdout.splitlines() if line.strip()}
+    if results["cloud"].returncode != 0 or cloud_entries.intersection(
+            {"instance", "instances", "sem", "data", "seed", "handlers", "scripts"}):
+        return "failed"
+    log_entries = {line.strip().rstrip("/").rsplit("/", 1)[-1]
+                   for line in results["logs"].stdout.splitlines() if line.strip()}
+    if results["logs"].returncode != 0 or log_entries.intersection(
+            {"cloud-init.log", "cloud-init-output.log"}):
         return "failed"
     return "passed"
 

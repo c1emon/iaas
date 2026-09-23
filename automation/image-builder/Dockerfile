@@ -66,6 +66,21 @@ RUN curl -fL --retry 3 "$UV_DOWNLOAD_URL" -o /tmp/uv.tar.gz \
  && rm -rf /tmp/uv.tar.gz /tmp/uv-x86_64-unknown-linux-gnu \
  && uv sync --locked --no-dev --group runtime --python /usr/local/bin/python3.12 --no-install-project
 
+# libguestfs creates appliance snapshots under /var/tmp. The launcher may use a
+# read-only container root with only /tmp writable, so keep this builder-local
+# path on the writable temporary filesystem.
+RUN rm -rf /var/tmp && ln -s /tmp /var/tmp
+
+# Fail the image build if the pinned libguestfs package does not support every
+# operation used by the runtime. The list is intentionally fixed to this
+# Debian 13 recipe; cloud-init state is removed by the explicit cleanup below.
+RUN set -eu; \
+    supported_operations="$(virt-sysprep --list-operations)"; \
+    for operation in machine-id ssh-hostkeys logfiles tmp-files package-manager-cache net-hwaddr; do \
+      printf '%s\n' "$supported_operations" | awk -v expected="$operation" '$1 == expected { found = 1 } END { exit found ? 0 : 1 }' \
+        || { echo "virt-sysprep operation is unavailable: $operation" >&2; exit 1; }; \
+    done
+
 COPY automation/src/ automation/src/
 COPY automation/ansible/ansible.cfg automation/ansible/ansible.cfg
 COPY automation/ansible/collections/ automation/ansible/collections/

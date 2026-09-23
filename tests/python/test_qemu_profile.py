@@ -41,6 +41,9 @@ def test_image_builder_installs_and_syntax_checks_customize_collections() -> Non
     playbook = customize.read_text(encoding="utf-8")
     assert "ansible-galaxy collection install --no-deps community.general:13.4.0" in dockerfile
     assert "ansible-playbook --syntax-check -i localhost," in dockerfile
+    assert "virt-sysprep --list-operations" in dockerfile
+    assert "for operation in machine-id ssh-hostkeys logfiles tmp-files package-manager-cache net-hwaddr" in dockerfile
+    assert "RUN rm -rf /var/tmp && ln -s /tmp /var/tmp" in dockerfile
     assert "community.general.timezone" in playbook
     assert "community.general.locale_gen" in playbook
     assert "ansible.builtin.locale_gen" not in playbook
