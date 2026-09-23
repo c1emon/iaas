@@ -142,3 +142,20 @@ def test_download_enospc_has_no_remote_effects_and_removes_partial_file(tmp_path
     assert result["effects"]["pve"] == "none"
     assert all(method == "GET" for method, *_ in api.calls)
     assert not list(execution.outputs.path("work").rglob("*.qcow2"))
+    assert intent["events"][0]["phase"] == "download" and intent["events"][0]["status"] == "intent"
+    assert intent["events"][1]["phase"] == "download" and intent["events"][1]["status"] == "failed"
+    assert intent["events"][1]["reason"] == "artifact download failed (os-error-28)"
+
+
+def test_download_http_failure_records_status_without_locator(tmp_path, monkeypatch):
+    from urllib.error import HTTPError
+
+    class FailingOpener:
+        def open(self, *args, **kwargs):
+            raise HTTPError("https://objects.invalid/private?token=redacted", 503, "busy", {}, None)
+
+    monkeypatch.setattr(runtime, "build_opener", lambda *args: FailingOpener())
+    destination = tmp_path / "disk.qcow2"
+    with pytest.raises(runtime.OperationFailed, match=r"artifact download failed \(HTTP 503\)"):
+        runtime._download("https://objects.invalid/private?token=redacted", destination, "0" * 64, 1)
+    assert not destination.exists()

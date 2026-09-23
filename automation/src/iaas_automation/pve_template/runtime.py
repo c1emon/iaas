@@ -305,7 +305,20 @@ def _download(locator: str, destination: Path, expected_digest: str, expected_si
                     raise OperationFailed("artifact exceeds the selected byte bound")
                 digest.update(chunk)
                 output.write(chunk)
-    except (OSError, URLError, HTTPError, OperationFailed):
+    except HTTPError as exc:
+        destination.unlink(missing_ok=True)
+        raise OperationFailed(f"artifact download failed (HTTP {exc.code})") from None
+    except URLError:
+        destination.unlink(missing_ok=True)
+        raise OperationFailed("artifact download failed (url-error)") from None
+    except TimeoutError:
+        destination.unlink(missing_ok=True)
+        raise OperationFailed("artifact download failed (timeout)") from None
+    except OSError as exc:
+        destination.unlink(missing_ok=True)
+        category = f"os-error-{exc.errno}" if exc.errno is not None else "os-error"
+        raise OperationFailed(f"artifact download failed ({category})") from None
+    except OperationFailed:
         destination.unlink(missing_ok=True)
         raise OperationFailed("artifact download failed; inspect protected recovery material") from None
     if destination.stat().st_size != expected_size or digest.hexdigest() != expected_digest:
@@ -366,8 +379,12 @@ def _write_intent(path: Path, intent: Mapping[str, Any]) -> None:
 def _failure_result(intent: Mapping[str, Any], execution_id: str, preview_digest: str,
                     artifact_digest: str) -> dict[str, Any]:
     events = intent.get("events", [])
-    submitted = any(isinstance(event, Mapping) and event.get("status") in {"intent", "submitted", "unknown"}
-                     for event in events)
+    # A download intent is local preparation only; it cannot imply a remote
+    # effect.  Only native upload/create/config/template/cleanup phases can
+    # make the publication outcome unknown.
+    native_phases = {"upload", "create", "import-config", "template", "remote-cleanup", "cleanup-vm", "cleanup-volume", "retire-template"}
+    submitted = any(isinstance(event, Mapping) and event.get("phase") in native_phases
+                    and event.get("status") in {"intent", "submitted", "unknown"} for event in events)
     residue = [str(item) for item in intent.get("residue", []) if isinstance(item, str)]
     action = intent.get("action", "publish")
     result = {"kind": "pve-template-result", "schema_version": 2, "execution_id": execution_id,
@@ -646,7 +663,15 @@ def _publish(selected: Any, execution: Execution, request: Mapping[str, Any], pr
         _write_intent(intent_path, intent)
         require(local_available is None or local_available >= artifact["disk"]["size_bytes"],
                 "publisher workspace has insufficient known capacity")
-        _download(_source_locator(execution, request), disk, artifact["disk"]["sha256"], artifact["disk"]["size_bytes"])
+        journal("download", "intent", expected_bytes=artifact["disk"]["size_bytes"])
+        try:
+            _download(_source_locator(execution, request), disk, artifact["disk"]["sha256"], artifact["disk"]["size_bytes"])
+        except OperationFailed as exc:
+            # Keep only the bounded category/status in the protected journal;
+            # never persist the locator, credentials, or native URL text.
+            journal("download", "failed", reason=str(exc))
+            raise
+        journal("download", "succeeded", bytes=artifact["disk"]["size_bytes"])
         _verify_qcow2(disk, artifact)
         _assert_upload_target_free(client, node_name, request["staging_storage"], upload_volid)
         journal("upload", "intent", volid=upload_volid)
