@@ -82,6 +82,35 @@ def _map_pve_cleanup_directory(selected: SelectedConfig, operation: str) -> None
     selected.file_paths["original_execution_dir"] = logical
 
 
+def _hydrate_pve_template_apply_options(selected: SelectedConfig) -> None:
+    """Bind apply metadata to the selected preview and admission files.
+
+    The files are the immutable apply inputs.  Keeping their derived digest and
+    admission in ``options`` lets the component runtime use one interface for
+    hand-authored and adapter-generated environments without asking callers to
+    duplicate those values in YAML.
+    """
+    preview_path = selected.file_paths.get("template_preview")
+    admission_path = selected.file_paths.get("execution_admission")
+    if preview_path is None or admission_path is None:
+        return
+    preview = selected.reader.document(preview_path)
+    admission = selected.reader.document(admission_path)
+    preview_digest = preview.get("preview_digest")
+    action = preview.get("action")
+    require(isinstance(preview_digest, str) and preview_digest,
+            "pve-template apply preview is missing preview_digest")
+    require(isinstance(action, str) and action,
+            "pve-template apply preview is missing action")
+    require(isinstance(admission, dict), "pve-template apply admission must contain a mapping")
+    for name, value in (("action", action), ("preview_digest", preview_digest), ("admission", admission)):
+        if name in selected.options:
+            require(selected.options[name] == value,
+                    f"pve-template apply {name} conflicts with selected file")
+        else:
+            selected.options[name] = value
+
+
 def _declared_input_names(entry: Path, component: str, scenario: str | None,
                           reader: SourceReader) -> set[str]:
     """Return declared names without resolving or reading their source files."""
@@ -255,6 +284,8 @@ def load_operation(entry: Path, component: str, operation: str, scenario: str | 
     if component == "image":
         _map_image_external_paths(selected, operation)
     if component == "pve-template":
+        if operation == "apply":
+            _hydrate_pve_template_apply_options(selected)
         _map_pve_cleanup_directory(selected, operation)
     if component == "opnsense" and operation in OPNSENSE_WORKFLOW_OPERATIONS:
         _validate_opnsense_options(selected, operation)
