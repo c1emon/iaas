@@ -251,7 +251,7 @@ def _observed(selected: Any, client: PveHttpsClient | None, target: Mapping[str,
     _assert_vmid_visibility(client, request["vmid"])
     storage_permissions: dict[str, set[str]] = {}
     storage_permissions.setdefault(request["staging_storage"], set()).update(
-        {"Datastore.Audit", "Datastore.AllocateTemplate"})
+        {"Datastore.Audit", "Datastore.Allocate", "Datastore.AllocateTemplate"})
     for storage in {request["disk_storage"], request["cloud_init_storage"], request.get("efi_storage")}:
         if isinstance(storage, str):
             storage_permissions.setdefault(storage, set()).add("Datastore.AllocateSpace")
@@ -385,6 +385,17 @@ def _phase_failure_reason(phase: str, error: Exception) -> str:
         if "timeout" in message.lower():
             return "upload-timeout"
         return "upload-request-failed"
+    if phase == "delete":
+        message = str(error)
+        http_status = re.search(r"\bHTTP ([1-5][0-9]{2})\b", message)
+        if http_status is not None:
+            return f"delete-http-{http_status.group(1)}"
+        os_error = re.search(r"\bos-error-([0-9]+)\b", message)
+        if os_error is not None:
+            return f"delete-os-error-{os_error.group(1)}"
+        if "timeout" in message.lower():
+            return "delete-timeout"
+        return "delete-request-failed"
     return "publication-phase-failed"
 
 
@@ -957,9 +968,10 @@ def _delete_action(selected: Any, execution: Execution, request: Mapping[str, An
             require(volid in evidence["volumes"],
                     "cleanup volume is not bound to the original publish journal")
             require(volid == evidence["upload_volid"] or volid in admitted_volumes,
-                    "cleanup volume is not bound to an admitted VM record")
-            _storage_content(client, target["node"], storage)
+                   "cleanup volume is not bound to an admitted VM record")
             volume_specs.append((storage, volid))
+        for storage in {storage for storage, _ in volume_specs}:
+            _assert_storage_permissions(client, storage, {"Datastore.Allocate"})
         if evidence["completed"]:
             require(all(volid == evidence["upload_volid"] for _, volid in volume_specs),
                     "completed publication cleanup may only remove its staging upload")
@@ -976,7 +988,12 @@ def _delete_action(selected: Any, execution: Execution, request: Mapping[str, An
                 journal("cleanup-volume", "succeeded", volid=volid, already_absent=True)
                 continue
             journal("cleanup-volume", "intent", volid=volid)
-            value = client.request("DELETE", f"/api2/json/nodes/{node}/storage/{quote(storage, safe='')}/content/{quote(volid, safe='')}")
+            try:
+                value = client.request("DELETE", f"/api2/json/nodes/{node}/storage/{quote(storage, safe='')}/content/{quote(volid, safe='')}")
+            except Exception as exc:
+                journal("cleanup-volume", "failed", volid=volid,
+                        reason=_phase_failure_reason("delete", exc))
+                raise
             journal("cleanup-volume", "submitted", volid=volid, upid=value)
             phase = _upid(client, value, "cleanup-volume", node=target["node"])
             _assert_upload_absent(client, target["node"], storage, volid)
@@ -1019,6 +1036,9 @@ def _delete_action(selected: Any, execution: Execution, request: Mapping[str, An
     require(set(actual_attachments) >= set(expected_volumes) and
             all(actual_attachments[slot] == volume for slot, volume in expected_volumes.items()),
             "retire VM volumes do not exactly match admitted template record")
+    for volume in expected_volumes.values():
+        storage, _ = _cleanup_volume_identity(volume)
+        _assert_storage_permissions(client, storage, {"Datastore.Allocate"})
     journal("retire-template", "observed", vmid=vmid, smbios_uuid=record["smbios_uuid"],
             volumes=sorted(expected_volumes.values()))
     journal("retire-template", "intent", vmid=vmid, smbios_uuid=record["smbios_uuid"])

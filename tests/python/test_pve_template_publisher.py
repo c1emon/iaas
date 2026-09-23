@@ -40,7 +40,8 @@ class API:
         self.calls.append((method, path, dict(fields) if fields else None))
         if method == "GET" and path.endswith("/access/permissions"):
             if isinstance(fields, dict) and isinstance(fields.get("path"), str) and fields["path"].startswith("/storage/"):
-                return {fields["path"]: {"Datastore.Audit": 1, "Datastore.AllocateTemplate": 1,
+                return {fields["path"]: {"Datastore.Audit": 1, "Datastore.Allocate": 1,
+                                          "Datastore.AllocateTemplate": 1,
                                           "Datastore.AllocateSpace": 1}}
             return {"/vms/9001": {"VM.Audit": 1}}
         if method == "GET" and path.endswith("/cluster/resources"):
@@ -132,7 +133,8 @@ def test_observed_storage_with_shared_staging_and_images_requires_both_capabilit
         def request(self, method, path, *, fields=None):
             if path.endswith("/access/permissions"):
                 if isinstance(fields, dict) and isinstance(fields.get("path"), str) and fields["path"].startswith("/storage/"):
-                    return {fields["path"]: {"Datastore.Audit": 1, "Datastore.AllocateTemplate": 1,
+                    return {fields["path"]: {"Datastore.Audit": 1, "Datastore.Allocate": 1,
+                                              "Datastore.AllocateTemplate": 1,
                                               "Datastore.AllocateSpace": 1}}
                 return {"/vms/9001": {"VM.Audit": 1}}
             if path.endswith("/cluster/resources"):
@@ -152,7 +154,8 @@ def test_observed_accepts_zero_storage_permission_propagation_value() -> None:
             if path.endswith("/access/permissions"):
                 if fields and fields.get("path") == "/vms/9001":
                     return {"/vms/9001": {"VM.Audit": 1}}
-                return {"/storage/images": {"Datastore.Audit": 1, "Datastore.AllocateTemplate": 0,
+                return {"/storage/images": {"Datastore.Audit": 1, "Datastore.Allocate": 0,
+                                             "Datastore.AllocateTemplate": 0,
                                              "Datastore.AllocateSpace": 0}}
             if path.endswith("/cluster/resources"):
                 return []

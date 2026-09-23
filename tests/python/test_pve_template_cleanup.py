@@ -33,12 +33,14 @@ class Outputs:
 
 class CleanupAPI:
     def __init__(self, *, config: dict[str, object], volumes: set[str], active: bool = False,
-                 failed_task: bool = False, upload: str = UPLOAD) -> None:
+                 failed_task: bool = False, upload: str = UPLOAD,
+                 delete_error: Exception | None = None) -> None:
         self.config = config
         self.volumes = set(volumes)
         self.active = active
         self.failed_task = failed_task
         self.upload = upload
+        self.delete_error = delete_error
         self.deletes: list[tuple[str, str]] = []
 
     def request(self, method: str, path: str, *, fields: dict | None = None, **kwargs: object) -> object:
@@ -46,6 +48,11 @@ class CleanupAPI:
             if self.active:
                 return {"status": "running"}
             return {"status": "stopped", "exitstatus": "ERROR" if self.failed_task and "00000004" in path else "OK"}
+        if method == "GET" and path.endswith("/access/permissions"):
+            if fields and isinstance(fields.get("path"), str) and fields["path"].startswith("/storage/"):
+                return {fields["path"]: {"Datastore.Audit": 1, "Datastore.Allocate": 1,
+                                          "Datastore.AllocateTemplate": 1, "Datastore.AllocateSpace": 1}}
+            return {"/vms/9001": {"VM.Audit": 1}}
         if method == "GET" and path.endswith("/config"):
             return dict(self.config)
         if method == "GET" and path.endswith("/content"):
@@ -56,6 +63,8 @@ class CleanupAPI:
             self.volumes.discard(DISK)
             return "UPID:cohe:00000000:00000000:00000006:vmdelete:100:root@pam:"
         if method == "DELETE" and "/content/" in path:
+            if self.delete_error is not None:
+                raise self.delete_error
             self.deletes.append((method, path))
             self.volumes.discard(unquote(path.rsplit("/", 1)[1]))
             return "UPID:cohe:00000000:00000000:00000005:voldelete:100:root@pam:"
@@ -149,6 +158,49 @@ def test_staging_only_cleanup_uses_journal_upload_without_deleting_vm(tmp_path: 
     assert result["status"] == "succeeded"
     assert not any("/qemu/" in path for _, path in api.deletes)
     assert any("/content/" in path for _, path in api.deletes)
+
+
+def test_cleanup_journals_bounded_delete_http_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    original = tmp_path / "original"
+    _journal(original)
+    api = CleanupAPI(config={"template": 1, "smbios1": "uuid=template-uuid", "scsi0": DISK},
+                     volumes={UPLOAD}, delete_error=runtime.OperationFailed(
+                         "PVE API DELETE request failed (HTTP 403)"))
+    execution = _execution(tmp_path)
+    monkeypatch.setattr(runtime, "_client", lambda selected, execution, target: api)
+    fixed = _fixed(objects=[], volumes=[UPLOAD])
+
+    with pytest.raises(runtime.OperationFailed, match="HTTP 403"):
+        runtime._delete_action(_selected(original), execution, fixed, _preview(fixed), "cleanup-1")
+
+    intent = json.loads((execution.outputs.path("diagnostics") / "delete-intent.json").read_text())
+    failed = [event for event in intent["events"]
+              if event.get("phase") == "cleanup-volume" and event.get("status") == "failed"]
+    assert failed == [{"phase": "cleanup-volume", "status": "failed", "volid": UPLOAD,
+                       "reason": "delete-http-403"}]
+
+
+def test_cleanup_requires_delete_permission_before_side_effect(tmp_path: Path,
+                                                               monkeypatch: pytest.MonkeyPatch) -> None:
+    original = tmp_path / "original"
+    _journal(original)
+
+    class NoDeletePermissionAPI(CleanupAPI):
+        def request(self, method: str, path: str, *, fields: dict | None = None, **kwargs: object) -> object:
+            if method == "GET" and path.endswith("/access/permissions"):
+                if fields and isinstance(fields.get("path"), str) and fields["path"].startswith("/storage/"):
+                    return {fields["path"]: {"Datastore.Audit": 1}}
+            return super().request(method, path, fields=fields, **kwargs)
+
+    api = NoDeletePermissionAPI(config={"template": 1, "smbios1": "uuid=template-uuid", "scsi0": DISK},
+                                volumes={UPLOAD})
+    execution = _execution(tmp_path)
+    monkeypatch.setattr(runtime, "_client", lambda selected, execution, target: api)
+    fixed = _fixed(objects=[], volumes=[UPLOAD])
+
+    with pytest.raises(ValidationError, match="Datastore.Allocate"):
+        runtime._delete_action(_selected(original), execution, fixed, _preview(fixed), "cleanup-1")
+    assert api.deletes == []
 
 
 def test_cleanup_rejects_wrong_original_binding_before_delete(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -285,7 +337,8 @@ def test_cleanup_consumes_real_publish_failure_journal(tmp_path: Path, monkeypat
         def request(self, method: str, path: str, *, fields: dict | None = None, **kwargs: object) -> object:
             if method == "GET" and path.endswith("/access/permissions"):
                 if fields and isinstance(fields.get("path"), str) and fields["path"].startswith("/storage/"):
-                    return {fields["path"]: {"Datastore.Audit": 1, "Datastore.AllocateTemplate": 1,
+                    return {fields["path"]: {"Datastore.Audit": 1, "Datastore.Allocate": 1,
+                                              "Datastore.AllocateTemplate": 1,
                                               "Datastore.AllocateSpace": 1}}
                 return {"/vms/9001": {"VM.Audit": 1}}
             if method == "GET" and path.endswith("/cluster/resources"):
