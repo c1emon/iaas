@@ -1,3 +1,4 @@
+from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
 import json
@@ -159,3 +160,79 @@ def test_download_http_failure_records_status_without_locator(tmp_path, monkeypa
     with pytest.raises(runtime.OperationFailed, match=r"artifact download failed \(HTTP 503\)"):
         runtime._download("https://objects.invalid/private?token=redacted", destination, "0" * 64, 1)
     assert not destination.exists()
+
+
+def test_same_artifact_supports_two_admitted_publications_without_rebuild(tmp_path, monkeypatch):
+    """Two independent apply executions may consume one immutable artifact."""
+    runtime_digest = "runtime@sha256:" + "a" * 64
+    artifact_bytes = b"same-delivered-disk"
+    download_calls: list[tuple[str, str]] = []
+
+    class TargetAPI(API):
+        def __init__(self, vmid: int) -> None:
+            super().__init__()
+            self.vmid = vmid
+
+        def request(self, method, path, **kwargs):
+            result = super().request(method, path, **kwargs)
+            if method == "GET" and path.endswith("/access/permissions"):
+                return {f"/vms/{self.vmid}": {"VM.Audit": 1}}
+            if method == "POST" and path.endswith("/config"):
+                self.config["scsi0"] = f"images:vm-{self.vmid}-disk-0,size=8G"
+            if method == "POST" and path.endswith("/template"):
+                self.config["scsi0"] = f"images:base-{self.vmid}-disk-0,size=8G"
+            return result
+
+    def download(locator, destination, digest, size):
+        download_calls.append((digest, destination.name))
+        destination.write_bytes(artifact_bytes)
+
+    monkeypatch.setattr(runtime, "_download", download)
+    monkeypatch.setattr(runtime, "_verify_qcow2", lambda *args: None)
+
+    executions = []
+    for execution_id, vmid in (("publish-a", 9001), ("publish-b", 9002)):
+        raw_request = deepcopy(publish_request())
+        raw_request["vmid"] = vmid
+        raw_request["name"] = f"debian-template-{vmid}"
+        request = contracts.validate_publish_request(raw_request)
+        preview = contracts.build_publish_preview(request, runtime={"image_digest": runtime_digest},
+                                                  observed={"vmid_free": True})
+        admission = {
+            "schema_version": 1, "execution_id": execution_id,
+            "plan_digest": preview["preview_digest"].removeprefix("sha256:"),
+            "target": request["target"], "approved": True,
+            "consumption": {"reserved": True, "reservation_id": f"reservation-{execution_id}"},
+            "pending": {"record_id": f"pending-{execution_id}"},
+            "serialization": {"held": True, "context_id": f"lock-{execution_id}"},
+        }
+        preview_path = tmp_path / f"{execution_id}-preview.json"
+        preview_path.write_text(json.dumps(preview))
+        outputs = Outputs(tmp_path / execution_id)
+        outputs.path("generated").mkdir()
+        execution = SimpleNamespace(
+            outputs=outputs,
+            environ={"PVE_ARTIFACT_URL": request["source"]["object_ref"]},
+            api=TargetAPI(vmid),
+            finished=[],
+        )
+        execution.finish = execution.finished.append
+        selected = SimpleNamespace(options={"action": "publish", "preview_digest": preview["preview_digest"],
+                                             "admission": admission}, files={"preview": preview_path})
+        monkeypatch.setattr(runtime, "_client", lambda _selected, current, _target: current.api)
+
+        runtime.run(selected, "apply", "cohe", execution, image_digest=runtime_digest,
+                    execution_id=execution_id)
+        assert execution.finished[-1]["status"] == "succeeded"
+        result = json.loads((outputs.path("diagnostics") / "result.json").read_text())
+        assert result["artifact_digest"] == request["artifact_digest"]
+        assert result["publication"] == "succeeded"
+        executions.append((request, result))
+
+    assert executions[0][0]["artifact_digest"] == executions[1][0]["artifact_digest"]
+    assert [result["execution_id"] for _, result in executions] == ["publish-a", "publish-b"]
+    assert [result["template_record"]["vmid"] for _, result in executions] == [9001, 9002]
+    assert [digest for digest, _ in download_calls] == ["b" * 64, "b" * 64]
+    assert [name for _, name in download_calls] == [
+        "publish-a-" + "b" * 64 + ".qcow2", "publish-b-" + "b" * 64 + ".qcow2"
+    ]

@@ -31,3 +31,33 @@ the current PVE identity and configuration only. Guest acceptance and caller
 promotion remain separate. A lost response leaves effects unknown and must be
 read/reconciled under the caller's pending and serialization context; it is
 never replayed from a fresh execution ID.
+
+## Promotion, revocation, rollback and unknown results
+
+IaaS reports technical publication only. The caller owns the availability
+registry and promotion decision: a `pve-template-record/v2` may be marked
+available only after the caller's declared configuration, clone and business
+checks have passed. Promotion records the exact template identity, artifact
+digest, runtime/schema pins and evidence scope; it does not update existing
+VMs or imply guest acceptance that was not performed.
+
+Revoking a promoted version is a caller registry change. It should stop new
+consumers while retaining the artifact, publication result and template record
+for investigation. Removing a PVE template is a separate `retire` operation
+with current ownership and dependency admission; revocation never authorizes
+deletion by itself.
+
+Software or runtime rollback requires draining the affected execution path,
+retaining its journals and results, and selecting the previous known-good
+launcher/runtime/schema pins. It does not replay a consumed admission, repeat
+a POST, rebuild the artifact, or automatically alter existing templates or
+VMs. Any new publication, cleanup or retirement after rollback needs a fresh
+request, preview and execution admission.
+
+If an apply response or result collection is lost, keep the original pending
+execution and journal as `unknown`. Reconcile the original UPID and exact
+objects under the caller's serialization context; do not infer success from
+current configuration or create a fresh execution ID to retry the mutation.
+Only after an unambiguous reconciliation may the caller create a new cleanup
+or retirement preview, with `recovery_of` where required. An unresolved
+unknown remains pending for manual recovery.
