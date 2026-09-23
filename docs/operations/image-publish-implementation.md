@@ -80,3 +80,10 @@ release 软件流程已接入同一 tag 的普通 runtime（amd64/arm64）和 im
 随后从本机直接以节点公开 CA 验证 `https://10.1.0.72:8006/`，返回 HTTP 200。这补充了控制端到节点的 HTTPS 可达性证据；页面访问不等于发布 token 的授权验证。
 
 现场后续需明确专用 KVM 执行器和新测试窗口，再执行串行的单模板、单临时 VM 验收。旧窗口不作为本轮授权依据。软件替身与源码证据不替代以上现场任务。
+
+## 2026-09-23 本轮实现与证据边界
+
+- `d1c4bd0` 修复了 image test 在只读输入挂载上的 qemu 元数据检查：`qemu-img` 的 JSON 捕获临时文件改写入任务的可写 `outputs/work`，不再尝试写入 `/inputs/files/...` 等只读源目录。新增代表性只读源回归后，image execution 定向测试为 22 passed，runtime Pyright 与 Ruff 通过。
+- 本轮失败样例发生在来宾启动前，原因是捕获文件目录不可写；同一只读绑定上的独立 `qemu-img info` 已确认可读。该修复不放宽输入挂载权限，也不证明来宾启动或测试验收成功。
+- 当前 image 任务材料的实际布局是 `work/image-tasks/<execution-id>/artifact.json`、`disk.qcow2`、`disk.qcow2.sha256`、`build-result.json`，以及测试产生的 `test-result.json`；操作文档已按此路径修正。`generated/` 下的 `template-record.json` 仍仅属于 PVE 发布结果。
+- 本轮 buildfix8 正在现场执行；上述软件测试和此前构建器/离线清理证据不勾选 amd64 来宾、临时 VM 或 PVE 发布终验任务。现场结果仍由主 agent 按真实执行记录补充。

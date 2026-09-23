@@ -7,12 +7,14 @@ writes `diagnostics/normalized.json`; build and test require a Linux amd64
 executor with usable `/dev/kvm`. A macOS or ordinary arm64 container is an
 unsupported executor and cannot be treated as a successful build check.
 
-The image output is `generated/artifact.json`, `generated/disk.qcow2` and
-`generated/disk.qcow2.sha256` within the task output when the image executor
-completes. `image test` produces `generated/test-result.json`. `image clean`
-accepts the original task identity and execution directory and removes only
-task-owned temporary resources; it does not remove a delivered artifact or a
-shared cache.
+The image executor keeps its task directory under
+`work/image-tasks/<execution-id>/`. A successful build writes
+`artifact.json`, `disk.qcow2`, `disk.qcow2.sha256`, and `build-result.json`
+there; a test writes `test-result.json` in the same directory. These are task
+records and materials, rather than files in the top-level `generated/`
+category. `image clean` accepts the original task identity and execution
+directory and removes only task-owned temporary resources; it does not remove
+a delivered artifact or a shared cache.
 
 PVE publication consumes `pve-template-publish-request/v1` and a selected
 `pve-template-preview/v2`. The publisher resolves the fixed credential-free
