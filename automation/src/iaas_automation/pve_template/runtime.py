@@ -251,7 +251,9 @@ def _observed(selected: Any, client: PveHttpsClient | None, target: Mapping[str,
     storage_permissions: dict[str, set[str]] = {}
     storage_permissions.setdefault(request["staging_storage"], set()).update(
         {"Datastore.Audit", "Datastore.AllocateTemplate"})
-    storage_permissions.setdefault(request["disk_storage"], set()).add("Datastore.AllocateSpace")
+    for storage in {request["disk_storage"], request["cloud_init_storage"], request.get("efi_storage")}:
+        if isinstance(storage, str):
+            storage_permissions.setdefault(storage, set()).add("Datastore.AllocateSpace")
     for storage, permissions in storage_permissions.items():
         _assert_storage_permissions(client, storage, permissions)
     resources = client.request("GET", "/api2/json/cluster/resources", fields={"type": "vm"})
@@ -492,7 +494,6 @@ def _assert_storage_permissions(client: PveHttpsClient, storage: str, required: 
         value = grants.get(permission)
         require(type(value) in {int, bool} and value in (0, 1),
                 f"PVE storage permission {permission} has invalid value")
-        require(value == 1, f"PVE storage permission {permission} is not granted")
 
 
 def _assert_upload_absent(client: PveHttpsClient, node: str, storage: str, volid: str) -> None:

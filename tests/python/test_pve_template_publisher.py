@@ -141,7 +141,7 @@ def test_observed_storage_with_shared_staging_and_images_requires_both_capabilit
         runtime._observed(None, StorageAPI(), request["target"], request)
 
 
-def test_observed_rejects_missing_or_zero_storage_permission() -> None:
+def test_observed_accepts_zero_storage_permission_propagation_value() -> None:
     request = contracts.validate_publish_request(publish_request())
 
     class PermissionAPI:
@@ -150,11 +150,16 @@ def test_observed_rejects_missing_or_zero_storage_permission() -> None:
                 if fields and fields.get("path") == "/vms/9001":
                     return {"/vms/9001": {"VM.Audit": 1}}
                 return {"/storage/images": {"Datastore.Audit": 1, "Datastore.AllocateTemplate": 0,
-                                             "Datastore.AllocateSpace": 1}}
+                                             "Datastore.AllocateSpace": 0}}
+            if path.endswith("/cluster/resources"):
+                return []
+            if path.endswith("/storage"):
+                return [{"storage": "images", "enabled": 1, "active": 1,
+                         "content": "images,import", "avail": 2**40}]
             raise AssertionError((method, path, fields))
 
-    with pytest.raises(Exception, match="Datastore.AllocateTemplate is not granted"):
-        runtime._observed(None, PermissionAPI(), request["target"], request)
+    observed = runtime._observed(None, PermissionAPI(), request["target"], request)
+    assert observed["vmid_free"] is True
 
 
 def test_storage_content_does_not_send_invalid_combined_content_filter() -> None:
