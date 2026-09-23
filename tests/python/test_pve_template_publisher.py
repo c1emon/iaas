@@ -121,6 +121,9 @@ def test_upid_requires_valid_identity_and_explicit_ok_exitstatus() -> None:
     with pytest.raises(Exception, match="did not finish successfully"):
         runtime._upid(StatusAPI(), valid, "create", node="cohe")
 
+    empty_task_id = "UPID:cohe:00267DCD:0AA89612:6AB35280:imgcopy::pve-ops@pve!opentofu:"
+    assert runtime._normalize_upid(empty_task_id, "cohe") == empty_task_id
+
 
 def test_observed_storage_with_shared_staging_and_images_requires_both_capabilities() -> None:
     request = contracts.validate_publish_request(publish_request())

@@ -89,8 +89,9 @@ def _normalize_upid(value: Any, node: str) -> str:
         require(value.startswith(prefix), "PVE task UPID is bound to another node")
         value = value[len(prefix):]
     parts = value.split(":")
+    required_fields = (1, 2, 3, 4, 5, 7)
     require(parts[0] == "UPID" and len(parts) >= _UPID_PARTS and parts[1] == node
-            and all(parts[index] for index in range(1, min(_UPID_PARTS, len(parts)))),
+            and all(parts[index] for index in required_fields),
             "PVE task response did not include a valid UPID")
     return value
 
