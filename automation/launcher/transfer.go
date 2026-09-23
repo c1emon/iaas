@@ -16,6 +16,7 @@ import (
 type inputFile struct {
 	logical, actual, remote string
 	writable                bool
+	directory               bool
 }
 
 type task struct {
@@ -125,17 +126,21 @@ func (t *task) addInput(logical string) error {
 			return errors.New("explicit input transfer failed")
 		}
 	} else {
-		// A placeholder allows a file bind below the read-only metadata bind.
+		// Regular files are copied into the private input tree so a Docker
+		// single-file bind cannot remap their owner to root (notably on Colima).
+		// Directory inputs remain placeholders for their separate read-only bind.
 		path := filepath.Join(t.directory, remote[1:])
 		if info.IsDir() {
 			if err := os.MkdirAll(path, 0700); err != nil {
 				return err
 			}
-		} else if err := os.WriteFile(path, nil, 0600); err != nil {
-			return err
+		} else {
+			if err := copyInputFile(actual, path, info.Mode().Perm()); err != nil {
+				return fmt.Errorf("explicit input copy failed: %w", err)
+			}
 		}
 	}
-	t.files = append(t.files, inputFile{logical, actual, remote, writable})
+	t.files = append(t.files, inputFile{logical, actual, remote, writable, info.IsDir()})
 	t.mapping[logical] = remote
 	return nil
 }
@@ -170,7 +175,9 @@ func (t *task) mounts(withOutput bool) []string {
 	} else {
 		args = append(args, bind(filepath.Join(t.directory, "inputs"), "/inputs", true)...)
 		for _, file := range t.files {
-			args = append(args, bind(file.actual, file.remote, !file.writable)...)
+			if file.directory {
+				args = append(args, bind(file.actual, file.remote, !file.writable)...)
+			}
 		}
 		if withOutput {
 			args = append(args, bind(filepath.Join(t.directory, "work"), "/task", false)...)
@@ -188,6 +195,30 @@ func (t *task) mounts(withOutput bool) []string {
 		args = append(args, "--device", "/dev/kvm:/dev/kvm")
 	}
 	return args
+}
+
+func copyInputFile(source, destination string, mode os.FileMode) (err error) {
+	input, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer input.Close()
+	output, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode.Perm())
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := output.Close(); err == nil && closeErr != nil {
+			err = closeErr
+		}
+		if err != nil {
+			_ = os.Remove(destination)
+		}
+	}()
+	if _, err = io.Copy(output, input); err != nil {
+		return err
+	}
+	return output.Sync()
 }
 
 func copyTree(source, destination string) error {
