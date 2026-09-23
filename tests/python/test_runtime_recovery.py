@@ -105,6 +105,14 @@ def test_credential_selection_and_operation_effects():
         credential_names("pve", "plan", ("OP_SERVICE_ACCOUNT_TOKEN",))
 
 
+def test_image_operations_preserve_builder_packer_plugin_path():
+    supplied = {"PACKER_PLUGIN_PATH": "/opt/packer/plugins", "HOME": "/task/output/work/home"}
+    assert process_environment("image", "build", supplied) == supplied
+    assert process_environment("image", "test", supplied) == supplied
+    assert "PACKER_PLUGIN_PATH" not in process_environment("image", "check", supplied)
+    assert "PACKER_PLUGIN_PATH" not in process_environment("pve", "plan", supplied)
+
+
 def test_file_ssh_credentials_disable_agent_and_pin_identity(tmp_path):
     key = tmp_path / "id_runtime"
     hosts = tmp_path / "known_hosts"

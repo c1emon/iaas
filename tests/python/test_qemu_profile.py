@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -21,7 +22,9 @@ def test_qemu_profile_keeps_system_disk_when_adding_seed_and_uefi() -> None:
     # Packer's qemuargs -drive override removes its generated system disk.
     assert "\n  qemuargs " not in profile
     assert 'vm_name              = "disk.qcow2"' in profile
-    assert 'cd_files = ["${var.seed_directory}/build.user-data", "${var.seed_directory}/build.meta-data"]' in profile
+    assert '"user-data" = file("${var.seed_directory}/build.user-data")' in profile
+    assert '"meta-data" = file("${var.seed_directory}/build.meta-data")' in profile
+    assert "cd_files =" not in profile
     assert 'cd_label = "cidata"' in profile
     assert 'efi_boot          = var.firmware == "uefi"' in profile
     assert "efi_firmware_code" in profile
@@ -108,3 +111,75 @@ def test_packer_command_capture_keeps_system_disk_and_boot_media(tmp_path: Path,
         assert any("efivars.fd" in value and "pflash" in value for value in drives)
     else:
         assert not any("pflash" in value for value in drives)
+
+
+def test_packer_cd_contains_nocloud_root_names(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Build Packer's actual seed ISO and inspect its root directory."""
+    required = ("packer", "ssh-keygen", "qemu-img", "mkisofs", "isoinfo")
+    if any(shutil.which(command) is None for command in required):
+        pytest.skip("Packer, QEMU image tools and ISO inspection tools are required")
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    iso_copy = tmp_path / "captured.iso"
+    qemu = bin_dir / "qemu-system-x86_64"
+    qemu.write_text(
+        "#!/bin/sh\nset -eu\n"
+        "if [ \"${1:-}\" = \"-version\" ]; then echo 'QEMU emulator version 8.2.0'; exit 0; fi\n"
+        "previous=\"\"\n"
+        "for argument do\n"
+        "  if [ \"$previous\" = \"-cdrom\" ]; then cp \"$argument\" "
+        f"{shlex.quote(str(iso_copy))}\n"
+        "  elif [ \"$previous\" = \"-drive\" ] && echo \"$argument\" | grep -q 'media=cdrom'; then\n"
+        "    image=${argument#file=}; image=${image%%,*}; cp \"$image\" "
+        f"{shlex.quote(str(iso_copy))}\n"
+        "  fi\n"
+        "  previous=\"$argument\"\n"
+        "done\nexit 1\n",
+        encoding="utf-8",
+    )
+    qemu.chmod(0o755)
+    qemu_img = bin_dir / "qemu-img"
+    qemu_img.write_text(
+        "#!/bin/sh\nset -eu\n"
+        "last=\"\"; for argument do last=\"$argument\"; done\n"
+        "case \"$1\" in\n"
+        "  info) echo '{\"format\":\"qcow2\",\"virtual-size\":1073741824}';;\n"
+        "  create|convert) : > \"$last\";;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    qemu_img.chmod(0o755)
+    ansible = bin_dir / "ansible-playbook"
+    ansible.write_text("#!/bin/sh\nset -eu\nexit 0\n", encoding="utf-8")
+    ansible.chmod(0o755)
+    cloud_localds = bin_dir / "cloud-localds"
+    cloud_localds.write_text("#!/bin/sh\nset -eu\n: > \"$1\"\n", encoding="utf-8")
+    cloud_localds.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+
+    seed = tmp_path / "seed"
+    seed.mkdir()
+    outputs = TaskOutputs.create(tmp_path / "outputs", tmp_path / "implementation", [])
+    execution = Execution(outputs, {})
+    task = {"owned_resources": []}
+    _, key = runtime._make_seed(execution, seed, username="packer", phase="build", task=task)
+    base = tmp_path / "base.qcow2"
+    base.write_bytes(b"base")
+    checksum = hashlib.sha256(base.read_bytes()).hexdigest()
+    command = [shutil.which("packer") or "packer", "build", "-machine-readable",
+               "-var", f"base_image={base}", "-var", f"base_checksum=sha256:{checksum}",
+               "-var", f"output_directory={tmp_path / 'out'}", "-var", "firmware=bios",
+               "-var", f"seed_directory={seed}", "-var", "ssh_username=packer",
+               "-var", f"ssh_private_key_file={key}", "-var", "apt_mirror=https://deb.debian.org/debian",
+               "-var", "apt_security_mirror=https://security.debian.org/debian-security",
+               "-var", "cpus=1", "-var", "memory_mib=512", str(PROFILE)]
+    result = subprocess.run(command, cwd=PROFILE.parent, env=dict(os.environ), capture_output=True, text=True, check=False)
+    if not iso_copy.exists() and "plugin" in (result.stdout + result.stderr).lower():
+        pytest.skip("pinned Packer QEMU plugin is unavailable in this environment")
+    assert iso_copy.is_file(), result.stdout + result.stderr
+    listing = subprocess.run(["isoinfo", "-R", "-f", "-i", str(iso_copy)], capture_output=True, text=True, check=True).stdout
+    names = {line.rsplit("/", 1)[-1].split(";", 1)[0].lower() for line in listing.splitlines() if line.strip()}
+    assert any(name.startswith("user-dat") for name in names), names
+    assert any(name.startswith("meta-dat") for name in names), names
+    assert not any(name.startswith("build.") for name in names), names

@@ -98,5 +98,10 @@ def process_environment(component: str, operation: str, supplied: Mapping[str, s
                      "ANSIBLE_COLLECTIONS_PATH", "ANSIBLE_FILTER_PLUGINS", "ANSIBLE_LOOKUP_PLUGINS",
                      "ANSIBLE_LOCAL_TEMP", "XDG_CACHE_HOME", "UV_NO_SYNC", "UV_PYTHON_DOWNLOADS",
                      "UV_NO_CACHE", "PYTHONDONTWRITEBYTECODE"}
+    if component == "image" and operation in {"build", "test"}:
+        # The dedicated image-builder installs Packer plugins outside the
+        # execution HOME.  Keep that image-owned path when HOME is relocated
+        # to the task workspace; do not expose it to unrelated components.
+        runtime_names.add("PACKER_PLUGIN_PATH")
     allowed = runtime_names | credential_names(component, operation, render_names)
     return {name: value for name, value in supplied.items() if name in allowed}

@@ -13,6 +13,37 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ANSIBLE_COLLECTIONS_PATH="/opt/iaas/automation/ansible/collections" \
     PACKER_PLUGIN_PATH="/opt/packer/plugins"
 
+ARG DEBIAN_MIRROR=https://deb.debian.org/debian
+ARG DEBIAN_SECURITY_MIRROR=https://security.debian.org/debian-security
+
+RUN DEBIAN_MIRROR="$DEBIAN_MIRROR" DEBIAN_SECURITY_MIRROR="$DEBIAN_SECURITY_MIRROR" \
+    python3 - <<'PY'
+from pathlib import Path
+import os
+
+sources = Path("/etc/apt/sources.list.d/debian.sources")
+if not sources.is_file():
+    raise SystemExit("the base image does not provide deb822 Debian sources")
+
+mirrors = {
+    "/debian": os.environ["DEBIAN_MIRROR"].rstrip("/"),
+    "/debian-security": os.environ["DEBIAN_SECURITY_MIRROR"].rstrip("/"),
+}
+lines = sources.read_text(encoding="utf-8").splitlines()
+seen = set()
+for index, line in enumerate(lines):
+    if not line.startswith("URIs: "):
+        continue
+    uri = line.removeprefix("URIs: ").strip().rstrip("/")
+    suffix = next((value for value in mirrors if uri.endswith(value)), None)
+    if suffix is not None:
+        lines[index] = f"URIs: {mirrors[suffix]}"
+        seen.add(suffix)
+if seen != set(mirrors):
+    raise SystemExit(f"unexpected Debian deb822 sources: {sorted(seen)}")
+sources.write_text("\n".join(lines) + "\n", encoding="utf-8")
+PY
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
       cloud-image-utils libguestfs-tools linux-image-amd64 openssh-client ovmf qemu-system-x86 qemu-utils \
       ca-certificates curl unzip \
@@ -27,7 +58,8 @@ RUN curl -fL --retry 3 "https://releases.hashicorp.com/packer/${PACKER_VERSION}/
 
 WORKDIR /opt/iaas
 COPY pyproject.toml uv.lock ./
-RUN curl -fL --retry 3 https://github.com/astral-sh/uv/releases/download/0.12.9/uv-x86_64-unknown-linux-gnu.tar.gz -o /tmp/uv.tar.gz \
+ARG UV_DOWNLOAD_URL=https://github.com/astral-sh/uv/releases/download/0.12.9/uv-x86_64-unknown-linux-gnu.tar.gz
+RUN curl -fL --retry 3 "$UV_DOWNLOAD_URL" -o /tmp/uv.tar.gz \
  && echo 'ec7a99cd05e0cd7f80243f135ce1361c76835cb0ee60055d14d20eba8eba1460  /tmp/uv.tar.gz' | sha256sum -c - \
  && tar -xzf /tmp/uv.tar.gz -C /tmp \
  && cp /tmp/uv-x86_64-unknown-linux-gnu/uv /usr/local/bin/uv \

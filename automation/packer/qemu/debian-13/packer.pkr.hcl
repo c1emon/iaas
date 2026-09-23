@@ -80,9 +80,12 @@ source "qemu" "debian-13-amd64" {
   efi_firmware_code = var.firmware == "uefi" ? var.uefi_code : null
   efi_firmware_vars = var.firmware == "uefi" ? var.uefi_vars : null
   efi_drop_efivars  = true
-  # _make_seed namespaces these files by phase so build and disposable test
-  # media cannot accidentally consume one another's cloud-init data.
-  cd_files = ["${var.seed_directory}/build.user-data", "${var.seed_directory}/build.meta-data"]
+  # _make_seed namespaces the host files by phase, but NoCloud requires the
+  # exact root names user-data and meta-data on the attached ISO.
+  cd_content = {
+    "user-data" = file("${var.seed_directory}/build.user-data")
+    "meta-data" = file("${var.seed_directory}/build.meta-data")
+  }
   cd_label = "cidata"
 }
 
