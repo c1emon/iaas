@@ -823,7 +823,7 @@ def _boot_guest(execution: Execution, directory: Path, task: dict[str, Any], dis
     port = int(port_socket.getsockname()[1])
     port_socket.close()
     command = [qemu, "-enable-kvm", "-machine", "q35", "-cpu", "host", "-m", str(resources["memory_mib"]), "-smp", str(resources["cpus"]),
-               "-display", "none", "-serial", "file=" + str(directory / f"{phase}.serial.log"), "-no-reboot",
+               "-display", "none", "-serial", "file:" + str(directory / f"{phase}.serial.log"), "-no-reboot",
                "-drive", f"file={overlay},if=virtio,format=qcow2", "-drive", f"file={seed},media=cdrom,readonly=on,format=raw",
                "-chardev", f"socket,id=qga,path={directory / f'{phase}.qga.sock'},server=on,wait=off",
                "-device", "virtio-serial", "-device", "virtserialport,chardev=qga,name=org.qemu.guest_agent.0",

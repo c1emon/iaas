@@ -3,8 +3,10 @@ from __future__ import annotations
 import hashlib
 import os
 import shlex
+import socket
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -33,6 +35,7 @@ def test_qemu_profile_keeps_system_disk_when_adding_seed_and_uefi() -> None:
     runtime = RUNTIME.read_text(encoding="utf-8")
     assert '"PKR_VAR_seed_directory": str(task)' in runtime
     assert "PKR_VAR_seed_image" not in runtime
+    assert '"-serial", "file:" + str(directory / f"{phase}.serial.log")' in runtime
 
 
 def test_image_builder_installs_and_syntax_checks_customize_collections() -> None:
@@ -50,6 +53,50 @@ def test_image_builder_installs_and_syntax_checks_customize_collections() -> Non
     assert "['locales', 'tzdata', 'util-linux-extra']" in playbook
     assert "['cloud-init-main.service']" in playbook
     assert 'loop: "{{ ([\'cloud-init\'] if image_cloud_init == \'installed\' else [])' not in playbook
+
+
+def test_qemu_file_serial_argument_parses_and_quits_without_a_guest(tmp_path: Path) -> None:
+    qemu = shutil.which("qemu-system-x86_64")
+    if qemu is None:
+        pytest.skip("qemu-system-x86_64 is required for the argv smoke test")
+    serial = tmp_path / "serial.log"
+    qmp = tmp_path / "qmp.sock"
+    command = [qemu, "-machine", "none", "-nodefaults", "-display", "none",
+               "-serial", f"file:{serial}", "-no-reboot", "-S",
+               "-qmp", f"unix:{qmp},server=on,wait=off"]
+    process = subprocess.Popen(command, stdin=subprocess.DEVNULL,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        deadline = time.monotonic() + 5
+        connection: socket.socket | None = None
+        while time.monotonic() < deadline and process.poll() is None:
+            if qmp.exists():
+                candidate: socket.socket | None = None
+                try:
+                    candidate = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    candidate.settimeout(0.5)
+                    candidate.connect(str(qmp))
+                    connection = candidate
+                    break
+                except OSError:
+                    if candidate is not None:
+                        candidate.close()
+            time.sleep(0.01)
+        if connection is None:
+            detail = "qmp socket did not become available"
+            if process.poll() is not None and process.stderr is not None:
+                detail = process.stderr.read().decode(errors="replace")
+            raise AssertionError(detail)
+        with connection:
+            connection.recv(4096)
+            connection.sendall(b'{"execute":"qmp_capabilities"}\r\n')
+            connection.recv(4096)
+            connection.sendall(b'{"execute":"quit"}\r\n')
+        assert process.wait(timeout=5) == 0
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
 
 
 @pytest.mark.parametrize("firmware", ["bios", "uefi"])
