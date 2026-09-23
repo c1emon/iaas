@@ -33,12 +33,12 @@ COPY --from=tools /downloads/tofu/LICENSE* /usr/share/licenses/opentofu/
 WORKDIR /opt/iaas
 COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev --group runtime --no-install-project --python /usr/local/bin/python3.12
-COPY automation/runtime/collections.yml /tmp/collections.yml
+COPY automation/images/runtime/collections.yml /tmp/collections.yml
 RUN apt-get update && apt-get install -y --no-install-recommends git \
  && .venv/bin/ansible-galaxy collection install --no-deps -r /tmp/collections.yml -p /opt/iaas/automation/ansible/collections \
  && apt-get purge -y --auto-remove git \
  && rm -rf /var/lib/apt/lists/*
-COPY automation/runtime/prune.py /tmp/prune.py
+COPY automation/images/runtime/prune.py /tmp/prune.py
 RUN python /tmp/prune.py
 
 # Publish a reusable, pruned dependency filesystem first. Repository code is
@@ -57,8 +57,8 @@ COPY automation/ansible/filter_plugins/ automation/ansible/filter_plugins/
 COPY automation/ansible/module_utils/ automation/ansible/module_utils/
 COPY automation/opentofu/modules/ automation/opentofu/modules/
 COPY automation/pve-node/ automation/pve-node/
-COPY --chmod=755 automation/runtime/entrypoint.sh /usr/local/bin/iaas
-COPY automation/runtime/NOTICE /usr/share/licenses/iaas-runtime/NOTICE
+COPY --chmod=755 automation/images/runtime/entrypoint.sh /usr/local/bin/iaas
+COPY automation/images/runtime/NOTICE /usr/share/licenses/iaas-runtime/NOTICE
 ENV PATH="/opt/iaas/.venv/bin:/usr/local/bin:/usr/bin:/bin" \
     PYTHONPATH="/opt/iaas/automation/src" \
     UV_NO_SYNC=1 UV_PYTHON_DOWNLOADS=never UV_NO_CACHE=1 \

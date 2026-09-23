@@ -5,7 +5,7 @@
   "include": [
     "automation/src",
     "automation/ansible",
-    "automation/runtime"
+    "automation/images/runtime"
   ],
   "exclude": [
     "automation/ansible/collections"

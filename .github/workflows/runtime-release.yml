@@ -70,11 +70,11 @@ jobs:
           tofu_version: "1.12.6"
           tofu_wrapper: false
       - name: Validate event and exact source
-        run: uv run python automation/runtime/release.py prepare
+        run: uv run python automation/images/release.py prepare
       - run: uv sync --locked --dev
       - run: >-
           uv run ansible-galaxy collection install --no-deps
-          -r automation/runtime/collections.yml -p automation/ansible/collections
+          -r automation/images/runtime/collections.yml -p automation/ansible/collections
       - name: Install checkout secret scanner
         run: |
           gitleaks_url="https://github.com/gitleaks/gitleaks/releases/download/v8.27.2"
@@ -93,8 +93,8 @@ jobs:
           path: /tmp/iaas-build-cache
           key: >-
             iaas-runtime-${{ matrix.arch }}-${{
-            hashFiles('pyproject.toml', 'uv.lock', 'automation/runtime/Dockerfile',
-            'automation/runtime/collections.yml', 'automation/runtime/prune.py') }}
+            hashFiles('pyproject.toml', 'uv.lock', 'automation/images/runtime/Dockerfile',
+            'automation/images/runtime/collections.yml', 'automation/images/runtime/prune.py') }}
           restore-keys: iaas-runtime-${{ matrix.arch }}-
       - name: Set up the release Docker baseline
         uses: docker/setup-docker-action@77e84dbf09b47d1e29270283c22f16145aa85ca1 # v5
@@ -110,7 +110,7 @@ jobs:
           export OCI_VERSION="$(jq -r .tag release.json)"
           make runtime-build RUNTIME_IMAGE="$RUNTIME_IMAGE"
       - run: make runtime-tofu-check RUNTIME_IMAGE="$RUNTIME_IMAGE"
-      - run: uv run python automation/runtime/inspect_image.py --image "$RUNTIME_IMAGE"
+      - run: uv run python automation/images/runtime/inspect_image.py --image "$RUNTIME_IMAGE"
       - name: Save the tested image without rebuilding
         run: |
           docker image inspect "$RUNTIME_IMAGE" --format '{{.Id}}' > image-id.txt
@@ -137,11 +137,11 @@ jobs:
           version: "0.12.9"
           python-version: "3.12"
       - name: Validate event and exact source
-        run: uv run python automation/runtime/release.py prepare --kind image-builder --metadata builder-release.json
+        run: uv run python automation/images/release.py prepare --kind image-builder --metadata builder-release.json
       - run: uv sync --locked --dev
       - run: >-
           uv run ansible-galaxy collection install --no-deps
-          -r automation/runtime/collections.yml -p automation/ansible/collections
+          -r automation/images/runtime/collections.yml -p automation/ansible/collections
       - name: Set up the release Docker baseline
         uses: docker/setup-docker-action@77e84dbf09b47d1e29270283c22f16145aa85ca1 # v5
         with:
@@ -157,7 +157,7 @@ jobs:
           export OCI_REVISION="$(jq -r .revision builder-release.json)"
           export OCI_VERSION="$(jq -r .tag builder-release.json)"
           docker buildx build --load --platform linux/amd64 \
-            -f automation/image-builder/Dockerfile -t "$BUILDER_IMAGE" \
+            -f automation/images/image-builder/Dockerfile -t "$BUILDER_IMAGE" \
             --build-arg "OCI_SOURCE=$OCI_SOURCE" \
             --build-arg "OCI_REVISION=$OCI_REVISION" \
             --build-arg "OCI_VERSION=$OCI_VERSION" .
@@ -233,13 +233,13 @@ jobs:
         id: publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: uv run --no-project python automation/runtime/release.py publish
+        run: uv run --no-project python automation/images/release.py publish
       - name: Publish tested image-builder without rebuilding
         id: publish-builder
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: >-
-          uv run --no-project python automation/runtime/release.py publish
+          uv run --no-project python automation/images/release.py publish
           --kind image-builder --metadata builder-release.json
           --tested-image iaas-image-builder:release-tested
 

@@ -99,7 +99,7 @@ RUN ansible-galaxy collection install --no-deps community.general:13.4.0 \
  && mkdir -p /opt/packer/plugins \
  && packer init automation/packer/qemu/debian-13 \
  && chmod -R a+rX /opt/packer
-COPY --chmod=755 automation/runtime/entrypoint.sh /usr/local/bin/iaas
+COPY --chmod=755 automation/images/runtime/entrypoint.sh /usr/local/bin/iaas
 
 WORKDIR /work
 ARG OCI_SOURCE="https://github.com/c1emon/iaas"

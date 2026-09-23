@@ -1,0 +1,3 @@
+# Allow only the caller-selected account to upload validated OpenTofu cloud-init snippets.
+# Render through bootstrap-pve-ssh-user.yml and validate with visudo before installation.
+{{ pve_bootstrap_user }} ALL=(root) NOPASSWD: /usr/local/sbin/iaas-pve-snippet-upload

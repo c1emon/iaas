@@ -120,7 +120,7 @@ S3 backend and native lock; local state migration is not supplied.
 make runtime-build
 make runtime-smoke
 make runtime-tofu-check
-uv run python automation/runtime/inspect_image.py
+uv run python automation/images/runtime/inspect_image.py
 ```
 
 These repository checks use synthetic inputs. Generation runs offline; the

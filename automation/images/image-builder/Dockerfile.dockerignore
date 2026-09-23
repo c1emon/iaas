@@ -8,9 +8,9 @@
 !automation/ansible/collections/**
 !automation/packer/
 !automation/packer/qemu/**
-!automation/runtime/
-!automation/runtime/entrypoint.sh
-!automation/image-builder/**
+!automation/images/runtime/
+!automation/images/runtime/entrypoint.sh
+!automation/images/image-builder/**
 **/README*
 **/AGENTS.md
 **/__pycache__

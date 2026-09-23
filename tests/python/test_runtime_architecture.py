@@ -33,7 +33,7 @@ def test_build_selects_one_explicit_platform(tmp_path, platform):
     docker = tmp_path / "docker"
     docker.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
     docker.chmod(0o755)
-    result = subprocess.run(["/bin/sh", str(ROOT / "automation/runtime/build.sh"), "test:arch"],
+    result = subprocess.run(["/bin/sh", str(ROOT / "automation/images/runtime/build.sh"), "test:arch"],
                             env={"PATH": f"{tmp_path}:/usr/bin:/bin", "RUNTIME_PLATFORM": platform},
                             capture_output=True, text=True)
     if platform == "linux/riscv64":
@@ -52,14 +52,14 @@ def test_ci_checks_both_architectures_serially():
 
 
 def test_runtime_pruning_preserves_only_sdk_documentation_packages():
-    dockerfile = (ROOT / "automation/runtime/Dockerfile").read_text()
+    dockerfile = (ROOT / "automation/images/runtime/Dockerfile").read_text()
     dependency_stage = dockerfile.split(" AS dependencies", 1)[1]
     workdir = re.search(r"^WORKDIR (.+)$", dependency_stage, re.MULTILINE)
     python_version = re.search(r"^FROM python:(\d+\.\d+)", dockerfile, re.MULTILINE)
     assert workdir is not None and python_version is not None
     site_packages = f"{workdir.group(1).lstrip('/')}/.venv/lib/python{python_version.group(1)}/site-packages"
 
-    inspect_path = ROOT / "automation/runtime/inspect_image.py"
+    inspect_path = ROOT / "automation/images/runtime/inspect_image.py"
     spec = importlib.util.spec_from_file_location("runtime_inspect_image", inspect_path)
     assert spec is not None and spec.loader is not None
     inspect_image = importlib.util.module_from_spec(spec)

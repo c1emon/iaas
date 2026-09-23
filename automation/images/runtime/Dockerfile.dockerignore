@@ -14,7 +14,7 @@
 !automation/opentofu/
 !automation/opentofu/modules/**
 !automation/pve-node/**
-!automation/runtime/**
+!automation/images/runtime/**
 **/README*
 **/AGENTS.md
 **/__pycache__

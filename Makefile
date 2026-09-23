@@ -62,13 +62,13 @@ export ENVIRONMENT_DIR OUTPUT_DIR
 .DEFAULT_GOAL := help
 .PHONY: runtime-build runtime-smoke runtime-tofu-check
 runtime-build:
-	sh "$(AUTOMATION)/runtime/build.sh" "$(RUNTIME_IMAGE)"
+	sh "$(AUTOMATION)/images/runtime/build.sh" "$(RUNTIME_IMAGE)"
 
 runtime-smoke:
-	$(UV) run --directory "$(ROOT)" python "$(AUTOMATION)/runtime/smoke.py" --image "$(RUNTIME_IMAGE)"
+	$(UV) run --directory "$(ROOT)" python "$(AUTOMATION)/images/runtime/smoke.py" --image "$(RUNTIME_IMAGE)"
 
 runtime-tofu-check:
-	$(UV) run --directory "$(ROOT)" python "$(AUTOMATION)/runtime/smoke.py" --image "$(RUNTIME_IMAGE)" --tofu
+	$(UV) run --directory "$(ROOT)" python "$(AUTOMATION)/images/runtime/smoke.py" --image "$(RUNTIME_IMAGE)" --tofu
 
 .PHONY: help require-environment require-pve-dir
 help:

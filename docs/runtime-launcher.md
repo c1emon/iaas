@@ -280,7 +280,7 @@ and cache directories when retaining both architectures:
 ```sh
 RUNTIME_PLATFORM=linux/arm64 make runtime-build RUNTIME_IMAGE=iaas-runtime:arm64
 make runtime-tofu-check RUNTIME_IMAGE=iaas-runtime:arm64
-uv run python automation/runtime/inspect_image.py --image iaas-runtime:arm64
+uv run python automation/images/runtime/inspect_image.py --image iaas-runtime:arm64
 ```
 
 For Colima, point `TMPDIR` at an existing shared host directory before running

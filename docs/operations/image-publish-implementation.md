@@ -111,3 +111,17 @@ VM799 使用 execution `vm799-create-20260923-0003-r2` 完成原生 apply，`nat
 2026-09-23 05:45:59 UTC 的 production 9001 final observation 显示对象 unchanged 且 HTTPS healthy；private copy 与 8 个 locator 已清除。该观察不改变本轮 PVE 资源范围；S3 cleanup 已由上述独立结果完成。
 
 ONE image execution 已有 guest boot evidence；PVE VM799 本轮保持 `started=false`，没有执行 guest boot。当前证据不包含正式 OCI/runtime release 或持久 Forgejo Runner 部署；这些边界仍保持未完成。5.3 已在本轮限定范围内完成，证据覆盖模板发布、VM 生命周期、retire、S3 cleanup 和现场无残留核对；5.4 release handoff 仍未授权发布或标记完成。
+
+## 镜像打包目录命名已统一
+
+普通 `iaas-runtime` OCI 镜像的 Dockerfile、构建、检查和入口现位于
+`automation/images/runtime/`，专用 builder 位于 `automation/images/image-builder/`；两者共享的
+`release.py` 位于 `automation/images/release.py`。具体操作逻辑仍位于
+`automation/src/iaas_automation/`。本次只调整仓库内打包资产路径，不改变镜像接口、发布行为或稳定合同/schema 路径。
+
+## PVE bootstrap 用户由调用方选择
+
+`automation/ansible/playbooks/pve/bootstrap-pve-ssh-user.yml` 要求调用方提供
+`pve_bootstrap_user` 和 `pve_bootstrap_authorized_key`，不再由 IaaS 选择账号。
+playbook 用同一用户名创建 SSH 账号并渲染 snippet-upload sudoers 规则，SSH
+目录取系统返回的实际 home。此处是软件和合同修正；本轮没有修改现场用户或权限。

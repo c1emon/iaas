@@ -12,7 +12,8 @@ state.
 - `ansible/` — reusable playbooks, roles, module utilities, and Ansible
   configuration.
 - `opentofu/modules/` — reusable OpenTofu modules.
-- `packer/qemu/` and `image-builder/` — pinned local image-build profiles and runtime assets.
+- `packer/qemu/` — pinned local image-build profiles.
+- `images/runtime/` and `images/image-builder/` — ordinary OCI runtime and dedicated image-builder packaging assets.
 - `pve-node/bin/iaas-pve-snippet-upload` — the retained node-side snippet helper only.
 
 本文件只说明可复用实现层。操作步骤、参数解释、准入和

@@ -13,6 +13,15 @@ The stable schemas live under `automation/schemas/image-publish/v1/`:
 - `pve-template-publish-request.schema.json`, `pve-template-preview.schema.json`, and `pve-template-record.schema.json`
 - `pve-template-result.schema.json`, `pve-template-cleanup-request.schema.json`, and `pve-template-retire-request.schema.json`
 
+The `v1` directory is the stable image-publish contract bundle version. It is
+not a promise that every document inside the bundle has
+`schema_version: 1`: each `kind` owns its own evolution. The current PVE
+preview, template record, and template result documents are explicitly
+`schema_version: 2`; their request and cleanup/retire companions remain
+`schema_version: 1`. Use the `title` and `schema_version` in each schema for
+the concrete document version, while keeping this directory and its `$id`
+paths stable for the v1 bundle.
+
 The shared launcher validates these documents with the same normalized
 contract code at `automation/src/iaas_automation/image/contracts.py` and
 writes `diagnostics/normalized.json` for `image check`. The file contains the

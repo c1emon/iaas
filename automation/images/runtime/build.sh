@@ -7,7 +7,7 @@ case "$platform" in
     linux/amd64|linux/arm64) ;;
     *) echo "unsupported runtime platform: $platform" >&2; exit 2 ;;
 esac
-set -- --platform "$platform" -f "$root/automation/runtime/Dockerfile" -t "$image" \
+set -- --platform "$platform" -f "$root/automation/images/runtime/Dockerfile" -t "$image" \
     --build-arg "OCI_SOURCE=${OCI_SOURCE:-https://github.com/c1emon/iaas}" \
     --build-arg "OCI_REVISION=${OCI_REVISION:-development}" \
     --build-arg "OCI_VERSION=${OCI_VERSION:-development}"
