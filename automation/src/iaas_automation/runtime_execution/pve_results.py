@@ -214,7 +214,12 @@ def _vm_fields(expected: dict, config: dict, status: dict) -> dict[str, str]:
         compare("on_boot", values["on_boot"], str(config.get("onboot", 0)) == "1")
     for field, api_field in (("bios", "bios"), ("machine", "machine"), ("scsi_hardware", "scsihw")):
         if values.get(field) is not None:
-            compare(field, values[field], config.get(api_field))
+            actual = config.get(api_field)
+            # PVE omits its optional bios field for the native seabios default.
+            # Preserve strict comparison for explicit values and other fields.
+            if field == "bios" and actual is None:
+                actual = "seabios"
+            compare(field, values[field], actual)
     for i, disk in enumerate(values.get("disk") or []):
         raw = config.get(disk.get("interface"))
         volume = str(raw).split(",", 1)[0] if raw else None

@@ -67,6 +67,17 @@ def test_stopped_vm_and_no_root_outputs_verify():
     assert result["status"] == "passed"
 
 
+def test_missing_pve_bios_uses_seabios_default_but_not_ovmf():
+    item = change()
+    item["change"]["after"]["bios"] = "seabios"
+    report = verify_configuration(expectations([item], snapshot(item)), API())
+    assert report["status"] == "passed"
+    item["change"]["after"]["bios"] = "ovmf"
+    report = verify_configuration(expectations([item], snapshot(item)), API())
+    assert report["status"] == "failed"
+    assert report["objects"][0]["checks"]["bios"] == "failed"
+
+
 @pytest.mark.parametrize("actions,wrong_identity", [
     (["create"], {"vm_id": 999}),
     (["update"], {"node_name": "wrong"}),
