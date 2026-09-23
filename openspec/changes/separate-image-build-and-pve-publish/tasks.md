@@ -28,7 +28,7 @@
 ## 5. Verification and paired rollout
 
 - [x] 5.1 Run representative schema/unit/fake HTTPS integration, launcher isolation and migration regressions; run corresponding lint/build/OpenSpec checks. Do not equate API substitutes with live validation.
-- [ ] 5.2 On a caller-provided KVM executor, build one image and verify final identity cleanup with a disposable guest; record the exact supported environment.
+- [x] 5.2 On a caller-provided KVM executor, build one image and verify final identity cleanup with a disposable guest; record the exact supported environment. (ONE Linux amd64/Docker/KVM evidence recorded; no persistent runner or publication claim.)
 - [ ] 5.3 Under a new explicit site window, validate one template publication and one disposable VM serially, including target storage and directory import; clean test resources and independently verify no unintended changes.
 - [ ] 5.4 Coordinate pinned runtime/schema handoff with infra-ops, validate a repeated publication of the same artifact without rebuild in an appropriately authorized scope, and document promotion/rollback/unknown-result recovery. No live resource expansion implied by this task list.
 

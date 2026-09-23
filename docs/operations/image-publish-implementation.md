@@ -22,7 +22,7 @@ infra-ops 原有 `docs/operations/README.md` 修改与未跟踪的 `pve-ci-iaas-
 | iaas 前置规格归档及软件实现 | 已完成软件阶段 | 主流程、失败恢复、隔离及发布接入已实现；全量软件检查通过 |
 | infra-ops 软件接入 | 已完成软件接入 | 当前阶段提交 `5944fbf`；站点启用仍未执行 |
 | 跨仓实际入口联调 | 软件范围通过 | Astra check、请求规范化、完整准入及发布/清理替身入口已验证；最终 runtime pin 和现场写入尚待完成 |
-| amd64/KVM 构建及来宾检查 | 待执行 | 本机不符合执行器条件；专用执行器尚待确定 |
+| amd64/KVM 构建及来宾检查 | 已完成限定范围 | ONE Linux amd64/Docker/KVM 上 r7 build 与 r2 独立 test 真实通过；不代表持久 Forgejo Runner、发布镜像 pin 或 PVE 验收 |
 | PVE 发布、临时 VM 与清理 | 待执行 | HTTPS 服务已修复并只读验证；现场窗口尚未安排 |
 
 首次跨仓软件交接检查：同一 `image-artifact/v1` 描述（external 来源、unknown 检查、`evidence_ref: null`）分别通过两仓当前校验器，输出相同规范化摘要。此检查未读取真实磁盘，只覆盖该代表性描述的字段与摘要交接，不代表全部 schema 或发布入口联调完成。
@@ -86,4 +86,12 @@ release 软件流程已接入同一 tag 的普通 runtime（amd64/arm64）和 im
 - `d1c4bd0` 修复了 image test 在只读输入挂载上的 qemu 元数据检查：`qemu-img` 的 JSON 捕获临时文件改写入任务的可写 `outputs/work`，不再尝试写入 `/inputs/files/...` 等只读源目录。新增代表性只读源回归后，image execution 定向测试为 22 passed，runtime Pyright 与 Ruff 通过。
 - 本轮失败样例发生在来宾启动前，原因是捕获文件目录不可写；同一只读绑定上的独立 `qemu-img info` 已确认可读。该修复不放宽输入挂载权限，也不证明来宾启动或测试验收成功。
 - 当前 image 任务材料的实际布局是 `work/image-tasks/<execution-id>/artifact.json`、`disk.qcow2`、`disk.qcow2.sha256`、`build-result.json`，以及测试产生的 `test-result.json`；操作文档已按此路径修正。`generated/` 下的 `template-record.json` 仍仅属于 PVE 发布结果。
-- 本轮 buildfix8 正在现场执行；上述软件测试和此前构建器/离线清理证据不勾选 amd64 来宾、临时 VM 或 PVE 发布终验任务。现场结果仍由主 agent 按真实执行记录补充。
+- 本轮 buildfix8 已形成 5.2 的真实证据；此前“正在执行”的中间状态已由下列结果替代。该证据不勾选 PVE 发布、临时 VM 或清理终验任务。
+
+## 5.2 amd64/KVM 真实验收
+
+2026-09-23，调用方在 ONE 上以 Linux amd64 Docker/KVM 执行器完成一项 build 和一项独立 test。build 使用 execution `one-build-20260923-0003-r7`，artifact 的磁盘摘要为 `sha256:891e603a57be75b995491f3d9fd9d1b9a0cca11891245d72c4d4c418f9341cb9`；format、self-contained、identity-cleanup、first-boot 均 passed，官方 cleanup 返回 succeeded 且 residue 为空。对应 image-builder runtime digest 为 `iaas-image-builder@sha256:e0924f6796dd10da7db85ed1397b3511a39f71120b8784b98fd99561daaf60a9`。
+
+独立 test 使用 execution `one-test-20260923-0003-r2`，消费同一磁盘摘要；first-boot、cloud-init、guest-agent 均 passed，`base_unchanged=true`，cleanup 为 succeeded 且 residue 为空。对应 runtime digest 为 `iaas-image-builder@sha256:8ff32e662b511778039634107f7a4e3ffbf205118bee5ecbebf71937cab04791`。两次操作均由官方 task cleanup 完成。
+
+执行边界为 ONE 上的 Linux amd64 Docker 容器和 `/dev/kvm`；实际 builder 子容器使用只读根、可用 KVM，未提供 Docker socket、PVE 凭据、S3 凭据或 1Password 凭据。该证据证明本次调用方提供的执行器和这两个 execution 的来宾路径，不证明持久 Forgejo Runner 已部署，也不证明 runtime 已发布或 PVE 模板已创建。5.3 仍等待新的 PVE 发布/临时 VM 窗口。
