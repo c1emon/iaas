@@ -31,7 +31,7 @@
         update_cache: true
     - name: Install requested image packages
       ansible.builtin.apt:
-        name: "{{ packages_list + (['cloud-init'] if image_cloud_init == 'installed' else []) + (['qemu-guest-agent'] if image_guest_agent == 'installed' else []) + ['openssh-server'] }}"
+        name: "{{ packages_list + ['locales', 'tzdata', 'util-linux-extra'] + (['cloud-init'] if image_cloud_init == 'installed' else []) + (['qemu-guest-agent'] if image_guest_agent == 'installed' else []) + ['openssh-server'] }}"
         state: present
         install_recommends: false
     - name: Enable requested services
@@ -39,7 +39,7 @@
         name: "{{ item }}"
         enabled: true
         masked: false
-      loop: "{{ (['cloud-init'] if image_cloud_init == 'installed' else []) + (['qemu-guest-agent'] if image_guest_agent == 'installed' else []) }}"
+      loop: "{{ (['cloud-init-main.service'] if image_cloud_init == 'installed' else []) + (['qemu-guest-agent'] if image_guest_agent == 'installed' else []) }}"
     - name: Set image timezone
       community.general.timezone:
         name: "{{ image_timezone }}"

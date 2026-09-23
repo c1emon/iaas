@@ -44,6 +44,9 @@ def test_image_builder_installs_and_syntax_checks_customize_collections() -> Non
     assert "community.general.timezone" in playbook
     assert "community.general.locale_gen" in playbook
     assert "ansible.builtin.locale_gen" not in playbook
+    assert "['locales', 'tzdata', 'util-linux-extra']" in playbook
+    assert "['cloud-init-main.service']" in playbook
+    assert 'loop: "{{ ([\'cloud-init\'] if image_cloud_init == \'installed\' else [])' not in playbook
 
 
 @pytest.mark.parametrize("firmware", ["bios", "uefi"])
