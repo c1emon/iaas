@@ -108,7 +108,8 @@ def test_pve_cleanup_recovery_directory_is_mapped_read_only_for_plan_and_apply(t
         assert selected.file_paths["original_execution_dir"] == recovery.resolve()
 
 
-def test_pve_template_apply_hydrates_preview_and_admission_from_selected_files(tmp_path, monkeypatch):
+@pytest.mark.parametrize("preview_name", ["template_preview", "preview"])
+def test_pve_template_apply_hydrates_preview_and_admission_from_selected_files(tmp_path, monkeypatch, preview_name):
     from iaas_automation.pve_template import contracts, runtime
     from test_image_publish_contracts import request as publish_request
     from test_pve_template_publisher import Outputs
@@ -131,7 +132,7 @@ def test_pve_template_apply_hydrates_preview_and_admission_from_selected_files(t
     entry.write_text(yaml.safe_dump({"schema_version": 1, "environment": "apply-check",
                                     "components": {"pve-template": {
                                         "inputs": {"request": str(request_path)},
-                                        "files": {"template_preview": str(preview_path),
+                                        "files": {preview_name: str(preview_path),
                                                   "execution_admission": str(admission_path)}}}}))
     mapping = {str(path): str(path) for path in (entry, request_path, preview_path, admission_path)}
     selected = load_operation(entry, "pve-template", "apply", None, SourceReader(mapping))

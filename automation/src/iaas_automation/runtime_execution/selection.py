@@ -90,11 +90,17 @@ def _hydrate_pve_template_apply_options(selected: SelectedConfig) -> None:
     hand-authored and adapter-generated environments without asking callers to
     duplicate those values in YAML.
     """
-    preview_path = selected.file_paths.get("template_preview")
+    preview_names = [name for name in ("preview", "template_preview") if name in selected.file_paths]
     admission_path = selected.file_paths.get("execution_admission")
-    if preview_path is None or admission_path is None:
+    if not preview_names or admission_path is None:
         return
-    preview = selected.reader.document(preview_path)
+    # The runtime consumes ``preview`` before its legacy alias
+    # ``template_preview``.  If both are declared, require identical parsed
+    # documents so the alias cannot hide a different apply binding.
+    preview = selected.reader.document(selected.file_paths[preview_names[0]])
+    for alias in preview_names[1:]:
+        require(selected.reader.document(selected.file_paths[alias]) == preview,
+                "pve-template apply preview aliases disagree")
     admission = selected.reader.document(admission_path)
     preview_digest = preview.get("preview_digest")
     action = preview.get("action")
