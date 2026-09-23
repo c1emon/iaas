@@ -39,6 +39,9 @@ class API:
     def request(self, method, path, *, fields=None, **kwargs):
         self.calls.append((method, path, dict(fields) if fields else None))
         if method == "GET" and path.endswith("/access/permissions"):
+            if isinstance(fields, dict) and isinstance(fields.get("path"), str) and fields["path"].startswith("/storage/"):
+                return {fields["path"]: {"Datastore.Audit": 1, "Datastore.AllocateTemplate": 1,
+                                          "Datastore.AllocateSpace": 1}}
             return {"/vms/9001": {"VM.Audit": 1}}
         if method == "GET" and path.endswith("/cluster/resources"):
             return []
@@ -125,6 +128,9 @@ def test_observed_storage_with_shared_staging_and_images_requires_both_capabilit
     class StorageAPI:
         def request(self, method, path, *, fields=None):
             if path.endswith("/access/permissions"):
+                if isinstance(fields, dict) and isinstance(fields.get("path"), str) and fields["path"].startswith("/storage/"):
+                    return {fields["path"]: {"Datastore.Audit": 1, "Datastore.AllocateTemplate": 1,
+                                              "Datastore.AllocateSpace": 1}}
                 return {"/vms/9001": {"VM.Audit": 1}}
             if path.endswith("/cluster/resources"):
                 return []
@@ -133,6 +139,22 @@ def test_observed_storage_with_shared_staging_and_images_requires_both_capabilit
 
     with pytest.raises(Exception, match="does not support images content"):
         runtime._observed(None, StorageAPI(), request["target"], request)
+
+
+def test_observed_rejects_missing_or_zero_storage_permission() -> None:
+    request = contracts.validate_publish_request(publish_request())
+
+    class PermissionAPI:
+        def request(self, method, path, *, fields=None):
+            if path.endswith("/access/permissions"):
+                if fields and fields.get("path") == "/vms/9001":
+                    return {"/vms/9001": {"VM.Audit": 1}}
+                return {"/storage/images": {"Datastore.Audit": 1, "Datastore.AllocateTemplate": 0,
+                                             "Datastore.AllocateSpace": 1}}
+            raise AssertionError((method, path, fields))
+
+    with pytest.raises(Exception, match="Datastore.AllocateTemplate is not granted"):
+        runtime._observed(None, PermissionAPI(), request["target"], request)
 
 
 def test_storage_content_does_not_send_invalid_combined_content_filter() -> None:

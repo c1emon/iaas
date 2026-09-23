@@ -284,6 +284,9 @@ def test_cleanup_consumes_real_publish_failure_journal(tmp_path: Path, monkeypat
 
         def request(self, method: str, path: str, *, fields: dict | None = None, **kwargs: object) -> object:
             if method == "GET" and path.endswith("/access/permissions"):
+                if fields and isinstance(fields.get("path"), str) and fields["path"].startswith("/storage/"):
+                    return {fields["path"]: {"Datastore.Audit": 1, "Datastore.AllocateTemplate": 1,
+                                              "Datastore.AllocateSpace": 1}}
                 return {"/vms/9001": {"VM.Audit": 1}}
             if method == "GET" and path.endswith("/cluster/resources"):
                 return []

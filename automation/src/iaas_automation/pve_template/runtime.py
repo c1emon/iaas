@@ -248,6 +248,12 @@ def _observed(selected: Any, client: PveHttpsClient | None, target: Mapping[str,
         raise ValidationError("PVE observation requires an HTTPS client")
     node = quote(str(target["node"]), safe="")
     _assert_vmid_visibility(client, request["vmid"])
+    storage_permissions: dict[str, set[str]] = {}
+    storage_permissions.setdefault(request["staging_storage"], set()).update(
+        {"Datastore.Audit", "Datastore.AllocateTemplate"})
+    storage_permissions.setdefault(request["disk_storage"], set()).add("Datastore.AllocateSpace")
+    for storage, permissions in storage_permissions.items():
+        _assert_storage_permissions(client, storage, permissions)
     resources = client.request("GET", "/api2/json/cluster/resources", fields={"type": "vm"})
     storages = client.request("GET", f"/api2/json/nodes/{node}/storage")
     require(isinstance(resources, list) and all(isinstance(item, Mapping) for item in resources)
@@ -474,6 +480,19 @@ def _assert_vmid_visibility(client: PveHttpsClient, vmid: int) -> None:
     require(isinstance(grants, Mapping) and type(grants.get("VM.Audit")) in {int, bool}
             and grants["VM.Audit"] in (0, 1),
             "PVE VMID observation requires effective VM.Audit on the selected VMID")
+
+
+def _assert_storage_permissions(client: PveHttpsClient, storage: str, required: set[str]) -> None:
+    path = f"/storage/{quote(storage, safe='')}"
+    permissions = client.request("GET", "/api2/json/access/permissions", fields={"path": path})
+    grants = permissions.get(path) if isinstance(permissions, Mapping) else None
+    if not isinstance(grants, Mapping):
+        raise ValidationError(f"PVE storage permissions are missing for {storage}")
+    for permission in sorted(required):
+        value = grants.get(permission)
+        require(type(value) in {int, bool} and value in (0, 1),
+                f"PVE storage permission {permission} has invalid value")
+        require(value == 1, f"PVE storage permission {permission} is not granted")
 
 
 def _assert_upload_absent(client: PveHttpsClient, node: str, storage: str, volid: str) -> None:

@@ -222,6 +222,10 @@ def test_same_artifact_supports_two_admitted_publications_without_rebuild(tmp_pa
         def request(self, method, path, **kwargs):
             result = super().request(method, path, **kwargs)
             if method == "GET" and path.endswith("/access/permissions"):
+                fields = kwargs.get("fields")
+                if isinstance(fields, dict) and isinstance(fields.get("path"), str) and fields["path"].startswith("/storage/"):
+                    return {fields["path"]: {"Datastore.Audit": 1, "Datastore.AllocateTemplate": 1,
+                                              "Datastore.AllocateSpace": 1}}
                 return {f"/vms/{self.vmid}": {"VM.Audit": 1}}
             if method == "POST" and path.endswith("/config"):
                 self.config["scsi0"] = f"images:vm-{self.vmid}-disk-0,size=8G"
