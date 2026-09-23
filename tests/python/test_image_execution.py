@@ -9,7 +9,7 @@ import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Self
+from typing import Any, Self
 
 import pytest
 from iaas_automation.common.errors import ValidationError
@@ -243,6 +243,27 @@ def test_wrong_checksum_and_external_backing_are_rejected(tmp_path: Path, monkey
         returncode=0, stdout=json.dumps({"format": "qcow2", "backing-filename": "/outside/base.qcow2"})))
     with pytest.raises(ValidationError, match="backing"):
         runtime._require_self_contained(disk)
+
+
+def test_qemu_info_keeps_metadata_capture_outside_readonly_source_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    execution = _execution(tmp_path)
+    source_root = tmp_path / "readonly-input"
+    source_root.mkdir()
+    disk = source_root / "disk.qcow2"
+    disk.write_bytes(b"image")
+    capture_parents: list[Path] = []
+    monkeypatch.setattr(runtime.shutil, "which", lambda name: "/usr/bin/qemu-img")
+
+    def inspect(command: list[str], *, stdout: Any, **_: object) -> subprocess.CompletedProcess[str]:
+        capture_parents.append(Path(str(stdout.name)).parent)
+        stdout.write(b'{"format":"qcow2","virtual-size":4096}')
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(runtime.subprocess, "run", inspect)
+    assert runtime._qemu_info(disk, execution) == {"format": "qcow2", "virtual-size": 4096}
+    assert capture_parents == [execution.outputs.path("work")]
 
 
 def test_base_download_rejects_declared_size_over_budget(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -383,7 +383,7 @@ def _qemu_info(path: Path, execution: Execution | None = None) -> dict[str, Any]
     else:
         capture: Path | None = None
         try:
-            with tempfile.NamedTemporaryFile(prefix="qemu-info-", dir=path.parent, delete=False) as capture_handle:
+            with tempfile.NamedTemporaryFile(prefix="qemu-info-", dir=execution.outputs.path("work"), delete=False) as capture_handle:
                 capture = Path(capture_handle.name)
                 result = subprocess.run([qemu_img, "info", "--output=json", str(path)], stdout=capture_handle,
                                          stderr=subprocess.DEVNULL, timeout=_current_timeout(execution), check=False)
