@@ -162,6 +162,33 @@ def test_download_http_failure_records_status_without_locator(tmp_path, monkeypa
     assert not destination.exists()
 
 
+@pytest.mark.parametrize("failed_phase", ["artifact-verify", "upload-target"])
+def test_preupload_failure_journals_bounded_phase_and_known_local_effects(tmp_path, monkeypatch, failed_phase):
+    api = API()
+    request, preview, execution = publish_setup(tmp_path, monkeypatch, api)
+    if failed_phase == "artifact-verify":
+        monkeypatch.setattr(runtime, "_verify_qcow2",
+                            lambda *args: (_ for _ in ()).throw(runtime.OperationFailed("private-token")))
+        expected_reason = "artifact-format-verification-failed"
+    else:
+        monkeypatch.setattr(runtime, "_assert_upload_target_free",
+                            lambda *args: (_ for _ in ()).throw(runtime.ValidationError("private-token")))
+        expected_reason = "upload-target-rejected"
+
+    with pytest.raises(Exception):
+        runtime._publish(SimpleNamespace(), execution, request, preview, "publish-1")
+
+    intent = json.loads((execution.outputs.path("diagnostics") / "publish-intent.json").read_text())
+    failed = [event for event in intent["events"] if event["phase"] == failed_phase and event["status"] == "failed"]
+    assert len(failed) == 1 and failed[0]["reason"] == expected_reason
+    assert intent["status"] == "failed"
+    assert not any(event["phase"] == "upload" for event in intent["events"])
+    assert "private-token" not in json.dumps(intent)
+    result = runtime._failure_result(intent, "publish-1", preview["preview_digest"], request["artifact_digest"])
+    assert result["status"] == "failed" and result["effects"] == {"pve": "none", "staging": "none"}
+    assert all(method == "GET" for method, *_ in api.calls)
+
+
 def test_same_artifact_supports_two_admitted_publications_without_rebuild(tmp_path, monkeypatch):
     """Two independent apply executions may consume one immutable artifact."""
     runtime_digest = "runtime@sha256:" + "a" * 64

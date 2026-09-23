@@ -44,6 +44,8 @@ from .contracts import (
 
 _UPID_PARTS = 8
 _DISK_SLOT = re.compile(r"(?:scsi|virtio|sata|ide)\d+")
+_NATIVE_PHASES = frozenset({"upload", "create", "import-config", "template", "remote-cleanup",
+                            "cleanup-vm", "cleanup-volume", "retire-template"})
 
 
 def _disk_slots(config: Mapping[str, Any]) -> dict[str, str]:
@@ -342,6 +344,19 @@ def _verify_qcow2(path: Path, artifact: Mapping[str, Any]) -> None:
             "artifact is not a self-contained qcow2 with the selected virtual size")
 
 
+def _phase_failure_reason(phase: str, error: Exception) -> str:
+    """Return a bounded diagnostic category without copying exception text."""
+    if phase == "artifact-verify":
+        if isinstance(error, OperationFailed) and "unavailable" in str(error):
+            return "qemu-img-unavailable"
+        return "artifact-format-verification-failed"
+    if phase == "upload-target":
+        if isinstance(error, ValidationError):
+            return "upload-target-rejected"
+        return "upload-target-observation-failed"
+    return "publication-phase-failed"
+
+
 def _upid(client: PveHttpsClient, value: Any, phase: str, *, node: str = "localhost", timeout: float = 300) -> dict[str, Any]:
     upid = _normalize_upid(value, node)
     deadline = time.monotonic() + timeout
@@ -382,8 +397,7 @@ def _failure_result(intent: Mapping[str, Any], execution_id: str, preview_digest
     # A download intent is local preparation only; it cannot imply a remote
     # effect.  Only native upload/create/config/template/cleanup phases can
     # make the publication outcome unknown.
-    native_phases = {"upload", "create", "import-config", "template", "remote-cleanup", "cleanup-vm", "cleanup-volume", "retire-template"}
-    submitted = any(isinstance(event, Mapping) and event.get("phase") in native_phases
+    submitted = any(isinstance(event, Mapping) and event.get("phase") in _NATIVE_PHASES
                     and event.get("status") in {"intent", "submitted", "unknown"} for event in events)
     residue = [str(item) for item in intent.get("residue", []) if isinstance(item, str)]
     action = intent.get("action", "publish")
@@ -672,8 +686,20 @@ def _publish(selected: Any, execution: Execution, request: Mapping[str, Any], pr
             journal("download", "failed", reason=str(exc))
             raise
         journal("download", "succeeded", bytes=artifact["disk"]["size_bytes"])
-        _verify_qcow2(disk, artifact)
-        _assert_upload_target_free(client, node_name, request["staging_storage"], upload_volid)
+        journal("artifact-verify", "intent")
+        try:
+            _verify_qcow2(disk, artifact)
+        except Exception as exc:
+            journal("artifact-verify", "failed", reason=_phase_failure_reason("artifact-verify", exc))
+            raise
+        journal("artifact-verify", "succeeded")
+        journal("upload-target", "intent", volid=upload_volid)
+        try:
+            _assert_upload_target_free(client, node_name, request["staging_storage"], upload_volid)
+        except Exception as exc:
+            journal("upload-target", "failed", reason=_phase_failure_reason("upload-target", exc))
+            raise
+        journal("upload-target", "succeeded", volid=upload_volid)
         journal("upload", "intent", volid=upload_volid)
         upload = client.upload_file(
             f"/api2/json/nodes/{node}/storage/{quote(request['staging_storage'], safe='')}/upload",
@@ -804,8 +830,9 @@ def _publish(selected: Any, execution: Execution, request: Mapping[str, Any], pr
                                       "import_config": config_result, "template": template_result},
                 "template_record": record, "cleanup": cleanup}
     except Exception:
-        intent["status"] = "unknown" if any(event.get("status") in {"intent", "submitted", "unknown"}
-                                                for event in intent["events"]) else "failed"
+        intent["status"] = "unknown" if any(event.get("phase") in _NATIVE_PHASES
+                                              and event.get("status") in {"intent", "submitted", "unknown"}
+                                              for event in intent["events"]) else "failed"
         _write_intent(intent_path, intent)
         raise
 
