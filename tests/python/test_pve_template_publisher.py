@@ -6,7 +6,7 @@ from urllib.error import HTTPError
 
 import pytest
 
-from iaas_automation.pve_template import contracts, runtime
+from iaas.pve_template import contracts, runtime
 
 from test_image_publish_contracts import request as publish_request
 

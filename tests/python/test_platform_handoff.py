@@ -8,11 +8,11 @@ from typing import Any
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.common.io import load_yaml
-from iaas_automation.k3s_automation.config import build_composed_model
-from iaas_automation.platform_handoff.cli import main
-from iaas_automation.platform_handoff.config import attach_ca_fingerprint, build_handoff, render_bundle
+from iaas.common.errors import ValidationError
+from iaas.common.io import load_yaml
+from iaas.k3s_automation.config import build_composed_model
+from iaas.platform_handoff.cli import main
+from iaas.platform_handoff.config import attach_ca_fingerprint, build_handoff, render_bundle
 
 
 ROOT = Path(__file__).resolve().parents[2]

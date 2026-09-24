@@ -34,8 +34,9 @@ make check-generated
 
 - `tests/fixtures/environment/` — synthetic offline regression inputs;
   these are not runtime defaults or a prerequisite for external callers.
-- `automation/` — reusable Python (`src/iaas_automation`), Ansible, OpenTofu
-  modules, Packer, and PVE-node mechanisms.
+- `src/iaas/` — reusable Python implementation and command modules.
+- `automation/` — Ansible, OpenTofu modules, Packer, OCI packaging,
+  and PVE-node mechanisms.
 - `platform/` — documentation-only boundary for handoff to the external
   platform repository; it is not an in-repository platform implementation root
   or compatibility alias.

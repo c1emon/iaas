@@ -12,16 +12,16 @@ from types import SimpleNamespace
 from typing import Any, Self
 
 import pytest
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.image import runtime
-from iaas_automation.image.contracts import (
+from iaas.common.errors import ValidationError
+from iaas.image import runtime
+from iaas.image.contracts import (
     canonical_digest,
     validate_artifact,
     validate_build_request,
     validate_test_result,
 )
-from iaas_automation.runtime_execution.execution import Execution, OperationFailed
-from iaas_automation.runtime_execution.outputs import TaskOutputs
+from iaas.runtime_execution.execution import Execution, OperationFailed
+from iaas.runtime_execution.outputs import TaskOutputs
 
 
 def _request(*, firmware: str = "uefi", checks: dict | None = None) -> dict:

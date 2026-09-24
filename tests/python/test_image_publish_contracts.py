@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.image.contracts import canonical_digest as image_canonical_digest
-from iaas_automation.pve_template.contracts import (
+from iaas.common.errors import ValidationError
+from iaas.image.contracts import canonical_digest as image_canonical_digest
+from iaas.pve_template.contracts import (
     build_action_preview,
     build_publish_preview,
     canonical_digest,
@@ -18,7 +18,7 @@ from iaas_automation.pve_template.contracts import (
     validate_retire_request,
     validate_template_record_v2,
 )
-from iaas_automation.runtime_execution.pve_contracts import validate_execution_admission
+from iaas.runtime_execution.pve_contracts import validate_execution_admission
 
 
 def artifact() -> dict:

@@ -10,12 +10,12 @@ import time
 from pathlib import Path
 
 import pytest
-from iaas_automation.image import runtime
-from iaas_automation.runtime_execution.execution import Execution
-from iaas_automation.runtime_execution.outputs import TaskOutputs
+from iaas.image import runtime
+from iaas.runtime_execution.execution import Execution
+from iaas.runtime_execution.outputs import TaskOutputs
 
 PROFILE = Path(__file__).parents[2] / "automation/packer/qemu/debian-13/packer.pkr.hcl"
-RUNTIME = Path(__file__).parents[2] / "automation/src/iaas_automation/image/runtime.py"
+RUNTIME = Path(__file__).parents[2] / "src/iaas/image/runtime.py"
 
 
 def test_qemu_profile_keeps_system_disk_when_adding_seed_and_uefi() -> None:
@@ -38,14 +38,19 @@ def test_qemu_profile_keeps_system_disk_when_adding_seed_and_uefi() -> None:
     assert '"-serial", "file:" + str(directory / f"{phase}.serial.log")' in runtime
 
 
-def test_image_builder_installs_and_syntax_checks_customize_collections() -> None:
-    dockerfile = (PROFILE.parents[3] / "image-builder" / "Dockerfile").read_text(encoding="utf-8")
+def test_image_builder_installs_pinned_tools_and_checks_recipe_separately() -> None:
+    oci = PROFILE.parents[4] / "automation" / "oci"
+    dockerfile = (oci / "disk-image-builder" / "Dockerfile").read_text(encoding="utf-8")
+    checks = (oci / "checks" / "disk_image_builder.sh").read_text(encoding="utf-8")
     customize = PROFILE.parent / "ansible" / "customize.yml"
     playbook = customize.read_text(encoding="utf-8")
     assert "ansible-galaxy collection install --no-deps community.general:13.4.0" in dockerfile
-    assert "ansible-playbook --syntax-check -i localhost," in dockerfile
-    assert "virt-sysprep --list-operations" in dockerfile
-    assert "for operation in machine-id ssh-hostkeys logfiles tmp-files package-manager-cache net-hwaddr" in dockerfile
+    assert "packer plugins install github.com/hashicorp/qemu 1.1.3" in dockerfile
+    assert "packer plugins install github.com/hashicorp/ansible 1.1.6" in dockerfile
+    assert "ansible-playbook" not in dockerfile
+    assert '--entrypoint virt-sysprep "$image" --list-operations' in checks
+    assert "for operation in machine-id ssh-hostkeys logfiles tmp-files package-manager-cache net-hwaddr" in checks
+    assert "--syntax-check -i localhost," in checks
     assert "RUN rm -rf /var/tmp && ln -s /tmp /var/tmp" in dockerfile
     assert "community.general.timezone" in playbook
     assert "community.general.locale_gen" in playbook

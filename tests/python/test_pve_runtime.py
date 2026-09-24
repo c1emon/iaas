@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.pve_inventory.pve_api.runtime import load_api_runtime_config, load_online_runtime_context, parse_pve_bool
+from iaas.common.errors import ValidationError
+from iaas.pve_inventory.pve_api.runtime import load_api_runtime_config, load_online_runtime_context, parse_pve_bool
 
 
 @pytest.mark.parametrize(

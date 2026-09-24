@@ -71,11 +71,11 @@ def test_make_targets_and_playbook_are_ansible_first() -> None:
     assert "pve-verify-guests:" in root_make
     assert "ansible-playbook -i \"$(ANSIBLE_INVENTORY)\" \"$(ANSIBLE_PLAYBOOK)\"" in root_make
     assert "pve-ansible-syntax:" in root_make
-    assert "python -m iaas_automation.pve_inventory.guest_verification" not in root_make
+    assert "python -m iaas.pve_inventory.guest_verification" not in root_make
 
     assert "hosts: localhost" in playbook
     assert "pve_guest_group: pve_vms" in playbook
-    assert "python -m iaas_automation.pve_inventory.guest_verification" not in playbook
+    assert "python -m iaas.pve_inventory.guest_verification" not in playbook
     assert "ansible.builtin.setup:" in tasks_file
     assert "ansible.builtin.service_facts:" in tasks_file
     assert "ansible.builtin.slurp:" in tasks_file

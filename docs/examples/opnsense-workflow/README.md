@@ -7,7 +7,7 @@
 从仓库根目录执行离线检查：
 
 ```sh
-PYTHONPATH=automation/src uv run python -m iaas_automation.runtime_execution \
+PYTHONPATH=src uv run python -m iaas.runtime_execution \
   --environment "$PWD/docs/examples/opnsense-workflow/environment.yml" \
   --component opnsense --operation plan --scope firewall \
   --output /tmp/opnsense-workflow-plan --discover
@@ -32,7 +32,7 @@ Alias、Gateway 和接口组每次实际激活都会向 stderr 与 result 写入
 `read` 默认隐藏已确认不能独立管理的系统内置／派生对象详情，未知来源、未知管理能力
 和普通配置转换失败仍可见。环境的 `components.opnsense.options.include_system: true`
 可展开当前选择范围内的系统项；该布尔选项仅用于 read。本地开发命令对应
-`python -m iaas_automation.opnsense_workflow.local read ... --include-system`。
+`python -m iaas.opnsense_workflow.local read ... --include-system`。
 完整观察保存在 `diagnostics/observations.json`，`result.json` 中的读取视图带有
 `observation_scope: display`，不能当作计划、漂移或缺失判断的完整状态输入。
 打开开关不扩大管理权限，也不提供完整 PF 活动规则集。
@@ -56,7 +56,7 @@ Alias、Gateway 和接口组每次实际激活都会向 stderr 与 result 写入
 需要进一步诊断时，使用真实 inventory、候选和环境变量凭据运行只读检查：
 
 ```sh
-PYTHONPATH=automation/src uv run python -m iaas_automation.opnsense_workflow.inspect \
+PYTHONPATH=src uv run python -m iaas.opnsense_workflow.inspect \
   --inventory /path/to/inventory.yml --candidate /path/to/candidate.json \
   --output /path/to/new-inspection.json
 ```

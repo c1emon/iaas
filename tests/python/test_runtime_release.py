@@ -9,7 +9,7 @@ import pytest
 import yaml
 
 
-spec = importlib.util.spec_from_file_location("runtime_release", Path(__file__).resolve().parents[2] / "automation/images/release.py")
+spec = importlib.util.spec_from_file_location("runtime_release", Path(__file__).resolve().parents[2] / "automation/oci/release.py")
 assert spec and spec.loader
 release = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(release)
@@ -168,7 +168,7 @@ def test_image_builder_publishes_single_tested_amd64_without_index(monkeypatch):
 
 def test_workflow_keeps_publication_after_tested_artifact_and_public_pull():
     root = Path(__file__).resolve().parents[2]
-    workflow = yaml.load((root / ".github/workflows/runtime-release.yml").read_text(), Loader=yaml.BaseLoader)
+    workflow = yaml.load((root / ".github/workflows/oci-release.yml").read_text(), Loader=yaml.BaseLoader)
     assert workflow["on"] == {"release": {"types": ["published"]}}
     assert workflow["concurrency"]["cancel-in-progress"] == "false"
     jobs = workflow["jobs"]
@@ -190,7 +190,8 @@ def test_workflow_keeps_publication_after_tested_artifact_and_public_pull():
     assert "cmp tested-images/" in commands["publish"]
     assert "--platform" in commands["anonymous-consumption"]
     assert "capabilities" in commands["anonymous-consumption"]
-    assert "automation/images/image-builder/Dockerfile" in commands["image-builder"]
+    assert "make disk-image-builder-build" in commands["image-builder"]
+    assert "automation/oci/checks/disk_image_builder.sh" in commands["image-builder"]
     assert "ansible-galaxy collection install" in commands["image-builder"]
     assert any(step.get("with", {}).get("name") == "tested-image-builder-amd64"
                for step in jobs["image-builder"]["steps"])
@@ -199,7 +200,7 @@ def test_workflow_keeps_publication_after_tested_artifact_and_public_pull():
     assert builder_consumption["if"] == "matrix.arch == 'amd64'"
     assert "publish --kind image-builder" in commands["publish"]
     assert "builder_digest" in jobs["publish"]["outputs"]
-    dockerfile = (root / "automation/images/image-builder/Dockerfile").read_text()
+    dockerfile = (root / "automation/oci/disk-image-builder/Dockerfile").read_text()
     assert "org.opencontainers.image.source" in dockerfile
     assert "org.opencontainers.image.revision" in dockerfile
     assert "org.opencontainers.image.version" in dockerfile

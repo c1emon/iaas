@@ -22,7 +22,7 @@
 这些入口默认串行，不启用 pytest-xdist。性能记录应同时报告所选 marker、完整集合、
 运行环境、冷热缓存和省略的检查；没有可比较的隔离收益时不启用并行。
 
-OPNsense 原生数据转换位于 `iaas_automation/opnsense_workflow/conversion/`。公共布尔转换使用 Pydantic 的内置机制；`0`、`"0"`、`False`、`0.0`、`"No"`、`"off"` 等等价，`fasle` 和外围空白输入报错。标准声明继续使用严格准入校验。
+OPNsense 原生数据转换位于 `iaas/opnsense_workflow/conversion/`。公共布尔转换使用 Pydantic 的内置机制；`0`、`"0"`、`False`、`0.0`、`"No"`、`"off"` 等等价，`fasle` 和外围空白输入报错。标准声明继续使用严格准入校验。
 
 转换先解码结构、来源别名及引用，再验证配置字段。普通配置不可表达的对象保留身份和引用，恢复为 `manual_required`；结构、selector、别名冲突和必要引用失败使观察不完整。动态未知字段名在公开 reason 中统一为 `unknown_native_field`，避免把敏感 key 输出到报告。
 
@@ -30,7 +30,7 @@ OPNsense 原生数据转换位于 `iaas_automation/opnsense_workflow/conversion/
 
 这些检查使用固定样例、测试替身和临时目录。发布镜像、设备写入及真实客户端验证仍是独立操作。
 
-OPNsense workflow 与 diagnostics 通过 `iaas_automation/http_transport/` 共享一次请求、严格 JSON 解码和响应关闭机制，固定 endpoint 和领域状态映射仍由各自适配器维护。保持单响应 2 MiB、默认 `(5, 15)` timeout、现有 TLS 选择和禁止重定向，不自动重试。
+OPNsense workflow 与 diagnostics 通过 `iaas/http_transport/` 共享一次请求、严格 JSON 解码和响应关闭机制，固定 endpoint 和领域状态映射仍由各自适配器维护。保持单响应 2 MiB、默认 `(5, 15)` timeout、现有 TLS 选择和禁止重定向，不自动重试。
 
 workflow 的累计 8 MiB 按完整观察计数：一次 `Reader.read` 的全部资源、接口选择、分页和详情共享预算；一次主动检查或关联完成轮询也各有观察预算，嵌套读取不重置计数。下一轮观察（包括失败后的恢复回读）重新计数，避免长流程因复用 reader 耗尽实例预算。独立 diagnostics 仍按其操作实例累计。workflow 的观察 deadline 在请求边界和数据块间检查，换轮字节预算不延长整个 wait 的 deadline；这是协作式时间预算，不是可抢占慢流的绝对墙钟保证。
 

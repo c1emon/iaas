@@ -6,11 +6,11 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from iaas_automation.runtime_execution.__main__ import main
-from iaas_automation.runtime_execution.execution import Execution
-from iaas_automation.runtime_execution.operations import capabilities, operation_for
-from iaas_automation.runtime_execution.selection import load_operation
-from iaas_automation.runtime_config import InputRequired, SourceReader
+from iaas.runtime_execution.__main__ import main
+from iaas.runtime_execution.execution import Execution
+from iaas.runtime_execution.operations import capabilities, operation_for
+from iaas.runtime_execution.selection import load_operation
+from iaas.runtime_config import InputRequired, SourceReader
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -25,7 +25,7 @@ def test_capabilities_advertise_lifecycle_contract_versions() -> None:
 
 
 def test_template_operations_do_not_forward_api_or_state_credentials():
-    from iaas_automation.runtime_execution.operations import credential_names, process_environment
+    from iaas.runtime_execution.operations import credential_names, process_environment
     for operation in ('check', 'read', 'plan', 'apply', 'verify'):
         expected = set() if operation in {"check", "verify"} else {'PVE_API_TOKEN', 'PVE_API_CA'}
         if operation == "apply":
@@ -69,7 +69,7 @@ def test_image_runtime_receives_launcher_resolved_digest(tmp_path, monkeypatch):
         received.update(operation=operation, execution_id=execution_id, runtime_digest=runtime_digest)
         execution.finish({"component": "image", "operation": operation, "status": "succeeded"})
 
-    import iaas_automation.image.runtime as image_runtime
+    import iaas.image.runtime as image_runtime
     monkeypatch.setattr(image_runtime, "run", fake_run)
     digest = "registry.invalid/runtime@sha256:" + "e" * 64
     assert main(["--environment", str(entry), "--component", "image", "--operation", "build",
@@ -110,7 +110,7 @@ def test_pve_cleanup_recovery_directory_is_mapped_read_only_for_plan_and_apply(t
 
 @pytest.mark.parametrize("preview_name", ["template_preview", "preview"])
 def test_pve_template_apply_hydrates_preview_and_admission_from_selected_files(tmp_path, monkeypatch, preview_name):
-    from iaas_automation.pve_template import contracts, runtime
+    from iaas.pve_template import contracts, runtime
     from test_image_publish_contracts import request as publish_request
     from test_pve_template_publisher import Outputs
 
@@ -353,7 +353,7 @@ def test_opnsense_request_is_validated_before_credentials(tmp_path, monkeypatch,
     entry = config(tmp_path, "opnsense", {}, {"inventory": "inventory.yml", "request": "request.yml"})
     (tmp_path / "inventory.yml").write_text("all: {}\n")
     (tmp_path / "request.yml").write_text("schema_version: 1\nselection: {snat: all}\n")
-    import iaas_automation.runtime_execution.__main__ as dispatch
+    import iaas.runtime_execution.__main__ as dispatch
     monkeypatch.setattr(dispatch, "prepare_file_credentials", lambda *args: (_ for _ in ()).throw(
         AssertionError("credentials must not be prepared for an invalid request")))
     output = tmp_path / "result"
@@ -364,7 +364,7 @@ def test_opnsense_request_is_validated_before_credentials(tmp_path, monkeypatch,
 
 
 def test_setup_failure_reports_created_output_and_redacts_exception(tmp_path, monkeypatch, capsys):
-    import iaas_automation.runtime_execution.__main__ as dispatch
+    import iaas.runtime_execution.__main__ as dispatch
     def fail(*args):
         raise yaml.YAMLError("synthetic-private-value")
     monkeypatch.setattr(dispatch, "prepare_file_credentials", fail)

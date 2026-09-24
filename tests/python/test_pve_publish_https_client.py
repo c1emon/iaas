@@ -16,8 +16,8 @@ from urllib.parse import parse_qs
 
 import pytest
 
-from iaas_automation.pve_template.runtime import PveHttpsClient
-from iaas_automation.runtime_execution.execution import OperationFailed
+from iaas.pve_template.runtime import PveHttpsClient
+from iaas.runtime_execution.execution import OperationFailed
 
 
 @pytest.fixture

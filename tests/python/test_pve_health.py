@@ -7,16 +7,16 @@ from typing import Any, cast
 
 import pytest
 
-from iaas_automation.common.io import load_yaml
-from iaas_automation.pve_inventory.checks.health.model import derive_health_expectations
-from iaas_automation.pve_inventory.checks.results import has_failures
-from iaas_automation.pve_inventory.checks.results import render_report
-from iaas_automation.pve_inventory.inventory.model import build_model
-from iaas_automation.pve_inventory.inventory.validation.cluster import validate_cluster
-from iaas_automation.pve_inventory.inventory.validation.vm import validate_vms
-from iaas_automation.pve_inventory.pve_api.runtime import load_api_runtime_config
-from iaas_automation.pve_inventory.health import run_health
-from iaas_automation.pve_inventory.pve_api.errors import PveApiNotConfiguredError, PveApiUnavailableError, PveApiAuthenticationError
+from iaas.common.io import load_yaml
+from iaas.pve_inventory.checks.health.model import derive_health_expectations
+from iaas.pve_inventory.checks.results import has_failures
+from iaas.pve_inventory.checks.results import render_report
+from iaas.pve_inventory.inventory.model import build_model
+from iaas.pve_inventory.inventory.validation.cluster import validate_cluster
+from iaas.pve_inventory.inventory.validation.vm import validate_vms
+from iaas.pve_inventory.pve_api.runtime import load_api_runtime_config
+from iaas.pve_inventory.health import run_health
+from iaas.pve_inventory.pve_api.errors import PveApiNotConfiguredError, PveApiUnavailableError, PveApiAuthenticationError
 
 
 ROOT = Path(__file__).resolve().parents[2]

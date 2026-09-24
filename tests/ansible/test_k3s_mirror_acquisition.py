@@ -6,8 +6,8 @@ import subprocess
 import pytest
 import yaml
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.k3s_automation.config import build_composed_model
+from iaas.common.errors import ValidationError
+from iaas.k3s_automation.config import build_composed_model
 
 ROOT = Path(__file__).resolve().parents[2]
 VERSION = 'v1.35.1+k3s1'

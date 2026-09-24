@@ -4,8 +4,8 @@ from copy import deepcopy
 
 import pytest
 
-from iaas_automation.opnsense_workflow.classification import classify_resource, reference_support
-from iaas_automation.opnsense_workflow.reader import COLLECTION_TARGETS, Reader
+from iaas.opnsense_workflow.classification import classify_resource, reference_support
+from iaas.opnsense_workflow.reader import COLLECTION_TARGETS, Reader
 
 
 TARGET = {"host": "firewall", "endpoint": "https://firewall.example", "ssl_verify": True}

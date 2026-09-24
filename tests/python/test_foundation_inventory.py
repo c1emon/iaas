@@ -11,14 +11,14 @@ from pathlib import Path
 import pytest
 import yaml
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.common.io import load_yaml
-from iaas_automation.foundation_inventory.cli import main as foundation_main
-from iaas_automation.foundation_inventory.health import ProbeOutcome, run_health_checks
-from iaas_automation.foundation_inventory.model import build_model
-from iaas_automation.foundation_inventory.render import build_markdown
-from iaas_automation.foundation_inventory.validation import validate_foundation_inventory
-from iaas_automation.pve_inventory.checks.results import render_report
+from iaas.common.errors import ValidationError
+from iaas.common.io import load_yaml
+from iaas.foundation_inventory.cli import main as foundation_main
+from iaas.foundation_inventory.health import ProbeOutcome, run_health_checks
+from iaas.foundation_inventory.model import build_model
+from iaas.foundation_inventory.render import build_markdown
+from iaas.foundation_inventory.validation import validate_foundation_inventory
+from iaas.pve_inventory.checks.results import render_report
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -130,7 +130,7 @@ def test_ca_path_is_resolved_from_selected_inventory(monkeypatch, tmp_path):
     def observe(model):
         assert model["foundation_services"][0]["health_check"]["ca_file"] == str(tmp_path / "trust/ca.pem")
         return []
-    monkeypatch.setattr("iaas_automation.foundation_inventory.cli.run_health_checks", observe)
+    monkeypatch.setattr("iaas.foundation_inventory.cli.run_health_checks", observe)
     assert foundation_main(["--inventory", str(path), "--health"]) == 0
 
 
@@ -213,7 +213,7 @@ def test_offline_check_mode_does_not_run_health(monkeypatch: pytest.MonkeyPatch,
         raise AssertionError("health should not run in offline check mode")
 
     # Offline check mode should never touch the live health path.
-    monkeypatch.setattr("iaas_automation.foundation_inventory.cli.run_health_checks", _boom)
+    monkeypatch.setattr("iaas.foundation_inventory.cli.run_health_checks", _boom)
     assert foundation_main(["--inventory", str(inventory_copy), "--docs", str(docs_copy), "--check"]) == 0
 
 
@@ -224,11 +224,11 @@ def test_foundation_cli_validation_failure_exits_1_without_traceback(tmp_path: P
     inventory_copy.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
 
     result = subprocess.run(
-        [sys.executable, "-m", "iaas_automation.foundation_inventory.cli", "--inventory", str(inventory_copy)],
+        [sys.executable, "-m", "iaas.foundation_inventory.cli", "--inventory", str(inventory_copy)],
         cwd=ROOT,
         capture_output=True,
         text=True,
-        env=os.environ | {"PYTHONPATH": str(ROOT / "automation" / "src")},
+        env=os.environ | {"PYTHONPATH": str(ROOT / "src")},
     )
 
     assert result.returncode == 1

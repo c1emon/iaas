@@ -7,12 +7,12 @@ from pathlib import Path
 import pytest
 import yaml
 
-from iaas_automation.foundation_inventory.health import ProbeOutcome, run_health_checks
-from iaas_automation.foundation_inventory.model import build_model
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.runtime_config import load_environment
-from iaas_automation.runtime_execution.__main__ import main
-from iaas_automation.runtime_execution.execution import Execution
+from iaas.foundation_inventory.health import ProbeOutcome, run_health_checks
+from iaas.foundation_inventory.model import build_model
+from iaas.common.errors import ValidationError
+from iaas.runtime_config import load_environment
+from iaas.runtime_execution.__main__ import main
+from iaas.runtime_execution.execution import Execution
 
 
 REPO = Path(__file__).resolve().parents[2]

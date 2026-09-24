@@ -2,8 +2,8 @@ from copy import deepcopy
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.opnsense_validation.one_to_one import validate_one_to_one
+from iaas.common.errors import ValidationError
+from iaas.opnsense_validation.one_to_one import validate_one_to_one
 
 
 def valid_record(**changes):

@@ -16,18 +16,18 @@ from typing import Any
 import pytest
 import yaml
 
-from iaas_automation.pve_inventory.cloud_init import main as cloud_init_main
-from iaas_automation.pve_inventory.cloud_init_helpers.artifacts import load_rendered_artifacts, write_rendered_artifacts
-from iaas_automation.pve_inventory.cloud_init_helpers.model import CloudInitSnippet
-from iaas_automation.pve_inventory.cloud_init_helpers.render import render_snippets
-from iaas_automation.pve_inventory.cloud_init_helpers import ssh as cloud_init_ssh
-from iaas_automation.common.io import load_yaml
-from iaas_automation.pve_inventory.checks.preflight.model import derive_expected_resources
-from iaas_automation.pve_inventory.inventory.model import build_model
-from iaas_automation.pve_inventory.inventory.render import render_outputs
-from iaas_automation.pve_inventory.inventory.validation.cluster import validate_cluster
-from iaas_automation.pve_inventory.inventory.validation.vm import validate_vms
-from iaas_automation.common.errors import ValidationError
+from iaas.pve_inventory.cloud_init import main as cloud_init_main
+from iaas.pve_inventory.cloud_init_helpers.artifacts import load_rendered_artifacts, write_rendered_artifacts
+from iaas.pve_inventory.cloud_init_helpers.model import CloudInitSnippet
+from iaas.pve_inventory.cloud_init_helpers.render import render_snippets
+from iaas.pve_inventory.cloud_init_helpers import ssh as cloud_init_ssh
+from iaas.common.io import load_yaml
+from iaas.pve_inventory.checks.preflight.model import derive_expected_resources
+from iaas.pve_inventory.inventory.model import build_model
+from iaas.pve_inventory.inventory.render import render_outputs
+from iaas.pve_inventory.inventory.validation.cluster import validate_cluster
+from iaas.pve_inventory.inventory.validation.vm import validate_vms
+from iaas.common.errors import ValidationError
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -891,11 +891,11 @@ def test_pve_cli_validation_failure_exits_1_without_traceback(tmp_path: Path) ->
     vms_copy.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
 
     result = subprocess.run(
-        [sys.executable, "-m", "iaas_automation.pve_inventory.cli", "--cluster", str(CLUSTER_PATH), "--vms", str(vms_copy)],
+        [sys.executable, "-m", "iaas.pve_inventory.cli", "--cluster", str(CLUSTER_PATH), "--vms", str(vms_copy)],
         cwd=ROOT,
         capture_output=True,
         text=True,
-        env=os.environ | {"PYTHONPATH": str(ROOT / "automation" / "src")},
+        env=os.environ | {"PYTHONPATH": str(ROOT / "src")},
     )
 
     assert result.returncode == 1

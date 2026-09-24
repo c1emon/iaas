@@ -7,7 +7,7 @@ import subprocess
 
 import pytest
 
-from iaas_automation.runtime_paths import validate_paths
+from iaas.runtime_paths import validate_paths
 
 
 ROOT = Path(__file__).resolve().parents[2]

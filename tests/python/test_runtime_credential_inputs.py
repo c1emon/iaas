@@ -7,10 +7,10 @@ import stat
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.k3s_automation.secrets import load_protected_environment_json
-from iaas_automation.pve_inventory.pve_api.runtime import load_api_runtime_config
-from iaas_automation.runtime_execution import credentials
+from iaas.common.errors import ValidationError
+from iaas.k3s_automation.secrets import load_protected_environment_json
+from iaas.pve_inventory.pve_api.runtime import load_api_runtime_config
+from iaas.runtime_execution import credentials
 
 
 def test_root_owned_public_trust_file_is_accepted_but_root_owned_secret_is_rejected(monkeypatch):

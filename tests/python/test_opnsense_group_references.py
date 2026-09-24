@@ -4,8 +4,8 @@ from typing import Any
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.opnsense_validation import validate_documents
+from iaas.common.errors import ValidationError
+from iaas.opnsense_validation import validate_documents
 
 
 def _group(*, name: str = "Internal", state: str = "present", members: list[str] | None = None) -> dict[str, Any]:

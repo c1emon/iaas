@@ -3,10 +3,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.runtime_config import InputRequired, SourceReader, load_environment
-from iaas_automation.runtime_config.compile import compile_documents, export_generated
-from iaas_automation.runtime_config.selection import RuntimeSelection
+from iaas.common.errors import ValidationError
+from iaas.runtime_config import InputRequired, SourceReader, load_environment
+from iaas.runtime_config.compile import compile_documents, export_generated
+from iaas.runtime_config.selection import RuntimeSelection
 
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"

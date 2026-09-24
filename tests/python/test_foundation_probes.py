@@ -9,7 +9,7 @@ import threading
 
 import pytest
 
-from iaas_automation.foundation_inventory import health
+from iaas.foundation_inventory import health
 
 
 def response(request, kind, data):

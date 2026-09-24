@@ -124,7 +124,7 @@
         argv:
           - "{{ ansible_playbook_python }}"
           - -m
-          - iaas_automation.platform_handoff
+          - iaas.platform_handoff
           - --intent
           - "{{ platform_handoff_k3s_intent }}"
           - --inventory
@@ -138,5 +138,5 @@
           - --ca-fingerprint
           - "{{ platform_handoff_ca_fingerprint }}"
       environment:
-        PYTHONPATH: "{{ playbook_dir }}/../../../src"
+        PYTHONPATH: "{{ playbook_dir }}/../../../../src"
       changed_when: true

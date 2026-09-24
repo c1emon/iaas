@@ -1,6 +1,6 @@
 """Focused loaded PF checks for gateway and interface-group consumers."""
 
-from iaas_automation.opnsense_workflow.pf_consumers import (
+from iaas.opnsense_workflow.pf_consumers import (
     check_gateway_active,
     check_interface_group_active,
 )

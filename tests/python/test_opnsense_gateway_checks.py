@@ -1,7 +1,7 @@
 from copy import deepcopy
 
-from iaas_automation.opnsense_workflow.gateway_checks import check_gateway_current
-from iaas_automation.opnsense_workflow.reader import FixedCollectionTransport, Reader
+from iaas.opnsense_workflow.gateway_checks import check_gateway_current
+from iaas.opnsense_workflow.reader import FixedCollectionTransport, Reader
 
 
 TARGET = {"host": "firewall", "endpoint": "https://firewall.example", "ssl_verify": True}

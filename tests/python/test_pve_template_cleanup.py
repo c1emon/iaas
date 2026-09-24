@@ -8,8 +8,8 @@ from urllib.parse import unquote
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.pve_template import contracts, runtime
+from iaas.common.errors import ValidationError
+from iaas.pve_template import contracts, runtime
 
 from test_image_publish_contracts import request as publish_request
 

@@ -1,8 +1,8 @@
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.opnsense_validation import validate_document
-from iaas_automation.opnsense_validation.interface_groups import validate_interface_group
+from iaas.common.errors import ValidationError
+from iaas.opnsense_validation import validate_document
+from iaas.opnsense_validation.interface_groups import validate_interface_group
 
 
 def valid_record(**changes):

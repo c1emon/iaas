@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 import yaml
 
-from iaas_automation.opnsense_workflow.writer import (
+from iaas.opnsense_workflow.writer import (
     Writer,
     WriterError,
     provider_arguments,

@@ -112,12 +112,14 @@ VM799 使用 execution `vm799-create-20260923-0003-r2` 完成原生 apply，`nat
 
 ONE image execution 已有 guest boot evidence；PVE VM799 本轮保持 `started=false`，没有执行 guest boot。当前证据不包含正式 OCI/runtime release 或持久 Forgejo Runner 部署；这些边界仍保持未完成。5.3 已在本轮限定范围内完成，证据覆盖模板发布、VM 生命周期、retire、S3 cleanup 和现场无残留核对；5.4 release handoff 仍未授权发布或标记完成。
 
-## 镜像打包目录命名已统一
+## OCI 打包与 Python 包边界
 
-普通 `iaas-runtime` OCI 镜像的 Dockerfile、构建、检查和入口现位于
-`automation/images/runtime/`，专用 builder 位于 `automation/images/image-builder/`；两者共享的
-`release.py` 位于 `automation/images/release.py`。具体操作逻辑仍位于
-`automation/src/iaas_automation/`。本次只调整仓库内打包资产路径，不改变镜像接口、发布行为或稳定合同/schema 路径。
+普通 OCI 镜像的打包材料位于 `automation/oci/iaas-runtime/`，磁盘镜像构建执行器的
+打包材料位于 `automation/oci/disk-image-builder/`。两者共享 `oci/common/` 的入口和
+依赖清单；构建后的检查位于 `oci/checks/`，共同发布逻辑位于 `oci/release.py`。
+Python 实现位于仓库根目录的 `src/iaas/`，模块入口已由 `iaas_automation.*` 改为
+`iaas.*`。这是源码/命令入口的不兼容改名；本轮未发布新的 OCI 镜像，也未改变已留存的
+现场执行证据。
 
 ## PVE bootstrap 用户由调用方选择
 

@@ -7,10 +7,10 @@ import sys
 import pytest
 import yaml
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.opnsense_validation import validate_document, validate_documents
-from iaas_automation.runtime_config import load_environment
-from iaas_automation.runtime_config.compile import compile_documents
+from iaas.common.errors import ValidationError
+from iaas.opnsense_validation import validate_document, validate_documents
+from iaas.runtime_config import load_environment
+from iaas.runtime_config.compile import compile_documents
 
 ROOT = Path(__file__).resolve().parents[2]
 

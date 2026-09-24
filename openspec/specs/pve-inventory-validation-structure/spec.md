@@ -11,14 +11,14 @@ The system SHALL organize PVE inventory validation implementation into focused m
 
 #### Scenario: Import concrete validation helpers
 - **WHEN** Python callers need PVE inventory validation helpers
-- **THEN** cluster validation helpers SHALL be importable from `iaas_automation.pve_inventory.inventory.validation.cluster`
-- **AND** VM validation helpers SHALL be importable from `iaas_automation.pve_inventory.inventory.validation.vm`
+- **THEN** cluster validation helpers SHALL be importable from `iaas.pve_inventory.inventory.validation.cluster`
+- **AND** VM validation helpers SHALL be importable from `iaas.pve_inventory.inventory.validation.vm`
 - **AND** the imported functions SHALL validate the selected environment's cluster and VM source-of-truth YAML
 - **AND** no `scripts` package or compatibility facade SHALL be required
 
 #### Scenario: Keep shared validation helpers cycle-free
 - **WHEN** cluster, VM, or passthrough validation code needs shared schema assertion helpers
-- **THEN** the helpers SHALL be available from `iaas_automation.common.validation`
+- **THEN** the helpers SHALL be available from `iaas.common.validation`
 - **AND** passthrough validation SHALL NOT import helpers through a compatibility facade
 
 #### Scenario: Preserve offline validation behavior

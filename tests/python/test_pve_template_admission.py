@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.runtime_execution.plans import _templates, _admit_templates
+from iaas.common.errors import ValidationError
+from iaas.runtime_execution.plans import _templates, _admit_templates
 
 TARGET = {'api_endpoint': 'https://pve.invalid:8006', 'insecure': False,
           'storage_id': 'snippets', 'ssh_host': 'ssh.invalid', 'ssh_user': 'ops'}
@@ -94,7 +94,7 @@ def test_update_delete_without_clone_does_not_check_publication():
 
 
 def test_state_ownership_allows_drift_but_markers_do_not_authorize_vmid():
-    from iaas_automation.runtime_execution.plans import _check_declared_conflicts
+    from iaas.runtime_execution.plans import _check_declared_conflicts
 
     api = SimpleNamespace(
         effective_permissions=lambda path: {path: {'VM.Audit': 1}},

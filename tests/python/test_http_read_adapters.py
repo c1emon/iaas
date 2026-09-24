@@ -2,8 +2,8 @@
 import pytest
 import requests
 
-from iaas_automation.opnsense_diagnostics import adapter as diagnostics
-from iaas_automation.opnsense_workflow import reader as workflow
+from iaas.opnsense_diagnostics import adapter as diagnostics
+from iaas.opnsense_workflow import reader as workflow
 
 pytestmark = pytest.mark.fast
 

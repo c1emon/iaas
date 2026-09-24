@@ -8,10 +8,10 @@ from typing import Any
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.common.io import load_yaml
-from iaas_automation.k3s_automation.config import build_composed_model
-from iaas_automation.k3s_automation.operations import (
+from iaas.common.errors import ValidationError
+from iaas.common.io import load_yaml
+from iaas.k3s_automation.config import build_composed_model
+from iaas.k3s_automation.operations import (
     UpgradePlan,
     validate_deployment_scope,
     validate_exact_scope,

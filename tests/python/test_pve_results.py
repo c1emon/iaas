@@ -2,9 +2,9 @@ from copy import deepcopy
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.runtime_execution.pve_results import machine_review, expectations, verify_configuration
-from iaas_automation.pve_inventory.pve_api import PveApiNotConfiguredError
+from iaas.common.errors import ValidationError
+from iaas.runtime_execution.pve_results import machine_review, expectations, verify_configuration
+from iaas.pve_inventory.pve_api import PveApiNotConfiguredError
 
 
 def change(actions=None, vmid=101):

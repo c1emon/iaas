@@ -1,4 +1,4 @@
-from iaas_automation.opnsense_workflow.group_checks import check_interface_group_current
+from iaas.opnsense_workflow.group_checks import check_interface_group_current
 
 
 DESIRED = {"name": "inside", "members": ["lan", "opt1"]}

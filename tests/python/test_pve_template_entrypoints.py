@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.pve_template import runtime
+from iaas.common.errors import ValidationError
+from iaas.pve_template import runtime
 
 from test_image_publish_contracts import request as publish_request
 from test_pve_template_publisher import API, Outputs
@@ -48,8 +48,8 @@ def test_read_observes_existing_template_without_build_history(tmp_path, monkeyp
 def test_observation_inputs_include_explicit_ca_file(tmp_path, operation):
     import json
 
-    from iaas_automation.runtime_config import SourceReader
-    from iaas_automation.runtime_execution.selection import load_operation
+    from iaas.runtime_config import SourceReader
+    from iaas.runtime_execution.selection import load_operation
 
     ca = tmp_path / "ca.pem"
     ca.write_text("public CA fixture")

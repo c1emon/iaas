@@ -7,15 +7,16 @@ This layer contains mechanisms reusable across environments. It does not own
 environment topology, VM declarations, runtime templates, generated inputs, or local
 state.
 
-- `src/iaas_automation/` — Python validation, rendering, and read-only check
+- `../src/iaas/` — Python validation, rendering, and read-only check
   modules. Their supported CLI inputs and outputs are explicit.
 - `ansible/` — reusable playbooks, roles, module utilities, and Ansible
   configuration.
 - `opentofu/modules/` — reusable OpenTofu modules.
 - `packer/qemu/` — pinned local image-build profiles.
-- `images/runtime/` and `images/image-builder/` — ordinary OCI runtime and dedicated image-builder packaging assets.
+- `oci/iaas-runtime/` and `oci/disk-image-builder/` — OCI packaging assets;
+  `oci/checks/` holds image checks and `oci/common/` holds shared inputs.
 - `pve-node/bin/iaas-pve-snippet-upload` — the retained node-side snippet helper only.
 
 本文件只说明可复用实现层。操作步骤、参数解释、准入和
 验收仅见 [基础设施操作手册](../docs/operations/README.md)。开发者直接调用
-Python 模块时需要 `PYTHONPATH=automation/src`；不存在 `scripts.*` 兼容包。
+Python 模块时需要 `PYTHONPATH=src`；不存在 `scripts.*` 兼容包。

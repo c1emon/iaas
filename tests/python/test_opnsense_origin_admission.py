@@ -4,10 +4,10 @@ import json
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.opnsense_workflow.contracts import key, load_candidate, save
-from iaas_automation.opnsense_workflow.executor import reverse_documents
-from iaas_automation.opnsense_workflow.planning import plan
+from iaas.common.errors import ValidationError
+from iaas.opnsense_workflow.contracts import key, load_candidate, save
+from iaas.opnsense_workflow.executor import reverse_documents
+from iaas.opnsense_workflow.planning import plan
 from test_opnsense_workflow import (Appliance, RUNTIME, TARGET, alias, candidate,
                                     documents, execute, rule)
 

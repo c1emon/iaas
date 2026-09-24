@@ -7,14 +7,14 @@ import sys
 import pytest
 import yaml
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.runtime_config import load_environment
-from iaas_automation.runtime_config.compile import compile_documents
-from iaas_automation.runtime_execution.execution import Execution, OperationFailed
-from iaas_automation.runtime_execution.outputs import TaskOutputs
-from iaas_automation.runtime_execution.plans import admit_plan, apply_saved_plan, prepare_plan, target_selection
-from iaas_automation.runtime_execution.process import run_protected
-from iaas_automation.runtime_execution.state import S3Backend
+from iaas.common.errors import ValidationError
+from iaas.runtime_config import load_environment
+from iaas.runtime_config.compile import compile_documents
+from iaas.runtime_execution.execution import Execution, OperationFailed
+from iaas.runtime_execution.outputs import TaskOutputs
+from iaas.runtime_execution.plans import admit_plan, apply_saved_plan, prepare_plan, target_selection
+from iaas.runtime_execution.process import run_protected
+from iaas.runtime_execution.state import S3Backend
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -23,8 +23,8 @@ IMAGE = "example/iaas@sha256:" + "a" * 64
 
 @pytest.fixture
 def setup_plan(tmp_path, monkeypatch):
-    from iaas_automation.runtime_execution import pve_provider, pve_state, plans
-    from iaas_automation.runtime_execution.pve_state import StateObservation
+    from iaas.runtime_execution import pve_provider, pve_state, plans
+    from iaas.runtime_execution.pve_state import StateObservation
     monkeypatch.setattr(pve_provider, "validate_root", lambda *a: {}, raising=False)
     monkeypatch.setattr(pve_provider, "prepare_provider_environment", lambda *a: None, raising=False)
     monkeypatch.setattr(pve_provider, "validate_plan_provider", lambda *a: None, raising=False)
@@ -53,7 +53,7 @@ def setup_plan(tmp_path, monkeypatch):
     cloud_init = generated["cluster"]["automation"]["cloud_init"]
     role = cloud_init["snippet_storage_role"]
     selected.options["pve"]["storage_id"] = generated["cluster"]["storage_roles"][role]["datastore"]
-    env = {"PATH": f"{tmp_path}:{os.environ['PATH']}", "PYTHONPATH": str(REPO / "automation/src"), "HOME": str(tmp_path)}
+    env = {"PATH": f"{tmp_path}:{os.environ['PATH']}", "PYTHONPATH": str(REPO / "src"), "HOME": str(tmp_path)}
     for user in cloud_init["users"]:
         env[user["password_env"]] = "synthetic-password"
         env[user["public_key_env"]] = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGsynthetic runtime-test"
@@ -183,7 +183,7 @@ def test_empty_vm_plan_skips_ssh_and_preserves_root_executable(setup_plan, tmp_p
 
 
 def test_collection_failure_preserves_native_success(setup_plan, monkeypatch):
-    from iaas_automation.runtime_execution import pve_state
+    from iaas.runtime_execution import pve_state
     selected, backend, tofu, execution = setup_plan
     plan = prepare_plan(selected, execution("prepare"), backend, "complete-root", IMAGE, tofu)
     observe = pve_state.observe_state
@@ -209,7 +209,7 @@ def test_collection_failure_preserves_native_success(setup_plan, monkeypatch):
 
 
 def test_independent_verify_keeps_original_and_never_initializes(setup_plan, monkeypatch):
-    from iaas_automation.runtime_execution.plans import verify_pve
+    from iaas.runtime_execution.plans import verify_pve
     selected, backend, tofu, execution = setup_plan
     plan = prepare_plan(selected, execution("prepare"), backend, "complete-root", IMAGE, tofu)
     apply = execution("apply")
@@ -241,7 +241,7 @@ def test_required_external_acceptance_remains_incomplete(setup_plan):
 
 
 def test_recovery_read_preserves_original_and_rejects_cross_root(setup_plan, monkeypatch):
-    from iaas_automation.runtime_execution.plans import read_pve
+    from iaas.runtime_execution.plans import read_pve
     selected, backend, tofu, execution = setup_plan
     plan = prepare_plan(selected, execution("prepare"), backend, "complete-root", IMAGE, tofu)
     apply = execution("apply")
@@ -261,7 +261,7 @@ def test_recovery_read_preserves_original_and_rejects_cross_root(setup_plan, mon
 
 
 def test_state_transition_only_admits_matching_initialization():
-    from iaas_automation.runtime_execution.plans import _state_transition
+    from iaas.runtime_execution.plans import _state_transition
     absent = {"status": "absent"}
     present = {"status": "present", "lineage": "original", "empty": True}
     _state_transition(absent, present, allow_initialization=True)
@@ -291,7 +291,7 @@ def test_native_state_write_failure_keeps_emergency_state(setup_plan):
 def first_use_plan(setup_plan, monkeypatch):
     from dataclasses import replace
     from types import SimpleNamespace
-    from iaas_automation.runtime_execution import plans, pve_state
+    from iaas.runtime_execution import plans, pve_state
     selected, backend, tofu, execution = setup_plan
     empty = pve_state.observe_state(backend, {})
     absent = replace(empty, status="absent", lineage=None, serial=None, empty=None, raw=None)
@@ -321,7 +321,7 @@ def first_use_plan(setup_plan, monkeypatch):
 @pytest.mark.parametrize("outcome", ["present", "absent", "error", "native_failure", "recovery_state"])
 def test_first_use_apply_collects_only_after_complete_native_success(first_use_plan, monkeypatch, outcome):
     from dataclasses import replace
-    from iaas_automation.runtime_execution import pve_state
+    from iaas.runtime_execution import pve_state
     selected, backend, tofu, execution, plan, absent, _, populated = first_use_plan
     observations = iter([absent, absent, populated if outcome == "present" else replace(absent, status=outcome)])
     reads = []
@@ -354,7 +354,7 @@ def test_first_use_apply_collects_only_after_complete_native_success(first_use_p
 @pytest.mark.parametrize("stage", ["before_apply", "initialization", "lineage_change"])
 def test_first_use_does_not_admit_unexpected_state(first_use_plan, monkeypatch, stage):
     from dataclasses import replace
-    from iaas_automation.runtime_execution import pve_state
+    from iaas.runtime_execution import pve_state
     selected, backend, tofu, execution, plan, absent, empty, populated = first_use_plan
     observations = iter({
         "before_apply": [populated],

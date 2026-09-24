@@ -4,10 +4,10 @@ from types import SimpleNamespace
 import pytest
 from proxmoxer import ResourceException
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.pve_inventory.pve_api import ReadOnlyPveApi, PveApiRuntimeConfig, PveApiUnavailableError
-from iaas_automation.runtime_execution.plans import _check_resource_conflicts, _check_declared_conflicts
-from iaas_automation.runtime_execution.pve_results import observed_vmids, verify_configuration, VM_TYPE
+from iaas.common.errors import ValidationError
+from iaas.pve_inventory.pve_api import ReadOnlyPveApi, PveApiRuntimeConfig, PveApiUnavailableError
+from iaas.runtime_execution.plans import _check_resource_conflicts, _check_declared_conflicts
+from iaas.runtime_execution.pve_results import observed_vmids, verify_configuration, VM_TYPE
 
 
 def api_for(rows, grants=None, calls=None):

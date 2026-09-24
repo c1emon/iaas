@@ -5,13 +5,13 @@ import sys
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.runtime_execution.outputs import TaskOutputs
-from iaas_automation.runtime_execution.process import _capture_output, run_protected
-from iaas_automation.runtime_execution.state import S3Backend
-from iaas_automation.runtime_execution.credentials import prepare_file_credentials
-from iaas_automation.runtime_execution.operations import credential_names, operation_for, process_environment
-from iaas_automation.runtime_execution.execution import Execution, OperationFailed
+from iaas.common.errors import ValidationError
+from iaas.runtime_execution.outputs import TaskOutputs
+from iaas.runtime_execution.process import _capture_output, run_protected
+from iaas.runtime_execution.state import S3Backend
+from iaas.runtime_execution.credentials import prepare_file_credentials
+from iaas.runtime_execution.operations import credential_names, operation_for, process_environment
+from iaas.runtime_execution.execution import Execution, OperationFailed
 
 
 def test_emergency_state_output_is_protected_even_without_recovery_file(tmp_path, capfd):

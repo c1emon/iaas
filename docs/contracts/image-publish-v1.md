@@ -23,7 +23,7 @@ the concrete document version, while keeping this directory and its `$id`
 paths stable for the v1 bundle.
 
 The shared launcher validates these documents with the same normalized
-contract code at `automation/src/iaas_automation/image/contracts.py` and
+contract code at `src/iaas/image/contracts.py` and
 writes `diagnostics/normalized.json` for `image check`. The file contains the
 normalized document and `input_digest`; callers should bind that digest rather
 than JSON formatting or object-key order.

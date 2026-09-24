@@ -20,7 +20,7 @@
           - "{{ playbook_dir }}/../../../.."
           - python
           - -m
-          - iaas_automation.opnsense_diagnostics
+          - iaas.opnsense_diagnostics
           - --target
           - "{{ opnsense_diagnostics_target }}"
           - --request
@@ -34,7 +34,7 @@
           - --inventories
           - "{{ ansible_inventory_sources | to_json }}"
       environment:
-        PYTHONPATH: "{{ playbook_dir }}/../../../src"
+        PYTHONPATH: "{{ playbook_dir }}/../../../../src"
       changed_when: false
       check_mode: false
 
@@ -67,7 +67,7 @@
       vars:
         diagnostic_base_command: *diagnostic_command
       environment:
-        PYTHONPATH: "{{ playbook_dir }}/../../../src"
+        PYTHONPATH: "{{ playbook_dir }}/../../../../src"
       register: opnsense_diagnostic_execution
       changed_when: false
       failed_when: false

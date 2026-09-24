@@ -15,7 +15,7 @@ def test_import_contracts_reject_each_boundary(tmp_path):
     contracts = tomllib.loads(config.read_text())['tool']['importlinter']['contracts']
     for contract in contracts:
         for name in contract['source_modules'] + contract['forbidden_modules']:
-            if not name.startswith('iaas_automation'):
+            if not name.startswith('iaas'):
                 continue
             path = tmp_path
             for part in name.split('.'):

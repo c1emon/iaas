@@ -196,7 +196,7 @@ make opnsense-validate
 三类新增资源必须显式选择。例如：
 
 ```bash
-PYTHONPATH=automation/src uv run python -m iaas_automation.opnsense_validation \
+PYTHONPATH=src uv run python -m iaas.opnsense_validation \
   --resource dnat --file "$ENVIRONMENT_DIR/ansible/vars/opnsense/dnat.yml"
 ```
 
@@ -401,7 +401,7 @@ desired inputs。apply 的 options 必须包含 `candidate_sha256`、`execution_
 可选深度核查命令：
 
 ```sh
-PYTHONPATH=automation/src uv run python -m iaas_automation.opnsense_workflow.inspect \
+PYTHONPATH=src uv run python -m iaas.opnsense_workflow.inspect \
   --inventory INVENTORY --candidate CANDIDATE --output OUTPUT
 ```
 
@@ -498,4 +498,4 @@ Alias/Rules 可手写，也可由调用方从其维护的输入确定性生成�
 
 规则文件可附带 `opnsense_filter_rule_context`，仅含 `interface_networks`（接口到 CIDR 列表）和 `aliases`（标准别名列表）。反向匹配只能有一个目标；反向 deny 的入口网络保护只接受静态覆盖证据，按 inet/inet6/inet46 分别检查。域名、URL Table 和未知外部成员本身不构成静态证据；未知外部引用仍按既有在线解析合同处理。上下文与所选别名声明冲突时拒绝，离线接受不证明现场事实有效。
 
-调用方可以通过 `PYTHONPATH=automation/src uv run python -m iaas_automation.opnsense_validation --vars-dir DIR` 校验原有四文件集，或用 `--resource dnat|one-to-one-nat|interface-groups --file FILE` 显式校验新增资源，再用 runtime_config 的 check/generate 入口生成文件。Ansible 加载后的复验也位于凭据访问前，不把字符串转换成整数或布尔。配置保存与激活仍是不同结果，不承诺跨资源事务；有引用时通常先处理 Groups/别名，再处理引用它们的 NAT/过滤规则，删除则反向进行。执行授权、阶段编排及恢复决策由调用方负责。
+调用方可以通过 `PYTHONPATH=src uv run python -m iaas.opnsense_validation --vars-dir DIR` 校验原有四文件集，或用 `--resource dnat|one-to-one-nat|interface-groups --file FILE` 显式校验新增资源，再用 runtime_config 的 check/generate 入口生成文件。Ansible 加载后的复验也位于凭据访问前，不把字符串转换成整数或布尔。配置保存与激活仍是不同结果，不承诺跨资源事务；有引用时通常先处理 Groups/别名，再处理引用它们的 NAT/过滤规则，删除则反向进行。执行授权、阶段编排及恢复决策由调用方负责。

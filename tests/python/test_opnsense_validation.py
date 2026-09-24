@@ -11,8 +11,8 @@ from typing import Any
 import pytest
 import yaml
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.opnsense_validation import RESOURCE_FILES, validate_all, validate_document
+from iaas.common.errors import ValidationError
+from iaas.opnsense_validation import RESOURCE_FILES, validate_all, validate_document
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -108,11 +108,11 @@ def test_cli_reports_expected_error_without_traceback_or_payload(tmp_path: Path)
     path = tmp_path / "aliases.yml"
     path.write_text("opnsense_aliases:\n  - name: secret-value\n", encoding="utf-8")
     result = subprocess.run(
-        [sys.executable, "-m", "iaas_automation.opnsense_validation", "--resource", "aliases", "--file", str(path)],
+        [sys.executable, "-m", "iaas.opnsense_validation", "--resource", "aliases", "--file", str(path)],
         check=False,
         capture_output=True,
         text=True,
-        env=os.environ | {"PYTHONPATH": str(ROOT / "automation" / "src")},
+        env=os.environ | {"PYTHONPATH": str(ROOT / "src")},
     )
     assert result.returncode == 1
     assert "opnsense validation failed: opnsense_aliases[0]" in result.stderr
@@ -133,7 +133,7 @@ def test_supported_mutation_playbooks_validate_before_credentials_and_mutation(
     playbook: str, resource: str, source_variable: str, mutation: str
 ) -> None:
     source = (ROOT / "automation" / "ansible" / "playbooks" / "opnsense" / playbook).read_text(encoding="utf-8")
-    validator = source.index("iaas_automation.opnsense_validation")
+    validator = source.index("iaas.opnsense_validation")
     assert source.index(f"- {resource}", validator) > validator
     assert source.index(f'"{{{{ {source_variable} }}}}"', validator) > validator
     assert validator < source.index("ansible.builtin.include_vars:")
@@ -146,7 +146,7 @@ def test_supported_mutation_playbooks_validate_before_credentials_and_mutation(
     assert validator < source.index("oxlorg.opnsense.reload:")
     assert "'ENVIRONMENT_DIR', default=undef()" in source
     assert "environments/astra" not in source
-    assert 'PYTHONPATH: "{{ playbook_dir }}/../../../src"' in source
+    assert 'PYTHONPATH: "{{ playbook_dir }}/../../../../src"' in source
     assert '"{{ ansible_project_dir }}/../../.."' not in source
     assert "changed_when: false" in source[: source.index("ansible.builtin.include_vars:")]
     assert "check_mode: false" in source[: source.index("ansible.builtin.include_vars:")]

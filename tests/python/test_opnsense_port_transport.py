@@ -1,6 +1,6 @@
 from copy import deepcopy
 
-from iaas_automation.opnsense_workflow.reader import FixedCollectionTransport, _HttpFailure
+from iaas.opnsense_workflow.reader import FixedCollectionTransport, _HttpFailure
 
 
 UUID = '11111111-1111-4111-8111-111111111111'

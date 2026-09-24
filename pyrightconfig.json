@@ -3,20 +3,20 @@
   "venv": ".venv",
   "pythonVersion": "3.12",
   "include": [
-    "automation/src",
+    "src",
     "automation/ansible",
-    "automation/images/runtime"
+    "automation/oci/checks"
   ],
   "exclude": [
     "automation/ansible/collections"
   ],
   "extraPaths": [
-    "automation/src"
+    "src"
   ],
   "strict": [
-    "automation/src/iaas_automation/common/conversion.py",
-    "automation/src/iaas_automation/common/errors.py",
-    "automation/src/iaas_automation/opnsense_workflow/conversion",
-    "automation/src/iaas_automation/http_transport"
+    "src/iaas/common/conversion.py",
+    "src/iaas/common/errors.py",
+    "src/iaas/opnsense_workflow/conversion",
+    "src/iaas/http_transport"
   ]
 }

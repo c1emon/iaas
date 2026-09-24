@@ -48,7 +48,7 @@
           - "{{ playbook_dir }}/../../../.."
           - python
           - -m
-          - iaas_automation.opnsense_validation
+          - iaas.opnsense_validation
           - --resource
           - filter-rules
           - --file
@@ -56,7 +56,7 @@
       args:
         chdir: "{{ playbook_dir }}/../../../.."
       environment:
-        PYTHONPATH: "{{ playbook_dir }}/../../../src"
+        PYTHONPATH: "{{ playbook_dir }}/../../../../src"
       changed_when: false
       check_mode: false
 

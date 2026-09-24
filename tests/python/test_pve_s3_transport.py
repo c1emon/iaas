@@ -10,8 +10,8 @@ from urllib.parse import unquote, urlsplit
 
 import pytest
 
-from iaas_automation.runtime_execution.pve_state import BotoS3ReadTransport, S3StateObserver
-from iaas_automation.runtime_execution.state import S3Backend
+from iaas.runtime_execution.pve_state import BotoS3ReadTransport, S3StateObserver
+from iaas.runtime_execution.state import S3Backend
 
 
 STATE = {

@@ -29,7 +29,7 @@
 
 ## Impact
 
-后续涉及 `automation/pve-node/bin/`、`automation/packer/`、`automation/src/iaas_automation/pve_template/`、runtime_execution、launcher、镜像构建资产、安装/卸载 playbook、生成器和操作文档。VM 原生 plan/state 与 OPNsense 候选/激活语义保持独立。
+后续涉及 `automation/pve-node/bin/`、`automation/packer/`、`src/iaas/pve_template/`、runtime_execution、launcher、镜像构建资产、安装/卸载 playbook、生成器和操作文档。VM 原生 plan/state 与 OPNsense 候选/激活语义保持独立。
 
 ## Non-goals and delivery scope
 

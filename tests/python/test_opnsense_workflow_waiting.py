@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from iaas_automation.opnsense_workflow.waiting import WaitPolicy, wait_for_confirmation
+from iaas.opnsense_workflow.waiting import WaitPolicy, wait_for_confirmation
 
 
 class FakeClock:

@@ -8,13 +8,13 @@ from tempfile import TemporaryDirectory
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.runtime_config import SourceReader
-from iaas_automation.runtime_config.compile import compile_documents
-from iaas_automation.runtime_execution.pve_contracts import validate_result
-from iaas_automation.runtime_execution.pve_provider import validate_root
-from iaas_automation.runtime_execution.root import materialize_root
-from iaas_automation.runtime_execution.selection import load_operation
+from iaas.common.errors import ValidationError
+from iaas.runtime_config import SourceReader
+from iaas.runtime_config.compile import compile_documents
+from iaas.runtime_execution.pve_contracts import validate_result
+from iaas.runtime_execution.pve_provider import validate_root
+from iaas.runtime_execution.root import materialize_root
+from iaas.runtime_execution.selection import load_operation
 
 
 ROOT = Path(__file__).resolve().parents[2] / "docs/examples/pve-lifecycle"

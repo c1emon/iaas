@@ -59,7 +59,7 @@ same input facts without requiring an internal Ansible directory structure.
 For development, run the offline compiler through the project environment:
 
 ```sh
-PYTHONPATH=automation/src uv run python -m iaas_automation.runtime_config \
+PYTHONPATH=src uv run python -m iaas.runtime_config \
   --environment docs/examples/runtime/flat/environment.yml \
   --component opnsense --operation check
 ```

@@ -8,8 +8,8 @@ from urllib.parse import urlsplit
 
 import pytest
 
-import iaas_automation.opnsense_workflow.reader as reader_module
-from iaas_automation.opnsense_workflow.reader import (
+import iaas.opnsense_workflow.reader as reader_module
+from iaas.opnsense_workflow.reader import (
     FixedCollectionTransport,
     Reader,
 )
@@ -207,8 +207,8 @@ def test_multistage_apply_retains_unknown_recovery_after_readback_failure(tmp_pa
 def test_real_reader_multistage_apply_and_failure_recovery(monkeypatch, tmp_path, fail_observation):
     from copy import deepcopy
     from test_opnsense_workflow import Appliance, TARGET as WORKFLOW_TARGET, alias, candidate, documents, rule
-    from iaas_automation.opnsense_workflow.contracts import identity
-    from iaas_automation.opnsense_workflow.executor import apply
+    from iaas.opnsense_workflow.contracts import identity
+    from iaas.opnsense_workflow.executor import apply
 
     limit = 2000
     monkeypatch.setattr(reader_module, 'MAX_TOTAL_BYTES', limit)

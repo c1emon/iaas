@@ -6,10 +6,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.opnsense_workflow.runtime import target_from_inventory
-from iaas_automation.runtime_config.selection import runtime_platform
-from iaas_automation.runtime_execution.__main__ import main
+from iaas.common.errors import ValidationError
+from iaas.opnsense_workflow.runtime import target_from_inventory
+from iaas.runtime_config.selection import runtime_platform
+from iaas.runtime_execution.__main__ import main
 from test_opnsense_workflow import Appliance, TARGET, alias
 
 
@@ -25,8 +25,8 @@ def test_target_requires_single_host_and_binds_tls():
 @pytest.mark.parametrize('layout', ['flat', 'nested'])
 @pytest.mark.parametrize('missing_evidence', [False, True])
 def test_formal_read_plan_apply_verify_and_fixed_source(tmp_path, monkeypatch, layout, missing_evidence):
-    import iaas_automation.opnsense_workflow.reader as reader_module
-    import iaas_automation.opnsense_workflow.writer as writer_module
+    import iaas.opnsense_workflow.reader as reader_module
+    import iaas.opnsense_workflow.writer as writer_module
     device = Appliance(aliases=[alias('UNMANAGED')])
     original_read = device.read
 
@@ -97,7 +97,7 @@ def test_formal_read_plan_apply_verify_and_fixed_source(tmp_path, monkeypatch, l
     (RuntimeError('runner failed'), 'failed'),
 ])
 def test_provider_runner_error_overrides_confirmed_facts(tmp_path, error, expected):
-    from iaas_automation.opnsense_workflow.writer import _AnsibleProvider
+    from iaas.opnsense_workflow.writer import _AnsibleProvider
 
     class Outputs:
         def path(self, category):
