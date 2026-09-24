@@ -284,11 +284,13 @@ def _check_templates(client: PveReadOnlyApi, expected: DerivedResources, vm_inde
                 f"template VMID {template['vmid']} mismatch: expected name={template['name']} node={template['node']} template=true; got name={record.get('name')!r} node={record.get('node')!r} template={record.get('template')!r}",
             )
             continue
-        _emit(results, "PASS", f"api.template.{template['vmid']}", f"template {template['name']} on {template['node']} is present")
+        _emit(results, "PASS", f"api.template.{template['vmid']}",
+              f"template {template['name']} on {template['node']} matches the declaration; root/state ownership is not established by preflight")
 
 
-def _check_vmids(client: PveReadOnlyApi, expected: DerivedResources, vm_index: dict[int, dict[str, Any]], results: list[CheckResult], secrets: list[str]) -> None:
-    """Allow free VMIDs; occupied IDs must look repository-owned to pass."""
+def _check_vmids(client: PveReadOnlyApi, expected: DerivedResources, vm_index: dict[int, dict[str, Any]], results: list[CheckResult], secrets: list[str], managed_vmids: set[int] | None = None) -> None:
+    """Report declaration readiness separately from optional state ownership."""
+    managed = managed_vmids or set()
     for vm in expected.vmid_expectations:
         record = vm_index.get(vm["vmid"])
         if record is None:
@@ -302,10 +304,15 @@ def _check_vmids(client: PveReadOnlyApi, expected: DerivedResources, vm_index: d
         actual_tags = _normalize_string_list(config.get("tags") or record.get("tags"))
         description = str(config.get("description") or record.get("description") or "")
         if record.get("name") == vm["name"] and (set(vm["tags"]).issubset(actual_tags) or vm["cluster_marker"] in description or "managed-by-opentofu" in actual_tags):
-            _emit(results, "PASS", f"api.vmid.{vm['vmid']}", f"VMID {vm['vmid']} is already owned by this repository")
+            _emit(results, "PASS", f"api.vmid.{vm['vmid']}",
+                  f"VMID {vm['vmid']} is declaration-compatible; root/state ownership is not established by preflight")
         else:
             observed = record.get("name") or "<unknown>"
-            _emit(results, "FAIL", f"api.vmid.{vm['vmid']}", f"VMID {vm['vmid']} is occupied by unexpected VM {observed}")
+            if vm["vmid"] in managed:
+                _emit(results, "WARN", f"api.vmid.{vm['vmid']}",
+                      f"VMID {vm['vmid']} is state-associated but declaration drifted (observed {observed}); native plan determines the change")
+            else:
+                _emit(results, "FAIL", f"api.vmid.{vm['vmid']}", f"VMID {vm['vmid']} is occupied by unexpected VM {observed}")
 
 
 def _mapping_detail_from_index(items: list[dict[str, Any]], mapping_name: str) -> dict[str, Any] | None:
@@ -380,7 +387,7 @@ def _check_pci_mappings(client: PveReadOnlyApi, expected: DerivedResources, mode
                 _emit(results, "WARN", f"api.pci.{mapping_name}.optional.{node}", f"unused declared PCI mapping node {node} is unavailable")
 
 
-def run_api_checks(runtime: RuntimeConfig, api_client: PveReadOnlyApi, model: dict[str, Any], expected: DerivedResources, results: list[CheckResult]) -> None:
+def run_api_checks(runtime: RuntimeConfig, api_client: PveReadOnlyApi, model: dict[str, Any], expected: DerivedResources, results: list[CheckResult], managed_vmids: set[int] | None = None) -> None:
     """Run the API-first read-only checks in dependency order."""
     secrets = [runtime.api_token_secret, str(getattr(api_client, "api_token_secret", "")), str(getattr(api_client, "_api_token_secret", ""))]
     node_names = _node_index(api_client, results, secrets)
@@ -392,5 +399,5 @@ def run_api_checks(runtime: RuntimeConfig, api_client: PveReadOnlyApi, model: di
     vm_index = _cluster_vm_index(api_client, results, secrets)
     if vm_index is not None:
         _check_templates(api_client, expected, vm_index, results, secrets)
-        _check_vmids(api_client, expected, vm_index, results, secrets)
+        _check_vmids(api_client, expected, vm_index, results, secrets, managed_vmids)
     _check_pci_mappings(api_client, expected, model, results, secrets)

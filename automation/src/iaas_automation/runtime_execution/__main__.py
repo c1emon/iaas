@@ -53,14 +53,17 @@ def main(argv: list[str] | None = None) -> int:
         mapping = json.loads(args.input_map.read_text()) if args.input_map else None
         reader = SourceReader(mapping)
         selected = load_operation(args.environment, args.component, args.operation, args.scenario, reader)
-        if args.component == 'opnsense' and args.operation == 'apply':
-            require(bool(args.execution_id), 'OPNsense apply requires --execution-id')
+        mutation = ((args.component == 'opnsense' and args.operation == 'apply')
+                    or (args.component in {'pve', 'pve-template'} and args.operation == 'apply'))
+        if mutation:
+            require(bool(args.execution_id), f'{args.component} apply requires --execution-id')
             require(re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", args.execution_id) is not None,
                     "execution-id must be a bounded identifier")
-            require(selected.options.get("execution_id") == args.execution_id,
-                    "execution identity does not match selected options")
+            if args.component == 'opnsense':
+                require(selected.options.get("execution_id") == args.execution_id,
+                        "execution identity does not match selected options")
         else:
-            require(not args.execution_id, 'execution identity is only supported for OPNsense apply')
+            require(not args.execution_id, 'execution identity is only supported for apply')
         render_names = rendering_credentials(selected, args.operation)
         allowed = credential_names(args.component, args.operation, render_names)
         # Explicit aliases win over host file channels, before the launcher
@@ -71,6 +74,11 @@ def main(argv: list[str] | None = None) -> int:
                               "sources": sorted(map(str, reader.logical_sources)),
                               "execution_id": args.execution_id or None}))
             return 0
+        # Discovery resolves caller inputs before the launcher stages saved
+        # artifacts. Require them only at execution, before creating outputs.
+        if args.component == "pve" and args.operation in {"apply", "verify"}:
+            require(args.plan is not None and args.companions is not None,
+                    f"PVE {args.operation} requires --plan and --companions")
         require(args.output is not None, "operation requires an explicit output directory")
         require(not effects.network or bool(args.scope), "online operation requires explicit scope")
         protected = list(reader.sources)
@@ -85,7 +93,11 @@ def main(argv: list[str] | None = None) -> int:
         common = {"component": args.component, "operation": args.operation, "environment": selected.environment,
                   "scenario": selected.scenario, "image_digest": args.image_digest, "effects": asdict(effects),
                   "input_origins": sorted(map(str, reader.logical_sources))}
-        if not effects.network:
+        if args.component == "pve-template":
+            from iaas_automation.pve_template.runtime import run as run_template
+            run_template(selected, args.operation, args.scope, execution, args.image_digest,
+                         execution_id=args.execution_id)
+        elif not effects.network:
             generated = compile_documents(selected)
             if args.operation != "check":
                 for name, contents in generated.items():
@@ -98,11 +110,18 @@ def main(argv: list[str] | None = None) -> int:
             execution.finish(common)
         elif effects.state:
             backend = S3Backend.load(selected.files["backend"])
-            if args.operation == "apply-saved-plan":
-                require(args.plan is not None and args.companions is not None, "saved apply requires --plan and --companions")
-                apply_saved_plan(cast(Path, args.plan), cast(Path, args.companions), selected, execution, backend, args.scope, args.image_digest)
+            if args.component == "pve" and args.operation == "read":
+                from .plans import read_pve
+                read_pve(selected, execution, backend, args.scope, args.image_digest)
+            elif args.component == "pve" and args.operation == "apply":
+                apply_saved_plan(cast(Path, args.plan), cast(Path, args.companions), selected, execution,
+                                 backend, args.scope, args.image_digest, execution_id=args.execution_id)
             else:
                 prepare_plan(selected, execution, backend, args.scope, args.image_digest)
+        elif args.component == "pve" and args.operation == "verify":
+            from .plans import verify_pve
+            verify_pve(cast(Path, args.plan), cast(Path, args.companions), selected, execution,
+                       args.scope, args.image_digest)
         else:
             run_component(selected, args.operation, args.scope, execution, image_digest=args.image_digest)
         print(json.dumps({"status": "success", "output": str(outputs.root), "effects": asdict(effects),
@@ -131,6 +150,7 @@ def main(argv: list[str] | None = None) -> int:
         safe_reasons = {
             "expected schema_version: 1; migrate the entry explicitly",
             "unsupported component/operation combination",
+            "prepare-plan/apply-saved-plan were removed; use PVE plan/apply",
             "unknown scenario; no default fallback",
             "unknown environment entry field",
             "environment must be a logical name",
@@ -158,6 +178,12 @@ def main(argv: list[str] | None = None) -> int:
             "foundation health scope must explicitly name the declared environment",
             "scope includes hosts outside the selected component",
             "OPNsense diagnostics requires exactly one target",
+            "OPNsense apply requires --execution-id",
+            "pve apply requires --execution-id",
+            "pve-template apply requires --execution-id",
+            "execution identity is only supported for apply",
+            "PVE apply requires --plan and --companions",
+            "PVE verify requires --plan and --companions",
             "online operation requires explicit scope",
         }
         safe_reasons |= {f"{field} {problem}" for field in (

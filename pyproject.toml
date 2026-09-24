@@ -13,18 +13,22 @@ dependencies = [
 [dependency-groups]
 runtime = [
     "ansible-core==2.21.4",
+    "boto3>=1.35,<2",
     "httpx==0.28.1",
     "paramiko==5.0.0",
+    "python-hcl2>=8,<9",
 ]
 dev = [
     "ansible==14.4.0",
     "ansible-lint>=26.8.0",
+    "boto3>=1.35,<2",
     "httpx>=0.28.1",
     "hypothesis>=6.168.0",
     "import-linter>=2.15",
     "paramiko>=3.5.1",
     "pyright>=1.1.411",
     "pytest>=8.3.0",
+    "python-hcl2>=8,<9",
     "ruff>=0.16.8",
     "yamllint>=1.38.0",
 ]

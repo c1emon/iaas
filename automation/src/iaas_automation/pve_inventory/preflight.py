@@ -27,7 +27,6 @@ from .pve_api.errors import redact_sensitive_text
 from .pve_api.runtime import PveOnlineRuntimeContext, load_api_runtime_config, load_online_runtime_context
 
 if TYPE_CHECKING:
-    from .checks.preflight.api import ProxmoxAPI
     from .checks.preflight.model import DerivedResources
     from .checks.results import CheckResult
     from .pve_api.protocol import PveReadOnlyApi
@@ -47,6 +46,7 @@ def run_preflight(
     environ: dict[str, str] | None = None,
     api_client: PveReadOnlyApi | None = None,
     ssh_runner=None,
+    managed_vmids: set[int] | None = None,
 ) -> list[CheckResult]:
     """Run the full read-only preflight and return structured results."""
     results: list[CheckResult] = []
@@ -63,7 +63,7 @@ def run_preflight(
     expected: DerivedResources = derive_expected_resources(model)
 
     client = api_client or create_api_client(runtime)
-    run_api_checks(runtime, client, model, expected, results)
+    run_api_checks(runtime, client, model, expected, results, managed_vmids)
 
     if ssh_runner is None:
         from subprocess import run as ssh_runner  # type: ignore[no-redef]

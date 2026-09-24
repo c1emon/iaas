@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "execution_id": "pve-synthetic-apply-001",
+  "plan_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "target": {
+    "api_endpoint": "https://pve.example.invalid:8006",
+    "insecure": false,
+    "storage_id": "synthetic-images",
+    "ssh_host": "synthetic-node.example.invalid",
+    "ssh_user": "pve-ops",
+    "ssh_port": 2222
+  },
+  "runtime": "ghcr.io/example/iaas-runtime@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "root_id": "synthetic-root",
+  "phase": "succeeded",
+  "effects": {"facility": "known", "state": "known", "collection": "known"},
+  "native_execution": {"status": "success"},
+  "state_persistence": {"status": "passed"},
+  "verification": {"status": "passed"},
+  "collection": {"status": "passed"},
+  "verification_requirements": {
+    "requirements": [
+      {"category": "configuration", "scope": "changed_objects", "required": true, "responsibility": "iaas"},
+      {"category": "guest", "scope": "changed_objects", "required": false, "responsibility": "caller"}
+    ]
+  },
+  "snapshot": {"version": 4, "serial": 1, "lineage": "synthetic-lineage", "resources": []}
+}

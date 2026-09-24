@@ -18,7 +18,7 @@ from iaas_automation.common.errors import ValidationError, require
 from iaas_automation.runtime_paths import validate_paths
 
 
-COMPONENTS = {"opnsense", "switch", "pve", "services", "foundation", "k3s"}
+COMPONENTS = {"opnsense", "switch", "pve", "pve-template", "services", "foundation", "k3s"}
 NAME = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]*$")
 
 

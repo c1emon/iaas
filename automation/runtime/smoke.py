@@ -73,6 +73,8 @@ for record in records:
 from iaas_automation.pve_inventory.pve_api.runtime import load_api_runtime_config
 from iaas_automation.k3s_automation.secrets import load_protected_environment_json
 from iaas_automation.common.errors import ValidationError
+import boto3
+import hcl2
 assert shutil.which('op') is None
 assert 'OP_SERVICE_ACCOUNT_TOKEN' not in os.environ
 config = load_api_runtime_config({'TF_VAR_pve_endpoint': 'https://pve.example.invalid',

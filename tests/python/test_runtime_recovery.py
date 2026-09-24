@@ -1,6 +1,5 @@
 import io
 import json
-import os
 from pathlib import Path
 import sys
 
@@ -10,6 +9,7 @@ from iaas_automation.common.errors import ValidationError
 from iaas_automation.runtime_execution.outputs import TaskOutputs
 from iaas_automation.runtime_execution.process import _capture_output, run_protected
 from iaas_automation.runtime_execution.state import S3Backend
+from iaas_automation.runtime_execution.credentials import prepare_file_credentials
 from iaas_automation.runtime_execution.operations import credential_names, operation_for, process_environment
 from iaas_automation.runtime_execution.execution import Execution, OperationFailed
 
@@ -97,12 +97,27 @@ def test_credential_selection_and_operation_effects():
     assert not credential_names("pve", "prepare-dependencies")
     plan = process_environment("pve", "plan", supplied, ("GUEST_PASSWORD",))
     assert set(plan) == {"PATH", "AWS_SECRET_ACCESS_KEY", "TF_VAR_pve_api_token_secret", "GUEST_PASSWORD"}
-    assert "GUEST_PASSWORD" not in process_environment("pve", "apply-saved-plan", supplied)
+    assert "GUEST_PASSWORD" not in process_environment("pve", "apply", supplied)
     assert operation_for("k3s", "snapshot").infrastructure_write
     with pytest.raises(ValidationError):
         operation_for("switch", "apply")
     with pytest.raises(ValidationError):
         credential_names("pve", "plan", ("OP_SERVICE_ACCOUNT_TOKEN",))
+
+
+def test_file_ssh_credentials_disable_agent_and_pin_identity(tmp_path):
+    key = tmp_path / "id_runtime"
+    hosts = tmp_path / "known_hosts"
+    key.write_text("synthetic-key")
+    hosts.write_text("synthetic-host")
+    key.chmod(0o600)
+    hosts.chmod(0o644)
+    environ = {}
+    prepare_file_credentials({"ssh_key": key, "known_hosts": hosts}, tmp_path / "home", environ)
+    config = (tmp_path / "home/.ssh/config").read_text()
+    assert "IdentityAgent none" in config
+    assert "IdentitiesOnly yes" in config
+    assert environ["ANSIBLE_HOST_KEY_CHECKING"] == "True"
 
 
 def test_cancellation_propagates_and_captures_child_output(tmp_path):

@@ -1,0 +1,58 @@
+schema_version: 1
+environment: synthetic-pve-lifecycle
+components:
+  pve:
+    inputs:
+      cluster: ./cluster.yml
+      vms: ./vms.yml
+    files:
+      backend: ./backend.json
+      state_admission: ./state-admission.json
+      execution_admission: ./execution-admission.json
+      execution_result: ./execution-result.json
+      template_records: ./template-records.json
+      template_admission: ./template-admission.json
+      ssh_key: ./ssh_key.example
+      known_hosts: ./known_hosts.example
+      root_main: ./root/main.tf
+      root_provider: ./root/main.tf.json
+      root_variables: ./root/variables.tf
+      root_outputs: ./root/outputs.tf
+      root_lock: ./root/.terraform.lock.hcl
+    options:
+      root:
+        id: synthetic-root
+        directory: .
+        files:
+          main.tf: root_main
+          main.tf.json: root_provider
+          variables.tf: root_variables
+          outputs.tf: root_outputs
+          .terraform.lock.hcl: root_lock
+      pve:
+        storage_id: synthetic-images
+        ssh_host: synthetic-node.example.invalid
+        ssh_user: pve-ops
+        ssh_port: 2222
+        api_endpoint: https://pve.example.invalid:8006
+        insecure: false
+      verification_requirements:
+        requirements:
+          - category: configuration
+            scope: changed_objects
+            required: true
+            responsibility: iaas
+          - category: guest
+            scope: changed_objects
+            required: false
+            responsibility: caller
+      destroy: false
+  pve-template:
+    inputs:
+      recipe: ./template/recipe.yml
+    files:
+      ssh_key: ./template/ssh_key.example
+      known_hosts: ./template/known_hosts.example
+      template_preview: ./template/template-preview.json
+      template_receipt: ./template/template-receipt.json
+      execution_admission: ./execution-admission.json

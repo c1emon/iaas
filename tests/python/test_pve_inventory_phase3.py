@@ -407,6 +407,19 @@ def test_cloud_init_render_writes_manifest_and_exact_bytes(monkeypatch: pytest.M
     assert media_entry["sha256"] == hashlib.sha256(media_bytes).hexdigest()
 
 
+def _execution_context(tmp_path: Path, host: str) -> Path:
+    target = {"api_endpoint": "https://pve.invalid:8006", "insecure": False, "ssh_host": host,
+              "ssh_user": "ops", "storage_id": "images"}
+    admission = {"schema_version": 1, "execution_id": "test", "plan_digest": "a" * 64,
+                 "target": target, "approved": True, "consumption": {"reserved": True, "reservation_id": "r"},
+                 "pending": {"record_id": "p"}, "serialization": {"held": True, "context_id": "l"}}
+    path = tmp_path / "execution.json"
+    path.write_text(json.dumps({"execution_admission": admission, "execution_id": "test",
+                               "plan_sha256": "a" * 64, "target": target}))
+    path.chmod(0o600)
+    return path
+
+
 def test_cloud_init_upload_and_verify_use_existing_manifest_without_rerender(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("PVE_VM_ADMIN_PASSWORD", "admin-password")
     monkeypatch.setenv("PVE_VM_ADMIN_PUBLIC_KEY", "ssh-ed25519 AAAAadmin admin@example")
@@ -425,10 +438,10 @@ def test_cloud_init_upload_and_verify_use_existing_manifest_without_rerender(mon
 
     monkeypatch.setattr(cloud_init_ssh.subprocess, "run", fake_run)
 
-    cloud_init_main(["upload", "--tfvars", str(tfvars_path), "--output-dir", str(tmp_path), "--storage-id", "images", "--pve-host", "pve-01", "--ssh-user", "ops"])
+    cloud_init_main(["upload", "--execution-context", str(_execution_context(tmp_path, "pve-01")), "--tfvars", str(tfvars_path), "--output-dir", str(tmp_path), "--storage-id", "images", "--pve-host", "pve-01", "--ssh-user", "ops"])
     cloud_init_main(["verify", "--tfvars", str(tfvars_path), "--output-dir", str(tmp_path), "--storage-id", "images", "--pve-host", "pve-01", "--ssh-user", "ops"])
 
-    assert any("--verify" in argv[2] and "--sha256" in argv[2] for argv in calls)
+    assert any("--verify" in argv[-1] and "--sha256" in argv[-1] for argv in calls)
 
 
 @pytest.mark.parametrize("command", ["upload", "verify"])
@@ -442,8 +455,9 @@ def test_cloud_init_rejects_stale_source_before_ssh(monkeypatch: pytest.MonkeyPa
     else:
         tfvars.write_text('{"changed": true}')
     monkeypatch.setattr(cloud_init_ssh.subprocess, "run", lambda *a, **kw: pytest.fail("unexpected SSH"))
+    context = ["--execution-context", str(_execution_context(tmp_path, "example.invalid"))] if command == "upload" else []
     with pytest.raises(ValidationError, match="tfvars"):
-        cloud_init_main([command, "--tfvars", str(tfvars), "--output-dir", str(tmp_path / "rendered"),
+        cloud_init_main([command, *context, "--tfvars", str(tfvars), "--output-dir", str(tmp_path / "rendered"),
                          "--storage-id", "images", "--pve-host", "example.invalid", "--ssh-user", "ops"])
 
 
@@ -543,7 +557,7 @@ def test_cloud_init_ssh_builds_single_quoted_remote_command(monkeypatch: pytest.
         input_text=snippet.content,
     )
 
-    assert calls == [["ssh", "ops@pve-01", "sudo -n /usr/local/sbin/iaas-pve-snippet-upload --storage images --filename opentofu-vm-501-user-data.yml"]]
+    assert calls == [["ssh", "-p", "22", "-o", "BatchMode=yes", "ops@pve-01", "sudo -n /usr/local/sbin/iaas-pve-snippet-upload --storage images --filename opentofu-vm-501-user-data.yml"]]
 
 
 @pytest.mark.parametrize("action", [cloud_init_ssh.upload_snippets, cloud_init_ssh.verify_snippets])
@@ -933,20 +947,20 @@ def test_template_build_env_honors_caller_overrides(tmp_path: Path) -> None:
     assert result.stdout == "override-url|9999"
 
 
-def test_template_build_script_requires_explicit_environment_file() -> None:
+def test_template_build_script_is_retired_before_environment_validation() -> None:
     script = ROOT / "automation" / "packer" / "proxmox" / "debian-13" / "build-template.sh"
     env = os.environ.copy()
     env.pop("TEMPLATE_BUILD_ENV", None)
-    source = script.read_text(encoding="utf-8")
 
     result = subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True)
 
-    assert result.returncode != 0
-    assert "TEMPLATE_BUILD_ENV" in result.stderr
-    assert "source template-build.env" not in source
+    assert result.returncode == 2
+    assert "legacy synchronous template trigger retired" in result.stderr
+    assert "pve-template runtime" in result.stderr
+    assert "TEMPLATE_BUILD_ENV" not in result.stderr
 
 
-def test_template_build_script_shell_quotes_remote_args(tmp_path: Path) -> None:
+def test_template_build_script_rejects_legacy_force_without_ssh(tmp_path: Path) -> None:
     ssh_bin = tmp_path / "ssh"
     capture_path = tmp_path / "ssh-argv.txt"
     ssh_bin.write_text(
@@ -963,69 +977,41 @@ def test_template_build_script_shell_quotes_remote_args(tmp_path: Path) -> None:
         "SSH_CAPTURE": str(capture_path),
         "PVE_HOST": "pve-01.example.invalid",
         "TEMPLATE_BUILD_ENV": str(ROOT / "tests" / "fixtures" / "environment" / "generated" / "packer" / "debian-13.env"),
-        "PVE_USER": "pve-ops",
-        "TEMPLATE_VMID": "9001",
-        "TEMPLATE_NAME": "debian-13-tmpl-20260621",
-        "IMAGE_URL_PREFIX": "https://images.example.invalid/",
-        "IMAGE_URL": "https://images.example.invalid/debian'$(touch /tmp/pwned);`id`.qcow2",
-        "IMAGE_SHA512": "a" * 128,
-        "IMPORT_STORAGE": "local",
-        "DISK_STORAGE": "fast-nvme",
-        "BUILD_DOMAIN": "build.example.invalid",
-        "APT_MIRROR": "https://deb.debian.org/debian",
-        "APT_SECURITY_MIRROR": "https://security.debian.org/debian-security",
-        "TIMEZONE": "Etc/UTC",
-        "LOCALE": "en_US.UTF-8",
-        "CIUSER": "ci'user",
-        "NAMESERVER": "192.0.2.53",
-        "BUILD_BRIDGE": "br_dev",
         "FORCE_REPLACE": "true",
-        "TEMPLATE_DEBUG": "true",
     }
 
-    subprocess.run(["bash", str(script)], check=True, env=env, capture_output=True, text=True)
+    result = subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True)
 
-    host, remote_command = capture_path.read_text(encoding="utf-8").splitlines()
-    assert host == "pve-ops@pve-01.example.invalid"
-    assert remote_command.startswith("'sudo' '-n' '/usr/local/sbin/iaas-pve-template-build'")
-    assert "--image-url" in remote_command
-    assert "'https://images.example.invalid/debian'\\''$(touch /tmp/pwned);`id`.qcow2'" in remote_command
-    assert "--ciuser" in remote_command
-    assert "'ci'\\''user'" in remote_command
-    assert remote_command.endswith("'--force' '--debug'")
+    assert result.returncode == 2
+    assert "legacy synchronous template trigger retired" in result.stderr
+    assert not capture_path.exists()
 
 
-def test_template_build_script_rejects_shell_unsafe_template_name(tmp_path: Path) -> None:
+def test_template_build_script_rejects_legacy_entrypoint_before_template_validation(tmp_path: Path) -> None:
     ssh_bin = tmp_path / "ssh"
-    ssh_bin.write_text("#!/usr/bin/env bash\nexit 99\n", encoding="utf-8")
+    capture_path = tmp_path / "ssh-argv.txt"
+    ssh_bin.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s\\n' called > \"${SSH_CAPTURE}\"\n",
+        encoding="utf-8",
+    )
     ssh_bin.chmod(0o755)
 
     script = ROOT / "automation" / "packer" / "proxmox" / "debian-13" / "build-template.sh"
     env = os.environ | {
         "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
+        "SSH_CAPTURE": str(capture_path),
         "PVE_HOST": "pve-01.example.invalid",
         "TEMPLATE_BUILD_ENV": str(ROOT / "tests" / "fixtures" / "environment" / "generated" / "packer" / "debian-13.env"),
-        "TEMPLATE_VMID": "9001",
         "TEMPLATE_NAME": "bad template name",
-        "IMAGE_URL_PREFIX": "https://images.example.invalid/",
-        "IMAGE_URL": "https://images.example.invalid/debian.qcow2",
-        "IMAGE_SHA512": "a" * 128,
-        "IMPORT_STORAGE": "local",
-        "DISK_STORAGE": "fast-nvme",
-        "BUILD_DOMAIN": "build.example.invalid",
-        "APT_MIRROR": "https://deb.debian.org/debian",
-        "APT_SECURITY_MIRROR": "https://security.debian.org/debian-security",
-        "TIMEZONE": "Etc/UTC",
-        "LOCALE": "en_US.UTF-8",
-        "CIUSER": "ci",
-        "NAMESERVER": "192.0.2.53",
-        "BUILD_BRIDGE": "br_dev",
     }
 
     result = subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True)
 
-    assert result.returncode == 1
-    assert "template name must match the conservative template regex" in result.stderr
+    assert result.returncode == 2
+    assert "legacy synchronous template trigger retired" in result.stderr
+    assert "template name must match" not in result.stderr
+    assert not capture_path.exists()
 
 
 def test_validation_rejects_unknown_template_build_keys() -> None:

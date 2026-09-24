@@ -17,6 +17,14 @@ from iaas_automation.opnsense_workflow.contracts import load_candidate
 OPNSENSE_WORKFLOW_OPERATIONS = {"read", "plan", "apply", "verify"}
 _OPNSENSE_APPLY_OPTIONS = {"candidate_sha256", "execution_id", "activation_check"}
 _OPNSENSE_READ_OPTIONS = {"include_system"}
+PVE_WORKFLOW_OPERATIONS = {"read", "plan", "apply", "verify"}
+_PVE_TEMPLATE_INPUTS = {"recipe"}
+_PVE_TEMPLATE_FILE_INPUTS = {
+    "read": {"execution_result", "result", "ssh_key", "known_hosts"},
+    "plan": {"ssh_key", "known_hosts"},
+    "apply": {"preview", "template_preview", "execution_admission", "ssh_key", "known_hosts"},
+    "verify": {"receipt", "template_receipt", "ssh_key", "known_hosts"},
+}
 
 
 def _declared_input_names(entry: Path, component: str, scenario: str | None,
@@ -115,9 +123,44 @@ def load_operation(entry: Path, component: str, operation: str, scenario: str | 
                 files.add("recovery")
         else:
             files.add("candidate")
-    elif operation == "apply-saved-plan":
-        inputs = set()
-        files |= {"backend", "ssh_key", "known_hosts"}
+    elif component == "pve" and operation in PVE_WORKFLOW_OPERATIONS:
+        # PVE lifecycle inputs intentionally differ by phase.  Read and plan
+        # inspect the complete root and selected backend; apply consumes only
+        # the caller's admission/target plus transferred companions; verify
+        # consumes its retained result without initializing the backend.
+        if operation in {"read", "plan"}:
+            root = metadata.options.get("root", {})
+            require(isinstance(root, dict) and isinstance(root.get("id"), str) and root["id"],
+                    "explicit root id is required")
+            files.add("backend")
+            if operation == "plan":
+                require(isinstance(root.get("files"), dict), "explicit root files are required")
+                files |= set(root["files"].values())
+                files.add("state_admission")
+                files |= {name for name in ("template_records", "template_admission")
+                          if name in metadata.file_paths}
+                files |= {name for name in ("ssh_key", "known_hosts", "dependencies")
+                          if name in metadata.file_paths}
+            if operation == "read":
+                inputs = set()
+                files |= {"execution_result"} if "execution_result" in metadata.file_paths else set()
+        elif operation == "apply":
+            inputs = set()
+            files.add("backend")
+            files.add("execution_admission")
+            files.add("state_admission")
+            files |= {"template_admission"} if "template_admission" in metadata.file_paths else set()
+            files |= {name for name in ("ssh_key", "known_hosts")
+                      if name in metadata.file_paths}
+        else:
+            inputs = set()
+            files |= {"execution_result"} if "execution_result" in metadata.file_paths else set()
+    elif component == "pve-template" and operation in OPNSENSE_WORKFLOW_OPERATIONS:
+        declared = _declared_input_names(entry, component, scenario, reader)
+        require(declared <= _PVE_TEMPLATE_INPUTS, "unsupported pve-template input")
+        inputs = declared
+        files |= {name for name in _PVE_TEMPLATE_FILE_INPUTS.get(operation, set())
+                  if name in metadata.file_paths}
     elif operation in {"prepare-dependencies", "plan", "prepare-plan"}:
         if operation == "prepare-dependencies":
             inputs = set()
@@ -159,7 +202,7 @@ def load_operation(entry: Path, component: str, operation: str, scenario: str | 
 
 
 def rendering_credentials(selected: SelectedConfig, operation: str) -> tuple[str, ...]:
-    if selected.component != "pve" or operation not in {"plan", "prepare-plan"}:
+    if selected.component != "pve" or operation != "plan":
         return ()
     tfvars = json.loads(compile_documents(selected)["pve.tfvars.json"])
     return tuple(sorted({user[field] for user in tfvars["cluster"]["automation"]["cloud_init"]["users"]

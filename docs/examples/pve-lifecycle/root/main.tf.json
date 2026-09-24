@@ -1,0 +1,15 @@
+{
+  "provider": {
+    "proxmox": {
+      "endpoint": "https://pve.example.invalid:8006",
+      "insecure": false,
+      "api_token": "${var.pve_api_username}!${var.pve_api_token_id}=${var.pve_api_token_secret}",
+      "ssh": {
+        "node": [{"name": "synthetic-node", "address": "synthetic-node.example.invalid", "port": 2222}],
+        "username": "${var.pve_ssh_username}",
+        "private_key": "${var.pve_ssh_private_key}",
+        "agent": false
+      }
+    }
+  }
+}

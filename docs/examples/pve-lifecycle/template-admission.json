@@ -1,0 +1,26 @@
+{
+  "admissions": [
+    {
+      "schema_version": 1,
+      "execution_id": "pve-synthetic-apply-001",
+      "plan_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "record_id": "synthetic-template-record-001",
+      "purpose": "execution",
+      "status": "available",
+      "target": {
+        "api_endpoint": "https://pve.example.invalid:8006",
+        "insecure": false,
+        "storage_id": "synthetic-images",
+        "ssh_host": "synthetic-node.example.invalid",
+        "ssh_user": "pve-ops",
+        "ssh_port": 2222
+      },
+      "object": {
+        "node": "synthetic-node",
+        "vmid": 9001,
+        "smbios_uuid": "synthetic-template-uuid",
+        "disks": {"scsi0": "synthetic-disks:base-9001-disk-0"}
+      }
+    }
+  ]
+}

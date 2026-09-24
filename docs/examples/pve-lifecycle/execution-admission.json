@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "execution_id": "pve-synthetic-apply-001",
+  "plan_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "target": {
+    "api_endpoint": "https://pve.example.invalid:8006",
+    "insecure": false,
+    "storage_id": "synthetic-images",
+    "ssh_host": "synthetic-node.example.invalid",
+    "ssh_user": "pve-ops",
+    "ssh_port": 2222
+  },
+  "approved": true,
+  "consumption": {"reserved": true, "reservation_id": "synthetic-reservation-001"},
+  "pending": {"record_id": "synthetic-pending-001"},
+  "serialization": {"held": true, "context_id": "synthetic-lock-001"}
+}

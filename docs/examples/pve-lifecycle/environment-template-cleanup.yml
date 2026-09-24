@@ -1,0 +1,21 @@
+schema_version: 1
+environment: synthetic-pve-template-cleanup
+components:
+  pve-template:
+    inputs:
+      recipe: ./template/recipe.yml
+    files:
+      ssh_key: ./template/ssh_key.example
+      known_hosts: ./template/known_hosts.example
+    options:
+      action: cleanup
+      execution_id: template-synthetic-cleanup-preview-001
+      cleanup:
+        vmid: 9001
+        owner: helper
+        original_execution: template-synthetic-build-001
+        management_status: stopped
+        state_owner: helper
+        state_ref_absent: true
+        mode: failed_build
+        volumes: [synthetic-disks:base-9001-disk-0]

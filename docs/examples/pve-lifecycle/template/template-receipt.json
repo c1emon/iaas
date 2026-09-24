@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "kind": "pve-template-receipt",
+  "execution_id": "template-synthetic-apply-001",
+  "status": "succeeded",
+  "phases": [],
+  "recovery_of": null,
+  "target": {
+    "node": "synthetic-node",
+    "host": "synthetic-node.example.invalid",
+    "api_endpoint": "https://pve.example.invalid:8006",
+    "insecure": false,
+    "ssh_user": "pve-ops",
+    "ssh_port": 2222
+  },
+  "publication": "caller_owned",
+  "clone_verification": "not_performed",
+  "business_acceptance": "not_performed",
+  "preview_digest": "sha256:9458e51ceaa9a0fb074a1604b6db981335dd23458c1d798c46db956e1bfd453b",
+  "effects": "known",
+  "storage_effects": {
+    "cache": "known",
+    "work": "cleaned"
+  },
+  "vm_effects": "known",
+  "object": {
+    "node": "synthetic-node",
+    "vmid": 9001,
+    "smbios_uuid": "synthetic-template-uuid",
+    "disks": {
+      "scsi0": "synthetic-disks:base-9001-disk-0"
+    },
+    "configuration": {
+      "template": 1,
+      "smbios1": "uuid=synthetic-template-uuid",
+      "scsi0": "synthetic-disks:base-9001-disk-0,discard=on,size=20G"
+    }
+  },
+  "template_record": {
+    "schema_version": 1,
+    "record_id": "synthetic-template-record-001",
+    "target": {
+      "node": "synthetic-node",
+      "host": "synthetic-node.example.invalid",
+      "api_endpoint": "https://pve.example.invalid:8006",
+      "insecure": false,
+      "ssh_user": "pve-ops",
+      "ssh_port": 2222
+    },
+    "object": {
+      "node": "synthetic-node",
+      "vmid": 9001,
+      "smbios_uuid": "synthetic-template-uuid",
+      "disks": {
+        "scsi0": "synthetic-disks:base-9001-disk-0"
+      },
+      "configuration": {
+        "template": 1,
+        "smbios1": "uuid=synthetic-template-uuid",
+        "scsi0": "synthetic-disks:base-9001-disk-0,discard=on,size=20G"
+      }
+    },
+    "configuration": {
+      "template": 1,
+      "smbios1": "uuid=synthetic-template-uuid",
+      "scsi0": "synthetic-disks:base-9001-disk-0,discard=on,size=20G"
+    },
+    "verification": {
+      "status": "passed",
+      "scope": "native-template-config"
+    }
+  }
+}

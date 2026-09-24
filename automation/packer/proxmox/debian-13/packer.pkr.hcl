@@ -59,12 +59,6 @@ variable "cache_dir" {
   description = "Explicit writable cache directory selected by the caller"
 }
 
-variable "force_replace" {
-  type        = bool
-  description = "Allow replacing an existing dated template"
-  default     = false
-}
-
 variable "image_url" {
   type        = string
   description = "Pinned Debian 13 genericcloud qcow2 URL, usually generated into template-build.env"

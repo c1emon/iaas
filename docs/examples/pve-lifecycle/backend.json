@@ -1,0 +1,12 @@
+{
+  "workspace": "review",
+  "config": {
+    "bucket": "synthetic-state",
+    "key": "pve/root.tfstate",
+    "region": "us-east-1",
+    "endpoint": "https://s3.example.invalid",
+    "workspace_key_prefix": "env:",
+    "force_path_style": true,
+    "use_lockfile": true
+  }
+}

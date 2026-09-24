@@ -13,8 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.mark.parametrize("operation", ["plan", "apply", "destroy"])
-@pytest.mark.parametrize("stale", [False, True])
-def test_external_parallel_make_orders_lifecycle(tmp_path: Path, operation: str, stale: bool) -> None:
+def test_legacy_make_pve_write_entrypoints_are_rejected(tmp_path: Path, operation: str) -> None:
     log = tmp_path / "calls"
     runner = tmp_path / "runner"
     runner.write_text('''#!/usr/bin/env python3
@@ -43,16 +42,8 @@ if phase == "render":
         f"PYTHON={runner}", f"TOFU={runner}", f"ENVIRONMENT_DIR={tmp_path}",
         f"OUTPUT_DIR={tmp_path / 'output'}", f"PVE_DIR={tmp_path}",
         "STORAGE_ID=images", "PVE_HOST=example.invalid", "PVE_SSH_USER=ops",
-    ], cwd=tmp_path, env=os.environ | {"MAKEFLAGS": "-j8", "WORKFLOW_LOG": str(log),
-                                      "STALE_INPUT": str(int(stale))},
+    ], cwd=tmp_path, env=os.environ | {"MAKEFLAGS": "-j8", "WORKFLOW_LOG": str(log)},
         capture_output=True, text=True)
-    phases = log.read_text().splitlines()
-    if stale and operation != "destroy":
-        assert result.returncode != 0
-        assert phases == ["check"]
-    else:
-        assert result.returncode == 0, result.stderr
-        expected = [] if operation == "destroy" else ["check", "render", "render-done"]
-        if operation == "apply":
-            expected += ["upload", "verify"]
-        assert phases == expected + [operation]
+    assert result.returncode != 0
+    assert not log.exists() or not log.read_text().strip()
+    assert "removed" in result.stderr
