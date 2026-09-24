@@ -1,6 +1,6 @@
 ## Context
 
-实施状态更新：已进入 `feat/separate-image-build-and-pve-publish`，保留工作树修改，并正常归档前置 `adapt-pve-ci-lifecycle`。以下背景记录设计时的原实现；当前进度见 [实施记录](../../../docs/operations/image-publish-implementation.md)。
+以下背景记录 2026-09-23 设计时的原实现，不描述当前分支或部署状态。两仓实现已合并；最终结果与剩余验收范围见[验证摘要](../../../docs/operations/image-publish-implementation.md)。
 
 2026-09-23 当前分支 `feat/adapt-pve-ci-lifecycle` 的实际代码已不同于旧 foundation 描述：`automation/packer/proxmox/debian-13/packer.pkr.hcl` 只有变量，没有 builder/build；同目录 `build-template.sh` 已 fail closed。真正的加工在 `iaas-pve-template-worker`：下载并 SHA-512 校验、复制镜像、virt-customize 设置 Debian 软件源/包/时区/locale、virt-sysprep 清理，再 qm create/importdisk/set/template。当前配置验证不等同于来宾启动验收。
 

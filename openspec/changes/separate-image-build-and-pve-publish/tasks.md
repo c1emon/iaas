@@ -28,8 +28,8 @@
 ## 5. Verification and paired rollout
 
 - [x] 5.1 Run representative schema/unit/fake HTTPS integration, launcher isolation and migration regressions; run corresponding lint/build/OpenSpec checks. Do not equate API substitutes with live validation.
-- [x] 5.2 On a caller-provided KVM executor, build one image and verify final identity cleanup with a disposable guest; record the exact supported environment. (ONE Linux amd64/Docker/KVM evidence recorded; no persistent runner or publication claim.)
+- [x] 5.2 On a caller-provided KVM executor, build one image and verify final identity cleanup with a disposable guest; record the exact supported environment. (ONE Linux amd64/Docker/KVM build and independent guest test passed; this direct test alone did not validate the later Runner.)
 - [x] 5.3 Under a new explicit site window, validate one template publication and one disposable VM serially, including target storage and directory import; clean test resources and independently verify no unintended changes. (限定证据：r8 publication、VM799 create/destroy、retire、S3 cleanup 与现场观察均已记录；PVE VM 未启动来宾。)
-- [ ] 5.4 Coordinate pinned runtime/schema handoff with infra-ops, validate a repeated publication of the same artifact without rebuild in an appropriately authorized scope, and document promotion/rollback/unknown-result recovery. No live resource expansion implied by this task list.
+- [ ] 5.4 Coordinate pinned runtime/schema handoff with infra-ops, validate a repeated publication of the same artifact without rebuild in an appropriately authorized scope, and document promotion/rollback/unknown-result recovery. (rc.13 runtime pins and one CI publication are verified; same-artifact repeat publication remains untested.)
 
 Checkboxes track actual implementation and acceptance evidence. Planning review alone does not complete an implementation task; current progress and site limits are recorded in [implementation record](../../../docs/operations/image-publish-implementation.md).

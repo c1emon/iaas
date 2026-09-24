@@ -2,9 +2,9 @@
 
 ## Scope and status
 
-实施更新：用户已授权双仓实施与分阶段提交，两仓已进入对应实施分支。IaaS 前置 change 已正式归档，task 1.1 完成；后续任务按实际证据更新。以下为此前设计复核记录，不表示当前仍停留在 planning-only；实时实施状态见 [实施记录](../../../docs/operations/image-publish-implementation.md)。
+这是 2026-09-23 的设计复核记录。两仓实现已合并，原实施分支已清理；现场结果和剩余验收范围见[验证摘要](../../../docs/operations/image-publish-implementation.md)。
 
-完成双仓planning-only设计后，用户进一步授权修正六项过度门禁；本记录反映修订后的决议，早期严苛规则不再有效。iaas留在feat/adapt-pve-ci-lifecycle，infra-ops留在main；不实现代码/CI、不部署执行器、不操作PVE/S3、不切分支、不提交或归档真实change。所有实施任务保持未勾选。
+设计阶段修正了六项过度门禁；本节以下描述的是当时的设计决议，不代表当前部署状态。
 
 对应 [infra-ops review](../../../../infra-ops/openspec/changes/integrate-image-build-and-pve-publish/review.md)。权威字段为 [contract](contracts/image-publish-v1.md)，设计选择为 [design](design.md)，未来执行与验收为 [tasks](tasks.md)。
 
