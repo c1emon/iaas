@@ -114,90 +114,51 @@ VMs. Its current template admission must set `purpose: verification`,
 VMID list in the plan's `template_use`. Normal VM consumption requires an
 `available` admission. Publication remains a caller decision after validation.
 
-## Independent template recipe
+## Independent image and PVE template publication
 
-Template operations use `environment-template.yml` and the node helper
-protocol. Build planning records a fixed recipe in `template-preview.json`;
-apply accepts that exact preview and an admission bound to its digest. The
-target always names one explicit node:
+The current image and template lifecycle is defined by the
+[image-publish-v1 contract](../../contracts/image-publish-v1.md). The complete
+request, artifact, preview, result, cleanup and retire examples are kept in
+[`docs/examples/image-publish/`](../image-publish/). These files are the
+transport fixtures for the current HTTPS publisher; they do not describe the
+old VM-root recipe or an SSH node helper.
 
-Online operations use the fixed SSH helper with explicit key and known_hosts
-files. Caller-supplied helper commands are not supported.
+Image build, test and clean are independent operations. `image check` is a
+passive contract check that writes `diagnostics/normalized.json`; build and
+test require the caller's Linux amd64/KVM executor. The artifact and test
+result remain separate from PVE publication, and an external artifact may be
+used when its descriptor and evidence satisfy the contract. Use the image
+operation and field definitions in the contract rather than adding image
+inputs to a VM-root environment.
 
-```sh
-iaas run --runtime-config runtime.json \
-  --environment environment-template.yml --engine local \
-  --component pve-template --operation check \
-  --output ./template-check
+PVE template publication consumes an immutable
+`pve-template-publish-request/v1`, a reviewed `pve-template-preview/v2`, and a
+complete execution admission. The publisher resolves the protected artifact
+through `PVE_ARTIFACT_URL`, verifies the downloaded disk, and uploads it over
+the PVE HTTPS API. `PVE_API_TOKEN` and `PVE_API_CA` are operation-scoped
+runtime credentials. The private locator is never put into the PVE request or
+logs, and the retired SSH helper/receipt protocol is not part of this path.
 
-iaas run --runtime-config runtime.json \
-  --environment environment-template.yml --engine local \
-  --component pve-template --operation plan --scope synthetic-node \
-  --output ./template-plan
+For a read-only observation, use
+[`docs/examples/image-publish/environment-template-read.yml`](../image-publish/environment-template-read.yml).
+It has no input documents; its `options.template` selects the fixed HTTPS
+endpoint, node and VMID. The caller supplies `PVE_API_TOKEN` and, when needed,
+declares `files.api_ca`; the launcher maps that file to `PVE_API_CA` inside the
+runtime.
 
-iaas run --runtime-config runtime.json \
-  --environment environment-template-read.yml --engine local \
-  --component pve-template --operation read --scope synthetic-node \
-  --output ./template-read
+Plan and apply must use the same request, preview digest, target and execution
+admission. Verify consumes the retained `pve-template-result/v2` and its
+template record. Cleanup is a separate action using
+`pve-template-cleanup-request.json`, a new preview and a new execution
+identity; it is limited to publisher-owned, incomplete effects with current
+inactive observations. A completed template is retired through
+`pve-template-retire-request.json`, never removed through arbitrary cleanup.
+Unknown effects, missing observations and lost responses remain pending for
+reconciliation.
 
-iaas run --runtime-config runtime.json \
-  --environment environment-template-apply.yml --engine local \
-  --component pve-template --operation apply --scope synthetic-node \
-  --execution-id template-synthetic-apply-001 \
-  --output ./template-synthetic-apply-001
-
-iaas run --runtime-config runtime.json \
-  --environment environment-template.yml --engine local \
-  --component pve-template --operation verify --scope synthetic-node \
-  --output ./template-verify
-```
-
-The apply entry selects the checked preview and pins its digest in
-`options.preview_digest`. In a caller copy, replace that preview with the
-reviewed `template-plan/plan/template-preview.json`, copy its digest into the
-apply entry, and transfer the independent execution admission bound to the
-same digest. The result's `diagnostics/receipt.json` is a bare template
-receipt; `generated/template-records.json` is the separate VM-plan input.
-Copy the bare receipt into the caller's selected `template_receipt` file
-before running verify; keep the remote observation separately if no complete
-receipt was collected, and leave that execution pending/unknown.
-
-Cleanup is a separate recipe action. The checked synthetic cleanup entry
-binds the failed execution, exact object, helper ownership, stopped management
-state, runtime image digest and helper protocol:
-
-```sh
-iaas run --runtime-config runtime.json \
-  --environment environment-template-cleanup.yml --engine local \
-  --component pve-template --operation plan --scope synthetic-node \
-  --output ./template-cleanup-plan
-
-# Copy the reviewed plan/template-preview.json into the caller-owned cleanup
-# apply entry and update its options.preview_digest before the authorized run.
-iaas run --runtime-config runtime.json \
-  --environment environment-template-cleanup-apply.yml --engine local \
-  --component pve-template --operation apply --scope synthetic-node \
-  --execution-id template-synthetic-cleanup-001 \
-  --output ./template-synthetic-cleanup-001
-```
-
-`template-cleanup-admission.json` is bound to that exact cleanup preview and
-new execution identity. A real caller must issue a fresh admission after
-reviewing the generated preview.
-
-If a build failed before creating a VM, cleanup can remove that execution's
-cache/work only when its record confirms no VM effects and a fresh node
-observation confirms the VMID is absent. Unknown effects or a reused VMID
-block this path. Original execution records, receipts and logs are retained;
-cleanup writes its own success or failure receipt.
-
-The example is a contract and transport fixture. It covers launcher discovery,
-file selection, schema validation, synthetic state and helper substitutions.
-It does not cover a real PVE API, SSH handshake, S3 lock, node helper,
-cloud-init upload, guest verification or business acceptance. Container and
-DinD checks prove the selected-file transfer and process boundary only; they
-do not qualify a facility or a shared CI environment.
-
-The old `prepare-plan`, `apply-saved-plan`, `pve-plan`, `pve-apply` and
-`pve-destroy` entrypoints are migration errors. Use the four PVE lifecycle
-operations above and express deletion through `options.destroy: true`.
+The old `docs/examples/pve-lifecycle/environment-template*.yml` files and
+their `template/` materials remain only as regression fixtures that verify
+the legacy protocol is rejected. They are not runnable instructions for the
+current image/PVE lifecycle. The removed `prepare-plan`, `apply-saved-plan`,
+`pve-plan`, `pve-apply`, `pve-destroy` and node-helper entrypoints must not be
+used as compatibility paths.

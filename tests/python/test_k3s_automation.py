@@ -12,10 +12,10 @@ from typing import Any
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.common.io import load_yaml
-from iaas_automation.k3s_automation.config import build_composed_model, render_review
-from iaas_automation.k3s_automation.cli import main as k3s_main
+from iaas.common.errors import ValidationError
+from iaas.common.io import load_yaml
+from iaas.k3s_automation.config import build_composed_model, render_review
+from iaas.k3s_automation.cli import main as k3s_main
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -408,9 +408,9 @@ def test_cli_validates_and_renders_review(tmp_path: Path) -> None:
 
 def test_cli_validation_failure_is_concise() -> None:
     env = os.environ.copy()
-    env["PYTHONPATH"] = str(ROOT / "automation" / "src")
+    env["PYTHONPATH"] = str(ROOT / "src")
     result = subprocess.run(
-        [sys.executable, "-m", "iaas_automation.k3s_automation", "--intent", "/missing/intent.yml", "--inventory", str(INVENTORY_PATH)],
+        [sys.executable, "-m", "iaas.k3s_automation", "--intent", "/missing/intent.yml", "--inventory", str(INVENTORY_PATH)],
         cwd=ROOT,
         env=env,
         capture_output=True,

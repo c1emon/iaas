@@ -48,9 +48,9 @@ func TestPVELauncherDiscoveryWithRealRuntime(t *testing.T) {
 				}
 			}
 			run := func(extra ...string) ([]byte, error) {
-				command := exec.Command("uv", append([]string{"run", "--no-sync", "python", "-m", "iaas_automation.runtime_execution"}, append(append([]string{}, args...), extra...)...)...)
+				command := exec.Command("uv", append([]string{"run", "--no-sync", "python", "-m", "iaas.runtime_execution"}, append(append([]string{}, args...), extra...)...)...)
 				command.Dir = repo
-				command.Env = append(os.Environ(), "PYTHONPATH="+filepath.Join(repo, "automation/src"))
+				command.Env = append(os.Environ(), "PYTHONPATH="+filepath.Join(repo, "src"))
 				return command.CombinedOutput()
 			}
 			output, err := run("--discover")

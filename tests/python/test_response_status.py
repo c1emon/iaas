@@ -1,7 +1,7 @@
 """External status conversion does not decide domain success or coerce values."""
 import pytest
 
-from iaas_automation.common.conversion import normalize_response_status
+from iaas.common.conversion import normalize_response_status
 
 
 @pytest.mark.parametrize('value, expected', [

@@ -69,7 +69,7 @@ def test_candidate_lifecycle_uses_real_module_and_fixture_arguments(resource):
         env=os.environ | {
             'TEST_NAT_PROVIDER': resource,
             'PYTHONPATH': os.pathsep.join([
-                str(ROOT / 'automation/src'),
+                str(ROOT / 'src'),
                 str(ROOT / 'automation/ansible/collections'),
             ]),
         },

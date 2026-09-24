@@ -1,0 +1,157 @@
+---
+- name: Bootstrap a caller-selected automation account on PVE nodes
+  hosts: all
+  become: true
+  gather_facts: false
+
+  vars:
+    pve_bootstrap_sudo_commands:
+      - /usr/local/sbin/iaas-pve-snippet-upload
+    pve_bootstrap_snippet_wrapper_sudoers_src: >-
+      {{ playbook_dir }}/../../../pve-node/sudoers.d/iaas-pve-snippet-upload.j2
+    pve_bootstrap_snippet_wrapper_src: "{{ playbook_dir }}/../../../pve-node/bin/iaas-pve-snippet-upload"
+    pve_bootstrap_snippet_wrapper_dest: /usr/local/sbin/iaas-pve-snippet-upload
+    pve_bootstrap_default_sudo_commands:
+      - /usr/local/sbin/iaas-pve-snippet-upload
+
+  tasks:
+    - name: Validate bootstrap inputs
+      ansible.builtin.assert:
+        that:
+          - pve_bootstrap_user is defined
+          - pve_bootstrap_user is string
+          - pve_bootstrap_user is match('^[a-z_][a-z0-9_-]{0,31}$')
+          - pve_bootstrap_user == pve_bootstrap_user | trim
+          - pve_bootstrap_user != 'root'
+          - pve_bootstrap_authorized_key is defined
+          - pve_bootstrap_authorized_key is string
+          - pve_bootstrap_authorized_key | trim | length > 0
+          - pve_bootstrap_sudo_commands | length > 0
+        fail_msg: >-
+          Provide pve_bootstrap_user (a non-root Linux username),
+          pve_bootstrap_authorized_key, and at least one sudo command
+
+    - name: Inspect existing bootstrap override
+      ansible.builtin.stat:
+        path: /etc/sudoers.d/iaas-pve-bootstrap-override
+        follow: false
+      register: pve_bootstrap_override_stat
+
+    - name: Require a regular bootstrap override file
+      ansible.builtin.assert:
+        that:
+          - pve_bootstrap_override_stat.stat.isreg | default(false)
+          - not (pve_bootstrap_override_stat.stat.islnk | default(false))
+        fail_msg: Refusing to modify a non-regular bootstrap override
+      when: pve_bootstrap_override_stat.stat.exists
+
+    - name: Read existing bootstrap override ownership marker
+      ansible.builtin.slurp:
+        src: /etc/sudoers.d/iaas-pve-bootstrap-override
+      register: pve_bootstrap_override_content
+      no_log: true
+      when: pve_bootstrap_override_stat.stat.exists
+
+    - name: Require a managed bootstrap override marker
+      ansible.builtin.assert:
+        that:
+          - >-
+            (pve_bootstrap_override_content.content | b64decode).splitlines() | first | default('') in
+            ['# Managed by automation/ansible/playbooks/pve/bootstrap-pve-ops.yml',
+             '# Managed by automation/ansible/playbooks/pve/bootstrap-pve-ssh-user.yml']
+        fail_msg: Refusing to modify an unmanaged bootstrap override; resolve it explicitly
+      when: pve_bootstrap_override_stat.stat.exists
+
+    - name: Create the selected automation user
+      ansible.builtin.user:
+        name: "{{ pve_bootstrap_user }}"
+        comment: PVE automation SSH user
+        shell: /bin/bash
+        create_home: true
+        password_lock: true
+        state: present
+      register: pve_bootstrap_user_result
+
+    - name: Ensure the selected automation user SSH directory exists
+      ansible.builtin.file:
+        path: "{{ pve_bootstrap_user_result.home }}/.ssh"
+        state: directory
+        owner: "{{ pve_bootstrap_user }}"
+        group: "{{ pve_bootstrap_user }}"
+        mode: "0700"
+
+    - name: Install the caller-provided authorized public key
+      ansible.builtin.copy:
+        dest: "{{ pve_bootstrap_user_result.home }}/.ssh/authorized_keys"
+        content: "{{ pve_bootstrap_authorized_key | trim }}\n"
+        owner: "{{ pve_bootstrap_user }}"
+        group: "{{ pve_bootstrap_user }}"
+        mode: "0600"
+
+    - name: Install the snippet upload sudoers rule
+      ansible.builtin.template:
+        dest: /etc/sudoers.d/iaas-pve-snippet-upload
+        src: "{{ pve_bootstrap_snippet_wrapper_sudoers_src }}"
+        owner: root
+        group: root
+        mode: "0440"
+        validate: /usr/sbin/visudo -cf %s
+
+    - name: Deploy the audited snippet upload wrapper
+      ansible.builtin.copy:
+        src: "{{ pve_bootstrap_snippet_wrapper_src }}"
+        dest: "{{ pve_bootstrap_snippet_wrapper_dest }}"
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Verify snippet wrapper file is installed
+      ansible.builtin.stat:
+        path: "{{ pve_bootstrap_snippet_wrapper_dest }}"
+      register: pve_bootstrap_snippet_wrapper_stat
+
+    - name: Validate snippet wrapper ownership and permissions
+      ansible.builtin.assert:
+        that:
+          - pve_bootstrap_snippet_wrapper_stat.stat.exists
+          - pve_bootstrap_snippet_wrapper_stat.stat.isreg
+          - pve_bootstrap_snippet_wrapper_stat.stat.pw_name == 'root'
+          - pve_bootstrap_snippet_wrapper_stat.stat.gr_name == 'root'
+          - pve_bootstrap_snippet_wrapper_stat.stat.mode == '0750'
+        fail_msg: "Snippet wrapper is missing or has the wrong ownership/mode"
+
+    - name: Validate snippet sudoers syntax non-mutating
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/visudo
+          - -cf
+          - /etc/sudoers.d/iaas-pve-snippet-upload
+      register: pve_bootstrap_snippet_sudoers_check
+      changed_when: false
+
+    - name: Remove managed override when restoring default permissions
+      ansible.builtin.file:
+        path: /etc/sudoers.d/iaas-pve-bootstrap-override
+        state: absent
+      when:
+        - pve_bootstrap_override_stat.stat.exists
+        - pve_bootstrap_sudo_commands == pve_bootstrap_default_sudo_commands
+
+    - name: Install optional broader sudo allowlist when requested
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/iaas-pve-bootstrap-override
+        content: |
+          # Managed by automation/ansible/playbooks/pve/bootstrap-pve-ssh-user.yml
+          # Temporary preflight override; keep it narrower than ALL.
+          {{ pve_bootstrap_user }} ALL=(root) NOPASSWD: {{ pve_bootstrap_sudo_commands | join(', ') }}
+        owner: root
+        group: root
+        mode: "0440"
+        validate: /usr/sbin/visudo -cf %s
+      when: pve_bootstrap_sudo_commands != pve_bootstrap_default_sudo_commands
+
+    - name: Assert sudoers validation succeeded
+      ansible.builtin.assert:
+        that:
+          - pve_bootstrap_snippet_sudoers_check.rc == 0
+        fail_msg: "sudoers validation failed"

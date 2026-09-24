@@ -1,0 +1,11 @@
+schema_version: 1
+environment: image-publish-template-read
+components:
+  pve-template:
+    options:
+      template:
+        target:
+          api_endpoint: https://pve.example.invalid:8006
+          node: cohe
+          tls_verify: true
+        vmid: 9001

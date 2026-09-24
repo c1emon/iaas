@@ -5,11 +5,11 @@ from pathlib import Path
 import pytest
 import yaml
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.opnsense_workflow import local, runtime
-from iaas_automation.opnsense_workflow.presentation import project_observations
-from iaas_automation.runtime_execution.execution import Execution
-from iaas_automation.runtime_execution import selection as runtime_selection
+from iaas.common.errors import ValidationError
+from iaas.opnsense_workflow import local, runtime
+from iaas.opnsense_workflow.presentation import project_observations
+from iaas.runtime_execution.execution import Execution
+from iaas.runtime_execution import selection as runtime_selection
 
 
 def observation():
@@ -131,7 +131,7 @@ def _formal_selected(tmp_path, *, include_system=False):
 
 
 def test_formal_read_writes_complete_artifact_then_returns_display_result(tmp_path, monkeypatch):
-    import iaas_automation.opnsense_workflow.reader as reader_module
+    import iaas.opnsense_workflow.reader as reader_module
 
     monkeypatch.setattr(reader_module, "Reader", _EntryReader)
     selected = _formal_selected(tmp_path, include_system=True)

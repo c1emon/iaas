@@ -15,11 +15,11 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(ROOT / "automation" / "src"))
+sys.path.insert(0, str(ROOT / "src"))
 
 from ansible.module_utils import basic  # noqa: E402
 from ansible_collections.oxlorg.opnsense.plugins.module_utils.base import logic  # noqa: E402
-from iaas_automation.opnsense_validation.lifecycle import resource_arguments  # noqa: E402
+from iaas.opnsense_validation.lifecycle import resource_arguments  # noqa: E402
 
 
 RESOURCE_FILES = {

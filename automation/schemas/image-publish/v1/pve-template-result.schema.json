@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iaas.invalid/schemas/image-publish/v1/pve-template-result.schema.json",
+  "title": "pve-template-result/v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "schema_version", "execution_id", "component", "operation", "action", "runtime_digest", "phase", "status", "effects", "preview_digest", "publication", "verification", "collection", "native_execution", "cleanup"],
+  "properties": {
+    "kind": {"const": "pve-template-result"}, "schema_version": {"const": 2},
+    "execution_id": {"$ref": "#/$defs/id"}, "component": {"const": "pve-template"},
+    "operation": {"const": "apply"}, "action": {"enum": ["publish", "cleanup", "retire"]},
+    "runtime_digest": {"type": "string", "minLength": 1},
+    "phase": {"enum": ["succeeded", "failed", "unknown"]},
+    "status": {"enum": ["succeeded", "failed", "unknown"]},
+    "effects": {"type": "object", "minProperties": 1, "additionalProperties": {"enum": ["none", "known", "unknown"]}},
+    "preview_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "artifact_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "publication": {"type": "string", "minLength": 1},
+    "verification": {"type": "array", "items": {"$ref": "#/$defs/check"}},
+    "collection": {"$ref": "#/$defs/collection"},
+    "native_execution": {"type": ["object", "array"]},
+    "template_record": {"$ref": "pve-template-record.schema.json"},
+    "recovery_of": {"$ref": "#/$defs/id"},
+    "cleanup": {"$ref": "#/$defs/cleanup"}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+    "check": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "scope", "status", "evidence_ref"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "scope": {"type": "string", "minLength": 1},
+        "status": {"enum": ["passed", "failed", "not_performed", "unknown"]},
+        "evidence_ref": {"type": ["string", "null"]}
+      }
+    },
+    "collection": {
+      "type": "object", "additionalProperties": false, "required": ["status"],
+      "properties": {"status": {"enum": ["succeeded", "failed", "unknown", "not_performed"]}}
+    },
+    "cleanup": {
+      "type": "object", "additionalProperties": false, "required": ["status", "residue"],
+      "properties": {
+        "status": {"enum": ["succeeded", "failed", "unknown", "not_required"]},
+        "residue": {"type": "array", "items": {"type": "string"}},
+        "scope": {"type": "string"}, "inactive": {"type": "boolean"},
+        "objects": {"type": "array"}, "todo": {"type": "object"}, "warning": {"type": "string"}
+      }
+    }
+  }
+}

@@ -6,9 +6,9 @@ from copy import deepcopy
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.opnsense_workflow.planning import coverage, plan
-from iaas_automation.opnsense_workflow.reader import (
+from iaas.common.errors import ValidationError
+from iaas.opnsense_workflow.planning import coverage, plan
+from iaas.opnsense_workflow.reader import (
     COLLECTION_TARGETS,
     FixedCollectionTransport,
     MAX_PAGES,

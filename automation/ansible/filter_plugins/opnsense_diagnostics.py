@@ -4,11 +4,11 @@ import json
 import sys
 from ansible import context
 
-_AUTOMATION_SRC=Path(__file__).resolve().parents[2]/'src'
+_AUTOMATION_SRC=Path(__file__).resolve().parents[3]/'src'
 if str(_AUTOMATION_SRC) not in sys.path:
     sys.path.insert(0,str(_AUTOMATION_SRC))
 
-from iaas_automation.opnsense_diagnostics.schema import controller_target
+from iaas.opnsense_diagnostics.schema import controller_target
 
 
 def diagnostic_controller(target,groups,limit=None):

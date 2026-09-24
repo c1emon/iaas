@@ -4,14 +4,19 @@ from types import SimpleNamespace
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.runtime_execution.plans import _templates, _admit_templates
+from iaas.common.errors import ValidationError
+from iaas.runtime_execution.plans import _templates, _admit_templates
 
 TARGET = {'api_endpoint': 'https://pve.invalid:8006', 'insecure': False,
           'storage_id': 'snippets', 'ssh_host': 'ssh.invalid', 'ssh_user': 'ops'}
+RECORD_TARGET = {'api_endpoint': TARGET['api_endpoint'], 'node': 'n1', 'tls_verify': True}
 OBJECT = {'node': 'n1', 'vmid': 9001, 'smbios_uuid': 'original-uuid', 'disks': {'scsi0': 'local:base-9001-disk-0'}}
-RECORD = {'schema_version': 1, 'record_id': 'build-1', 'target': {**TARGET, 'ssh_user': 'builder'},
-          'object': OBJECT, 'configuration': {'cores': 2, 'memory': 2048, 'template': 1}}
+RECORD = {'kind': 'pve-template-record', 'schema_version': 2, 'record_id': 'build-1',
+          'target': RECORD_TARGET, 'node': 'n1', 'vmid': 9001, 'smbios_uuid': 'original-uuid',
+          'volumes': {'scsi0': 'local:base-9001-disk-0'},
+          'configuration': {'cores': 2, 'memory': 2048, 'template': 1}, 'origin': 'publication',
+          'execution_id': 'build-1', 'artifact_digest': 'sha256:' + 'b' * 64,
+          'verification': {'template_config': 'passed', 'guest_acceptance': 'not_performed'}}
 
 
 class API:
@@ -31,14 +36,15 @@ def selected(tmp_path, admission):
 
 
 def material():
-    admission = {'schema_version': 1, 'execution_id': 'apply-1', 'plan_digest': 'a' * 64,
-                 'record_id': 'build-1', 'target': TARGET, 'purpose': 'execution', 'status': 'available', 'object': OBJECT}
+    admission = {'schema_version': 2, 'execution_id': 'apply-1', 'plan_digest': 'a' * 64,
+                 'record_id': 'build-1', 'target': TARGET, 'purpose': 'execution', 'status': 'available',
+                 'template_record': RECORD}
     metadata = {'target': TARGET, 'plan_digest': 'a' * 64, 'root_id': 'root', 'template_records': [RECORD],
                 'template_use': {'purpose': 'execution', 'vmids': [501]}}
     return admission, metadata
 
 
-def test_different_build_ssh_identity_can_supply_template_record(tmp_path):
+def test_current_template_record_and_admission_bind_native_identity(tmp_path):
     admission, metadata = material()
     config = selected(tmp_path, admission)
     assert _templates(config, [{'node': 'n1', 'vmid': 9001}], TARGET, API()) == [RECORD]
@@ -53,7 +59,7 @@ def test_current_template_admission_is_required(tmp_path, change):
     if change == 'execution':
         admission['execution_id'] = 'another'
     if change == 'object':
-        admission['object']['vmid'] = 9002
+        admission['template_record']['vmid'] = 9002
     if change == 'missing':
         admission['record_id'] = 'missing'
     with pytest.raises(ValidationError):
@@ -67,7 +73,7 @@ def test_same_vmid_rebuilt_is_rejected(tmp_path):
         def vm_config(self, *args):
             return {**super().vm_config(*args), 'smbios1': 'uuid=replaced'}
 
-    with pytest.raises(ValidationError, match='replaced'):
+    with pytest.raises(ValidationError, match='replaced|identity'):
         _admit_templates(metadata, selected(tmp_path, admission), 'apply-1', Rebuilt())
 
 
@@ -88,7 +94,7 @@ def test_update_delete_without_clone_does_not_check_publication():
 
 
 def test_state_ownership_allows_drift_but_markers_do_not_authorize_vmid():
-    from iaas_automation.runtime_execution.plans import _check_declared_conflicts
+    from iaas.runtime_execution.plans import _check_declared_conflicts
 
     api = SimpleNamespace(
         effective_permissions=lambda path: {path: {'VM.Audit': 1}},

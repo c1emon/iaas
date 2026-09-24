@@ -4,12 +4,12 @@ from pathlib import Path
 import sys
 from typing import Any
 
-_SOURCE = str(Path(__file__).resolve().parents[2] / 'src')
+_SOURCE = str(Path(__file__).resolve().parents[3] / 'src')
 if _SOURCE not in sys.path:
     sys.path.insert(0, _SOURCE)
 
-from iaas_automation.opnsense_validation import TOP_LEVEL, validate_document
-from iaas_automation.opnsense_validation.lifecycle import resource_arguments, resource_preflight
+from iaas.opnsense_validation import TOP_LEVEL, validate_document
+from iaas.opnsense_validation.lifecycle import resource_arguments, resource_preflight
 
 
 _PROVIDER_COLLECTION = 'oxlorg.opnsense'

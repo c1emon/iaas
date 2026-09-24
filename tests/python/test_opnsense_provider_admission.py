@@ -6,8 +6,8 @@ import subprocess
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.opnsense_validation.aliases import validate_url
+from iaas.common.errors import ValidationError
+from iaas.opnsense_validation.aliases import validate_url
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -24,8 +24,8 @@ from pathlib import Path
 import yaml
 from ansible.module_utils import basic
 from ansible_collections.oxlorg.opnsense.plugins.module_utils.base import multi
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.opnsense_validation import validate_document
+from iaas.common.errors import ValidationError
+from iaas.opnsense_validation import validate_document
 kind = os.environ['TEST_PROVIDER_KIND']
 root = Path.cwd()
 playbooks = root / 'automation/ansible/playbooks/opnsense'
@@ -76,7 +76,7 @@ print(json.dumps({'failed': result['failed'], 'code': code}))
 '''
     result = subprocess.run(['uv', 'run', 'python', '-c', script], cwd=ROOT, capture_output=True, text=True,
                             env=os.environ | {'TEST_PROVIDER_KIND': kind,
-                                              'PYTHONPATH': os.pathsep.join([str(ROOT / 'automation/src'), str(COLLECTIONS)])})
+                                              'PYTHONPATH': os.pathsep.join([str(ROOT / 'src'), str(COLLECTIONS)])})
     assert result.returncode == 0, result.stdout + result.stderr
     assert json.loads(result.stdout)['failed'] is True
 

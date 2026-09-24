@@ -10,8 +10,8 @@ import pytest
 import requests
 import yaml
 
-from iaas_automation.opnsense_diagnostics.adapter import MAX_RESPONSE_BYTES,Transport,observe
-from iaas_automation.opnsense_diagnostics.schema import validate_request
+from iaas.opnsense_diagnostics.adapter import MAX_RESPONSE_BYTES,Transport,observe
+from iaas.opnsense_diagnostics.schema import validate_request
 
 ROOT=Path(__file__).resolve().parents[2]
 ANSIBLE=ROOT/'automation/ansible'

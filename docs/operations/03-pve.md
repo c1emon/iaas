@@ -23,11 +23,10 @@
 
 | 文件 | 所有权 | 产物/用途 |
 | --- | --- | --- |
-| `$ENVIRONMENT_DIR/inventory/pve-cluster.yml` | PVE 集群共享事实、模板、网络、存储角色、VM 默认值和 PCI mappings。 | 归一化模型、OpenTofu input、Ansible inventory、Packer env、PVE VM 文档。 |
+| `$ENVIRONMENT_DIR/inventory/pve-cluster.yml` | PVE 集群共享事实、模板、网络、存储角色、VM 默认值和 PCI mappings。 | 归一化模型、OpenTofu input、Ansible inventory、PVE VM 文档。 |
 | `$ENVIRONMENT_DIR/inventory/vms.yml` | 单个 VM 的生命周期、NIC、资源、启动、HA 与 passthrough。 | 同上。 |
 | `$GENERATED_DIR/opentofu/pve.tfvars.json` | 生成的 OpenTofu 输入。 | 只审查，不手改。 |
 | `$GENERATED_DIR/ansible/pve.yml` | 生成的 VM SSH/网络事实。 | VM bootstrap、guest verify、K3s inventory 输入。 |
-| `$GENERATED_DIR/packer/debian-13.env` | 非敏感模板构建参数。 | Packer helper 输入。 |
 | `$GENERATED_DIR/docs/pve-vms.md` | VM 声明的可读表格。 | 审查参考，不是源配置。 |
 | `$PVE_ENV_TEMPLATE` | PVE API、SSH 和 cloud-init 用户材料的运行时变量名。 | 调用方通过 1Password 或传统 Secret 注入相同变量。 |
 
@@ -54,62 +53,32 @@ make pve-bootstrap-guests-syntax
 `pve-check` 只校验源与已提交生成物是否一致；不检查实际 PVE bridge、存储、模板
 或来宾可达性。
 
-## 3.3 PVE 节点自动化账户与模板 helper
+## 3.3 PVE template publisher and retained snippet helper
 
-在首次构建模板前，PVE 节点需要 `pve-ops` 自动化账户和 root-owned template
-wrapper。使用一个已有的、受控的 PVE 管理账户与 runtime 提供的 SSH 公钥执行：
+Image construction runs as the independent local `image` capability. Template
+publication runs in the controller through the HTTPS PVE API and consumes an
+`image-artifact/v1` plus `pve-template-publish-request/v1`; it does not install
+or invoke a node template worker, storage probe, Packer PVE builder or template
+sudo rule. Supply the fixed API endpoint with a matching CA, an operation-scoped
+`PVE_API_TOKEN`, and a protected `PVE_ARTIFACT_URL` locator resolved for the
+credential-free HTTPS or S3 request source. The publisher checks VMID, storage activity/content and
+known capacity before downloading and verifies the final bytes, qcow2 format,
+virtual size and absence of a backing file before its first PVE write.
 
-```bash
-# 调用方已提供 PVE_SSH_AUTOMATION_PUBLIC_KEY；可来自 op read 或传统 Secret。
-uv run ansible-playbook -i '<pve-node>,' -u <existing-admin-login> --become \
-  automation/ansible/playbooks/pve/bootstrap-pve-ops.yml \
-  -e pve_bootstrap_authorized_key="$PVE_SSH_AUTOMATION_PUBLIC_KEY"
-```
+The apply sequence is upload with `content=import` and SHA-256, create VM,
+`importdisk` from the selected storage volume, configure boot/cloud-init/EFI,
+convert to template, wait for every returned UPID, and independently verify
+current configuration and attached volumes. PVE temporary upload space and
+reverse-proxy limits are reported as unobserved unless the API exposes them;
+SSH is not added to probe them. Cleanup and retire use new action-specific
+previews with current publisher ownership, task inactivity and caller
+retirement/dependency admission. A failed or unknown native task remains
+pending and is never treated as a successful publication.
 
-该 playbook 创建并锁定 `pve-ops` 密码、安装 SSH 公钥、验证 sudoers。临时的
-多命令 preflight sudo 白名单只能在明确窗口内使用，验证后必须缩回到 wrapper-only
-规则。它不更改全局 SSHD 策略。
-
-已有主机须先完成 [helper 切换前置步骤](pve-helper-cutover.md)，禁止两代 helper 并行运行。
-在每个 PVE build node 安装并检查 wrapper：
-
-```bash
-sudo install -m 750 -o root -g root \
-  automation/pve-node/bin/iaas-pve-template \
-  /usr/local/sbin/iaas-pve-template
-sudo install -m 750 -o root -g root \
-  automation/pve-node/bin/iaas-pve-template-worker \
-  /usr/local/sbin/iaas-pve-template-worker
-sudo install -m 750 -o root -g root \
-  automation/pve-node/bin/iaas-pve-storage-status \
-  /usr/local/sbin/iaas-pve-storage-status
-# 先复制 sudoers 文件到临时路径，以 visudo 校验后再以 root:root / 0440 安装。
-sudo visudo -cf <temporary-sudoers-file>
-```
-
-PVE 节点需具备 Python 3、`curl`、`virt-customize`、`virt-sysprep`、`qm`、`pvesh`、
-`ip`、`flock`，以及运行中的 systemd（`systemd-run`、`systemctl`）；安装
-`libguestfs-tools` 可提供两个 `virt-*` 工具。wrapper、worker 与 sudoers
-必须保持 root-owned，`pve-ops` 仅能无密码执行
-`/usr/local/sbin/iaas-pve-template`。可用下列只读 smoke 验证安装：
-
-```bash
-ssh <existing-admin-login>@<pve-node> \
-  'sudo -n visudo -cf /etc/sudoers.d/iaas-pve-template'
-printf '%s\n' '{"protocol_version":2,"operation":"capabilities"}' | \
-  ssh pve-ops@<pve-node> 'sudo -n /usr/local/sbin/iaas-pve-template'
-```
-
-存储预检查和 worker 获锁后的复查通过本机 `127.0.0.1:8006` HTTPS API
-读取目标存储的 `content/enabled/active/avail`，不解析 `pvesh` 的存储 stdout。
-新增的 `iaas-pve-storage-status` 必须与 wrapper/worker 一起安装，但不增加 sudoers 入口。
-它使用节点既有 root 权限，在内存中生成 PVE ticket；不接收控制端 token，也不落盘认证材料。
-认证只读取现有签名密钥，不调用可能触发集群密钥轮换的高层认证函数。
-TLS 校验使用本机 `/etc/pve/local/pveproxy-ssl.pem`（存在时优先）或 `pve-ssl.pem`：
-验证证书链/有效期，并在发送认证前匹配服务端叶证书；固定连接 loopback，不跟随重定向或环境代理。
-因此 pveproxy 必须监听本机 loopback，证书文件必须与服务中实际证书一致；不一致、API 不可达、
-认证失败或数据无效均阻断构建，不回退到 CLI。cache/work 空间仍按节点实际文件系统检查。
-API 内部仍可能查询其他存储；HTTPS 隔离输出通道，不保证隔离其他插件的异常或超时。
+The independent `iaas-pve-snippet-upload` helper remains available only for
+cloud-init snippet transfer where the selected VM workflow requires it. Its
+SSH key and known_hosts are separate operation inputs; it is not a template
+build or publication transport.
 
 ## 3.4 `pve-cluster.yml` 参数
 
@@ -139,36 +108,15 @@ API 内部仍可能查询其他存储；HTTPS 隔离输出通道，不保证隔�
 | `nodes.<node>.storage_ip` | PVE 存储网络地址。 | 不自动开放存储路径。 |
 | `nodes.<node>.ssh_host` | 控制机 SSH alias/地址。 | 若 alias 无法解析，显式使用已确认的管理 IP；不要猜测主机名。 |
 
-### 模板构建与 cloud-init
+### 独立镜像与模板发布
 
-`cluster.automation.template_build` 是 Debian genericcloud 模板材料：
-`template_key`、`image_url`、`image_sha512`、`image_url_prefix`、
-`import_storage_role`、`disk_storage_role`、`build_domain`、`apt_mirror`、
-`apt_security_mirror`、`timezone`、`locale`、`ciuser`、`nameserver` 与
-`build_bridge`。URL 必须在允许前缀内，SHA-512 是镜像身份，不得用“最新”替代；
-APT 镜像只用于模板构建，不能替代 [VM bootstrap](04-vm-bootstrap.md) 的来宾
-软件源策略。
-
-### 生成的 Packer 环境与构建开关
-
-`make generate` 从上述 `template_build` 生成
-`$GENERATED_DIR/packer/debian-13.env`。这个文件的变量在未预先
-设置时才赋默认值；因此日常操作不得用 shell 环境覆盖镜像、存储或网络参数，
-应修改源 YAML 后重新生成并审查 diff。
-
-| 变量 | 来源/含义 | 操作约束 |
-| --- | --- | --- |
-| `TEMPLATE_BUILD_ENV` | 要 source 的 generated env 文件，Make 默认指向上述路径。 | 通常不覆盖；替换文件须经同等审查。 |
-| `TEMPLATE_VMID`、`TEMPLATE_NAME` | 模板标识。 | VMID 须在 helper 限制的 `9000–9500`；名称匹配保守字符规则。 |
-| `IMAGE_URL`、`IMAGE_SHA512`、`IMAGE_URL_PREFIX` | Debian genericcloud 下载地址、128 位十六进制 SHA-512、允许 URL 前缀。 | 三者共同界定镜像身份和下载边界；不得只换 URL 或跳过 checksum。 |
-| `IMPORT_STORAGE`、`DISK_STORAGE` | 下载/导入与最终磁盘使用的 PVE datastore。 | 必须与源配置的 storage role 和内容能力一致。 |
-| `BUILD_DOMAIN` | 模板构建时使用的域。 | 不等于某个 VM 的最终 hostname/FQDN。 |
-| `APT_MIRROR`、`APT_SECURITY_MIRROR` | 模板镜像内 Debian 主与安全软件源。 | 仅影响新模板；既有来宾的软件源见第 4 章。 |
-| `TIMEZONE`、`LOCALE`、`CIUSER`、`NAMESERVER` | 模板初始时区、locale、cloud-init 默认用户和 resolver。 | 不含密码；仍应由源 YAML 统一变更。 |
-| `BUILD_BRIDGE` | 模板构建时临时网卡附着的既有 PVE bridge。 | helper 不创建 bridge；在线构建前确认其实际存在和 egress。 |
-| `PVE_HOST`、`PVE_USER` | 本次 SSH transport 的 build node 和用户。 | `PVE_HOST` 必填且必须明确；`PVE_USER` 默认 `pve-ops`。 |
-| 旧同步 Packer trigger | 已退役。 | 模板构建必须通过 `pve-template` 的 reviewed preview、execution admission 和新 helper；不存在原地替换旁路。 |
-| `TEMPLATE_DEBUG` 或 `DEBUG` | 输出 wrapper 调试信息。 | 默认 `false`；禁止让调试输出携带运行时秘密。 |
+Debian 镜像由独立 `image` capability 构建和测试，产出
+`image-artifact/v1`。PVE 模板由控制端 `pve-template` HTTPS publisher
+消费该 artifact 和 `pve-template-publish-request/v1`；模板 VMID、节点、存储、
+bridge、固件与 cloud-init 默认值都属于发布请求，不再写入 PVE VM inventory。
+请求、preview、execution admission 和 result 的固定字段见
+[image publication contract](../contracts/image-publish-v1.md)。PVE inventory
+仍只描述 OpenTofu 管理的模板引用和普通 VM，生成器不会输出构建环境文件。
 
 `cluster.automation.cloud_init` 的关键字段如下：
 
@@ -245,31 +193,17 @@ IOMMU/VFIO/设备绑定。`make pve-preflight` 会只读检查 mapping，不会�
 
 ## 3.6 模板、计划和 VM 生命周期
 
-模板构建是变更操作。PVE 节点必须已安装 wrapper、`libguestfs-tools` 等依赖，
-`build_bridge` 必须存在。它下载/复用缓存的 qcow2、校验 SHA-512、清理机器身份、
-导入磁盘和转为 template；不将 VM 专用 IP、hostname、SSH host key 或应用秘密
-写入模板。
-
-正式构建消费独立 recipe 及已审阅的 preview，SSH 目标固定为 recipe 中的节点。
-缓存和工作镜像位于 `/var/lib/iaas/pve-template/executions/<execution-id>/cache`
-与 `work`。下载前会检查实际文件系统空间，并核对两个 PVE datastore 均已启用、
-可访问且支持 `images`；PVE datastore 剩余空间不能替代本地工作盘空间检查。
-空间检查采用节点端 `IAAS_PVE_MIN_FREE_BYTES` 最低门槛（默认 1 GiB），cache
-和 work 在同一文件系统时合并为两份预算；这不是空间预留或镜像实际容量保证。
-worker 会写临时 deb822 source、删除旧
-`/etc/apt/sources.list`、执行 APT 更新、安装 cloud-init、清理 cloud-init logs 并
-通过 virt-sysprep 移除机器特有状态；这些仅发生在模板构建机/镜像内，不能代替
-已有 VM 的 egress policy。对 OVMF/q35，模板有显式 4 MiB EFI disk；`qm importdisk`
-会以实际 VM config 报告的 imported volume 附着，无法确定时失败而不是猜测。
-目录型存储使用如 `local:9003/vm-9003-disk-0.qcow2` 的卷 ID；导入和清理使用
-相同校验规则，保留目录分隔符并拒绝路径穿越。
+镜像构建由独立 `image` capability 在明确的 QEMU/KVM executor 上完成，
+并在交付前记录磁盘摘要、自包含性和清理证据。模板发布消费固定的
+`image-artifact/v1` 和 `pve-template-publish-request/v1`，由控制端 HTTPS
+publisher 完成上传、VM 创建、importdisk、cloud-init/EFI 配置、template 转换
+和 API 读回核验。发布不使用节点 template worker、Packer PVE token 或存储
+space probe；snippet transfer 仍是普通 VM 工作流的独立 SSH helper。
 
 正式写入入口统一使用 [`iaas run` 启动器](../runtime-launcher.md) 的
-`pve-template` 或 PVE `read` / `plan` / `apply` / `verify`。调用方通过
-`runtime.json` 固定镜像 digest、通过环境文件选择 root、S3 backend、SSH
-key/known_hosts、state admission 和 execution admission。模板 recipe 独立于
-VM root，并将目标节点写入 recipe；helper 使用
-`/usr/local/sbin/iaas-pve-template`，不接受旧命令行参数。
+`pve-template` 或 PVE `read` / `plan` / `apply` / `verify`。调用方为模板发布
+选择 request、artifact locator、PVE API CA、API token、preview 和完整
+execution admission；它们独立于 VM root、OpenTofu state 和 SSH snippet 凭据。
 
 ```bash
 iaas run --runtime-config runtime.json --environment environment.yml \

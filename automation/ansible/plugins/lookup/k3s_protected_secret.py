@@ -18,11 +18,11 @@ from ansible.plugins.lookup import LookupBase
 # Ansible invokes plugins in its own interpreter, outside the package command
 # wrappers.  Resolve the repository's automation source explicitly instead of
 # relying on a caller to export PYTHONPATH.
-_AUTOMATION_SRC = Path(__file__).resolve().parents[3] / "src"
+_AUTOMATION_SRC = Path(__file__).resolve().parents[4] / "src"
 if str(_AUTOMATION_SRC) not in sys.path:
     sys.path.insert(0, str(_AUTOMATION_SRC))
 
-from iaas_automation.k3s_automation.secrets import load_protected_environment_json
+from iaas.k3s_automation.secrets import load_protected_environment_json
 
 DOCUMENTATION = r"""
 name: k3s_protected_secret

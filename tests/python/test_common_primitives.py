@@ -7,11 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from iaas_automation.common.cli import run_validation_cli
-from iaas_automation.common.errors import ValidationError, require
-from iaas_automation.common.io import check_outputs, check_text_file, load_json, load_yaml, write_text
-from iaas_automation.common.markdown import escape_table_cell
-from iaas_automation.common.validation import as_list, as_mapping, require_bool, require_non_empty_string, require_positive_int, require_unknown_keys, require_url_like
+from iaas.common.cli import run_validation_cli
+from iaas.common.errors import ValidationError, require
+from iaas.common.io import check_outputs, check_text_file, load_json, load_yaml, write_text
+from iaas.common.markdown import escape_table_cell
+from iaas.common.validation import as_list, as_mapping, require_bool, require_non_empty_string, require_positive_int, require_unknown_keys, require_url_like
 
 pytestmark = pytest.mark.fast
 
@@ -78,11 +78,11 @@ def test_validation_cli_boundary_preserves_failure_format(capsys: pytest.Capture
 
 def test_services_inventory_does_not_import_pve_shared_primitives() -> None:
     forbidden = {
-        "iaas_automation.pve_inventory.errors",
-        "iaas_automation.pve_inventory.io",
-        "iaas_automation.pve_inventory.validation_common",
+        "iaas.pve_inventory.errors",
+        "iaas.pve_inventory.io",
+        "iaas.pve_inventory.validation_common",
     }
-    for path in (ROOT / "automation" / "src" / "iaas_automation" / "services_inventory").glob("*.py"):
+    for path in (ROOT / "src" / "iaas" / "services_inventory").glob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             module: str | None = None

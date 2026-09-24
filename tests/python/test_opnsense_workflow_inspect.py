@@ -7,11 +7,11 @@ import pytest
 import requests
 import yaml
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.opnsense_workflow.confirmation import response_warnings
-from iaas_automation.opnsense_workflow.contracts import save as save_candidate
-from iaas_automation.opnsense_workflow.inspect import inspect_candidate, main
-from iaas_automation.opnsense_workflow.reader import FixedCollectionTransport, Reader
+from iaas.common.errors import ValidationError
+from iaas.opnsense_workflow.confirmation import response_warnings
+from iaas.opnsense_workflow.contracts import save as save_candidate
+from iaas.opnsense_workflow.inspect import inspect_candidate, main
+from iaas.opnsense_workflow.reader import FixedCollectionTransport, Reader
 from test_opnsense_workflow import Appliance, TARGET, alias, candidate, documents
 
 

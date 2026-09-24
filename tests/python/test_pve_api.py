@@ -8,16 +8,16 @@ from typing import Any
 
 import pytest
 
-from iaas_automation.pve_inventory.pve_api import (
+from iaas.pve_inventory.pve_api import (
     PveApiAuthenticationError,
     PveApiNotConfiguredError,
     PveReadOnlyApi,
     ReadOnlyPveApi,
 )
-from iaas_automation.pve_inventory.pve_api.client import HealthApiRuntimeConfig
-from iaas_automation.pve_inventory.pve_api import client as pve_client_mod
-from iaas_automation.pve_inventory.health import run_health
-from iaas_automation.pve_inventory.preflight import run_preflight
+from iaas.pve_inventory.pve_api.client import HealthApiRuntimeConfig
+from iaas.pve_inventory.pve_api import client as pve_client_mod
+from iaas.pve_inventory.health import run_health
+from iaas.pve_inventory.preflight import run_preflight
 
 
 ROOT = Path(__file__).resolve().parents[2]

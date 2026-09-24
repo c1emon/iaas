@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iaas.invalid/schemas/image-publish/v1/pve-template-retire-request.schema.json",
+  "title": "pve-template-retire-request/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "schema_version", "target", "template_record", "ownership_admission", "retirement_admission"],
+  "properties": {
+    "kind": {"const": "pve-template-retire-request"}, "schema_version": {"const": 1},
+    "target": {"$ref": "#/$defs/target"},
+    "template_record": {"$ref": "pve-template-record.schema.json"},
+    "ownership_admission": {"$ref": "#/$defs/ownership"},
+    "retirement_admission": {
+      "type": "object", "required": ["authorized", "dependencies_resolved", "reference"],
+      "properties": {"authorized": {"const": true}, "dependencies_resolved": {"const": true}, "reference": {"type": "string", "minLength": 1}}
+    }
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+    "target": {
+      "type": "object", "additionalProperties": false,
+      "required": ["api_endpoint", "node", "tls_verify"],
+      "properties": {
+        "api_endpoint": {"type": "string", "pattern": "^https://[^/?#]+$"},
+        "node": {"$ref": "#/$defs/id"}, "tls_verify": {"const": true}
+      }
+    },
+    "ownership": {
+      "type": "object", "additionalProperties": false, "required": ["owner", "reference", "activity"],
+      "properties": {"owner": {"const": "publisher"}, "reference": {"type": "string", "minLength": 1}, "activity": {"enum": ["stopped", "inactive"]}}
+    }
+  }
+}

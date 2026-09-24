@@ -3,9 +3,9 @@ from copy import deepcopy
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.opnsense_validation import validate_document
-from iaas_automation.opnsense_validation.aliases import plan_aliases
+from iaas.common.errors import ValidationError
+from iaas.opnsense_validation import validate_document
+from iaas.opnsense_validation.aliases import plan_aliases
 
 pytestmark = pytest.mark.fast
 

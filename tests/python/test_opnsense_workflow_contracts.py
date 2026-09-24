@@ -3,9 +3,9 @@ import json
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.opnsense_workflow.contracts import load_candidate, save
-from iaas_automation.opnsense_workflow.executor import reverse_documents
+from iaas.common.errors import ValidationError
+from iaas.opnsense_workflow.contracts import load_candidate, save
+from iaas.opnsense_workflow.executor import reverse_documents
 from test_opnsense_workflow import Appliance, TARGET, alias, candidate, documents
 
 
@@ -20,7 +20,7 @@ def _saved_recovery(tmp_path):
     tmp_path.mkdir(parents=True, exist_ok=True)
     device = Appliance()
     value = candidate(device, documents(aliases=[alias()]))
-    from iaas_automation.opnsense_workflow.executor import apply
+    from iaas.opnsense_workflow.executor import apply
 
     apply(value, "a" * 64, device, device, "execution-1", {
         "target": TARGET, "candidate_sha256": "a" * 64,

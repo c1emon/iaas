@@ -1,0 +1,135 @@
+{
+  "kind": "pve-template-preview",
+  "schema_version": 2,
+  "action": "publish",
+  "fixed_input": {
+    "kind": "pve-template-publish-request",
+    "schema_version": 1,
+    "artifact": {
+      "kind": "image-artifact",
+      "schema_version": 1,
+      "artifact_id": "external-debian13-example",
+      "version": "external-2026-09-23",
+      "disk": {
+        "path": "disk.qcow2",
+        "format": "qcow2",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "size_bytes": 1073741824,
+        "virtual_size_bytes": 8589934592,
+        "self_contained": true
+      },
+      "guest": {
+        "architecture": "amd64",
+        "firmware": "bios",
+        "cloud_init": "unknown",
+        "guest_agent": "unknown"
+      },
+      "build": {
+        "origin": "external"
+      },
+      "checks": [
+        {
+          "id": "format",
+          "scope": "static",
+          "status": "passed",
+          "evidence_ref": null
+        },
+        {
+          "id": "self-contained",
+          "scope": "static",
+          "status": "passed",
+          "evidence_ref": null
+        },
+        {
+          "id": "first-boot",
+          "scope": "post-cleanup-disposable",
+          "status": "unknown",
+          "evidence_ref": null
+        }
+      ]
+    },
+    "artifact_digest": "sha256:a3cc5759eb5c646c4d290bfc81f25d54ee008e3a67336864a2a4055f739eca85",
+    "source": {
+      "object_ref": "s3://iaas-images/external-debian13-example.qcow2",
+      "object_version": "immutable-v1"
+    },
+    "target": {
+      "api_endpoint": "https://pve.example.invalid:8006",
+      "node": "cohe",
+      "tls_verify": true
+    },
+    "vmid": 9001,
+    "version": "external-2026-09-23",
+    "name": "debian13-template",
+    "staging_storage": "images",
+    "disk_storage": "images",
+    "cloud_init_storage": "images",
+    "hardware": {
+      "cpus": 2,
+      "memory_mib": 2048,
+      "machine": "q35",
+      "scsi_controller": "virtio-scsi-single",
+      "boot_disk": "scsi0",
+      "bridge": "vmbr0",
+      "firmware": "bios"
+    },
+    "cloud_init_defaults": {
+      "user": "debian",
+      "ssh_keys": [],
+      "ip_config": "dhcp"
+    },
+    "requirements": {
+      "required": [
+        {
+          "id": "format",
+          "scope": "static"
+        },
+        {
+          "id": "self-contained",
+          "scope": "static"
+        }
+      ],
+      "optional": [
+        {
+          "id": "first-boot",
+          "scope": "post-cleanup-disposable"
+        }
+      ],
+      "native_template_config_verify": true,
+      "guest_acceptance_scope": "caller"
+    },
+    "transport": "controller-upload",
+    "test_results": []
+  },
+  "artifact_digest": "sha256:a3cc5759eb5c646c4d290bfc81f25d54ee008e3a67336864a2a4055f739eca85",
+  "disk_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "runtime": {
+    "image_digest": "ghcr.io/c1emon/iaas-runtime@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "requirements": {
+    "required": [
+      {
+        "id": "format",
+        "scope": "static"
+      },
+      {
+        "id": "self-contained",
+        "scope": "static"
+      }
+    ],
+    "optional": [
+      {
+        "id": "first-boot",
+        "scope": "post-cleanup-disposable"
+      }
+    ],
+    "native_template_config_verify": true,
+    "guest_acceptance_scope": "caller"
+  },
+  "observed": {
+    "vmid_free": true,
+    "receiving_temp": "unobserved",
+    "proxy_limits": "unobserved"
+  },
+  "preview_digest": "sha256:e3c29ed2cf025f5c17b6c287f036f945275f85b2de3f7a4adb5d235acc902210"
+}

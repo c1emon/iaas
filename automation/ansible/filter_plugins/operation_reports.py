@@ -4,11 +4,11 @@ from pathlib import Path
 import re
 import sys
 
-_AUTOMATION_SRC = Path(__file__).resolve().parents[2] / "src"
+_AUTOMATION_SRC = Path(__file__).resolve().parents[3] / "src"
 if str(_AUTOMATION_SRC) not in sys.path:
     sys.path.insert(0, str(_AUTOMATION_SRC))
 
-from iaas_automation.runtime_paths import validate_paths
+from iaas.runtime_paths import validate_paths
 
 
 def protected_report_directory(base, target, environment=None):

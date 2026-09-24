@@ -1,0 +1,24 @@
+{
+  "kind": "image-test-result",
+  "schema_version": 1,
+  "execution_id": "test-external-2026-09-23",
+  "component": "image",
+  "operation": "test",
+  "phase": "succeeded",
+  "status": "succeeded",
+  "effects": {"guest": "known", "source": "none"},
+  "verification": [
+    {"id": "base-unchanged", "scope": "source", "status": "passed", "evidence_ref": "test-result.json"}
+  ],
+  "collection": {"status": "succeeded"},
+  "cleanup": {"status": "succeeded", "residue": []},
+  "input_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "disk_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "test_config_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "runtime_digest": "registry.invalid/iaas-runtime@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "checks": [
+    {"id": "format", "scope": "static", "status": "passed", "evidence_ref": "test-result.json"},
+    {"id": "self-contained", "scope": "static", "status": "passed", "evidence_ref": "test-result.json"}
+  ],
+  "base_unchanged": true
+}

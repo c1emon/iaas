@@ -4,10 +4,10 @@ from copy import deepcopy
 from hypothesis import given, settings, strategies as st
 import pytest
 
-from iaas_automation.common.conversion import ConversionError, convert_bool
-from iaas_automation.opnsense_workflow.conversion import convert_provider_row, normalize_standard_record
-from iaas_automation.opnsense_workflow.conversion.resources import unexpressed_fields
-from iaas_automation.opnsense_workflow.conversion.types import selected
+from iaas.common.conversion import ConversionError, convert_bool
+from iaas.opnsense_workflow.conversion import convert_provider_row, normalize_standard_record
+from iaas.opnsense_workflow.conversion.resources import unexpressed_fields
+from iaas.opnsense_workflow.conversion.types import selected
 from test_opnsense_workflow_reader import ROWS, FakeCollection, reader
 
 pytestmark = pytest.mark.fast
@@ -145,7 +145,7 @@ def test_dnat_compatibility_nested_leaves_are_consumed_but_unknowns_fail_closed(
         converted_address = convert_provider_row('dnat', unknown_address)
         assert unexpressed_fields('dnat', converted_address.extras, converted_address.fields) == ['source']
 
-    from iaas_automation.opnsense_workflow.reader import _configuration
+    from iaas.opnsense_workflow.reader import _configuration
     configuration, reason = _configuration('dnat', row)
     assert reason is None
     assert configuration['destination_net'] == 'PUBLIC_ALIAS'
@@ -180,7 +180,7 @@ def test_invalid_reference_fails_closed():
 
 
 def test_active_consumer_rejects_partial_provider_conversion():
-    from iaas_automation.opnsense_workflow.reader import _HttpFailure, _flatten_provider_row
+    from iaas.opnsense_workflow.reader import _HttpFailure, _flatten_provider_row
 
     row = {
         'uuid': '11111111-1111-4111-8111-111111111111',
@@ -198,7 +198,7 @@ def test_active_consumer_rejects_partial_provider_conversion():
 
 @pytest.mark.parametrize('flag', [0, '0', False, 'No', 'off', 'f', 0.0])
 def test_gateway_observation_uses_shared_flag_semantics(flag):
-    from iaas_automation.opnsense_workflow.gateway_checks import check_gateway_current
+    from iaas.opnsense_workflow.gateway_checks import check_gateway_current
     from test_opnsense_gateway_checks import DESIRED, GATEWAY_ROWS
     rows = deepcopy(GATEWAY_ROWS)
     rows['rows'][0].update(monitor_disable=flag, monitor_noroute=flag)
@@ -209,7 +209,7 @@ def test_gateway_observation_uses_shared_flag_semantics(flag):
 
 @pytest.mark.parametrize('flag', [None, 'fasle', ' false '])
 def test_invalid_monitor_flag_stays_unknown(flag):
-    from iaas_automation.opnsense_workflow.gateway_checks import check_gateway_current
+    from iaas.opnsense_workflow.gateway_checks import check_gateway_current
     from test_opnsense_gateway_checks import DESIRED, GATEWAY_ROWS
     rows = deepcopy(GATEWAY_ROWS)
     rows['rows'][0].update(monitor_disable=flag, monitor_noroute=flag)

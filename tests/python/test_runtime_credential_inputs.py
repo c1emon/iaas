@@ -2,12 +2,27 @@
 
 import json
 import subprocess
+from types import SimpleNamespace
+import stat
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.k3s_automation.secrets import load_protected_environment_json
-from iaas_automation.pve_inventory.pve_api.runtime import load_api_runtime_config
+from iaas.common.errors import ValidationError
+from iaas.k3s_automation.secrets import load_protected_environment_json
+from iaas.pve_inventory.pve_api.runtime import load_api_runtime_config
+from iaas.runtime_execution import credentials
+
+
+def test_root_owned_public_trust_file_is_accepted_but_root_owned_secret_is_rejected(monkeypatch):
+    class RootOwnedFile:
+        def stat(self):
+            return SimpleNamespace(st_mode=stat.S_IFREG | 0o640, st_uid=0, st_size=1)
+
+    monkeypatch.setattr(credentials.os, "getuid", lambda: 501)
+    path = RootOwnedFile()
+    credentials.protected_file(path, secret=False)
+    with pytest.raises(ValidationError, match="owned by the execution user"):
+        credentials.protected_file(path)
 
 
 def test_credentials_need_no_provider_process_or_token(monkeypatch, tmp_path):

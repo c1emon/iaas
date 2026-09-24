@@ -1,0 +1,11 @@
+{
+  "kind": "pve-template-cleanup-request",
+  "schema_version": 1,
+  "target": {"api_endpoint": "https://pve.example.invalid:8006", "node": "cohe", "tls_verify": false},
+  "original_execution_id": "publish-example-1",
+  "original_execution_dir": "retained/publish-example-1",
+  "original_preview_digest": "sha256:2895c58153d1b121d953bcfc7886b3691f29e5187971528115094340423efbc1",
+  "objects": [],
+  "volumes": [],
+  "ownership_admission": {"owner": "publisher", "reference": "journal/publish-example-1"}
+}

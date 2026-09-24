@@ -1,0 +1,93 @@
+{
+  "kind": "pve-template-result",
+  "schema_version": 2,
+  "execution_id": "publish-example-1",
+  "component": "pve-template",
+  "operation": "apply",
+  "action": "publish",
+  "runtime_digest": "ghcr.io/c1emon/iaas-runtime@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "phase": "succeeded",
+  "status": "succeeded",
+  "effects": {
+    "pve": "known",
+    "staging": "known"
+  },
+  "preview_digest": "sha256:e3c29ed2cf025f5c17b6c287f036f945275f85b2de3f7a4adb5d235acc902210",
+  "artifact_digest": "sha256:a3cc5759eb5c646c4d290bfc81f25d54ee008e3a67336864a2a4055f739eca85",
+  "publication": "succeeded",
+  "verification": [
+    {
+      "id": "template-config",
+      "scope": "pve-api-config",
+      "status": "passed",
+      "evidence_ref": null
+    },
+    {
+      "id": "guest-acceptance",
+      "scope": "caller",
+      "status": "not_performed",
+      "evidence_ref": null
+    }
+  ],
+  "collection": {
+    "status": "succeeded"
+  },
+  "native_execution": {
+    "upload": {
+      "phase": "upload",
+      "status": "succeeded"
+    },
+    "create": {
+      "phase": "create",
+      "status": "succeeded"
+    },
+    "import": {
+      "phase": "import",
+      "status": "succeeded"
+    },
+    "config": {
+      "phase": "config",
+      "status": "succeeded"
+    },
+    "template": {
+      "phase": "template",
+      "status": "succeeded"
+    }
+  },
+  "template_record": {
+    "kind": "pve-template-record",
+    "schema_version": 2,
+    "record_id": "external-2026-09-23-9001",
+    "target": {
+      "api_endpoint": "https://pve.example.invalid:8006",
+      "node": "cohe",
+      "tls_verify": true
+    },
+    "node": "cohe",
+    "vmid": 9001,
+    "smbios_uuid": "00000000-0000-0000-0000-000000000001",
+    "volumes": {
+      "scsi0": "images:vm-9001-disk-0"
+    },
+    "configuration": {
+      "cores": 2,
+      "memory": 2048,
+      "machine": "q35",
+      "template": 1,
+      "scsi0": "images:vm-9001-disk-0",
+      "ide2": "images:cloudinit"
+    },
+    "origin": "publication",
+    "execution_id": "publish-example-1",
+    "artifact_digest": "sha256:a3cc5759eb5c646c4d290bfc81f25d54ee008e3a67336864a2a4055f739eca85",
+    "verification": {
+      "template_config": "passed",
+      "guest_acceptance": "not_performed",
+      "caller_promotion": "not_performed"
+    }
+  },
+  "cleanup": {
+    "status": "succeeded",
+    "residue": []
+  }
+}

@@ -19,11 +19,11 @@ def test_legacy_make_pve_write_entrypoints_are_rejected(tmp_path: Path, operatio
     runner.write_text('''#!/usr/bin/env python3
 import os, sys, time
 args = sys.argv[1:]
-if "iaas_automation.runtime_paths" in args:
+if "iaas.runtime_paths" in args:
     sys.exit(0)
-if "iaas_automation.pve_inventory.cli" in args:
+if "iaas.pve_inventory.cli" in args:
     phase = "check"
-elif "iaas_automation.pve_inventory.cloud_init" in args:
+elif "iaas.pve_inventory.cloud_init" in args:
     phase = args[2]
 else:
     phase = args[1]

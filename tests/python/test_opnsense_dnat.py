@@ -5,8 +5,8 @@ from typing import Any
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.opnsense_validation.dnat import validate_dnat
+from iaas.common.errors import ValidationError
+from iaas.opnsense_validation.dnat import validate_dnat
 
 pytestmark = pytest.mark.fast
 

@@ -4,10 +4,10 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from iaas_automation.common.conversion import ConversionError
-from iaas_automation.common.errors import Diagnostic, ValidationError
-from iaas_automation.http_transport import TransportFailure
-from iaas_automation.pve_inventory.pve_api import (
+from iaas.common.conversion import ConversionError
+from iaas.common.errors import Diagnostic, ValidationError
+from iaas.http_transport import TransportFailure
+from iaas.pve_inventory.pve_api import (
     PveApiAuthenticationError,
     PveApiError,
     PveApiNotConfiguredError,
@@ -122,7 +122,7 @@ def test_pve_errors_keep_inheritance_message_status_and_safe_diagnostic(
 
 
 def test_validation_cli_with_diagnostic_keeps_existing_output(capsys) -> None:
-    from iaas_automation.common.cli import run_validation_cli
+    from iaas.common.cli import run_validation_cli
 
     def invalid(_argv):
         raise ValidationError('bad input', diagnostic=Diagnostic('validation', 'invalid_value'))

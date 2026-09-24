@@ -8,7 +8,7 @@ from typing import Any, cast
 import pytest
 import requests
 
-from iaas_automation.http_transport import HttpResponse, ReadBudget, TransportFailure, read_json
+from iaas.http_transport import HttpResponse, ReadBudget, TransportFailure, read_json
 
 pytestmark = pytest.mark.fast
 

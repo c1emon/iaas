@@ -59,7 +59,7 @@ same input facts without requiring an internal Ansible directory structure.
 For development, run the offline compiler through the project environment:
 
 ```sh
-PYTHONPATH=automation/src uv run python -m iaas_automation.runtime_config \
+PYTHONPATH=src uv run python -m iaas.runtime_config \
   --environment docs/examples/runtime/flat/environment.yml \
   --component opnsense --operation check
 ```
@@ -184,25 +184,26 @@ files. `options.destroy: true` changes the normal `plan` into a delete plan;
 there is no direct destroy operation. Apply still requires a newly issued
 execution admission bound to the reviewed plan.
 
-Template recipes are independent from VM roots:
+Template publication requests are independent from VM roots:
 
 ```yaml
 components:
   pve-template:
     inputs:
-      recipe: ./template/recipe.yml
+      request: ./image-publish/pve-template-publish-request.json
     files:
       template_preview: ./template-preview.json
-      template_receipt: ./template-receipt.json
+      result: ./image-publish/template-result.json
       execution_admission: ./template-admission.json
-      ssh_key: ./ssh_key
-      known_hosts: ./known_hosts
+      artifact: ./image-publish/image-artifact.json
+      artifact_locator: ./image-publish/artifact-locator.txt
+      api_ca: ./image-publish/pve-ca.pem
 ```
 
-The helper target must select one explicit node. Template apply consumes the
-exact preview and admission; verify consumes the retained receipt. Cleanup is a
-separate recipe action carrying the VMID, original execution, ownership and
-management status.
+The HTTPS target must select one explicit node. Template apply consumes the
+exact preview and complete admission; verify consumes the retained v2 result.
+Cleanup and retire use separate action requests carrying exact native
+identities, current publisher ownership and caller dependency disposition.
 
 ## S3 and protected process results
 

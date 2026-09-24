@@ -4,7 +4,7 @@ from copy import deepcopy
 
 import pytest
 
-from iaas_automation.opnsense_workflow.pf_rules import check_port_alias_active
+from iaas.opnsense_workflow.pf_rules import check_port_alias_active
 
 
 UUID = "11111111-1111-4111-8111-111111111111"

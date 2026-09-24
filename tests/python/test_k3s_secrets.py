@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.k3s_automation.secrets import (
+from iaas.common.errors import ValidationError
+from iaas.k3s_automation.secrets import (
     ProtectedSecretChannel,
     SecretMetadata,
     load_protected_environment_json,

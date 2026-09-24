@@ -1,0 +1,22 @@
+{
+  "kind": "pve-template-retire-request",
+  "schema_version": 1,
+  "target": {"api_endpoint": "https://pve.example.invalid:8006", "node": "cohe", "tls_verify": true},
+  "template_record": {
+    "kind": "pve-template-record",
+    "schema_version": 2,
+    "record_id": "external-2026-09-23-9001",
+    "target": {"api_endpoint": "https://pve.example.invalid:8006", "node": "cohe", "tls_verify": true},
+    "node": "cohe",
+    "vmid": 9001,
+    "smbios_uuid": "00000000-0000-0000-0000-000000000001",
+    "volumes": {"scsi0": "images:vm-9001-disk-0"},
+    "configuration": {"cores": 2, "memory": 2048, "template": 1, "scsi0": "images:vm-9001-disk-0", "ide2": "images:cloudinit"},
+    "origin": "publication",
+    "execution_id": "publish-example-1",
+    "artifact_digest": "sha256:a3cc5759eb5c646c4d290bfc81f25d54ee008e3a67336864a2a4055f739eca85",
+    "verification": {"template_config": "passed", "guest_acceptance": "not_performed", "caller_promotion": "not_performed"}
+  },
+  "ownership_admission": {"owner": "publisher", "reference": "ledger/template-external-2026-09-23-9001", "activity": "stopped"},
+  "retirement_admission": {"authorized": true, "dependencies_resolved": true, "reference": "review/retire-2026-09-23-1"}
+}

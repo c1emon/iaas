@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from iaas_automation.opnsense_diagnostics.adapter import MAX_PAGES,ObservationError,OPERATIONS,observe
-from iaas_automation.opnsense_diagnostics.schema import AdmissionError,admit,controller_target,validate_request,write_detail
+from iaas.opnsense_diagnostics.adapter import MAX_PAGES,ObservationError,OPERATIONS,observe
+from iaas.opnsense_diagnostics.schema import AdmissionError,admit,controller_target,validate_request,write_detail
 
 ROOT=Path(__file__).resolve().parents[1]/'fixtures/opnsense-capabilities'
 FIXTURE=json.loads((ROOT/'diagnostic-responses.json').read_text())

@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.opnsense_workflow import local
+from iaas.common.errors import ValidationError
+from iaas.opnsense_workflow import local
 
 
 class FakeReader:
@@ -95,17 +95,17 @@ def test_local_apply_delegates_to_guarded_executor(local_args, monkeypatch):
 
 
 def test_source_identity_tracks_dirty_source_not_bytecode(tmp_path):
-    for name in ('pyproject.toml', 'uv.lock', 'automation/src/example.py',
+    for name in ('pyproject.toml', 'uv.lock', 'src/example.py',
                  'automation/ansible/playbook.yml'):
         path = tmp_path / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text('original')
     before = local.source_identity(tmp_path)
-    cache = tmp_path / 'automation/src/__pycache__'
+    cache = tmp_path / 'src/__pycache__'
     cache.mkdir()
     (cache / 'example.pyc').write_bytes(b'cache')
     assert local.source_identity(tmp_path) == before
-    (tmp_path / 'automation/src/example.py').write_text('modified')
+    (tmp_path / 'src/example.py').write_text('modified')
     assert local.source_identity(tmp_path) != before
 
 

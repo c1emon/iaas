@@ -60,7 +60,7 @@ def run_play(tmp_path, desired, live=(), check=False, force=False, fail_name=Non
     def convert(value):
         if isinstance(value,list): return [convert(v) for v in value]
         if isinstance(value,str):
-            return value.replace('{{ playbook_dir }}/../../../..',str(ROOT)).replace('{{ playbook_dir }}/../../../src',str(ROOT/'automation/src'))
+            return value.replace('{{ playbook_dir }}/../../../..',str(ROOT)).replace('{{ playbook_dir }}/../../../../src',str(ROOT/'src'))
         if not isinstance(value,dict): return value
         result={}
         for key,item in value.items():

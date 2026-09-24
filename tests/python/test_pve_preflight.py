@@ -11,14 +11,14 @@ from typing import Any
 
 import pytest
 
-from iaas_automation.common.io import load_yaml
-from iaas_automation.pve_inventory.inventory.model import build_model
-from iaas_automation.pve_inventory.checks.preflight.api import ProxmoxAPI
-from iaas_automation.pve_inventory.checks.preflight.model import derive_expected_resources
-from iaas_automation.pve_inventory.checks.results import CheckResult, has_failures, render_report
-from iaas_automation.pve_inventory.inventory.validation.cluster import validate_cluster
-from iaas_automation.pve_inventory.inventory.validation.vm import validate_vms
-from iaas_automation.pve_inventory.preflight import run_preflight
+from iaas.common.io import load_yaml
+from iaas.pve_inventory.inventory.model import build_model
+from iaas.pve_inventory.checks.preflight.api import ProxmoxAPI
+from iaas.pve_inventory.checks.preflight.model import derive_expected_resources
+from iaas.pve_inventory.checks.results import CheckResult, has_failures, render_report
+from iaas.pve_inventory.inventory.validation.cluster import validate_cluster
+from iaas.pve_inventory.inventory.validation.vm import validate_vms
+from iaas.pve_inventory.preflight import run_preflight
 
 
 ROOT = Path(__file__).resolve().parents[2]

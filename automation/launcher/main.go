@@ -91,6 +91,9 @@ func run(args []string) error {
 	if options.Engine != "local" && options.Engine != "dind" {
 		return errors.New("explicit --engine local or dind is required")
 	}
+	if options.Engine == "dind" && options.Component == "image" && (options.Operation == "read" || options.Operation == "clean") {
+		return errors.New("image read/clean requires the local engine to preserve the caller-owned task workspace")
+	}
 	if options.Environment == "" || options.Output == "" {
 		return errors.New("run requires --environment and --output")
 	}
@@ -127,7 +130,8 @@ func run(args []string) error {
 func validateExecutionID(options Options) error {
 	mutation := (options.Component == "opnsense" && options.Operation == "apply") ||
 		(options.Component == "pve" && options.Operation == "apply") ||
-		(options.Component == "pve-template" && options.Operation == "apply")
+		(options.Component == "pve-template" && options.Operation == "apply") ||
+		(options.Component == "image" && (options.Operation == "build" || options.Operation == "test" || options.Operation == "clean" || options.Operation == "read"))
 	if options.ExecutionID == "" {
 		if mutation {
 			return errors.New("mutation apply requires --execution-id")

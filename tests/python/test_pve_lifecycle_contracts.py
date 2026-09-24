@@ -6,14 +6,14 @@ import json
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.runtime_execution.pve_contracts import (
+from iaas.common.errors import ValidationError
+from iaas.runtime_execution.pve_contracts import (
     validate_execution_admission,
     validate_plan_metadata,
     validate_result,
 )
-from iaas_automation.runtime_execution.pve_state import S3StateObserver, admit_state, extract_state_vmids
-from iaas_automation.runtime_execution.state import S3Backend
+from iaas.runtime_execution.pve_state import S3StateObserver, admit_state, extract_state_vmids
+from iaas.runtime_execution.state import S3Backend
 
 
 DIGEST = "a" * 64

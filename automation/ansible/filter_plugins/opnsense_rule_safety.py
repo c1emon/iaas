@@ -3,11 +3,11 @@
 from pathlib import Path
 import sys
 
-_AUTOMATION_SRC = Path(__file__).resolve().parents[2] / "src"
+_AUTOMATION_SRC = Path(__file__).resolve().parents[3] / "src"
 if str(_AUTOMATION_SRC) not in sys.path:
     sys.path.insert(0, str(_AUTOMATION_SRC))
 
-from iaas_automation.opnsense_validation import validate_document
+from iaas.opnsense_validation import validate_document
 
 
 def _plain(value):

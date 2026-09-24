@@ -34,7 +34,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-pythonpath = ["automation/src"]
+pythonpath = ["src"]
 testpaths = ["tests"]
 norecursedirs = [".*", "automation/ansible/collections"]
 addopts = "--strict-markers"
@@ -44,40 +44,40 @@ markers = [
 ]
 
 [tool.importlinter]
-root_package = "iaas_automation"
+root_package = "iaas"
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
 name = "Common primitives stay independent"
 type = "forbidden"
-source_modules = ["iaas_automation.common"]
-forbidden_modules = ["iaas_automation.http_transport", "iaas_automation.opnsense_workflow", "iaas_automation.opnsense_diagnostics", "iaas_automation.opnsense_validation", "iaas_automation.pve_inventory", "iaas_automation.k3s_automation", "iaas_automation.runtime_execution", "requests", "httpx", "proxmoxer"]
+source_modules = ["iaas.common"]
+forbidden_modules = ["iaas.http_transport", "iaas.opnsense_workflow", "iaas.opnsense_diagnostics", "iaas.opnsense_validation", "iaas.pve_inventory", "iaas.k3s_automation", "iaas.runtime_execution", "requests", "httpx", "proxmoxer"]
 
 [[tool.importlinter.contracts]]
 name = "OPNsense conversion stays pure"
 type = "forbidden"
-source_modules = ["iaas_automation.opnsense_workflow.conversion"]
-forbidden_modules = ["iaas_automation.http_transport", "iaas_automation.opnsense_workflow.reader", "iaas_automation.opnsense_workflow.executor", "iaas_automation.opnsense_workflow.planning", "iaas_automation.runtime_execution", "requests", "httpx", "proxmoxer"]
+source_modules = ["iaas.opnsense_workflow.conversion"]
+forbidden_modules = ["iaas.http_transport", "iaas.opnsense_workflow.reader", "iaas.opnsense_workflow.executor", "iaas.opnsense_workflow.planning", "iaas.runtime_execution", "requests", "httpx", "proxmoxer"]
 
 [[tool.importlinter.contracts]]
 name = "Offline OPNsense admission stays offline"
 type = "forbidden"
-source_modules = ["iaas_automation.opnsense_validation"]
-forbidden_modules = ["iaas_automation.http_transport", "iaas_automation.opnsense_workflow", "iaas_automation.opnsense_diagnostics", "iaas_automation.runtime_execution", "requests", "httpx", "proxmoxer"]
+source_modules = ["iaas.opnsense_validation"]
+forbidden_modules = ["iaas.http_transport", "iaas.opnsense_workflow", "iaas.opnsense_diagnostics", "iaas.runtime_execution", "requests", "httpx", "proxmoxer"]
 
 [[tool.importlinter.contracts]]
 name = "HTTP transport stays independent of domains"
 type = "forbidden"
-source_modules = ["iaas_automation.http_transport"]
-forbidden_modules = ["iaas_automation.opnsense_workflow", "iaas_automation.opnsense_diagnostics", "iaas_automation.opnsense_validation", "iaas_automation.pve_inventory", "iaas_automation.k3s_automation", "iaas_automation.runtime_execution"]
+source_modules = ["iaas.http_transport"]
+forbidden_modules = ["iaas.opnsense_workflow", "iaas.opnsense_diagnostics", "iaas.opnsense_validation", "iaas.pve_inventory", "iaas.k3s_automation", "iaas.runtime_execution"]
 
 [tool.ruff]
 target-version = "py312"
 include = [
-    "automation/src/iaas_automation/common/conversion.py",
-    "automation/src/iaas_automation/common/errors.py",
-    "automation/src/iaas_automation/opnsense_workflow/conversion/*.py",
-    "automation/src/iaas_automation/http_transport/*.py",
+    "src/iaas/common/conversion.py",
+    "src/iaas/common/errors.py",
+    "src/iaas/opnsense_workflow/conversion/*.py",
+    "src/iaas/http_transport/*.py",
     "tests/python/test_opnsense_conversion.py",
     "tests/python/test_import_contracts.py",
     "tests/python/test_http_transport.py",

@@ -4,8 +4,8 @@ from copy import deepcopy
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.runtime_execution.pve_provider import (
+from iaas.common.errors import ValidationError
+from iaas.runtime_execution.pve_provider import (
     AUTH, SSH_AUTH, TOKEN, validate_root, prepare_provider_environment,
     validate_plan_provider, verify_ssh_trust,
 )

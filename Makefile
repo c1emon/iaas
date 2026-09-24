@@ -22,11 +22,10 @@ UV ?= uv
 TOFU ?= tofu
 GITLEAKS ?= gitleaks
 RUNTIME_IMAGE ?= iaas-runtime:oci-release-test
-PYTHON ?= PYTHONPATH="$(AUTOMATION)/src" $(UV) run --directory "$(ROOT)" python
-PYTEST := PYTHONPATH="$(AUTOMATION)/src" $(UV) run --directory "$(ROOT)" pytest
+BUILDER_IMAGE ?= iaas-image-builder:oci-release-test
+PYTHON ?= PYTHONPATH="$(ROOT)/src" $(UV) run --directory "$(ROOT)" python
+PYTEST := PYTHONPATH="$(ROOT)/src" $(UV) run --directory "$(ROOT)" pytest
 ANSIBLE_LINT_PATHS ?= $(AUTOMATION)/ansible/playbooks/pve $(AUTOMATION)/ansible/playbooks/opnsense $(AUTOMATION)/ansible/roles/vm_baseline
-PACKER_BUILD_SCRIPT ?= $(AUTOMATION)/packer/proxmox/debian-13/build-template.sh
-TEMPLATE_BUILD_ENV ?= $(GENERATED_DIR)/packer/debian-13.env
 PVE_TFVARS ?= $(GENERATED_DIR)/opentofu/pve.tfvars.json
 PVE_DOCS ?= $(GENERATED_DIR)/docs/pve-vms.md
 SERVICES_DOCS ?= $(GENERATED_DIR)/docs/services.md
@@ -62,15 +61,18 @@ export ANSIBLE_LOOKUP_PLUGINS := $(AUTOMATION)/ansible/plugins/lookup
 export ENVIRONMENT_DIR OUTPUT_DIR
 
 .DEFAULT_GOAL := help
-.PHONY: runtime-build runtime-smoke runtime-tofu-check
+.PHONY: runtime-build runtime-smoke runtime-tofu-check disk-image-builder-build
 runtime-build:
-	sh "$(AUTOMATION)/runtime/build.sh" "$(RUNTIME_IMAGE)"
+	sh "$(AUTOMATION)/oci/iaas-runtime/build.sh" "$(RUNTIME_IMAGE)"
+
+disk-image-builder-build:
+	sh "$(AUTOMATION)/oci/disk-image-builder/build.sh" "$(BUILDER_IMAGE)"
 
 runtime-smoke:
-	$(UV) run --directory "$(ROOT)" python "$(AUTOMATION)/runtime/smoke.py" --image "$(RUNTIME_IMAGE)"
+	$(UV) run --directory "$(ROOT)" python "$(AUTOMATION)/oci/checks/smoke.py" --image "$(RUNTIME_IMAGE)"
 
 runtime-tofu-check:
-	$(UV) run --directory "$(ROOT)" python "$(AUTOMATION)/runtime/smoke.py" --image "$(RUNTIME_IMAGE)" --tofu
+	$(UV) run --directory "$(ROOT)" python "$(AUTOMATION)/oci/checks/smoke.py" --image "$(RUNTIME_IMAGE)" --tofu
 
 .PHONY: help require-environment require-pve-dir
 help:
@@ -86,7 +88,7 @@ require-environment:
 	@test -n "$(ENVIRONMENT_DIR)" || { printf 'error: ENVIRONMENT_DIR is required\n' >&2; exit 1; }
 	@test -d "$(ENVIRONMENT_DIR)" || { printf 'error: ENVIRONMENT_DIR must exist\n' >&2; exit 1; }
 	@test -n "$(OUTPUT_DIR)" || { printf 'error: OUTPUT_DIR is required\n' >&2; exit 1; }
-	@$(PYTHON) -m iaas_automation.runtime_paths --environment "$(ENVIRONMENT_DIR)" --implementation "$(AUTOMATION)" --output "$(OUTPUT_DIR)" --output "$(GENERATED_DIR)" --output "$(RUNTIME_DIR)" --output "$(PVE_TFVARS)" --output "$(ANSIBLE_INVENTORY)" --output "$(PVE_DOCS)" --output "$(TEMPLATE_BUILD_ENV)" --output "$(SERVICES_DOCS)" --output "$(FOUNDATION_DOCS)" --output "$(PVE_USER_DATA_DIR)" --output "$(BACKUP_DIR)"
+	@$(PYTHON) -m iaas.runtime_paths --environment "$(ENVIRONMENT_DIR)" --implementation "$(AUTOMATION)" --output "$(OUTPUT_DIR)" --output "$(GENERATED_DIR)" --output "$(RUNTIME_DIR)" --output "$(PVE_TFVARS)" --output "$(ANSIBLE_INVENTORY)" --output "$(PVE_DOCS)" --output "$(SERVICES_DOCS)" --output "$(FOUNDATION_DOCS)" --output "$(PVE_USER_DATA_DIR)" --output "$(BACKUP_DIR)"
 
 require-pve-dir:
 	@test -n "$(PVE_DIR)" || { printf 'error: PVE_DIR is required\n' >&2; exit 1; }
@@ -98,10 +100,10 @@ pve-validate pve-fmt tofu-fmt pve-plan pve-apply pve-destroy pve-backup-state: r
 .PHONY: require-output require-k3s-output
 require-output:
 	@test -n "$(OUTPUT_DIR)" || { printf 'error: OUTPUT_DIR is required\n' >&2; exit 1; }
-	@$(PYTHON) -m iaas_automation.runtime_paths --implementation "$(AUTOMATION)" $(if $(ENVIRONMENT_DIR),--environment "$(ENVIRONMENT_DIR)") --output "$(OUTPUT_DIR)" --output "$(RUNTIME_DIR)" --output "$(PVE_USER_DATA_DIR)" --output "$(BACKUP_DIR)"
+	@$(PYTHON) -m iaas.runtime_paths --implementation "$(AUTOMATION)" $(if $(ENVIRONMENT_DIR),--environment "$(ENVIRONMENT_DIR)") --output "$(OUTPUT_DIR)" --output "$(RUNTIME_DIR)" --output "$(PVE_USER_DATA_DIR)" --output "$(BACKUP_DIR)"
 
 require-k3s-output: require-output
-	@$(PYTHON) -m iaas_automation.runtime_paths --implementation "$(AUTOMATION)" --input "$(K3S_INTENT)" --input "$(K3S_INVENTORY)" --output "$(K3S_REVIEW)" --output "$(K3S_UPGRADE_PLAN)" $(if $(PLATFORM_HANDOFF_INTENT),--input "$(PLATFORM_HANDOFF_INTENT)") $(if $(PLATFORM_HANDOFF_OUTPUT),--output "$(PLATFORM_HANDOFF_OUTPUT)")
+	@$(PYTHON) -m iaas.runtime_paths --implementation "$(AUTOMATION)" --input "$(K3S_INTENT)" --input "$(K3S_INVENTORY)" --output "$(K3S_REVIEW)" --output "$(K3S_UPGRADE_PLAN)" $(if $(PLATFORM_HANDOFF_INTENT),--input "$(PLATFORM_HANDOFF_INTENT)") $(if $(PLATFORM_HANDOFF_OUTPUT),--output "$(PLATFORM_HANDOFF_OUTPUT)")
 
 render-cloud-init upload-cloud-init verify-cloud-init pve-backup-state: require-output
 k3s-render: require-k3s-output
@@ -136,7 +138,7 @@ lint-yaml:
 	$(UV) run --directory "$(ROOT)" yamllint "$(INVENTORY_DIR)" "$(ENVIRONMENT_DIR)/ansible"
 
 typecheck:
-	PYTHONPATH="$(AUTOMATION)/src" $(UV) run --directory "$(ROOT)" pyright
+	PYTHONPATH="$(ROOT)/src" $(UV) run --directory "$(ROOT)" pyright
 
 ansible-lint:
 	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-lint $(ANSIBLE_LINT_PATHS)
@@ -148,7 +150,7 @@ tofu-fmt:
 tofu-validate: pve-validate
 
 opnsense-validate:
-	$(PYTHON) -m iaas_automation.opnsense_validation --vars-dir "$(ENVIRONMENT_DIR)/ansible/vars/opnsense"
+	$(PYTHON) -m iaas.opnsense_validation --vars-dir "$(ENVIRONMENT_DIR)/ansible/vars/opnsense"
 
 check: check-generated test lint-yaml typecheck ansible-lint tofu-fmt tofu-validate opnsense-validate lint-imports lint-python
 
@@ -159,25 +161,25 @@ secret-scan:
 ansible-syntax: pve-ansible-syntax
 
 pve-generate:
-	$(PYTHON) -m iaas_automation.pve_inventory.cli --cluster "$(INVENTORY_DIR)/pve-cluster.yml" --vms "$(INVENTORY_DIR)/vms.yml" --tfvars "$(PVE_TFVARS)" --ansible "$(ANSIBLE_INVENTORY)" --docs "$(PVE_DOCS)" --template-build-env "$(TEMPLATE_BUILD_ENV)" --generate
+	$(PYTHON) -m iaas.pve_inventory.cli --cluster "$(INVENTORY_DIR)/pve-cluster.yml" --vms "$(INVENTORY_DIR)/vms.yml" --tfvars "$(PVE_TFVARS)" --ansible "$(ANSIBLE_INVENTORY)" --docs "$(PVE_DOCS)" --generate
 
 pve-check:
-	$(PYTHON) -m iaas_automation.pve_inventory.cli --cluster "$(INVENTORY_DIR)/pve-cluster.yml" --vms "$(INVENTORY_DIR)/vms.yml" --tfvars "$(PVE_TFVARS)" --ansible "$(ANSIBLE_INVENTORY)" --docs "$(PVE_DOCS)" --template-build-env "$(TEMPLATE_BUILD_ENV)" --check
+	$(PYTHON) -m iaas.pve_inventory.cli --cluster "$(INVENTORY_DIR)/pve-cluster.yml" --vms "$(INVENTORY_DIR)/vms.yml" --tfvars "$(PVE_TFVARS)" --ansible "$(ANSIBLE_INVENTORY)" --docs "$(PVE_DOCS)" --check
 
 services-generate:
-	$(PYTHON) -m iaas_automation.services_inventory.cli --services "$(INVENTORY_DIR)/services.yml" --vms "$(INVENTORY_DIR)/vms.yml" --docs "$(SERVICES_DOCS)" --generate
+	$(PYTHON) -m iaas.services_inventory.cli --services "$(INVENTORY_DIR)/services.yml" --vms "$(INVENTORY_DIR)/vms.yml" --docs "$(SERVICES_DOCS)" --generate
 
 services-check:
-	$(PYTHON) -m iaas_automation.services_inventory.cli --services "$(INVENTORY_DIR)/services.yml" --vms "$(INVENTORY_DIR)/vms.yml" --docs "$(SERVICES_DOCS)" --check
+	$(PYTHON) -m iaas.services_inventory.cli --services "$(INVENTORY_DIR)/services.yml" --vms "$(INVENTORY_DIR)/vms.yml" --docs "$(SERVICES_DOCS)" --check
 
 foundation-generate:
-	$(PYTHON) -m iaas_automation.foundation_inventory.cli --inventory "$(INVENTORY_DIR)/foundation.yml" --docs "$(FOUNDATION_DOCS)" --generate
+	$(PYTHON) -m iaas.foundation_inventory.cli --inventory "$(INVENTORY_DIR)/foundation.yml" --docs "$(FOUNDATION_DOCS)" --generate
 
 foundation-check:
-	$(PYTHON) -m iaas_automation.foundation_inventory.cli --inventory "$(INVENTORY_DIR)/foundation.yml" --docs "$(FOUNDATION_DOCS)" --check
+	$(PYTHON) -m iaas.foundation_inventory.cli --inventory "$(INVENTORY_DIR)/foundation.yml" --docs "$(FOUNDATION_DOCS)" --check
 
 foundation-health:
-	$(PYTHON) -m iaas_automation.foundation_inventory.cli --inventory "$(INVENTORY_DIR)/foundation.yml" --health
+	$(PYTHON) -m iaas.foundation_inventory.cli --inventory "$(INVENTORY_DIR)/foundation.yml" --health
 
 pve-validate: pve-check
 	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-inventory -i "$(ANSIBLE_INVENTORY)" --list >/dev/null
@@ -188,10 +190,10 @@ pve-fmt:
 	$(TOFU) -chdir="$(PVE_DIR)" fmt -recursive
 
 pve-preflight:
-	$(PYTHON) -m iaas_automation.pve_inventory.preflight --cluster "$(INVENTORY_DIR)/pve-cluster.yml" --vms "$(INVENTORY_DIR)/vms.yml"
+	$(PYTHON) -m iaas.pve_inventory.preflight --cluster "$(INVENTORY_DIR)/pve-cluster.yml" --vms "$(INVENTORY_DIR)/vms.yml"
 
 pve-health:
-	$(PYTHON) -m iaas_automation.pve_inventory.health --cluster "$(INVENTORY_DIR)/pve-cluster.yml" --vms "$(INVENTORY_DIR)/vms.yml"
+	$(PYTHON) -m iaas.pve_inventory.health --cluster "$(INVENTORY_DIR)/pve-cluster.yml" --vms "$(INVENTORY_DIR)/vms.yml"
 
 pve-packer-build:
 	@printf '%s\n' 'error: pve-packer-build was removed; use the pve-template plan/apply lifecycle with explicit admission' >&2
@@ -205,14 +207,14 @@ require-pve-target: require-storage-id
 	@test -n "$(PVE_SSH_USER)" || { printf 'error: PVE_SSH_USER is required\n' >&2; exit 1; }
 
 render-cloud-init: require-storage-id
-	$(PYTHON) -m iaas_automation.pve_inventory.cloud_init render --tfvars "$(PVE_TFVARS)" --output-dir "$(PVE_USER_DATA_DIR)" --storage-id "$(STORAGE_ID)"
+	$(PYTHON) -m iaas.pve_inventory.cloud_init render --tfvars "$(PVE_TFVARS)" --output-dir "$(PVE_USER_DATA_DIR)" --storage-id "$(STORAGE_ID)"
 
 upload-cloud-init: require-pve-target
 	@printf '%s\n' 'error: upload-cloud-init was removed as a direct write path; use PVE apply with an admitted native plan' >&2
 	@exit 2
 
 verify-cloud-init: require-pve-target
-	$(PYTHON) -m iaas_automation.pve_inventory.cloud_init verify --tfvars "$(PVE_TFVARS)" --output-dir "$(PVE_USER_DATA_DIR)" --storage-id "$(STORAGE_ID)" --pve-host "$(PVE_HOST)" --ssh-user "$(PVE_SSH_USER)"
+	$(PYTHON) -m iaas.pve_inventory.cloud_init verify --tfvars "$(PVE_TFVARS)" --output-dir "$(PVE_USER_DATA_DIR)" --storage-id "$(STORAGE_ID)" --pve-host "$(PVE_HOST)" --ssh-user "$(PVE_SSH_USER)"
 
 pve-backup-state:
 	@mkdir -p "$(BACKUP_DIR)"
@@ -268,10 +270,10 @@ require-platform-handoff-render-inputs: require-platform-handoff-inputs
 	@test -n "$(PLATFORM_HANDOFF_OUTPUT)" || { printf 'error: PLATFORM_HANDOFF_OUTPUT is required\n' >&2; exit 1; }
 
 k3s-check: require-k3s-inputs
-	$(PYTHON) -m iaas_automation.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)"
+	$(PYTHON) -m iaas.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)"
 
 k3s-render: require-k3s-inputs
-	$(PYTHON) -m iaas_automation.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --render "$(K3S_REVIEW)"
+	$(PYTHON) -m iaas.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --render "$(K3S_REVIEW)"
 
 k3s-ansible-syntax: require-k3s-inputs
 	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook --syntax-check -i "$(K3S_INVENTORY)" "$(K3S_PREFLIGHT_PLAYBOOK)"
@@ -284,34 +286,34 @@ require-k3s-preflight-mode:
 	@case "$(K3S_PREFLIGHT_MODE)" in install|converge|upgrade) ;; *) printf 'error: K3S_PREFLIGHT_MODE must be install, converge or upgrade\n' >&2; exit 1 ;; esac
 
 k3s-preflight: require-k3s-preflight-mode require-k3s-online-inputs k3s-render
-	$(PYTHON) -m iaas_automation.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --scope "$(K3S_SCOPE)" --runtime-secrets "$(K3S_RUNTIME_SECRETS)"
+	$(PYTHON) -m iaas.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --scope "$(K3S_SCOPE)" --runtime-secrets "$(K3S_RUNTIME_SECRETS)"
 	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(K3S_INVENTORY)" -l "$(K3S_ANSIBLE_LIMIT)" -e "k3s_model_path=$(K3S_REVIEW)" -e "k3s_preflight_scope=$(K3S_SCOPE)" -e "k3s_preflight_mode=$(K3S_PREFLIGHT_MODE)" -e "k3s_runtime_secret_file=$(K3S_RUNTIME_SECRETS)" "$(K3S_PREFLIGHT_PLAYBOOK)"
 
 k3s-verify: require-k3s-scoped-inputs k3s-render
-	$(PYTHON) -m iaas_automation.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --scope "$(K3S_SCOPE)"
+	$(PYTHON) -m iaas.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --scope "$(K3S_SCOPE)"
 	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(K3S_INVENTORY)" -l "$(K3S_ANSIBLE_LIMIT)" -e "k3s_model_path=$(K3S_REVIEW)" -e "k3s_verify_scope=$(K3S_SCOPE)" "$(K3S_VERIFY_PLAYBOOK)"
 
 k3s-deploy: require-k3s-online-inputs k3s-render
-	$(PYTHON) -m iaas_automation.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --scope "$(K3S_SCOPE)" --whole-cluster-scope --runtime-secrets "$(K3S_RUNTIME_SECRETS)"
+	$(PYTHON) -m iaas.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --scope "$(K3S_SCOPE)" --whole-cluster-scope --runtime-secrets "$(K3S_RUNTIME_SECRETS)"
 	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(K3S_INVENTORY)" -l "$(K3S_ANSIBLE_LIMIT)" -e "k3s_deploy_model_path=$(K3S_REVIEW)" -e "k3s_deploy_scope=$(K3S_SCOPE)" -e "k3s_deploy_runtime_secret_file=$(K3S_RUNTIME_SECRETS)" "$(K3S_DEPLOY_PLAYBOOK)"
 
 k3s-snapshot: require-k3s-scoped-inputs k3s-render
-	$(PYTHON) -m iaas_automation.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --scope "$(K3S_SCOPE)"
+	$(PYTHON) -m iaas.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --scope "$(K3S_SCOPE)"
 	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(K3S_INVENTORY)" -l "$(K3S_ANSIBLE_LIMIT)" -e "k3s_model_path=$(K3S_REVIEW)" -e "k3s_snapshot_scope=$(K3S_SCOPE)" "$(K3S_SNAPSHOT_PLAYBOOK)"
 
 k3s-upgrade: require-k3s-upgrade-inputs k3s-render
-	$(PYTHON) -m iaas_automation.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --scope "$(K3S_SCOPE)" --upgrade-target "$(K3S_UPGRADE_TARGET)" --observed-versions "$(K3S_OBSERVED_VERSIONS)" --render-upgrade-plan "$(K3S_UPGRADE_PLAN)" --runtime-secrets "$(K3S_RUNTIME_SECRETS)"
+	$(PYTHON) -m iaas.k3s_automation --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --scope "$(K3S_SCOPE)" --upgrade-target "$(K3S_UPGRADE_TARGET)" --observed-versions "$(K3S_OBSERVED_VERSIONS)" --render-upgrade-plan "$(K3S_UPGRADE_PLAN)" --runtime-secrets "$(K3S_RUNTIME_SECRETS)"
 	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(K3S_INVENTORY)" -l "$(K3S_ANSIBLE_LIMIT)" -e "k3s_upgrade_model_path=$(K3S_REVIEW)" -e "k3s_upgrade_scope=$(K3S_SCOPE)" -e "k3s_upgrade_target_version=$(K3S_UPGRADE_TARGET)" -e "k3s_upgrade_observed_versions_path=$(K3S_OBSERVED_VERSIONS)" -e "k3s_upgrade_plan_path=$(K3S_UPGRADE_PLAN)" -e "k3s_upgrade_runtime_secret_file=$(K3S_RUNTIME_SECRETS)" "$(K3S_UPGRADE_PLAYBOOK)"
 
 platform-handoff-check: require-platform-handoff-inputs
-	$(PYTHON) -m iaas_automation.platform_handoff --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --handoff-intent "$(PLATFORM_HANDOFF_INTENT)" --scope "$(K3S_SCOPE)"
+	$(PYTHON) -m iaas.platform_handoff --intent "$(K3S_INTENT)" --inventory "$(K3S_INVENTORY)" --handoff-intent "$(PLATFORM_HANDOFF_INTENT)" --scope "$(K3S_SCOPE)"
 
 platform-handoff-render: require-platform-handoff-render-inputs k3s-verify
 	ANSIBLE_CONFIG="$(ANSIBLE_CONFIG)" $(UV) run --directory "$(ROOT)" ansible-playbook -i "$(K3S_INVENTORY)" -l "$(K3S_ANSIBLE_LIMIT)" -e "platform_handoff_model_path=$(K3S_REVIEW)" -e "platform_handoff_k3s_intent=$(K3S_INTENT)" -e "platform_handoff_intent=$(PLATFORM_HANDOFF_INTENT)" -e "platform_handoff_scope=$(K3S_SCOPE)" -e "platform_handoff_output=$(PLATFORM_HANDOFF_OUTPUT)" "$(PLATFORM_HANDOFF_PLAYBOOK)"
 
 .PHONY: lint-imports
 lint-imports:
-	PYTHONPATH="$(AUTOMATION)/src" $(UV) run --directory "$(ROOT)" lint-imports
+	PYTHONPATH="$(ROOT)/src" $(UV) run --directory "$(ROOT)" lint-imports
 
 .PHONY: lint-python
 lint-python:

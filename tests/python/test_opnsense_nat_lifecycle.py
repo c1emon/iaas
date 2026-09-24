@@ -4,10 +4,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.opnsense_validation import TOP_LEVEL, validate_all, validate_document, validate_documents
-from iaas_automation.opnsense_validation.lifecycle import resource_arguments, resource_preflight
-from iaas_automation.runtime_execution.__main__ import main
+from iaas.common.errors import ValidationError
+from iaas.opnsense_validation import TOP_LEVEL, validate_all, validate_document, validate_documents
+from iaas.opnsense_validation.lifecycle import resource_arguments, resource_preflight
+from iaas.runtime_execution.__main__ import main
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / 'tests/fixtures/opnsense-nat'

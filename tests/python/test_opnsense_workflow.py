@@ -4,11 +4,11 @@ import json
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.opnsense_validation import TOP_LEVEL
-from iaas_automation.opnsense_workflow.contracts import identity, key, load_candidate, request, save
-from iaas_automation.opnsense_workflow.executor import apply, reverse_documents, verify
-from iaas_automation.opnsense_workflow.planning import coverage, plan
+from iaas.common.errors import ValidationError
+from iaas.opnsense_validation import TOP_LEVEL
+from iaas.opnsense_workflow.contracts import identity, key, load_candidate, request, save
+from iaas.opnsense_workflow.executor import apply, reverse_documents, verify
+from iaas.opnsense_workflow.planning import coverage, plan
 
 
 TARGET = {'host': 'firewall-a', 'endpoint': 'https://192.0.2.254', 'ssl_verify': True}
@@ -105,7 +105,7 @@ def test_fixed_candidate_and_digest(tmp_path):
 
 
 def test_live_rule_without_recreation_context_is_manual_recovery():
-    from iaas_automation.opnsense_workflow.executor import recovery_document
+    from iaas.opnsense_workflow.executor import recovery_document
     device = Appliance(filter_rules=[rule('192.0.2.0/24', action='block', protocol='any', destination_invert=True)])
     cand = candidate(device, documents(filter_rules=[rule('192.0.2.10')]))
     recovery = recovery_document(cand, 'a' * 64, 'execution-1', cand['before'])
@@ -261,7 +261,7 @@ def test_recovery_actual_before_state_and_created_inverse(tmp_path):
 
 
 def test_private_output_failure_prevents_write(tmp_path, monkeypatch):
-    import iaas_automation.opnsense_workflow.executor as module
+    import iaas.opnsense_workflow.executor as module
     device = Appliance()
     cand = candidate(device, documents(aliases=[alias()]))
     original = module.save
@@ -329,7 +329,7 @@ def test_old_dependency_drift_after_reference_switch_still_stops_activation(tmp_
 
 
 def test_disabled_alias_old_table_cannot_confirm_activation(tmp_path):
-    from iaas_automation.opnsense_workflow.reader import FixedCollectionTransport
+    from iaas.opnsense_workflow.reader import FixedCollectionTransport
 
     class OldTable(FixedCollectionTransport):
         def __init__(self):

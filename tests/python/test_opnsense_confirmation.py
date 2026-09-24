@@ -3,10 +3,10 @@ from copy import deepcopy
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.opnsense_workflow.confirmation import action_results
-from iaas_automation.opnsense_workflow.contracts import load_candidate, save
-from iaas_automation.opnsense_workflow.executor import verify
+from iaas.common.errors import ValidationError
+from iaas.opnsense_workflow.confirmation import action_results
+from iaas.opnsense_workflow.contracts import load_candidate, save
+from iaas.opnsense_workflow.executor import verify
 from test_opnsense_workflow import Appliance, alias, candidate, documents, execute, rule
 
 
@@ -166,8 +166,8 @@ def test_native_limitation_warning_is_recorded_once_without_source_or_credential
 
 
 def test_correlated_wait_is_read_only_and_stops_on_conflict():
-    from iaas_automation.opnsense_workflow.confirmation import complete_action
-    from iaas_automation.opnsense_workflow.confirmation import WAIT_POLICY
+    from iaas.opnsense_workflow.confirmation import complete_action
+    from iaas.opnsense_workflow.confirmation import WAIT_POLICY
     device = Appliance()
     stage = candidate(device, documents(aliases=[alias()]))['stages'][0]
     stage['confirmation']['wait'] = deepcopy(WAIT_POLICY)

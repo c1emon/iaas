@@ -1,14 +1,16 @@
 import json
 import hashlib
 from pathlib import Path
+from types import SimpleNamespace
 
+import pytest
 import yaml
 
-from iaas_automation.runtime_execution.__main__ import main
-from iaas_automation.runtime_execution.execution import Execution
-from iaas_automation.runtime_execution.operations import capabilities, operation_for
-from iaas_automation.runtime_execution.selection import load_operation
-from iaas_automation.runtime_config import InputRequired, SourceReader
+from iaas.runtime_execution.__main__ import main
+from iaas.runtime_execution.execution import Execution
+from iaas.runtime_execution.operations import capabilities, operation_for
+from iaas.runtime_execution.selection import load_operation
+from iaas.runtime_config import InputRequired, SourceReader
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -17,18 +19,157 @@ REPO = Path(__file__).resolve().parents[2]
 def test_capabilities_advertise_lifecycle_contract_versions() -> None:
     assert capabilities()["lifecycle_versions"] == {
         "pve": {"plan": 2, "result": 1},
-        "pve-template": {"preview": 1, "receipt": 1, "helper": 2},
+        "pve-template": {"preview": 2, "result": 2, "record": 2},
+        "image": {"artifact": 1, "build_request": 1, "test_request": 1, "test_result": 1},
     }
 
 
 def test_template_operations_do_not_forward_api_or_state_credentials():
-    from iaas_automation.runtime_execution.operations import credential_names, process_environment
+    from iaas.runtime_execution.operations import credential_names, process_environment
     for operation in ('check', 'read', 'plan', 'apply', 'verify'):
-        assert credential_names('pve-template', operation) == set()
+        expected = set() if operation in {"check", "verify"} else {'PVE_API_TOKEN', 'PVE_API_CA'}
+        if operation == "apply":
+            expected.add('PVE_ARTIFACT_URL')
+        assert credential_names('pve-template', operation) == expected
         assert process_environment('pve-template', operation, {
+            'PVE_API_TOKEN': 'scoped-token', 'PVE_API_CA': '/tmp/ca.pem', 'PVE_ARTIFACT_URL': 'https://objects.invalid/disk',
             'TF_VAR_pve_api_token_secret': 'must-not-pass',
             'AWS_SECRET_ACCESS_KEY': 'must-not-pass',
-            'OPNSENSE_API_SECRET': 'must-not-pass'}) == {}
+            'OPNSENSE_API_SECRET': 'must-not-pass'}) == ({
+                'PVE_API_TOKEN': 'scoped-token', 'PVE_API_CA': '/tmp/ca.pem', 'PVE_ARTIFACT_URL': 'https://objects.invalid/disk'
+            } if operation == "apply" else {
+                'PVE_API_TOKEN': 'scoped-token', 'PVE_API_CA': '/tmp/ca.pem'
+            } if operation in {"read", "plan"} else {})
+
+
+def test_image_test_requests_persist_an_external_artifact_directory_mapping(tmp_path):
+    request_path = tmp_path / "request.yml"
+    artifact_root = tmp_path / "artifact-root"
+    artifact_root.mkdir()
+    request_path.write_text(yaml.safe_dump({"kind": "image-test-request", "artifact_root": str(artifact_root)}))
+    entry = config(tmp_path, "image", {"test": str(request_path)})
+    first = SourceReader({str(entry): str(entry), str(request_path): str(request_path)})
+    with pytest.raises(InputRequired) as missing:
+        load_operation(entry, "image", "test", None, first)
+    assert missing.value.path == artifact_root.resolve()
+    mapped = tmp_path / "mapped-artifact-root"
+    mapped.mkdir()
+    second = SourceReader({str(entry): str(entry), str(request_path): str(request_path), str(artifact_root.resolve()): str(mapped)})
+    selected = load_operation(entry, "image", "test", None, second)
+    assert selected.documents["test"]["artifact_root"] == str(mapped)
+
+
+def test_image_runtime_receives_launcher_resolved_digest(tmp_path, monkeypatch):
+    request = tmp_path / "build.yml"
+    request.write_text(yaml.safe_dump({"kind": "image-build-request", "schema_version": 1}))
+    entry = config(tmp_path, "image", {"build": str(request)})
+    received = {}
+
+    def fake_run(selected, operation, execution, *, execution_id=None, runtime_digest=None):
+        received.update(operation=operation, execution_id=execution_id, runtime_digest=runtime_digest)
+        execution.finish({"component": "image", "operation": operation, "status": "succeeded"})
+
+    import iaas.image.runtime as image_runtime
+    monkeypatch.setattr(image_runtime, "run", fake_run)
+    digest = "registry.invalid/runtime@sha256:" + "e" * 64
+    assert main(["--environment", str(entry), "--component", "image", "--operation", "build",
+                 "--execution-id", "build-1", "--image-digest", digest, "--scope", "image-build",
+                 "--output", str(tmp_path / "build-1")]) == 0
+    assert received == {"operation": "build", "execution_id": "build-1", "runtime_digest": digest}
+
+
+def test_pve_cleanup_recovery_directory_is_mapped_read_only_for_plan_and_apply(tmp_path):
+    recovery = tmp_path / "publish-evidence"
+    recovery.mkdir()
+    mapped = tmp_path / "mapped-publish-evidence"
+    mapped.mkdir()
+    cleanup = tmp_path / "cleanup.json"
+    cleanup.write_text(json.dumps({
+        "kind": "pve-template-cleanup-request", "schema_version": 1,
+        "original_execution_dir": str(recovery),
+    }))
+    preview = tmp_path / "preview.json"
+    preview.write_text(json.dumps({
+        "kind": "pve-template-preview", "schema_version": 2, "action": "cleanup",
+        "fixed_input": {"original_execution_dir": str(recovery)},
+    }))
+    entry = tmp_path / "environment.yml"
+    entry.write_text(yaml.safe_dump({
+        "schema_version": 1, "environment": "synthetic",
+        "components": {"pve-template": {"inputs": {"cleanup": str(cleanup)},
+                                           "files": {"preview": str(preview)},
+                                           "options": {"action": "cleanup"}}},
+    }))
+    for operation in ("plan", "apply"):
+        reader = SourceReader({str(entry): str(entry), str(cleanup): str(cleanup),
+                               str(preview): str(preview), str(recovery): str(mapped)})
+        selected = load_operation(entry, "pve-template", operation, None, reader)
+        assert selected.files["original_execution_dir"] == mapped.resolve()
+        assert selected.file_paths["original_execution_dir"] == recovery.resolve()
+
+
+@pytest.mark.parametrize("preview_name", ["template_preview", "preview"])
+def test_pve_template_apply_hydrates_preview_and_admission_from_selected_files(tmp_path, monkeypatch, preview_name):
+    from iaas.pve_template import contracts, runtime
+    from test_image_publish_contracts import request as publish_request
+    from test_pve_template_publisher import Outputs
+
+    request = contracts.validate_publish_request(publish_request())
+    preview = contracts.build_publish_preview(request, runtime={"image_digest": "runtime@sha256:" + "a" * 64})
+    admission = {"schema_version": 1, "execution_id": "apply-1",
+                 "plan_digest": preview["preview_digest"].removeprefix("sha256:"),
+                 "target": request["target"], "approved": True,
+                 "consumption": {"reserved": True, "reservation_id": "reservation-1"},
+                 "pending": {"record_id": "pending-1"},
+                 "serialization": {"held": True, "context_id": "context-1"}}
+    request_path = tmp_path / "request.json"
+    preview_path = tmp_path / "template-preview.json"
+    admission_path = tmp_path / "execution-admission.json"
+    request_path.write_text(json.dumps(request))
+    preview_path.write_text(json.dumps(preview))
+    admission_path.write_text(json.dumps(admission))
+    entry = tmp_path / "environment.yml"
+    entry.write_text(yaml.safe_dump({"schema_version": 1, "environment": "apply-check",
+                                    "components": {"pve-template": {
+                                        "inputs": {"request": str(request_path)},
+                                        "files": {preview_name: str(preview_path),
+                                                  "execution_admission": str(admission_path)}}}}))
+    mapping = {str(path): str(path) for path in (entry, request_path, preview_path, admission_path)}
+    selected = load_operation(entry, "pve-template", "apply", None, SourceReader(mapping))
+    assert selected.options == {"action": "publish", "preview_digest": preview["preview_digest"],
+                                "admission": admission}
+
+    class ReachedGuard(Exception):
+        pass
+
+    def guard(*args, **kwargs):
+        raise ReachedGuard
+
+    monkeypatch.setattr(runtime, "_publish", guard)
+    with pytest.raises(ReachedGuard):
+        runtime.run(selected, "apply", "cohe", SimpleNamespace(outputs=Outputs(tmp_path / "output")),
+                    image_digest=preview["runtime"]["image_digest"], execution_id="apply-1")
+
+
+def test_launcher_rejects_duplicate_keys_in_image_json_contract(tmp_path, capsys):
+    request = tmp_path / "request.json"
+    request.write_text('{"kind":"image-test-request","kind":"image-test-request"}\n')
+    entry = config(tmp_path, "image", {"test": str(request)})
+    assert main(["--environment", str(entry), "--component", "image", "--operation", "check",
+                 "--output", str(tmp_path / "check")]) == 2
+    assert json.loads(capsys.readouterr().out)["status"] == "failed"
+
+
+def test_launcher_keeps_json_strictness_through_extensionless_input_mapping(tmp_path, capsys):
+    logical = tmp_path / "request.json"
+    physical = tmp_path / "mapped-input"
+    physical.write_text('{"kind":"image-test-request","kind":"image-test-request"}\n')
+    entry = config(tmp_path, "image", {"test": str(logical)})
+    mapping = tmp_path / "input-map.json"
+    mapping.write_text(json.dumps({str(entry): str(entry), str(logical): str(physical)}))
+    assert main(["--environment", str(entry), "--input-map", str(mapping), "--component", "image",
+                 "--operation", "check", "--output", str(tmp_path / "check")]) == 2
+    assert json.loads(capsys.readouterr().out)["status"] == "failed"
 
 
 def config(tmp_path, component, inputs, files=None):
@@ -212,7 +353,7 @@ def test_opnsense_request_is_validated_before_credentials(tmp_path, monkeypatch,
     entry = config(tmp_path, "opnsense", {}, {"inventory": "inventory.yml", "request": "request.yml"})
     (tmp_path / "inventory.yml").write_text("all: {}\n")
     (tmp_path / "request.yml").write_text("schema_version: 1\nselection: {snat: all}\n")
-    import iaas_automation.runtime_execution.__main__ as dispatch
+    import iaas.runtime_execution.__main__ as dispatch
     monkeypatch.setattr(dispatch, "prepare_file_credentials", lambda *args: (_ for _ in ()).throw(
         AssertionError("credentials must not be prepared for an invalid request")))
     output = tmp_path / "result"
@@ -223,7 +364,7 @@ def test_opnsense_request_is_validated_before_credentials(tmp_path, monkeypatch,
 
 
 def test_setup_failure_reports_created_output_and_redacts_exception(tmp_path, monkeypatch, capsys):
-    import iaas_automation.runtime_execution.__main__ as dispatch
+    import iaas.runtime_execution.__main__ as dispatch
     def fail(*args):
         raise yaml.YAMLError("synthetic-private-value")
     monkeypatch.setattr(dispatch, "prepare_file_credentials", fail)

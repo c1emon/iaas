@@ -2,8 +2,8 @@
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.pve_inventory.cloud_init_helpers.ssh import resolve_ssh_timeout
+from iaas.common.errors import ValidationError
+from iaas.pve_inventory.cloud_init_helpers.ssh import resolve_ssh_timeout
 
 
 def test_generic_timeout(monkeypatch):

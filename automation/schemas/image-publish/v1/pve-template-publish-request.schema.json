@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iaas.invalid/schemas/image-publish/v1/pve-template-publish-request.schema.json",
+  "title": "pve-template-publish-request/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "schema_version", "artifact", "artifact_digest", "source", "target", "vmid", "version", "name", "staging_storage", "disk_storage", "cloud_init_storage", "hardware", "cloud_init_defaults", "requirements", "transport"],
+  "properties": {
+    "kind": {"const": "pve-template-publish-request"}, "schema_version": {"const": 1},
+    "artifact": {"$ref": "image-artifact.schema.json"}, "artifact_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "source": {"type": "object", "additionalProperties": false, "required": ["object_ref"], "properties": {"object_ref": {"type": "string", "pattern": "^(https://[^/?#]+|s3://[^?#]+)$"}, "object_version": {"type": "string", "minLength": 1}}},
+    "target": {"type": "object", "additionalProperties": false, "required": ["api_endpoint", "node", "tls_verify"], "properties": {"api_endpoint": {"type": "string", "pattern": "^https://[^/?#]+$"}, "node": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"}, "tls_verify": {"const": true}}},
+    "vmid": {"type": "integer", "minimum": 100, "maximum": 999999999}, "version": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"}, "name": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+    "staging_storage": {"$ref": "#/$defs/storage"}, "disk_storage": {"$ref": "#/$defs/storage"}, "cloud_init_storage": {"$ref": "#/$defs/storage"}, "efi_storage": {"$ref": "#/$defs/storage"},
+    "hardware": {"type": "object", "additionalProperties": false, "required": ["cpus", "memory_mib", "machine", "scsi_controller", "boot_disk", "bridge", "firmware"], "properties": {"cpus": {"type": "integer", "minimum": 1}, "memory_mib": {"type": "integer", "minimum": 1}, "machine": {"$ref": "#/$defs/id"}, "scsi_controller": {"$ref": "#/$defs/id"}, "boot_disk": {"$ref": "#/$defs/id"}, "bridge": {"$ref": "#/$defs/id"}, "firmware": {"enum": ["bios", "uefi"]}}},
+    "cloud_init_defaults": {"type": "object", "additionalProperties": false, "properties": {"user": {"type": "string"}, "ssh_keys": {"type": "array", "items": {"type": "string"}}, "ip_config": {"type": "string"}}},
+    "requirements": {"type": "object", "additionalProperties": false, "required": ["required", "optional", "native_template_config_verify", "guest_acceptance_scope"], "properties": {"required": {"type": "array", "items": {"$ref": "#/$defs/check"}}, "optional": {"type": "array", "items": {"$ref": "#/$defs/check"}}, "native_template_config_verify": {"const": true}, "guest_acceptance_scope": {"const": "caller"}}},
+    "test_results": {"type": "array", "items": {"type": "object"}}, "transport": {"const": "controller-upload"}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+    "storage": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+    "check": {"type": "object", "additionalProperties": false, "required": ["id", "scope"], "properties": {"id": {"$ref": "#/$defs/id"}, "scope": {"$ref": "#/$defs/id"}}}
+  }
+}

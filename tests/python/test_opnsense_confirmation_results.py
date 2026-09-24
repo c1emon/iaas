@@ -1,7 +1,7 @@
 """Current-state verification must not certify an earlier action."""
 import pytest
 
-from iaas_automation.opnsense_workflow.executor import verify
+from iaas.opnsense_workflow.executor import verify
 from test_opnsense_workflow import Appliance, alias, candidate, documents, execute
 
 

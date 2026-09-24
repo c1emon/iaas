@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iaas.invalid/schemas/image-publish/v1/image-test-result.schema.json",
+  "title": "image-test-result/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "schema_version", "execution_id", "component", "operation", "phase", "status", "effects", "verification", "collection", "cleanup", "input_digest", "disk_sha256", "test_config_digest", "runtime_digest", "checks", "base_unchanged"],
+  "properties": {
+    "kind": {"const": "image-test-result"}, "schema_version": {"const": 1}, "execution_id": {"$ref": "#/$defs/id"},
+    "component": {"const": "image"}, "operation": {"const": "test"}, "phase": {"type": "string", "minLength": 1},
+    "status": {"enum": ["succeeded", "failed", "interrupted", "unknown"]},
+    "effects": {"type": "object", "minProperties": 1, "additionalProperties": {"enum": ["none", "known", "unknown"]}},
+    "verification": {"type": "array", "items": {"$ref": "#/$defs/check"}}, "collection": {"$ref": "#/$defs/collection"},
+    "cleanup": {"$ref": "#/$defs/cleanup"}, "input_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "disk_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "test_config_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "runtime_digest": {"type": "string", "minLength": 1}, "checks": {"type": "array", "items": {"$ref": "#/$defs/check"}},
+    "base_unchanged": {"type": ["boolean", "null"]}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+    "check": {"type": "object", "additionalProperties": false, "required": ["id", "scope", "status", "evidence_ref"], "properties": {
+      "id": {"$ref": "#/$defs/id"}, "scope": {"type": "string", "minLength": 1}, "status": {"enum": ["passed", "failed", "not_performed", "unknown"]}, "evidence_ref": {"type": ["string", "null"]}
+    }},
+    "collection": {"type": "object", "additionalProperties": false, "required": ["status"], "properties": {"status": {"enum": ["succeeded", "failed", "unknown", "not_performed"]}}},
+    "cleanup": {"type": "object", "additionalProperties": false, "required": ["status", "residue"], "properties": {"status": {"enum": ["succeeded", "failed", "unknown", "not_required"]}, "residue": {"type": "array", "items": {"type": "string"}}}}
+  }
+}

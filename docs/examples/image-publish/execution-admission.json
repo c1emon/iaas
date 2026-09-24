@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "execution_id": "publish-example-1",
+  "plan_digest": "e3c29ed2cf025f5c17b6c287f036f945275f85b2de3f7a4adb5d235acc902210",
+  "target": {
+    "api_endpoint": "https://pve.example.invalid:8006",
+    "node": "cohe",
+    "tls_verify": true
+  },
+  "approved": true,
+  "consumption": {
+    "reserved": true,
+    "reservation_id": "reservation-example-1"
+  },
+  "pending": {
+    "record_id": "pending-example-1"
+  },
+  "serialization": {
+    "held": true,
+    "context_id": "lock-example-1"
+  }
+}

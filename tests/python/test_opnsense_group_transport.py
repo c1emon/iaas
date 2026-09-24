@@ -1,6 +1,6 @@
 from copy import deepcopy
 
-from iaas_automation.opnsense_workflow.reader import FixedCollectionTransport, _HttpFailure
+from iaas.opnsense_workflow.reader import FixedCollectionTransport, _HttpFailure
 
 
 DESIRED = {

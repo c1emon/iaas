@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -99,6 +100,27 @@ func TestExplicitInputAndPortableArtifacts(t *testing.T) {
 	if err := work.addInput(key); err != nil {
 		t.Fatal(err)
 	}
+	mapped := filepath.Join(taskDir, strings.TrimPrefix(work.mapping[key], "/"))
+	info, err := os.Stat(mapped)
+	if err != nil {
+		t.Fatalf("local input was not copied with caller ownership and mode: %v", err)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || int(stat.Uid) != os.Getuid() {
+		t.Fatalf("local input was not copied with caller ownership and mode: %v", err)
+	}
+	if data, err := os.ReadFile(mapped); err != nil || string(data) != "synthetic" {
+		t.Fatalf("local input snapshot is incorrect: %v", err)
+	}
+	if err := os.WriteFile(key, []byte("changed"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(mapped); err != nil || string(data) != "synthetic" {
+		t.Fatalf("local input copy changed with caller source: %v", err)
+	}
+	if mounts := strings.Join(work.mounts(false), " "); strings.Contains(mounts, "src="+key) {
+		t.Fatal("local regular input still uses a single-file bind")
+	}
 	if err := work.addInput(key); err == nil {
 		t.Fatal("duplicate discovery must stop")
 	}
@@ -112,8 +134,8 @@ func TestExplicitInputAndPortableArtifacts(t *testing.T) {
 	if err := copyTree(input, filepath.Join(directory, "export")); err != nil {
 		t.Fatal(err)
 	}
-	info, _ := os.Stat(filepath.Join(directory, "export/protected key"))
-	if info.Mode().Perm() != 0600 {
+	exportInfo, _ := os.Stat(filepath.Join(directory, "export/protected key"))
+	if exportInfo.Mode().Perm() != 0600 {
 		t.Fatal("private file permissions changed")
 	}
 	if err := os.Symlink(key, filepath.Join(input, "link")); err != nil {
@@ -121,6 +143,73 @@ func TestExplicitInputAndPortableArtifacts(t *testing.T) {
 	}
 	if err := copyTree(input, filepath.Join(directory, "reject")); err == nil {
 		t.Fatal("artifact symlink accepted")
+	}
+}
+
+func TestDindRegularInputUsesTheInputVolume(t *testing.T) {
+	work := task{options: Options{Engine: "dind"}, inputVolume: "task-inputs",
+		files: []inputFile{{logical: "/caller/key", actual: "/caller/key",
+			remote: "/inputs/files/000000", writable: false, directory: false}},
+	}
+	mounts := strings.Join(work.mounts(false), " ")
+	if !strings.Contains(mounts, "type=volume,src=task-inputs,dst=/inputs,readonly") {
+		t.Fatal("dind input volume was not mounted read-only")
+	}
+	if strings.Contains(mounts, "src=/caller/key") {
+		t.Fatal("dind regular input unexpectedly used a host file bind")
+	}
+}
+
+func TestImageTaskDirectoryInputIsMountedWritableOnlyForLocalReadClean(t *testing.T) {
+	directory := t.TempDir()
+	taskDir := filepath.Join(directory, "task")
+	if err := os.Mkdir(taskDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	work := task{options: Options{Engine: "local", Component: "image", Operation: "clean"},
+		directory: taskDir, mapping: map[string]string{}}
+	if err := work.initialize(); err != nil {
+		t.Fatal(err)
+	}
+	if err := work.addInput(directory); err != nil {
+		t.Fatal(err)
+	}
+	if len(work.files) != 1 || !work.files[0].writable {
+		t.Fatal("image cleanup directory was not marked writable")
+	}
+	mounts := strings.Join(work.mounts(false), " ")
+	if strings.Contains(mounts, "readonly,src="+directory) {
+		t.Fatal("image cleanup directory was mounted read-only")
+	}
+	verify := task{options: Options{Engine: "local", Component: "image", Operation: "verify"},
+		directory: taskDir, mapping: map[string]string{}}
+	if err := verify.initialize(); err != nil {
+		t.Fatal(err)
+	}
+	if err := verify.addInput(directory); err != nil {
+		t.Fatal(err)
+	}
+	if len(verify.files) != 1 || verify.files[0].writable {
+		t.Fatal("image verification directory was not kept read-only")
+	}
+	verifyMounts := strings.Join(verify.mounts(false), " ")
+	if !strings.Contains(verifyMounts, ",dst=/inputs/files/000000,readonly") {
+		t.Fatal("image verification directory was not mounted read-only")
+	}
+	recovery := task{options: Options{Engine: "local", Component: "pve-template", Operation: "apply"},
+		directory: taskDir, mapping: map[string]string{}}
+	if err := recovery.initialize(); err != nil {
+		t.Fatal(err)
+	}
+	if err := recovery.addInput(directory); err != nil {
+		t.Fatal(err)
+	}
+	if len(recovery.files) != 1 || recovery.files[0].writable {
+		t.Fatal("PVE cleanup recovery directory was not kept read-only")
+	}
+	recoveryMounts := strings.Join(recovery.mounts(false), " ")
+	if !strings.Contains(recoveryMounts, ",dst=/inputs/files/000000,readonly") {
+		t.Fatal("PVE cleanup recovery directory was not mounted read-only")
 	}
 }
 
@@ -214,6 +303,39 @@ func TestCollectionPreservesNativeLinksWithoutFollowingThem(t *testing.T) {
 	data, _ := os.ReadFile(outstanding)
 	if string(data) != "unchanged" {
 		t.Fatal("source overwritten during result recording")
+	}
+}
+
+func TestImageLocalOutputRelocationPreservesTaskIdentity(t *testing.T) {
+	directory := t.TempDir()
+	source := filepath.Join(directory, ".iaas-task-1", "work", "output")
+	destination := filepath.Join(directory, "result")
+	if err := os.MkdirAll(source, 0700); err != nil {
+		t.Fatal(err)
+	}
+	taskFile := filepath.Join(source, "work", "image", "task.json")
+	if err := os.MkdirAll(filepath.Dir(taskFile), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(taskFile, []byte("task"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(taskFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := relocateImageOutput(source, destination, []byte("result"), []byte("provenance")); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Stat(filepath.Join(destination, "work", "image", "task.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(before, after) {
+		t.Fatal("local image collection copied instead of relocating the task workspace")
+	}
+	if _, err := os.Stat(source); !os.IsNotExist(err) {
+		t.Fatalf("source workspace remained after relocation: %v", err)
 	}
 }
 

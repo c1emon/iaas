@@ -13,7 +13,11 @@ import (
 	"strings"
 )
 
-type inputFile struct{ logical, actual, remote string }
+type inputFile struct {
+	logical, actual, remote string
+	writable                bool
+	directory               bool
+}
 
 type task struct {
 	options       Options
@@ -107,21 +111,36 @@ func (t *task) addInput(logical string) error {
 		return fmt.Errorf("cannot supply declared input: %s", logical)
 	}
 	info, err := os.Stat(actual)
-	if err != nil || !info.Mode().IsRegular() {
-		return errors.New("declared input must be a readable regular file")
+	if err != nil {
+		return errors.New("declared input is unavailable")
 	}
+	allowDirectory := (t.options.Component == "image" && (t.options.Operation == "build" || t.options.Operation == "test" || t.options.Operation == "read" || t.options.Operation == "verify" || t.options.Operation == "clean")) ||
+		(t.options.Component == "pve-template" && (t.options.Operation == "plan" || t.options.Operation == "apply"))
+	if !info.Mode().IsRegular() && !(allowDirectory && info.IsDir()) {
+		return errors.New("declared input must be a readable regular file or supported image directory")
+	}
+	writable := t.options.Component == "image" && (t.options.Operation == "read" || t.options.Operation == "clean") && info.IsDir()
 	remote := fmt.Sprintf("/inputs/files/%06d", len(t.files))
 	if t.options.Engine == "dind" {
 		if _, err := t.docker.call("cp", "-a", actual, t.seed+":"+remote); err != nil {
 			return errors.New("explicit input transfer failed")
 		}
 	} else {
-		// A placeholder allows a file bind below the read-only metadata bind.
-		if err := os.WriteFile(filepath.Join(t.directory, remote[1:]), nil, 0600); err != nil {
-			return err
+		// Regular files are copied into the private input tree so a Docker
+		// single-file bind cannot remap their owner to root (notably on Colima).
+		// Directory inputs remain placeholders for their separate read-only bind.
+		path := filepath.Join(t.directory, remote[1:])
+		if info.IsDir() {
+			if err := os.MkdirAll(path, 0700); err != nil {
+				return err
+			}
+		} else {
+			if err := copyInputFile(actual, path, info.Mode().Perm()); err != nil {
+				return fmt.Errorf("explicit input copy failed: %w", err)
+			}
 		}
 	}
-	t.files = append(t.files, inputFile{logical, actual, remote})
+	t.files = append(t.files, inputFile{logical, actual, remote, writable, info.IsDir()})
 	t.mapping[logical] = remote
 	return nil
 }
@@ -145,14 +164,20 @@ func (t *task) mounts(withOutput bool) []string {
 	args := []string{"--platform", t.configuration.Platform, "--read-only", "--tmpfs", "/tmp:rw,mode=1777",
 		"--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())}
 	if t.options.Engine == "dind" {
-		args = append(args, "--mount", "type=volume,src="+t.inputVolume+",dst=/inputs,readonly")
+		mount := "type=volume,src=" + t.inputVolume + ",dst=/inputs"
+		if !(t.options.Component == "image" && (t.options.Operation == "read" || t.options.Operation == "clean")) {
+			mount += ",readonly"
+		}
+		args = append(args, "--mount", mount)
 		if withOutput {
 			args = append(args, "--mount", "type=volume,src="+t.outputVolume+",dst=/task")
 		}
 	} else {
 		args = append(args, bind(filepath.Join(t.directory, "inputs"), "/inputs", true)...)
 		for _, file := range t.files {
-			args = append(args, bind(file.actual, file.remote, true)...)
+			if file.directory {
+				args = append(args, bind(file.actual, file.remote, !file.writable)...)
+			}
 		}
 		if withOutput {
 			args = append(args, bind(filepath.Join(t.directory, "work"), "/task", false)...)
@@ -166,7 +191,34 @@ func (t *task) mounts(withOutput bool) []string {
 			args = append(args, "--mount", "type=volume,src="+t.inputVolume+",dst=/etc/"+name+",volume-subpath="+name+",readonly")
 		}
 	}
+	if t.options.Component == "image" && (t.options.Operation == "build" || t.options.Operation == "test") {
+		args = append(args, "--device", "/dev/kvm:/dev/kvm")
+	}
 	return args
+}
+
+func copyInputFile(source, destination string, mode os.FileMode) (err error) {
+	input, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer input.Close()
+	output, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode.Perm())
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := output.Close(); err == nil && closeErr != nil {
+			err = closeErr
+		}
+		if err != nil {
+			_ = os.Remove(destination)
+		}
+	}()
+	if _, err = io.Copy(output, input); err != nil {
+		return err
+	}
+	return output.Sync()
 }
 
 func copyTree(source, destination string) error {

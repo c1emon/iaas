@@ -2,9 +2,9 @@ from copy import deepcopy
 
 import pytest
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.runtime_execution.pve_results import machine_review, expectations, verify_configuration
-from iaas_automation.pve_inventory.pve_api import PveApiNotConfiguredError
+from iaas.common.errors import ValidationError
+from iaas.runtime_execution.pve_results import machine_review, expectations, verify_configuration
+from iaas.pve_inventory.pve_api import PveApiNotConfiguredError
 
 
 def change(actions=None, vmid=101):
@@ -65,6 +65,17 @@ def test_stopped_vm_and_no_root_outputs_verify():
     item = change()
     result = verify_configuration(expectations([item], snapshot(item)), API())
     assert result["status"] == "passed"
+
+
+def test_missing_pve_bios_uses_seabios_default_but_not_ovmf():
+    item = change()
+    item["change"]["after"]["bios"] = "seabios"
+    report = verify_configuration(expectations([item], snapshot(item)), API())
+    assert report["status"] == "passed"
+    item["change"]["after"]["bios"] = "ovmf"
+    report = verify_configuration(expectations([item], snapshot(item)), API())
+    assert report["status"] == "failed"
+    assert report["objects"][0]["checks"]["bios"] == "failed"
 
 
 @pytest.mark.parametrize("actions,wrong_identity", [

@@ -11,12 +11,12 @@ from pathlib import Path
 import pytest
 import yaml
 
-from iaas_automation.common.errors import ValidationError
-from iaas_automation.common.io import load_yaml
-from iaas_automation.services_inventory.cli import main as services_main
-from iaas_automation.services_inventory.model import build_model
-from iaas_automation.services_inventory.render import build_markdown
-from iaas_automation.services_inventory.validation import load_vm_names, validate_services
+from iaas.common.errors import ValidationError
+from iaas.common.io import load_yaml
+from iaas.services_inventory.cli import main as services_main
+from iaas.services_inventory.model import build_model
+from iaas.services_inventory.render import build_markdown
+from iaas.services_inventory.validation import load_vm_names, validate_services
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -196,11 +196,11 @@ def test_services_cli_validation_failure_exits_1_without_traceback(tmp_path: Pat
     services_copy.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
 
     result = subprocess.run(
-        [sys.executable, "-m", "iaas_automation.services_inventory.cli", "--services", str(services_copy), "--vms", str(VMS_PATH)],
+        [sys.executable, "-m", "iaas.services_inventory.cli", "--services", str(services_copy), "--vms", str(VMS_PATH)],
         cwd=ROOT,
         capture_output=True,
         text=True,
-        env=os.environ | {"PYTHONPATH": str(ROOT / "automation" / "src")},
+        env=os.environ | {"PYTHONPATH": str(ROOT / "src")},
     )
 
     assert result.returncode == 1

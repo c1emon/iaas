@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from iaas_automation.opnsense_workflow.confirmation import complete_action
-from iaas_automation.opnsense_workflow.reader import FixedCollectionTransport, observation_budget
+from iaas.opnsense_workflow.confirmation import complete_action
+from iaas.opnsense_workflow.reader import FixedCollectionTransport, observation_budget
 
 
 TARGET = {"endpoint": "https://192.0.2.254", "ssl_verify": True}
@@ -139,7 +139,7 @@ def test_smaller_request_budget_applies_to_boundary_reads() -> None:
 
 @pytest.mark.parametrize('limit, expected', [(4, 'confirmed'), (3, 'unknown')])
 def test_poll_bytes_share_boundary_but_reset_between_attempts(monkeypatch, limit, expected):
-    from iaas_automation.opnsense_workflow import reader as reader_module
+    from iaas.opnsense_workflow import reader as reader_module
 
     monkeypatch.setattr(reader_module, 'MAX_TOTAL_BYTES', limit)
     clock = Clock()

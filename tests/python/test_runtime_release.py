@@ -9,7 +9,7 @@ import pytest
 import yaml
 
 
-spec = importlib.util.spec_from_file_location("runtime_release", Path(__file__).resolve().parents[2] / "automation/runtime/release.py")
+spec = importlib.util.spec_from_file_location("runtime_release", Path(__file__).resolve().parents[2] / "automation/oci/release.py")
 assert spec and spec.loader
 release = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(release)
@@ -121,13 +121,58 @@ def test_exact_tagged_checkout(monkeypatch):
         release.prepare("release", {"action": "published", "release": {"draft": False, "tag_name": "v1.2.3"}}, "example/iaas")
 
 
+def test_image_builder_release_profile(monkeypatch):
+    monkeypatch.setattr(release, "command", lambda *args: "a" * 40)
+    metadata = release.prepare("release", {"action": "published", "release": {"draft": False, "tag_name": "v1.2.3"}},
+                               "example/iaas", kind="image-builder")
+    assert metadata["kind"] == "image-builder"
+    assert metadata["architectures"] == ["amd64"]
+    assert metadata["image"] == "ghcr.io/example/iaas-image-builder"
+
+
+def test_image_builder_publishes_single_tested_amd64_without_index(monkeypatch):
+    metadata = {"kind": "image-builder", "architectures": ["amd64"],
+                "image": "ghcr.io/example/iaas-image-builder", "source": "https://github.com/example/iaas",
+                "revision": "a" * 40, "tag": "v1.2.3"}
+    labels = {f"org.opencontainers.image.{key}": metadata["tag" if key == "version" else key]
+              for key in ("source", "revision", "version")}
+    image = metadata["image"]
+    version = image + ":v1.2.3"
+    digest = "sha256:" + "c" * 64
+    image_id = "sha256:" + "a" * 64
+    calls = []
+
+    def fake_command(*arguments, **kwargs):
+        calls.append(arguments)
+        if arguments[:3] == ("docker", "image", "inspect"):
+            return json.dumps([{"Config": {"Labels": labels}, "Os": "linux", "Id": image_id,
+                                "Architecture": "amd64"}])
+        if arguments[:2] == ("docker", "pull"):
+            return "Digest: " + digest
+        return ""
+
+    monkeypatch.setattr(release, "command", fake_command)
+
+    def lookup(reference, insecure=False):
+        if reference == version:
+            return None
+        if reference == f"{image}@{digest}":
+            return {"config": {"digest": image_id}}
+        raise AssertionError(reference)
+
+    monkeypatch.setattr(release, "registry_manifest", lookup)
+    assert release.publish(metadata, "iaas-image-builder:release-tested") == f"{image}@{digest}"
+    assert any(call[:2] == ("docker", "push") for call in calls)
+    assert not any(call[:3] == ("docker", "manifest", "create") for call in calls)
+
+
 def test_workflow_keeps_publication_after_tested_artifact_and_public_pull():
     root = Path(__file__).resolve().parents[2]
-    workflow = yaml.load((root / ".github/workflows/runtime-release.yml").read_text(), Loader=yaml.BaseLoader)
+    workflow = yaml.load((root / ".github/workflows/oci-release.yml").read_text(), Loader=yaml.BaseLoader)
     assert workflow["on"] == {"release": {"types": ["published"]}}
     assert workflow["concurrency"]["cancel-in-progress"] == "false"
     jobs = workflow["jobs"]
-    assert jobs["publish"]["needs"] == "build"
+    assert jobs["publish"]["needs"] == ["build", "image-builder"]
     assert jobs["anonymous-consumption"]["needs"] == "publish"
     assert workflow["permissions"] == {"contents": "read"}
     assert [name for name, job in jobs.items() if job.get("permissions", {}).get("packages") == "write"] == ["publish"]
@@ -145,3 +190,17 @@ def test_workflow_keeps_publication_after_tested_artifact_and_public_pull():
     assert "cmp tested-images/" in commands["publish"]
     assert "--platform" in commands["anonymous-consumption"]
     assert "capabilities" in commands["anonymous-consumption"]
+    assert "make disk-image-builder-build" in commands["image-builder"]
+    assert "automation/oci/checks/disk_image_builder.sh" in commands["image-builder"]
+    assert "ansible-galaxy collection install" in commands["image-builder"]
+    assert any(step.get("with", {}).get("name") == "tested-image-builder-amd64"
+               for step in jobs["image-builder"]["steps"])
+    builder_consumption = next(step for step in jobs["anonymous-consumption"]["steps"]
+                               if step.get("name") == "Clean anonymous image-builder digest pull and invocation")
+    assert builder_consumption["if"] == "matrix.arch == 'amd64'"
+    assert "publish --kind image-builder" in commands["publish"]
+    assert "builder_digest" in jobs["publish"]["outputs"]
+    dockerfile = (root / "automation/oci/disk-image-builder/Dockerfile").read_text()
+    assert "org.opencontainers.image.source" in dockerfile
+    assert "org.opencontainers.image.revision" in dockerfile
+    assert "org.opencontainers.image.version" in dockerfile
