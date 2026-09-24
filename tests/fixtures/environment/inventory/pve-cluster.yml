@@ -14,45 +14,45 @@ cluster:
       snippet_storage_role: images
       snippet_file_prefix: opentofu-vm
       users:
-      - name: admin
-        gecos: admin
-        groups: sudo
-        shell: /bin/bash
-        sudo:
-        - ALL=(ALL) ALL
-        password_env: PVE_VM_ADMIN_PASSWORD
-        public_key_env: PVE_VM_ADMIN_PUBLIC_KEY
-      - name: ops
-        gecos: ops
-        groups: sudo
-        shell: /bin/bash
-        sudo:
-        - ALL=(ALL) NOPASSWD:ALL
-        password_env: PVE_VM_OPS_PASSWORD
-        public_key_env: PVE_VM_OPS_PUBLIC_KEY
+        - name: admin
+          gecos: admin
+          groups: sudo
+          shell: /bin/bash
+          sudo:
+            - ALL=(ALL) ALL
+          password_env: PVE_VM_ADMIN_PASSWORD
+          public_key_env: PVE_VM_ADMIN_PUBLIC_KEY
+        - name: ops
+          gecos: ops
+          groups: sudo
+          shell: /bin/bash
+          sudo:
+            - ALL=(ALL) NOPASSWD:ALL
+          password_env: PVE_VM_OPS_PASSWORD
+          public_key_env: PVE_VM_OPS_PUBLIC_KEY
 reserved_vm_id_ranges:
   templates:
-  - 9000
-  - 9500
+    - 9000
+    - 9500
   long_lived:
-  - 1000
-  - 2000
+    - 1000
+    - 2000
   ephemeral_lab:
-  - 500
-  - 800
+    - 500
+    - 800
 storage_roles:
   memory:
     datastore: memory
     purpose: vm_template_disks
     content:
-    - disk
+      - disk
   images:
     datastore: images
     purpose: iso_import_snippets
     content:
-    - iso
-    - import
-    - snippets
+      - iso
+      - import
+      - snippets
 networks:
   mgmt:
     bridge: vmbr0
