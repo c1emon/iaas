@@ -45,8 +45,9 @@ def test_image_builder_installs_pinned_tools_and_checks_recipe_separately() -> N
     customize = PROFILE.parent / "ansible" / "customize.yml"
     playbook = customize.read_text(encoding="utf-8")
     assert "ansible-galaxy collection install --no-deps community.general:13.4.0" in dockerfile
-    assert "packer plugins install github.com/hashicorp/qemu 1.1.3" in dockerfile
-    assert "packer plugins install github.com/hashicorp/ansible 1.1.6" in dockerfile
+    assert 'packer plugins install "$1" "$2"' in dockerfile
+    assert "install_plugin github.com/hashicorp/qemu 1.1.3" in dockerfile
+    assert "install_plugin github.com/hashicorp/ansible 1.1.6" in dockerfile
     assert "ansible-playbook" not in dockerfile
     assert '--entrypoint virt-sysprep "$image" --list-operations' in checks
     assert "for operation in machine-id ssh-hostkeys logfiles tmp-files package-manager-cache net-hwaddr" in checks
