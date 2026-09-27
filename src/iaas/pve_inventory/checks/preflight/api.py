@@ -14,7 +14,9 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Callable, cast
 
-from ...pve_api.errors import PveApiAuthenticationError, PveApiError, PveApiNotConfiguredError, PveApiUnavailableError, redact_sensitive_text
+from iaas.common.pve_tls import ssl_context
+
+from ...pve_api.errors import PveApiAuthenticationError, PveApiError, PveApiNotConfiguredError, PveApiTlsError, PveApiUnavailableError, redact_sensitive_text
 from ...pve_api.protocol import PveReadOnlyApi
 from ...pve_api.runtime import PveOnlineRuntimeContext as RuntimeConfig
 from ..results import CheckResult, Severity
@@ -65,6 +67,7 @@ class ProxmoxAPI:
     timeout: int = 15
     opener: Callable[..., Any] = urllib.request.urlopen
     base_url: str = field(init=False, default="")
+    api_ca: str | None = None
 
     def __post_init__(self) -> None:
         # Proxmox token auth is sent as the standard API token header.
@@ -80,7 +83,7 @@ class ProxmoxAPI:
             headers={"Authorization": f"PVEAPIToken={self.api_username}!{self.api_token_id}={self.api_token_secret}"},
             method="GET",
         )
-        context = ssl._create_unverified_context() if self.insecure else ssl.create_default_context()
+        context = ssl_context(self.insecure, self.api_ca)
         return self.opener(request, context=context, timeout=self.timeout)
 
     def _safe_message(self, action: str, exc: Exception) -> str:
@@ -107,7 +110,11 @@ class ProxmoxAPI:
                 raise PveApiUnavailableError(message, status_code=exc.code) from None
             raise PveApiError(message, status_code=exc.code) from None
         except urllib.error.URLError as exc:
+            if isinstance(exc.reason, ssl.SSLError):
+                raise PveApiTlsError(self._safe_message(path, exc)) from None
             raise PveApiError(self._safe_message(path, exc)) from None
+        except ssl.SSLError as exc:
+            raise PveApiTlsError(self._safe_message(path, exc)) from None
         except OSError as exc:
             raise PveApiError(self._safe_message(path, exc)) from None
 
@@ -168,6 +175,7 @@ def create_api_client(runtime: RuntimeConfig) -> ProxmoxAPI:
         api_token_id=runtime.api_token_id,
         api_token_secret=runtime.api_token_secret,
         insecure=runtime.insecure,
+        api_ca=runtime.api_ca,
     )
 
 

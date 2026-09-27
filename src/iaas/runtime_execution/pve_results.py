@@ -12,7 +12,7 @@ from typing import Any
 
 from iaas.common.errors import require
 from iaas.pve_inventory.pve_api import (
-    ReadOnlyPveApi, PveApiRuntimeConfig,
+    ReadOnlyPveApi, PveApiRuntimeConfig, PveApiTlsError,
 )
 
 VM_TYPE = "proxmox_virtual_environment_vm"
@@ -64,7 +64,8 @@ def api_client(target: dict, environ: dict) -> ReadOnlyPveApi:
         endpoint=target["api_endpoint"], insecure=target["insecure"],
         api_username=environ["TF_VAR_pve_api_username"],
         api_token_id=environ["TF_VAR_pve_api_token_id"],
-        api_token_secret=environ["TF_VAR_pve_api_token_secret"]))
+        api_token_secret=environ["TF_VAR_pve_api_token_secret"],
+        api_ca=environ.get("PVE_API_CA") or None))
 
 
 def machine_review(native: dict) -> tuple[dict, list[dict], list[dict]]:
@@ -302,6 +303,8 @@ def verify_configuration(expected: list[dict], api: Any) -> dict:
                     checks = _vm_fields(wanted, config, api.vm_status(wanted["node"], wanted["vmid"]))
                 if wanted.get("deposed") or wanted.get("state_absent") is False:
                     checks["state_residual"] = "failed"
+        except PveApiTlsError:
+            raise
         except Exception:
             checks["observation"] = "unknown"
         status = "failed" if "failed" in checks.values() else "unknown" if not checks or "unknown" in checks.values() else "passed"

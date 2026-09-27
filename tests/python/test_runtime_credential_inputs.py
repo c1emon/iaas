@@ -52,3 +52,16 @@ def test_credentials_need_no_provider_process_or_token(monkeypatch, tmp_path):
         load_protected_environment_json(path)
     with pytest.raises(ValidationError, match="missing required"):
         load_api_runtime_config({})
+
+
+def test_insecure_skips_empty_api_ca_before_credential_validation(tmp_path):
+    ca = tmp_path / "ca.pem"
+    ca.touch(mode=0o600)
+    environment = {"PVE_API_CA": "stale-path"}
+    credentials.prepare_file_credentials({"api_ca": ca}, tmp_path / "home", environment, api_insecure=True)
+    assert "PVE_API_CA" not in environment
+    with pytest.raises(ValidationError, match="^PVE API CA preparation failed$"):
+        credentials.prepare_file_credentials({"api_ca": ca}, tmp_path / "strict", {})
+    ca.chmod(0o666)
+    with pytest.raises(ValidationError, match="^PVE API CA preparation failed$"):
+        credentials.prepare_file_credentials({"api_ca": ca}, tmp_path / "unsafe", {}, api_insecure=True)

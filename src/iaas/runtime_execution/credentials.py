@@ -9,7 +9,7 @@ import shlex
 import shutil
 import stat
 
-from iaas.common.errors import require
+from iaas.common.errors import ValidationError, require
 from iaas.common.io import write_text
 
 
@@ -26,7 +26,8 @@ def protected_file(path: Path, *, secret: bool = True) -> None:
     require(info.st_size > 0, "protected file is empty")
 
 
-def prepare_file_credentials(files: dict[str, Path], home: Path, environ: dict[str, str]) -> None:
+def prepare_file_credentials(files: dict[str, Path], home: Path, environ: dict[str, str], *,
+                             api_insecure: bool = False) -> None:
     home.mkdir(parents=True, exist_ok=True, mode=0o700)
     environ["HOME"] = str(home)
     for alias, variable in AWS_FILE_VARIABLES.items():
@@ -36,8 +37,22 @@ def prepare_file_credentials(files: dict[str, Path], home: Path, environ: dict[s
     for variable in ("AWS_SHARED_CREDENTIALS_FILE", "AWS_SHARED_CONFIG_FILE", "AWS_CA_BUNDLE", "AWS_WEB_IDENTITY_TOKEN_FILE"):
         if variable in environ:
             protected_file(Path(environ[variable]), secret=variable != "AWS_CA_BUNDLE")
-    if "api_ca" in files:
-        protected_file(files["api_ca"], secret=False)
+    if api_insecure:
+        environ.pop("PVE_API_CA", None)
+        if "api_ca" in files:
+            # Ignore contents in insecure mode, retaining public-file access
+            # constraints without relaxing protected_file's shared contract.
+            try:
+                info = files["api_ca"].stat()
+                require(stat.S_ISREG(info.st_mode) and info.st_uid in {os.getuid(), 0}
+                        and not info.st_mode & 0o022, "PVE API CA preparation failed")
+            except OSError:
+                raise ValidationError("PVE API CA preparation failed") from None
+    elif "api_ca" in files:
+        try:
+            protected_file(files["api_ca"], secret=False)
+        except (OSError, ValidationError):
+            raise ValidationError("PVE API CA preparation failed") from None
         environ["PVE_API_CA"] = str(files["api_ca"])
     if "artifact_locator" in files:
         protected_file(files["artifact_locator"])

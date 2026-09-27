@@ -6,6 +6,8 @@ components:
       cluster: ./cluster.yml
       vms: ./vms.yml
     files:
+      # Optional caller-owned PEM CA for strict VM API TLS; never baked into the runtime.
+      # api_ca: /caller/pve-api-ca.pem
       backend: ./backend.json
       state_admission: ./state-admission.json
       execution_admission: ./execution-admission.json
