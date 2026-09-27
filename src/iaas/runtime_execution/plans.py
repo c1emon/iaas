@@ -10,9 +10,10 @@ import shutil
 import sys
 from typing import Any, cast
 
-from iaas.common.errors import require
+from iaas.common.errors import ValidationError, require
 from iaas.common.io import write_text
 from iaas.pve_inventory.cloud_init_helpers.artifacts import load_rendered_artifacts, manifest_path
+from iaas.pve_inventory.pve_api.errors import PveApiTlsError
 from iaas.runtime_config.compile import compile_documents
 from iaas.runtime_config.loader import SelectedConfig
 from iaas.runtime_config.selection import runtime_platform
@@ -30,6 +31,31 @@ from iaas.pve_template.contracts import validate_template_record_v2
 def sha256(path: Path) -> str:
     with path.open("rb") as source:
         return hashlib.file_digest(source, "sha256").hexdigest()
+
+
+def _freeze_api_ca(selected: SelectedConfig, metadata: dict, bundle: Path, environ: dict[str, str]) -> None:
+    from iaas.common.pve_tls import ssl_context
+    environ.pop("PVE_API_CA", None)
+    if metadata["target"]["insecure"] or "api_ca" not in selected.files:
+        return
+    destination = bundle / "trust/api-ca.pem"
+    try:
+        protected_file(selected.files["api_ca"], secret=False)
+        destination.parent.mkdir(mode=0o700)
+        shutil.copyfile(selected.files["api_ca"], destination)
+        destination.chmod(0o600)
+        ssl_context(False, destination)
+    except (OSError, ValidationError):
+        raise ValidationError("PVE API CA preparation failed") from None
+    metadata["api_ca"] = {"path": "trust/api-ca.pem", "sha256": sha256(destination)}
+    environ["PVE_API_CA"] = str(destination)
+
+
+def _restore_api_ca(metadata: dict, bundle: Path, environ: dict[str, str]) -> None:
+    # Saved trust always wins over current caller paths, including system-only plans.
+    environ.pop("PVE_API_CA", None)
+    if "api_ca" in metadata:
+        environ["PVE_API_CA"] = str(bundle / metadata["api_ca"]["path"])
 
 
 def target_selection(selected: SelectedConfig, scope: str, image_digest: str) -> dict[str, Any]:
@@ -144,6 +170,7 @@ def prepare_plan(selected: SelectedConfig, execution: Execution, backend: S3Back
     metadata = target_selection(selected, scope, image_digest)
     generated = compile_documents(selected)
     bundle = execution.outputs.path("plan")
+    _freeze_api_ca(selected, metadata, bundle, execution.environ)
     root = materialize_root(selected.options["root"], selected.files, bundle / "workspace")
     provider = validate_root(root, metadata["target"])
     prepare_provider_environment(provider, selected.files, execution.environ)
@@ -215,6 +242,7 @@ def prepare_plan(selected: SelectedConfig, execution: Execution, backend: S3Back
                     root_directory=str(root.relative_to(bundle)),
                     companion_files=sorted(
                         ["workspace/" + relative_path(name).as_posix() for name in selected.options["root"]["files"]]
+                        + ([metadata["api_ca"]["path"]] if "api_ca" in metadata else [])
                         + (["dependencies.tar.gz"] if "dependencies" in selected.files else [])),
                     provider_lock_sha256=sha256(root / ".terraform.lock.hcl"),
                     input_origins=sorted(map(str, selected.reader.logical_sources)))
@@ -238,6 +266,13 @@ def admit_plan(plan: Path, bundle: Path, expected: dict[str, Any], backend: S3Ba
     require(all(metadata.get(key) == value for key, value in expected.items()), "saved plan target or runtime mismatch")
     if backend is not None:
         require(metadata.get("backend") == backend.identity(), "saved plan backend/workspace mismatch")
+    if "api_ca" in metadata:
+        ca = bundle / metadata["api_ca"]["path"]
+        try:
+            require(ca.resolve().is_relative_to(bundle.resolve()) and ca.is_file()
+                    and sha256(ca) == metadata["api_ca"]["sha256"], "saved PVE API CA material mismatch")
+        except OSError:
+            raise ValidationError("saved PVE API CA material mismatch") from None
     files = metadata.get("companion_files")
     require(isinstance(files, list) and bool(files), "saved companion file list is missing; prepare the plan again")
     for name in files:
@@ -315,6 +350,7 @@ def apply_saved_plan(plan: Path, bundle: Path, selected: SelectedConfig, executi
     for path in retained.rglob("*"):
         path.chmod(0o700 if path.is_dir() else 0o600 | (path.stat().st_mode & 0o100))
     _, root = admit_plan(retained / "plan.tfplan", retained, expected, backend)
+    _restore_api_ca(metadata, retained, execution.environ)
     provider = validate_root(root, metadata["target"])
     require(provider == metadata["provider"], "saved provider configuration changed")
     prepare_provider_environment(provider, selected.files, execution.environ)
@@ -421,6 +457,7 @@ def verify_pve(plan: Path, bundle: Path, selected: SelectedConfig, execution: Ex
                scope: str, image_digest: str) -> None:
     metadata = _json(bundle / "summary.json")
     metadata, _ = admit_plan(plan, bundle, target_selection(selected, scope, image_digest), None)
+    _restore_api_ca(metadata, bundle, execution.environ)
     require("verification_requirements" not in selected.options
             or _verification(selected) == metadata["verification_requirements"], "verification requirements cannot change after plan")
     if "execution_result" not in selected.files:
@@ -476,6 +513,8 @@ def read_pve(selected: SelectedConfig, execution: Execution, backend: S3Backend,
                 continue
             try:
                 report["objects"].append({"node": node, "vmid": vmid, "configuration": api.vm_config(node, vmid)})
+            except PveApiTlsError:
+                raise
             except Exception:
                 report["objects"].append({"node": node, "vmid": vmid, "status": "unknown"})
     if "execution_result" in selected.files:

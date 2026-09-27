@@ -1,6 +1,9 @@
 """Root parsing and trust tests; SSH transport is a local test double."""
 import json
+import os
+import ssl
 from copy import deepcopy
+from pathlib import Path
 
 import pytest
 
@@ -138,3 +141,69 @@ def test_wrong_key_does_not_expose_authentication_diagnostics(tmp_path, monkeypa
     with pytest.raises(ValidationError, match='could not be verified') as error:
         verify_ssh_trust(provider, {'ssh_key': key, 'known_hosts': key}, {'TF_VAR_pve_ssh_username': 'ops'})
     assert 'secret diagnostic' not in str(error.value)
+
+
+def test_private_ca_environment_preserves_public_roots_and_explicit_backend_trust(tmp_path):
+    roots = ssl.create_default_context().get_ca_certs(binary_form=True)
+    assert roots
+    ca = tmp_path / 'api-ca.pem'
+    ca.write_text(ssl.DER_cert_to_PEM_cert(roots[0]))
+    before = dict(os.environ)
+    env = {'TF_VAR_' + name: 'synthetic' for name in AUTH}
+    env.update({'HOME': str(tmp_path / 'task'), 'PVE_API_CA': str(ca),
+                'AWS_CA_BUNDLE': '/explicit/backend-ca.pem',
+                'SSL_CERT_FILE': '/unselected/host-ca.pem',
+                'SSL_CERT_DIR': '/unselected/host-certs'})
+
+    prepare_provider_environment({**TARGET, 'ssh_enabled': False}, {}, env)
+
+    bundle = Path(env['SSL_CERT_FILE'])
+    assert bundle == tmp_path / 'task' / 'pve-ca-bundle.pem'
+    assert ca.read_text() in bundle.read_text()
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.load_verify_locations(cafile=str(bundle))
+    assert set(roots) <= set(context.get_ca_certs(binary_form=True))
+    assert 'SSL_CERT_DIR' not in env
+    assert env['AWS_CA_BUNDLE'] == '/explicit/backend-ca.pem'
+    assert dict(os.environ) == before
+
+
+def test_private_ca_environments_remain_owned_by_each_task(tmp_path):
+    roots = ssl.create_default_context().get_ca_certs(binary_form=True)
+    ca = tmp_path / 'ca.pem'
+    ca.write_text(ssl.DER_cert_to_PEM_cert(roots[0]))
+    provider = {**TARGET, 'ssh_enabled': False}
+    auth = {'TF_VAR_' + name: 'synthetic' for name in AUTH}
+    first = {**auth, 'HOME': str(tmp_path / 'first'), 'PVE_API_CA': str(ca)}
+    second = {**auth, 'HOME': str(tmp_path / 'second'), 'PVE_API_CA': str(ca)}
+    prepare_provider_environment(provider, {}, first)
+    first_bundle = Path(first['SSL_CERT_FILE']).read_bytes()
+    prepare_provider_environment(provider, {}, second)
+    assert first['SSL_CERT_FILE'] != second['SSL_CERT_FILE']
+    assert Path(first['SSL_CERT_FILE']).read_bytes() == first_bundle
+    assert Path(second['SSL_CERT_FILE']).read_bytes() == first_bundle
+
+    # An unrelated task cannot inherit a former task's provider trust settings.
+    third = {**auth, 'HOME': str(tmp_path / 'third'),
+             'SSL_CERT_FILE': first['SSL_CERT_FILE'], 'SSL_CERT_DIR': '/host/certs'}
+    prepare_provider_environment(provider, {}, third)
+    assert 'SSL_CERT_FILE' not in third and 'SSL_CERT_DIR' not in third
+    assert not (tmp_path / 'third' / 'pve-ca-bundle.pem').exists()
+
+
+@pytest.mark.parametrize('content', ['', 'not a PEM certificate', None])
+def test_insecure_provider_does_not_read_or_validate_ca(tmp_path, content):
+    ca = tmp_path / 'ignored-ca.pem'
+    if content is not None:
+        ca.write_text(content)
+    env = {'TF_VAR_' + name: 'synthetic' for name in AUTH}
+    env.update({'HOME': str(tmp_path), 'PVE_API_CA': str(ca),
+                'SSL_CERT_FILE': '/previous/task-ca.pem',
+                'AWS_CA_BUNDLE': '/explicit/backend-ca.pem'})
+
+    prepare_provider_environment({**TARGET, 'insecure': True, 'ssh_enabled': False}, {}, env)
+
+    assert env['TF_VAR_pve_insecure'] == 'true'
+    assert 'SSL_CERT_FILE' not in env
+    assert env['AWS_CA_BUNDLE'] == '/explicit/backend-ca.pem'
+    assert not (tmp_path / 'pve-ca-bundle.pem').exists()

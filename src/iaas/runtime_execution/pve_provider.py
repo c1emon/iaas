@@ -112,6 +112,14 @@ def validate_root(root: Path, target: Mapping[str, Any]) -> dict:
 
 
 def prepare_provider_environment(provider: Mapping, files: Mapping[str, Path], environ: dict[str, str]) -> None:
+    from iaas.common.pve_tls import write_ca_bundle
+    # Only task-selected trust may reach OpenTofu and its provider subprocess.
+    # Explicit backend/AWS CA settings remain independent.
+    environ.pop('SSL_CERT_FILE', None)
+    environ.pop('SSL_CERT_DIR', None)
+    if not provider['insecure'] and environ.get('PVE_API_CA'):
+        bundle = write_ca_bundle(environ['PVE_API_CA'], Path(environ['HOME']) / 'pve-ca-bundle.pem')
+        environ['SSL_CERT_FILE'] = str(bundle)
     environ['TF_VAR_pve_endpoint'] = provider['api_endpoint']
     environ['TF_VAR_pve_insecure'] = str(provider['insecure']).lower()
     require(all(environ.get('TF_VAR_' + name) for name in AUTH), 'PVE execution credentials missing')
