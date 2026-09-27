@@ -61,7 +61,9 @@ apply／verify 使用已保存 CA，校验相对路径、文件存在和摘要�
 
 ## Migration Plan
 
-后续取得实施授权并确认实现分支后，扩展现有可选输入与伴随材料，运行定向回归，再交付 runtime 和示例。infra-ops 选择新 runtime 并提供 `files.api_ca` 生成新计划。未使用该入口的调用方保持现有行为。若回退 runtime，继续遵守既有 runtime／plan 绑定，重新生成需要执行的计划，不转换已保存材料。
+实现已在 `feat/support-pve-vm-private-ca` 分支完成，扩展现有可选输入与伴随材料并运行定向回归。infra-ops 接入时需选择包含此实现的新 runtime，固定 image digest，并提供 `files.api_ca` 生成新计划；当前软件验证不代表镜像已发布。未使用该入口的调用方保持现有行为。若回退 runtime，继续遵守既有 runtime／plan 绑定，重新生成需要执行的计划，不转换已保存材料。
+
+实际 provider TLS 检查使用仓库 fixture lock 固定的 bpg/proxmox 0.111.1、OpenTofu 1.12.6 和本地 Linux arm64 runtime 依赖镜像挂载当前源码；只连接本地 HTTPS stub。结果与复验命令见 [开发验证](../../../docs/development-validation.md#pve-vm-private-ca)。
 
 ## References
 

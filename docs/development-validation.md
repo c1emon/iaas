@@ -39,3 +39,26 @@ workflow 的累计 8 MiB 按完整观察计数：一次 `Reader.read` 的全部�
 `common.errors.Diagnostic` 提供不可变的内部诊断（component、固定 code、可选安全 field_path/status_code）。conversion、HTTP 和 PVE 四类异常附带该属性；安全导出不接收 backend message、payload 或任意 context。现有异常 str/继承/status_code、CLI 前缀和领域 SKIP/FAIL 等状态继续沿用；诊断不会自动加入公共结果 JSON。其他历史错误未批量迁移。
 
 Python 质量检查范围固定在 `pyproject.toml` / `pyrightconfig.json`：Ruff 使用 `E4/E7/E9/F`（不启用 preview、fix 或 formatter），覆盖 common 转换/诊断、OPNsense conversion、HTTP transport 及对应新测试；Pyright 仅对这 9 个核心源码文件使用严格模式，其余项目维持现有模式。runtime dataclass 仍校验未经静态检查的调用，只在对应守卫行保留带理由的局部类型诊断豁免，不对整个模块关闭规则。
+
+## PVE VM private CA
+
+2026-09-27 软件验证覆盖 urllib／proxmoxer 的本地 HTTPS 信任、证书有效期与
+SAN 反例、insecure 优先级、公共根保留，以及 CA 随 saved-plan 跨目录恢复、
+材料损坏拒绝和 launcher 传输。运行对应 `test_pve_private_ca.py`、
+`test_pve_provider_contract.py`、`test_runtime_saved_plans.py` 及输入／调度回归，
+launcher 使用 `cd automation/launcher && go test ./...`。
+
+真实 provider 的代表性 TLS 检查命令：
+
+```sh
+docker run --rm --entrypoint uv \
+  -v "$PWD:/repo:ro" -e PYTHONPATH=/repo/src \
+  iaas-runtime:refactor-local run --project /opt/iaas \
+  python /repo/tests/integration/provider_private_ca.py
+```
+
+实际环境为本地 Linux arm64 runtime 依赖镜像挂载当前源码，OpenTofu 1.12.6、
+fixture lock 固定的 bpg/proxmox 0.111.1。无 CA 严格模式拒绝、私有 CA 成功、
+后续无 CA 任务仍拒绝、insecure 加无效 CA 成功，四项均通过。
+该脚本只访问 loopback HTTPS stub，并允许下载锁定 provider；不访问真实 PVE。
+这些结果不代表新镜像已发布，也不代表 infra-ops Runner、现场网络或 PVE 已验收。
