@@ -26,7 +26,7 @@
       "template": 1,
       "smbios1": "uuid=11111111-1111-4111-8111-111111111111",
       "scsi0": "local-lvm:vm-9000-disk-0,size=8G",
-      "ide2": "local-lvm:vm-9000-cloudinit,media=cdrom",
+      "ide2": "local-lvm:vm-9000-cloudinit,media=cdrom,size=4M",
       "agent": "enabled=1",
       "boot": "order=scsi0",
       "bios": "seabios"

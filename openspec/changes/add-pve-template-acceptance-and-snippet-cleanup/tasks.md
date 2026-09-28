@@ -1,8 +1,8 @@
 ## 1. 实现准入与当前合同
 
-- [ ] 1.1 用户确认创建/切换 `feat/pve-template-acceptance-and-snippet-cleanup`，并选择保留当前规划文件及 GitNexus 计数更新；切换前重新检查工作树。
-- [ ] 1.2 将合同草案落实为当前 request/result 校验及 JSON schema，包含 origin 的互斥证据分支、retry_of/retry_materials 的首次/补执行规则、状态、摘要绑定、执行授权与标准 reason codes；拒绝未知版本和扩展删除范围。
-- [ ] 1.3 建立供 IaaS/infra-ops 共用的正常和拒绝样例，同一份 fixture 由合同测试加载；不伪称样例即现场结果。
+- [x] 1.1 按用户授权创建 `feat/pve-template-acceptance-and-snippet-cleanup`；切换前工作树干净，规划文件已在 main，无未提交内容需要处置。
+- [x] 1.2 将合同草案落实为当前 request/result 校验及 JSON schema，包含 origin 的互斥证据分支、retry_of/retry_materials 的首次/补执行规则、状态、摘要绑定、执行授权与标准 reason codes；拒绝未知版本和扩展删除范围。
+- [x] 1.3 建立供 IaaS/infra-ops 共用的正常和拒绝样例，同一份 fixture 由合同测试加载；不伪称样例即现场结果。
 
 ## 2. 受控 snippet 清理
 
@@ -13,11 +13,11 @@
 
 ## 3. 新模板最小验收
 
-- [ ] 3.1 固定模板发布身份、临时 VM 资源/网络上限、只读检查、注入值、工作/清理期限及创建删除授权；副作用前保留意图和一次性执行关联。
-- [ ] 3.2 使用已有 API/UPID 通道实现 full clone、磁盘/启动核验、临时配置及启动；拒绝 VMID 冲突，保留新对象及卷的准确归属。
-- [ ] 3.3 实现固定 guest-agent、cloud-init 和本次 hostname 检查，无 SSH/外网/修复依赖。
-- [ ] 3.4 实现失败/超时 finally 收尾、临时 VM/卷/snippet 清理和源模板前后复核；未知归属或活动任务保留，结果分为 passed/failed/unknown。
-- [ ] 3.5 落实 caller 一次性分派边界及显式 start/observe；校验原目录中的执行/请求/目标/admission 关联，冲突拒绝、缺核心材料 unknown 且零 PVE 写入；断线/响应丢失不自动重放 mutation。
+- [x] 3.1 固定模板发布身份、临时 VM 资源/网络上限、只读检查、注入值、工作/清理期限及创建删除授权；副作用前保留意图和一次性执行关联。
+- [x] 3.2 使用已有 API/UPID 通道实现 full clone、磁盘/启动核验、临时配置及启动；拒绝 VMID 冲突，保留新对象及卷的准确归属。
+- [x] 3.3 实现固定 guest-agent、cloud-init 和本次 hostname 检查，无 SSH/外网/修复依赖。
+- [x] 3.4 实现失败/超时 finally 收尾、临时 VM/卷/snippet 清理和源模板前后复核；未知归属或活动任务保留，结果分为 passed/failed/unknown。
+- [x] 3.5 落实 caller 一次性分派边界及显式 start/observe；校验原目录中的执行/请求/目标/admission 关联，冲突拒绝、缺核心材料 unknown 且零 PVE 写入；断线/响应丢失不自动重放 mutation。
 
 ## 4. launcher、测试与交付
 
