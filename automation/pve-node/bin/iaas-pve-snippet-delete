@@ -1,0 +1,169 @@
+#!/usr/bin/python3
+"""Restricted exact snippet deletion helper, protocol version 1."""
+import argparse
+import fcntl
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import stat
+import subprocess
+
+PVESM = '/usr/sbin/pvesm'
+PVE_CONFIG = Path('/etc/pve')
+
+
+def delete_exact(storage, filename, expected):
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', storage):
+        return 'mismatch', 'invalid_storage'
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}', filename):
+        return 'mismatch', 'invalid_filename'
+    if not re.fullmatch(r'[a-f0-9]{64}', expected):
+        return 'mismatch', 'invalid_digest'
+    try:
+        resolved = subprocess.run([PVESM, 'path', f'{storage}:snippets/{filename}'],
+                                  capture_output=True, text=True, check=True, timeout=20).stdout.strip()
+        path = Path(resolved)
+        if not path.is_absolute() or '\n' in resolved or path.parts[-2:] != ('snippets', filename) or '..' in path.parts:
+            return 'mismatch', 'unsafe_path'
+        # Resolve each directory without following symbolic links; hold its fd
+        # through the hash/inode recheck/unlink so path replacement cannot redirect us.
+        directory = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            for part in path.parts[1:-1]:
+                child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+                os.close(directory)
+                directory = child
+            try:
+                info = os.stat(filename, dir_fd=directory, follow_symlinks=False)
+            except FileNotFoundError:
+                return 'already_absent', 'exact_target_absent'
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                return 'mismatch', 'not_exclusive_regular_file'
+            descriptor = os.open(filename, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory)
+            try:
+                opened = os.fstat(descriptor)
+                digest = hashlib.sha256()
+                while chunk := os.read(descriptor, 1024 * 1024):
+                    digest.update(chunk)
+                current = os.stat(filename, dir_fd=directory, follow_symlinks=False)
+                def identity(s):
+                    return (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
+                if identity(info) != identity(opened) or identity(opened) != identity(current) or digest.hexdigest() != expected:
+                    return 'mismatch', 'content_or_identity_changed'
+                os.unlink(filename, dir_fd=directory)
+                try:
+                    os.stat(filename, dir_fd=directory, follow_symlinks=False)
+                except FileNotFoundError:
+                    return 'deleted', 'absence_confirmed'
+                return 'unknown', 'target_reappeared'
+            finally:
+                os.close(descriptor)
+        finally:
+            os.close(directory)
+    except PermissionError:
+        return 'failed', 'permission_denied'
+    except (OSError, subprocess.SubprocessError):
+        return 'unknown', 'path_or_delete_unconfirmed'
+
+
+def inspect_cluster(root=PVE_CONFIG):
+    """pmxcfs root view includes configurations hidden by token ACL filters.
+
+    Snapshot and pending sections live in these same configuration files. Match
+    every snippets filename across storage aliases, conservatively retaining a
+    target if an unrelated storage has an identically named referenced file.
+    """
+    try:
+        members = json.loads((root / '.members').read_text())
+        if members.get('cluster', {}).get('quorate') != 1:
+            return {'complete': False, 'reason_code': 'cluster_not_quorate'}
+        before = (root / '.vmlist').read_bytes()
+        inventory = json.loads(before)
+        ids = inventory.get('ids')
+        if not isinstance(ids, dict):
+            raise ValueError()
+        observed = {}
+        references = set()
+        nodes = []
+        for node in sorted((root / 'nodes').iterdir()):
+            if node.is_symlink() or not node.is_dir():
+                raise ValueError()
+            nodes.append(node.name)
+            for kind, subdir in [('qemu', 'qemu-server'), ('lxc', 'lxc')]:
+                directory = node / subdir
+                if not directory.is_dir() or directory.is_symlink():
+                    raise ValueError()
+                for config in sorted(directory.iterdir()):
+                    if not config.name.endswith('.conf'):
+                        continue
+                    if config.is_symlink() or not config.is_file() or not config.stem.isdecimal():
+                        raise ValueError()
+                    vmid = config.stem
+                    if vmid in observed:
+                        raise ValueError()
+                    observed[vmid] = {'node': node.name, 'type': kind}
+                    data = config.read_text()
+                    # cicustom is a comma-separated set of storage volume IDs.
+                    # Parse all occurrences, including pending/snapshot sections.
+                    for value in re.findall(r'(?m)^(?:cicustom|hookscript):\s*(.+)$', data):
+                        for part in value.split(','):
+                            volid = part.strip().split('=', 1)[-1]
+                            if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*:snippets/[A-Za-z0-9._/-]+', volid):
+                                raise ValueError()
+                            references.add(volid.rsplit('/', 1)[-1])
+                    # Other configuration keys can also carry volume IDs.
+                    references.update(re.findall(r'[A-Za-z0-9][A-Za-z0-9._-]*:snippets/(?:[A-Za-z0-9._-]+/)*([A-Za-z0-9._-]+)', data))
+        expected = {key: {'node': row['node'], 'type': row['type']} for key, row in ids.items()}
+        if observed != expected or before != (root / '.vmlist').read_bytes():
+            raise ValueError()
+        local_node = (root / 'local').resolve(strict=True).name
+        if local_node not in nodes:
+            raise ValueError()
+        return {'complete': True, 'reason_code': 'pmxcfs_complete', 'nodes': nodes, 'local_node': local_node,
+                'vmids': sorted(int(key) for key in observed), 'references': sorted(references),
+                'reference_strategy': 'all_storage_aliases_by_filename'}
+    except (OSError, ValueError, KeyError, TypeError):
+        return {'complete': False, 'reason_code': 'cluster_inventory_incomplete'}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--inspect-cluster', action='store_true')
+    parser.add_argument('--storage')
+    parser.add_argument('--filename')
+    parser.add_argument('--sha256')
+    parser.add_argument('--node')
+    parser.add_argument('--vmid', type=int)
+    args = parser.parse_args()
+    if args.inspect_cluster:
+        if args.storage or args.filename or args.sha256 or args.node or args.vmid:
+            parser.error('inspection does not accept file arguments')
+        print(json.dumps({'schema_version': 1, **inspect_cluster()}))
+        return
+    if not all((args.storage, args.filename, args.sha256, args.node, args.vmid)):
+        parser.error('exact storage, filename, digest, node and original VMID are required')
+    try:
+        descriptor = os.open('/run/lock/iaas-pve-snippet-cleanup.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(descriptor, 'w') as lock:
+            info = os.fstat(lock.fileno())
+            if info.st_uid != 0 or info.st_mode & 0o077 or not stat.S_ISREG(info.st_mode):
+                raise OSError()
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            current = inspect_cluster()
+            if not current.get('complete'):
+                status, reason = 'unknown', 'cluster_inventory_incomplete'
+            elif current['local_node'] != args.node or args.vmid in current['vmids']:
+                status, reason = 'mismatch', 'node_or_vm_identity_conflict'
+            elif args.filename in current['references']:
+                status, reason = 'referenced', 'cluster_configuration_reference'
+            else:
+                status, reason = delete_exact(args.storage, args.filename, args.sha256)
+    except OSError:
+        status, reason = 'unknown', 'helper_lock_unavailable'
+    print(json.dumps({'schema_version': 1, 'status': status, 'reason_code': reason}))
+
+
+if __name__ == '__main__':
+    main()

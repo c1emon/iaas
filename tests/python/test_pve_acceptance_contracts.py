@@ -78,3 +78,31 @@ def test_bool_schema_version_and_unknown_fields_rejected():
         with pytest.raises(ValueError) as error:
             validate_acceptance_request(changed)
         assert 'private-test-sentinel' not in str(error.value)
+
+
+@pytest.mark.parametrize('host', ['pve.example.invalid', '10.1.0.5', '2001:db8::5', '::1'])
+def test_cleanup_binds_supported_ssh_endpoint(host):
+    request = load_strict_json(FIXTURES / 'cleanup-acceptance-request.json')
+    original_digest = canonical_digest(request)
+    request['ssh']['host'] = host
+    assert validate_snippet_cleanup_request(request)['ssh']['host'] == host
+    if host != 'pve.example.invalid':
+        assert canonical_digest(request) != original_digest
+
+
+@pytest.mark.parametrize('connection', [
+    {'host': '-oProxyCommand=unsafe', 'user': 'iaas', 'port': 22},
+    {'host': 'user@pve.example.invalid', 'user': 'iaas', 'port': 22},
+    {'host': 'pve.example.invalid/path', 'user': 'iaas', 'port': 22},
+    {'host': '999.1.1.1', 'user': 'iaas', 'port': 22},
+    {'host': 'pve.example.invalid', 'user': 'root', 'port': 22},
+    {'host': 'pve.example.invalid', 'user': 'iaas -oUnsafe', 'port': 22},
+    {'host': 'pve.example.invalid', 'user': 'iaas', 'port': 0},
+    {'host': 'pve.example.invalid', 'user': 'iaas', 'port': 65536},
+    {'host': 'pve.example.invalid', 'user': 'iaas', 'port': True},
+])
+def test_cleanup_rejects_unbounded_or_unsafe_ssh_connection(connection):
+    request = load_strict_json(FIXTURES / 'cleanup-acceptance-request.json')
+    request['ssh'] = connection
+    with pytest.raises(ValueError):
+        validate_snippet_cleanup_request(request)

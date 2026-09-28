@@ -180,6 +180,38 @@
       "title": "OwnershipRecords",
       "type": "object"
     },
+    "SSHConnection": {
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "maxLength": 253,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9:][A-Za-z0-9.:-]*$",
+          "title": "Host",
+          "type": "string"
+        },
+        "user": {
+          "maxLength": 32,
+          "minLength": 1,
+          "pattern": "^[a-z_][a-z0-9_-]*$",
+          "title": "User",
+          "type": "string"
+        },
+        "port": {
+          "maximum": 65535,
+          "minimum": 1,
+          "title": "Port",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "host",
+        "user",
+        "port"
+      ],
+      "title": "SSHConnection",
+      "type": "object"
+    },
     "Snippet": {
       "additionalProperties": false,
       "properties": {
@@ -254,6 +286,28 @@
           ],
           "title": "Endpoint"
         },
+        "endpoints": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "propertyNames": {
+            "enum": [
+              "s3",
+              "S3"
+            ]
+          },
+          "title": "Endpoints",
+          "type": "object"
+        },
+        "workspace": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Workspace",
+          "type": "string"
+        },
+        "workspace_key_prefix": {
+          "title": "Workspace Key Prefix",
+          "type": "string"
+        },
         "tls_verify": {
           "title": "Tls Verify",
           "type": "boolean"
@@ -273,6 +327,9 @@
         "key",
         "region",
         "endpoint",
+        "endpoints",
+        "workspace",
+        "workspace_key_prefix",
         "tls_verify",
         "path_style",
         "use_lockfile"
@@ -373,6 +430,9 @@
       "title": "Schema Version",
       "type": "integer"
     },
+    "ssh": {
+      "$ref": "#/$defs/SSHConnection"
+    },
     "origin": {
       "enum": [
         "deployment",
@@ -459,6 +519,7 @@
   "required": [
     "kind",
     "schema_version",
+    "ssh",
     "origin",
     "target",
     "original_vm",

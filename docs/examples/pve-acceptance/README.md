@@ -15,3 +15,5 @@
 使用既有 canonical JSON（键排序、紧凑分隔符、UTF-8、拒绝浮点及重复 key）计算 `sha256:` request digest。`options.execution_mode` 位于 environment，不属于固定请求。`EvidenceRef.sha256` 是无前缀的文件 SHA-256，路径相对于只读 evidence root；禁止绝对路径、逃逸及符号链接。
 
 公共 `reason_code` 使用短小 snake_case，不能拼接异常、路径、guest 输出或秘密。固定检查 ID 为 `full_clone`、`disk_boot`、`guest_agent`、`cloud_init`、`injected_hostname`、`source_unchanged`。检查 `not_attempted` 表示因前序已知阻断未执行，不能用于已尝试但结果未知的检查。
+
+独立 snippet 清理的 `ssh.host/user/port` 是固定请求的一部分，纳入 request digest 与 admission。使用非 root helper 账户；SSH 私钥及 known_hosts 仍由既有受保护文件通道提供，不内嵌请求。修改连接目标必须创建新的经批准请求，补执行不得换目标。

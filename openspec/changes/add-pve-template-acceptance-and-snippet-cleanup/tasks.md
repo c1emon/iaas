@@ -6,10 +6,10 @@
 
 ## 2. 受控 snippet 清理
 
-- [ ] 2.1 绑定原 VM 及所有权材料：deployment 复用 manifest＋保存计划＋pve-result 与删除/state 写回关联；acceptance 使用原 request/journal、创建/删除授权和临时 VM 删除确认。共享清理检查，不访问 state，不允许切换来源规避证据。
-- [ ] 2.2 实现 VM 缺席、节点/共享存储范围及完整 VM/模板引用检查；权限不足、pending/snapshot 或别名范围不明时 fail closed。
-- [ ] 2.3 实现精确文件 helper、删除前摘要/路径检查、互斥、缺席幂等与删除后复核；更新最小安装/sudo 权限及 bootstrap 文档。
-- [ ] 2.4 支持新补清理执行加载 retry_materials、核验 retry_of/原摘要/完整清单及原任务已终止，再全部重新检查，输出分项结果和残留；允许验收 VM 删除后单独收尾 snippet，不重复删 VM、写 state、解锁或扩大清单。
+- [x] 2.1 绑定原 VM 及所有权材料：deployment 复用 manifest＋保存计划＋pve-result 与删除/state 写回关联；acceptance 使用原 request/journal、创建/删除授权和临时 VM 删除确认。共享清理检查，不访问 state，不允许切换来源规避证据。
+- [x] 2.2 实现 VM 缺席、节点/共享存储范围及完整 VM/模板引用检查；权限不足、pending/snapshot 或别名范围不明时 fail closed。
+- [x] 2.3 实现精确文件 helper、删除前摘要/路径检查、互斥、缺席幂等与删除后复核；更新最小安装/sudo 权限及 bootstrap 文档。
+- [x] 2.4 支持新补清理执行加载 retry_materials、核验 retry_of/原摘要/完整清单及原任务已终止，再全部重新检查，输出分项结果和残留；允许验收 VM 删除后单独收尾 snippet，不重复删 VM、写 state、解锁或扩大清单。
 
 ## 3. 新模板最小验收
 

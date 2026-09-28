@@ -46,7 +46,10 @@
         "endpoint": "https://state.example.invalid",
         "tls_verify": true,
         "path_style": true,
-        "use_lockfile": true
+        "use_lockfile": true,
+        "endpoints": {},
+        "workspace": "default",
+        "workspace_key_prefix": "env:"
       },
       "root_id": "root1",
       "workspace": "default",
@@ -80,5 +83,10 @@
   ],
   "timeout_seconds": 120,
   "retry_of": null,
-  "retry_materials": null
+  "retry_materials": null,
+  "ssh": {
+    "host": "pve.example.invalid",
+    "user": "iaas",
+    "port": 22
+  }
 }

@@ -5,6 +5,8 @@ execution admission still require validation by the runtime before mutation.
 """
 from __future__ import annotations
 
+from ipaddress import ip_address
+import re
 from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -161,6 +163,9 @@ class StateBackend(Contract):
     key: Annotated[str, Field(min_length=1)]
     region: Annotated[str, Field(min_length=1)]
     endpoint: str | None
+    endpoints: dict[Literal["s3", "S3"], str]
+    workspace: Identifier
+    workspace_key_prefix: str
     tls_verify: bool
     path_style: bool
     use_lockfile: Literal[True]
@@ -209,9 +214,30 @@ class Snippet(Contract):
         return self
 
 
+class SSHConnection(Contract):
+    host: Annotated[str, Field(min_length=1, max_length=253, pattern=r'^[A-Za-z0-9:][A-Za-z0-9.:-]*$')]
+    user: Annotated[str, Field(min_length=1, max_length=32, pattern=r'^[a-z_][a-z0-9_-]*$')]
+    port: Annotated[int, Field(ge=1, le=65535)]
+
+    @model_validator(mode='after')
+    def fixed_connection(self):
+        if self.user == 'root':
+            raise ValueError('snippet helper requires an unprivileged SSH account')
+        try:
+            ip_address(self.host)
+        except ValueError:
+            if ':' in self.host or all(c in '0123456789.' for c in self.host):
+                raise ValueError('SSH host must be a DNS name or IP address') from None
+            labels = self.host.rstrip('.').split('.')
+            if any(re.fullmatch(r'[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?', label) is None for label in labels):
+                raise ValueError('SSH host must be a DNS name or IP address') from None
+        return self
+
+
 class CleanupRequest(Contract):
     kind: Literal['pve-snippet-cleanup-request']
     schema_version: Literal[1]
+    ssh: SSHConnection
     origin: Literal['deployment', 'acceptance']
     target: Target
     original_vm: OriginalVM
