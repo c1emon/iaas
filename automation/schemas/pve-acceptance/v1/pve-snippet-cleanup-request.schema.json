@@ -1,0 +1,547 @@
+{
+  "$defs": {
+    "DeletePlan": {
+      "additionalProperties": false,
+      "properties": {
+        "plan_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Plan Id",
+          "type": "string"
+        },
+        "plan_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Plan Digest",
+          "type": "string"
+        },
+        "execution_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Execution Id",
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/$defs/EvidenceRef"
+        },
+        "admission": {
+          "$ref": "#/$defs/EvidenceRef"
+        }
+      },
+      "required": [
+        "plan_id",
+        "plan_digest",
+        "execution_id",
+        "metadata",
+        "admission"
+      ],
+      "title": "DeletePlan",
+      "type": "object"
+    },
+    "DeletionEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "execution_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Execution Id",
+          "type": "string"
+        },
+        "native_task": {
+          "minLength": 1,
+          "title": "Native Task",
+          "type": "string"
+        },
+        "result": {
+          "$ref": "#/$defs/EvidenceRef"
+        },
+        "vm_absence": {
+          "$ref": "#/$defs/EvidenceRef"
+        },
+        "state_persistence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StatePersistence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "execution_id",
+        "native_task",
+        "result",
+        "vm_absence",
+        "state_persistence"
+      ],
+      "title": "DeletionEvidence",
+      "type": "object"
+    },
+    "EvidenceRef": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$",
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "title": "EvidenceRef",
+      "type": "object"
+    },
+    "ExecutionMaterials": {
+      "additionalProperties": false,
+      "properties": {
+        "execution_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Execution Id",
+          "type": "string"
+        },
+        "request_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Request Digest",
+          "type": "string"
+        },
+        "request": {
+          "$ref": "#/$defs/EvidenceRef"
+        },
+        "journal": {
+          "$ref": "#/$defs/EvidenceRef"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EvidenceRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "execution_id",
+        "request_digest",
+        "request",
+        "journal",
+        "result"
+      ],
+      "title": "ExecutionMaterials",
+      "type": "object"
+    },
+    "OriginalVM": {
+      "additionalProperties": false,
+      "properties": {
+        "node": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Node",
+          "type": "string"
+        },
+        "vmid": {
+          "maximum": 999999999,
+          "minimum": 100,
+          "title": "Vmid",
+          "type": "integer"
+        },
+        "smbios_uuid": {
+          "title": "Smbios Uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node",
+        "vmid",
+        "smbios_uuid"
+      ],
+      "title": "OriginalVM",
+      "type": "object"
+    },
+    "OwnershipRecords": {
+      "additionalProperties": false,
+      "properties": {
+        "manifest": {
+          "$ref": "#/$defs/EvidenceRef"
+        },
+        "upload": {
+          "$ref": "#/$defs/EvidenceRef"
+        }
+      },
+      "required": [
+        "manifest",
+        "upload"
+      ],
+      "title": "OwnershipRecords",
+      "type": "object"
+    },
+    "Snippet": {
+      "additionalProperties": false,
+      "properties": {
+        "node": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Node",
+          "type": "string"
+        },
+        "storage": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Storage",
+          "type": "string"
+        },
+        "file_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*:snippets/[A-Za-z0-9][A-Za-z0-9_.-]*$",
+          "title": "File Id",
+          "type": "string"
+        },
+        "file_name": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "File Name",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "record_ref": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Record Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node",
+        "storage",
+        "file_id",
+        "file_name",
+        "sha256",
+        "record_ref"
+      ],
+      "title": "Snippet",
+      "type": "object"
+    },
+    "StateBackend": {
+      "additionalProperties": false,
+      "properties": {
+        "bucket": {
+          "minLength": 1,
+          "title": "Bucket",
+          "type": "string"
+        },
+        "key": {
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "region": {
+          "minLength": 1,
+          "title": "Region",
+          "type": "string"
+        },
+        "endpoint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Endpoint"
+        },
+        "tls_verify": {
+          "title": "Tls Verify",
+          "type": "boolean"
+        },
+        "path_style": {
+          "title": "Path Style",
+          "type": "boolean"
+        },
+        "use_lockfile": {
+          "const": true,
+          "title": "Use Lockfile",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "bucket",
+        "key",
+        "region",
+        "endpoint",
+        "tls_verify",
+        "path_style",
+        "use_lockfile"
+      ],
+      "title": "StateBackend",
+      "type": "object"
+    },
+    "StatePersistence": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "$ref": "#/$defs/StateBackend"
+        },
+        "root_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Root Id",
+          "type": "string"
+        },
+        "workspace": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Workspace",
+          "type": "string"
+        },
+        "lineage": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Lineage"
+        },
+        "serial": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Serial"
+        },
+        "result": {
+          "$ref": "#/$defs/EvidenceRef"
+        }
+      },
+      "required": [
+        "backend",
+        "root_id",
+        "workspace",
+        "lineage",
+        "serial",
+        "result"
+      ],
+      "title": "StatePersistence",
+      "type": "object"
+    },
+    "Target": {
+      "additionalProperties": false,
+      "properties": {
+        "api_endpoint": {
+          "title": "Api Endpoint",
+          "type": "string"
+        },
+        "node": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Node",
+          "type": "string"
+        },
+        "tls_verify": {
+          "const": true,
+          "title": "Tls Verify",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "api_endpoint",
+        "node",
+        "tls_verify"
+      ],
+      "title": "Target",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "kind": {
+      "const": "pve-snippet-cleanup-request",
+      "title": "Kind",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "origin": {
+      "enum": [
+        "deployment",
+        "acceptance"
+      ],
+      "title": "Origin",
+      "type": "string"
+    },
+    "target": {
+      "$ref": "#/$defs/Target"
+    },
+    "original_vm": {
+      "$ref": "#/$defs/OriginalVM"
+    },
+    "original_execution_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Original Execution Id",
+      "type": "string"
+    },
+    "delete_plan": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DeletePlan"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "acceptance_evidence": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ExecutionMaterials"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "deletion_evidence": {
+      "$ref": "#/$defs/DeletionEvidence"
+    },
+    "ownership_records": {
+      "$ref": "#/$defs/OwnershipRecords"
+    },
+    "snippets": {
+      "items": {
+        "$ref": "#/$defs/Snippet"
+      },
+      "maxItems": 256,
+      "minItems": 1,
+      "title": "Snippets",
+      "type": "array"
+    },
+    "timeout_seconds": {
+      "exclusiveMinimum": 0,
+      "maximum": 86400,
+      "title": "Timeout Seconds",
+      "type": "integer"
+    },
+    "retry_of": {
+      "anyOf": [
+        {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Retry Of"
+    },
+    "retry_materials": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ExecutionMaterials"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "kind",
+    "schema_version",
+    "origin",
+    "target",
+    "original_vm",
+    "original_execution_id",
+    "delete_plan",
+    "acceptance_evidence",
+    "deletion_evidence",
+    "ownership_records",
+    "snippets",
+    "timeout_seconds",
+    "retry_of",
+    "retry_materials"
+  ],
+  "title": "CleanupRequest",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iaas.invalid/schemas/pve-acceptance/v1/pve-snippet-cleanup-request.schema.json",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "origin": {
+            "const": "deployment"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "delete_plan": {
+            "$ref": "#/$defs/DeletePlan"
+          },
+          "acceptance_evidence": {
+            "type": "null"
+          },
+          "deletion_evidence": {
+            "properties": {
+              "state_persistence": {
+                "$ref": "#/$defs/StatePersistence"
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "delete_plan": {
+            "type": "null"
+          },
+          "acceptance_evidence": {
+            "$ref": "#/$defs/ExecutionMaterials"
+          },
+          "deletion_evidence": {
+            "properties": {
+              "state_persistence": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "retry_of": {
+            "type": "null"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "retry_materials": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "retry_materials": {
+            "$ref": "#/$defs/ExecutionMaterials"
+          }
+        }
+      }
+    }
+  ]
+}

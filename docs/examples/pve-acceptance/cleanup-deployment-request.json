@@ -1,0 +1,84 @@
+{
+  "kind": "pve-snippet-cleanup-request",
+  "schema_version": 1,
+  "origin": "deployment",
+  "target": {
+    "api_endpoint": "https://pve.example.invalid:8006",
+    "node": "pve1",
+    "tls_verify": true
+  },
+  "original_vm": {
+    "node": "pve1",
+    "vmid": 9100,
+    "smbios_uuid": "22222222-2222-4222-8222-222222222222"
+  },
+  "original_execution_id": "deploy-001",
+  "delete_plan": {
+    "plan_id": "delete-plan-001",
+    "plan_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "execution_id": "delete-001",
+    "metadata": {
+      "path": "delete/plan.json",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "admission": {
+      "path": "delete/execution-context.json",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  },
+  "acceptance_evidence": null,
+  "deletion_evidence": {
+    "execution_id": "delete-001",
+    "native_task": "opentofu-apply",
+    "result": {
+      "path": "accept/journal.json",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "vm_absence": {
+      "path": "accept/journal.json",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "state_persistence": {
+      "backend": {
+        "bucket": "state",
+        "key": "vm.tfstate",
+        "region": "local",
+        "endpoint": "https://state.example.invalid",
+        "tls_verify": true,
+        "path_style": true,
+        "use_lockfile": true
+      },
+      "root_id": "root1",
+      "workspace": "default",
+      "lineage": "lineage-001",
+      "serial": 2,
+      "result": {
+        "path": "delete/pve-result.json",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "ownership_records": {
+    "manifest": {
+      "path": "deploy/manifest.json",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "upload": {
+      "path": "deploy/upload.json",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  },
+  "snippets": [
+    {
+      "node": "pve1",
+      "storage": "local",
+      "file_id": "local:snippets/accept-001.yaml",
+      "file_name": "accept-001.yaml",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "record_ref": "accept-001.yaml"
+    }
+  ],
+  "timeout_seconds": 120,
+  "retry_of": null,
+  "retry_materials": null
+}

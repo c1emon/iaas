@@ -1,0 +1,74 @@
+{
+  "kind": "pve-template-acceptance-request",
+  "schema_version": 1,
+  "target": {
+    "api_endpoint": "https://pve.example.invalid:8006",
+    "node": "pve1",
+    "tls_verify": true
+  },
+  "template_record": {
+    "kind": "pve-template-record",
+    "schema_version": 2,
+    "record_id": "template-9000",
+    "target": {
+      "api_endpoint": "https://pve.example.invalid:8006",
+      "node": "pve1",
+      "tls_verify": true
+    },
+    "node": "pve1",
+    "vmid": 9000,
+    "smbios_uuid": "11111111-1111-4111-8111-111111111111",
+    "volumes": {
+      "scsi0": "local-lvm:vm-9000-disk-0,size=8G"
+    },
+    "configuration": {
+      "name": "debian-template",
+      "template": 1,
+      "smbios1": "uuid=11111111-1111-4111-8111-111111111111",
+      "scsi0": "local-lvm:vm-9000-disk-0,size=8G",
+      "ide2": "local-lvm:vm-9000-cloudinit,media=cdrom",
+      "agent": "enabled=1",
+      "boot": "order=scsi0",
+      "bios": "seabios"
+    },
+    "origin": "publication",
+    "execution_id": "publish-001",
+    "artifact_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "verification": {
+      "template_config": "passed"
+    }
+  },
+  "temporary_vm": {
+    "node": "pve1",
+    "vmid": 9000,
+    "storage": "local-lvm",
+    "bridge": "vmbr0",
+    "vlan_tag": null,
+    "ip_config": "ip=dhcp",
+    "cpus": 2,
+    "memory_mib": 2048,
+    "disk_limit_bytes": 34359738368,
+    "boot": "scsi0",
+    "firmware": "bios"
+  },
+  "cloud_init": {
+    "hostname": "accept-001"
+  },
+  "required_checks": [
+    "full_clone",
+    "disk_boot",
+    "guest_agent",
+    "cloud_init",
+    "injected_hostname",
+    "source_unchanged"
+  ],
+  "timeouts": {
+    "work_seconds": 600,
+    "guest_seconds": 180,
+    "cleanup_seconds": 180
+  },
+  "authorization": {
+    "create_temporary_vm": true,
+    "delete_temporary_resources": true
+  }
+}
