@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import ssl
 import sys
 
 import pytest
@@ -19,6 +20,16 @@ from iaas.runtime_execution.state import S3Backend
 
 REPO = Path(__file__).resolve().parents[2]
 IMAGE = "example/iaas@sha256:" + "a" * 64
+
+
+@pytest.fixture
+def api_ca(tmp_path):
+    # Artifact tests only need loadable public trust; handshake tests use a local CA.
+    certificate = ssl.create_default_context().get_ca_certs(binary_form=True)[0]
+    path = tmp_path / "caller-ca.pem"
+    path.write_text(ssl.DER_cert_to_PEM_cert(certificate))
+    path.chmod(0o644)
+    return path
 
 
 @pytest.fixture
@@ -428,3 +439,117 @@ def test_native_plan_missing_helper_is_rejected_before_resource_creation(setup_p
         apply_saved_plan(plan, plan.parent, selected, apply, backend, "complete-root", IMAGE, tofu)
     assert apply.phases == []
     assert not list(tmp_path.rglob("terraform.tfstate"))
+
+
+def test_private_ca_is_frozen_before_clients_and_restored_cross_directory(setup_plan, api_ca, tmp_path, monkeypatch):
+    from iaas.runtime_execution import plans, pve_provider
+    from iaas.runtime_execution.plans import verify_pve
+    selected, backend, tofu, execution = setup_plan
+    selected.files['api_ca'] = api_ca
+    original_bytes = api_ca.read_bytes()
+    observed = []
+    original_client = plans.api_client
+
+    def client(target, environ):
+        path = Path(environ['PVE_API_CA'])
+        assert path != api_ca and path.read_bytes() == original_bytes
+        observed.append(path)
+        api_ca.write_text('caller source changed after freeze')
+        return original_client(target, environ)
+
+    def provider(_provider, _files, environ):
+        assert Path(environ['PVE_API_CA']).read_bytes() == original_bytes
+
+    monkeypatch.setattr(plans, 'api_client', client)
+    monkeypatch.setattr(pve_provider, 'prepare_provider_environment', provider)
+    plan = prepare_plan(selected, execution('prepare'), backend, 'complete-root', IMAGE, tofu)
+    metadata = json.loads((plan.parent / 'summary.json').read_text())
+    assert metadata['api_ca'] == {'path': 'trust/api-ca.pem', 'sha256': plans.sha256(plan.parent / 'trust/api-ca.pem')}
+    assert 'trust/api-ca.pem' in metadata['companion_files']
+    moved = tmp_path / 'another-runner'
+    shutil.copytree(plan.parent, moved)
+    shutil.rmtree(plan.parent)
+    api_ca.unlink()
+    selected.files['api_ca'] = tmp_path / 'missing-current-ca'
+    apply = execution('apply', PVE_API_CA=str(selected.files['api_ca']))
+    apply_saved_plan(moved / 'plan.tfplan', moved, selected, apply, backend, 'complete-root', IMAGE, tofu)
+    selected.files['execution_result'] = apply.outputs.root / 'pve-result.json'
+    verify = execution('verify', PVE_API_CA=str(selected.files['api_ca']))
+    verify_pve(moved / 'plan.tfplan', moved, selected, verify, 'complete-root', IMAGE)
+    assert len(observed) == 3
+    assert observed[1].is_relative_to(apply.outputs.root)
+    assert observed[2] == moved / 'trust/api-ca.pem'
+    assert not verify.phases
+
+
+@pytest.mark.parametrize('damage', ['missing', 'changed', 'escape', 'symlink', 'unlisted'])
+@pytest.mark.parametrize('operation', ['apply', 'verify'])
+def test_private_ca_damage_rejected_before_effects(setup_plan, api_ca, tmp_path, monkeypatch, damage, operation):
+    from iaas.runtime_execution import plans, pve_state
+    selected, backend, tofu, execution = setup_plan
+    selected.files['api_ca'] = api_ca
+    plan = prepare_plan(selected, execution('prepare'), backend, 'complete-root', IMAGE, tofu)
+    ca = plan.parent / 'trust/api-ca.pem'
+    metadata_path = plan.parent / 'summary.json'
+    metadata = json.loads(metadata_path.read_text())
+    if damage == 'missing':
+        ca.unlink()
+    elif damage == 'changed':
+        ca.write_text('changed')
+    elif damage == 'escape':
+        metadata['api_ca']['path'] = '../caller-ca.pem'
+        metadata_path.write_text(json.dumps(metadata))
+    elif damage == 'symlink':
+        ca.unlink()
+        ca.symlink_to(api_ca)
+    else:
+        metadata['companion_files'].remove('trust/api-ca.pem')
+        metadata_path.write_text(json.dumps(metadata))
+    monkeypatch.setattr(plans, 'api_client', lambda *a: pytest.fail('API before trust admission'))
+    monkeypatch.setattr(pve_state, 'observe_state', lambda *a: pytest.fail('state access before trust admission'))
+    monkeypatch.setattr(S3Backend, 'initialize', lambda *a, **k: pytest.fail('init before trust admission'))
+    run = execution(operation)
+    with pytest.raises(ValidationError, match='saved PVE API CA'):
+        if operation == 'apply':
+            apply_saved_plan(plan, plan.parent, selected, run, backend, 'complete-root', IMAGE, tofu)
+        else:
+            plans.verify_pve(plan, plan.parent, selected, run, 'complete-root', IMAGE)
+    assert run.phases == []
+
+
+@pytest.mark.parametrize('insecure', [False, True])
+def test_no_effective_ca_plan_does_not_restore_current_trust(setup_plan, tmp_path, insecure):
+    selected, backend, tofu, execution = setup_plan
+    selected.options['pve']['insecure'] = insecure
+    if insecure:
+        empty = tmp_path / 'unused-ca'
+        empty.touch()
+        selected.files['api_ca'] = empty
+    prepare = execution('prepare', PVE_API_CA='/unselected/host-ca')
+    plan = prepare_plan(selected, prepare, backend, 'complete-root', IMAGE, tofu)
+    assert 'PVE_API_CA' not in prepare.environ
+    metadata = json.loads((plan.parent / 'summary.json').read_text())
+    assert 'api_ca' not in metadata and not (plan.parent / 'trust').exists()
+    apply = execution('apply', PVE_API_CA='/current/ca-must-not-be-used')
+    apply_saved_plan(plan, plan.parent, selected, apply, backend, 'complete-root', IMAGE, tofu)
+    assert 'PVE_API_CA' not in apply.environ
+
+
+def test_read_does_not_report_success_after_tls_failure(setup_plan, monkeypatch):
+    from types import SimpleNamespace
+    from iaas.pve_inventory.pve_api.errors import PveApiTlsError
+    from iaas.runtime_execution import plans, pve_state
+    selected, backend, _tofu, execution = setup_plan
+    observation = pve_state.observe_state(backend, {})
+    observation.raw['resources'] = [{'type': 'proxmox_virtual_environment_vm', 'name': 'test', 'instances': [
+        {'attributes': {'node_name': 'node', 'vm_id': 101}}]}]
+    monkeypatch.setattr(pve_state, 'observe_state', lambda *a: observation)
+
+    def failed(*_args):
+        raise PveApiTlsError('synthetic TLS verification failed')
+
+    monkeypatch.setattr(plans, 'api_client', lambda *a: SimpleNamespace(vm_config=failed))
+    run = execution('read')
+    with pytest.raises(PveApiTlsError):
+        plans.read_pve(selected, run, backend, 'complete-root', IMAGE)
+    assert not (run.outputs.root / 'summary.json').exists()

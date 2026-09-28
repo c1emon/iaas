@@ -85,9 +85,9 @@ func (t *task) savedPlan() ([]string, error) {
 	}
 	// Only the saved-plan contract's files/directories are transferred, not the
 	// arbitrary parent directory of a selected native plan.
-	for _, name := range []string{"summary.json", "native-plan.json", "inputs.tfvars.json", "snippets", "workspace", "dependencies.tar.gz"} {
+	for _, name := range []string{"summary.json", "native-plan.json", "inputs.tfvars.json", "snippets", "workspace", "trust", "dependencies.tar.gz"} {
 		source := filepath.Join(bundle, name)
-		if _, err := os.Stat(source); os.IsNotExist(err) && name == "dependencies.tar.gz" {
+		if _, err := os.Stat(source); os.IsNotExist(err) && (name == "dependencies.tar.gz" || name == "trust") {
 			continue
 		}
 		if err := copyTree(source, filepath.Join(staged, name)); err != nil {

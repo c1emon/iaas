@@ -4,6 +4,7 @@ from .client import HealthApiRuntimeConfig, ReadOnlyPveApi
 from .errors import (
     PveApiAuthenticationError,
     PveApiError,
+    PveApiTlsError,
     PveApiNotConfiguredError,
     PveApiUnavailableError,
     redact_sensitive_text,
@@ -14,6 +15,7 @@ from .runtime import PveApiRuntimeConfig, PveOnlineRuntimeContext, load_api_runt
 __all__ = [
     "PveApiAuthenticationError",
     "PveApiError",
+    "PveApiTlsError",
     "PveApiNotConfiguredError",
     "PveApiUnavailableError",
     "PveApiRuntimeConfig",

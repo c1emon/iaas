@@ -17,6 +17,7 @@ class PveApiRuntimeConfig:
     api_token_id: str
     api_token_secret: str
     insecure: bool
+    api_ca: str | None = None
 
 
 @dataclass(frozen=True)
@@ -65,12 +66,14 @@ def load_api_runtime_config(environ: dict[str, str] | None = None) -> PveApiRunt
     """Load the API-only runtime config used by health checks."""
 
     endpoint, api_username, api_token_id, api_token_secret, insecure = _load_base_runtime_config(environ, require_api=True)
+    env = os.environ if environ is None else environ
     return PveApiRuntimeConfig(
         endpoint=endpoint,
         api_username=api_username,
         api_token_id=api_token_id,
         api_token_secret=api_token_secret,
         insecure=insecure,
+        api_ca=env.get("PVE_API_CA") or None,
     )
 
 
@@ -87,6 +90,7 @@ def load_online_runtime_context(environ: dict[str, str] | None = None) -> PveOnl
         api_token_id=api_token_id,
         api_token_secret=api_token_secret,
         insecure=insecure,
+        api_ca=env.get("PVE_API_CA") or None,
         ssh_host=ssh_host,
         ssh_user=ssh_user,
     )

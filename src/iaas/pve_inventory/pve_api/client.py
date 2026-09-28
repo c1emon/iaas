@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Callable
 from urllib.parse import urlparse
 
 from proxmoxer import AuthenticationError, ProxmoxAPI, ResourceException
+from requests.exceptions import SSLError
+
+from iaas.common.pve_tls import write_ca_bundle
 
 from .errors import (
     PveApiAuthenticationError,
     PveApiError,
+    PveApiTlsError,
     PveApiNotConfiguredError,
     PveApiUnavailableError,
     redact_sensitive_text,
@@ -36,12 +42,17 @@ class ReadOnlyPveApi:
 
     def __init__(self, runtime: PveApiRuntimeConfig, *, timeout: int = 30, prox: Any | None = None) -> None:
         self._api_token_secret = runtime.api_token_secret
+        self._trust_directory: TemporaryDirectory[str] | None = None
+        verify_ssl: bool | str = not runtime.insecure
+        if not runtime.insecure and runtime.api_ca:
+            self._trust_directory = TemporaryDirectory(prefix="iaas-pve-trust-")
+            verify_ssl = str(write_ca_bundle(runtime.api_ca, Path(self._trust_directory.name) / "ca.pem"))
         host, port = _normalize_endpoint(runtime.endpoint)
         kwargs: dict[str, Any] = {
             "user": runtime.api_username,
             "token_name": runtime.api_token_id,
             "token_value": runtime.api_token_secret,
-            "verify_ssl": not runtime.insecure,
+            "verify_ssl": verify_ssl,
             "timeout": timeout,
         }
         if port is not None:
@@ -73,6 +84,8 @@ class ReadOnlyPveApi:
             return getter()
         except AuthenticationError as exc:
             raise PveApiAuthenticationError(self._safe_message(action, exc)) from None
+        except SSLError as exc:
+            raise PveApiTlsError(self._safe_message(action, exc)) from None
         except ResourceException as exc:
             status_code = getattr(exc, "status_code", None)
             message = self._safe_message(action, exc)

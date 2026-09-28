@@ -282,6 +282,8 @@ def load_operation(entry: Path, component: str, operation: str, scenario: str | 
             files.add("observed_versions")
     elif effects.network and component == "foundation":
         files |= set(metadata.options.get("ca_files", {}).values())
+    if component == "pve" and operation in {"preflight", "health", "read", "plan"}:
+        files |= {"api_ca"} if "api_ca" in metadata.file_paths else set()
     if effects.state:
         # Optional standard AWS file channels are mapped explicitly by alias.
         files |= {name for name in ("aws_credentials", "aws_config", "aws_ca", "aws_web_identity")

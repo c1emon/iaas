@@ -49,6 +49,13 @@ iaas run --runtime-config runtime.json \
   --output ./pve-plan
 ```
 
+For a private API CA, set optional `files.api_ca` to a caller-owned PEM file;
+`insecure: true` takes precedence and does not load its contents. When moving
+between Runners, copy the whole `pve-plan/plan` directory, including `trust/`
+when present, and retain it with the native plan. Apply and verify use that saved
+CA without requiring its original caller path; a current `files.api_ca` cannot
+replace the plan's trust material.
+
 Review `pve-plan/plan/review.txt`, `review.json`, the provider binding and
 snippet manifest. Apply consumes that exact native plan and all companions;
 the execution ID is passed explicitly and the output directory uses the same

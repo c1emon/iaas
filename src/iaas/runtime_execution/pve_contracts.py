@@ -181,6 +181,14 @@ def validate_plan_metadata(value: Any) -> dict[str, Any]:
     require(type(document["schema_version"]) is int and document["schema_version"] == PLAN_METADATA_VERSION, "unsupported PVE plan metadata; prepare a new plan")
     _digest_value(document["plan_digest"], "PVE plan metadata.plan_digest")
     target = validate_target(document["target"], "PVE plan metadata.target")
+    if "api_ca" in document:
+        ca = document["api_ca"]
+        require(isinstance(ca, dict) and set(ca) == {"path", "sha256"}
+                and ca["path"] == "trust/api-ca.pem"
+                and isinstance(ca["sha256"], str) and _DIGEST.fullmatch(ca["sha256"]) is not None
+                and target.get("insecure") is False
+                and isinstance(document.get("companion_files"), list)
+                and ca["path"] in document["companion_files"], "saved PVE API CA metadata is invalid")
     _identifier(document["workspace"], "PVE plan metadata.workspace")
     if "root_id" in document and "root_id" in target:
         require(target["root_id"] == document["root_id"], "PVE plan metadata root identity conflicts with target")

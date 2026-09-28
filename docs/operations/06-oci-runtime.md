@@ -114,6 +114,46 @@ ephemeral sensitive credential variables. Provider downloads belong to the
 separate dependency preparation operation. Actual deployment uses the selected
 S3 backend and native lock; local state migration is not supplied.
 
+### PVE VM private CA and saved plans
+
+Callers such as infra-ops may declare `components.pve.files.api_ca` as a PEM
+file containing one or more CA certificates. Use a runtime built from the
+private-CA implementation and pin its resolved image digest; a source change
+alone does not update a previously released runtime. The CA belongs to the
+caller and is transferred with the selected task, never installed in the
+generic image or host trust store. Public trust file ownership/permissions
+apply (for example, caller-owned mode `0644`); it is not a private key.
+
+`preflight`, `health`, `read` and `plan` select this optional file. Offline
+`check`/`generate` and `prepare-dependencies` do not load it. With strict TLS,
+Python API clients and the provider retain public roots and add the private
+CA, preserving chain, validity and endpoint identity checks. Empty or invalid
+CA input fails with `PVE API CA preparation failed`; it is never hidden by
+the public roots. `insecure: true` takes precedence and does not parse or
+freeze unused CA contents. For preflight/health the mode comes from
+`TF_VAR_pve_insecure`; read/plan/apply/verify use the fixed `options.pve.insecure`.
+
+Before its first API request, strict planning freezes the CA as
+`plan/trust/api-ca.pem`. `summary.json` records `api_ca.path`, `api_ca.sha256`
+and its entry in `companion_files`. Preserve and transfer the **whole plan
+directory**, including `trust/`, with the native plan. Apply and independent
+verify restore that CA on another Runner without requiring the original path
+or consulting the current environment CA. Missing, altered or escaping CA
+material fails admission before API access or initialization. System-only and
+insecure plans carry no CA requirement. Changing CA or TLS mode requires a new
+plan; a valid renewed server certificate under the same CA does not.
+
+The provider receives a task-generated public-plus-private bundle through
+`SSL_CERT_FILE`. Other Go HTTPS clients using default roots in that OpenTofu
+process can also see the additional CA. Explicit backend TLS and AWS CA
+settings are preserved; no arbitrary host TLS variables are forwarded.
+Derived bundles are rebuilt per task, not saved as absolute provider paths.
+Native failures retain their phase and protected diagnostics in task output.
+Local Docker and DinD both transport and retain the saved trust material.
+
+See the [caller example](../examples/pve-lifecycle/README.md) and
+[software validation scope](../development-validation.md#pve-vm-private-ca).
+
 ## Build and validation
 
 ```sh

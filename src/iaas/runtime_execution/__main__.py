@@ -13,6 +13,7 @@ from typing import cast
 
 from iaas.common.errors import require
 from iaas.common.io import write_text
+from iaas.pve_inventory.pve_api.errors import PveApiTlsError
 from iaas.runtime_config import InputRequired, SourceReader
 from iaas.runtime_config.compile import compile_documents
 from .components import IMPLEMENTATION, run_component
@@ -89,7 +90,15 @@ def main(argv: list[str] | None = None) -> int:
             protected.append(args.plan)
         outputs = TaskOutputs.create(args.output, IMPLEMENTATION, protected)
         environ = process_environment(args.component, args.operation, os.environ, render_names)
-        prepare_file_credentials(selected.files, outputs.path("work") / "home", environ)
+        api_insecure = False
+        if args.component == "pve" and "api_ca" in selected.files:
+            if args.operation in {"plan", "read"}:
+                api_insecure = selected.options.get("pve", {}).get("insecure") is True
+            else:
+                from iaas.pve_inventory.pve_api.runtime import parse_pve_bool
+                api_insecure = parse_pve_bool(environ.get("TF_VAR_pve_insecure"))
+        prepare_file_credentials(selected.files, outputs.path("work") / "home", environ,
+                                 api_insecure=api_insecure)
         execution = Execution(outputs, environ)
         common = {"component": args.component, "operation": args.operation, "environment": selected.environment,
                   "scenario": selected.scenario, "image_digest": args.image_digest, "effects": asdict(effects),
@@ -143,6 +152,14 @@ def main(argv: list[str] | None = None) -> int:
         retained = False
         if execution is not None:
             phases = execution.phases
+            if isinstance(exc, PveApiTlsError):
+                capture = execution.outputs.path("recovery") / "pve-api-tls.raw"
+                failure = {"phase": "pve-api-tls", "exit_code": 2, "capture": str(capture)}
+                try:
+                    write_text(capture, str(exc) + "\n", secure=True)
+                except OSError:
+                    failure["retain_storage"] = True
+                phases.append(failure)
             if phases:
                 code = phases[-1].get("exit_code") or 2
             retained = any(item.get("retain_storage", False) for item in phases)
@@ -153,6 +170,9 @@ def main(argv: list[str] | None = None) -> int:
         # Only literal, value-free diagnostics are safe to surface. Never
         # expose arbitrary ValidationError text from domain parsers.
         safe_reasons = {
+            "PVE API CA preparation failed",
+            "saved PVE API CA metadata is invalid",
+            "saved PVE API CA material mismatch",
             "expected schema_version: 1; migrate the entry explicitly",
             "unsupported component/operation combination",
             "prepare-plan/apply-saved-plan were removed; use PVE plan/apply",

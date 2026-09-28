@@ -365,7 +365,7 @@ def test_opnsense_request_is_validated_before_credentials(tmp_path, monkeypatch,
 
 def test_setup_failure_reports_created_output_and_redacts_exception(tmp_path, monkeypatch, capsys):
     import iaas.runtime_execution.__main__ as dispatch
-    def fail(*args):
+    def fail(*args, **kwargs):
         raise yaml.YAMLError("synthetic-private-value")
     monkeypatch.setattr(dispatch, "prepare_file_credentials", fail)
     output = tmp_path / "failed"
@@ -388,3 +388,72 @@ def test_opnsense_uses_existing_exact_target_admission(tmp_path, monkeypatch):
     assert "--limit" not in calls[0][0]
     assert calls[0][1]["OPNSENSE_TARGET"] == "firewall"
     assert calls[0][1]["OPNSENSE_DIAGNOSTICS_OUTPUT"].endswith("/runtime/opnsense-diagnostics/detail.json")
+
+
+@pytest.mark.parametrize("operation", ["preflight", "health", "read", "plan"])
+def test_vm_api_ca_discovery_maps_caller_file(tmp_path, operation):
+    entry = config(tmp_path, "pve", {"cluster": "cluster.yml"}, {"api_ca": "ca.pem", "backend": "backend", "state_admission": "state"})
+    (tmp_path / "cluster.yml").write_text("synthetic: true")
+    document = yaml.safe_load(entry.read_text())
+    document["components"]["pve"]["options"] = {"root": {"id": "root", "files": {}}}
+    entry.write_text(yaml.safe_dump(document))
+    for name in ("backend", "state", "transferred-ca.pem"):
+        (tmp_path / name).touch()
+    mapping = {str(entry): str(entry), str(tmp_path / "cluster.yml"): str(tmp_path / "cluster.yml"), str(tmp_path / "backend"): str(tmp_path / "backend"),
+               str(tmp_path / "state"): str(tmp_path / "state")}
+    with pytest.raises(InputRequired) as error:
+        load_operation(entry, "pve", operation, None, SourceReader(mapping))
+    assert error.value.path == tmp_path / "ca.pem"
+    mapping[str(tmp_path / "ca.pem")] = str(tmp_path / "transferred-ca.pem")
+    selected = load_operation(entry, "pve", operation, None, SourceReader(mapping))
+    assert selected.files["api_ca"] == tmp_path / "transferred-ca.pem"
+
+
+@pytest.mark.parametrize("operation", ["check", "generate", "prepare-dependencies", "apply", "verify"])
+def test_vm_other_phases_never_discover_current_api_ca(tmp_path, operation):
+    entry = config(tmp_path, "pve", {"cluster": "cluster.yml"}, {"api_ca": "missing-ca.pem", "backend": "backend",
+                   "state_admission": "state", "execution_admission": "execution"})
+    (tmp_path / "cluster.yml").write_text("synthetic: true")
+    document = yaml.safe_load(entry.read_text())
+    document["components"]["pve"]["options"] = {"root": {"id": "root", "files": {}}}
+    entry.write_text(yaml.safe_dump(document))
+    for name in ("backend", "state", "execution"):
+        (tmp_path / name).touch()
+    selected = load_operation(entry, "pve", operation, None, SourceReader())
+    assert "api_ca" not in selected.files
+
+
+@pytest.mark.parametrize("insecure", [True, False])
+def test_vm_health_empty_ca_insecure_precedence(tmp_path, monkeypatch, capsys, insecure):
+    entry = config(tmp_path, "pve", {"cluster": str(REPO / "tests/fixtures/runtime/pve-cluster.yml"),
+                                    "vms": str(REPO / "tests/fixtures/runtime/vms.yml")})
+    selected = load_operation(entry, "pve", "health", None, SourceReader())
+    ca = tmp_path / "ca.pem"
+    ca.touch(mode=0o600)
+    selected.files["api_ca"] = ca
+    import iaas.runtime_execution.__main__ as dispatch
+    monkeypatch.setattr(dispatch, "load_operation", lambda *args: selected)
+    monkeypatch.setenv("TF_VAR_pve_insecure", str(insecure).lower())
+    calls = []
+    monkeypatch.setattr(Execution, "run", lambda *args, **kwargs: calls.append(args))
+    result = main(["--environment", str(entry), "--component", "pve", "--operation", "health",
+                   "--scope", "synthetic-pve", "--output", str(tmp_path / "health")])
+    assert result == (0 if insecure else 2)
+    assert bool(calls) is insecure
+    if not insecure:
+        assert json.loads(capsys.readouterr().out)["reason"] == "PVE API CA preparation failed"
+
+
+@pytest.mark.parametrize("reason", ["PVE API CA preparation failed", "saved PVE API CA metadata is invalid",
+                                   "saved PVE API CA material mismatch"])
+def test_vm_ca_failures_have_stable_public_reasons(tmp_path, monkeypatch, capsys, reason):
+    import iaas.runtime_execution.__main__ as dispatch
+    from iaas.common.errors import ValidationError
+
+    def fail(*args):
+        raise ValidationError(reason)
+
+    monkeypatch.setattr(dispatch, "load_operation", fail)
+    assert main(["--environment", str(tmp_path / "environment.yml"), "--component", "pve",
+                 "--operation", "health", "--discover"]) == 2
+    assert json.loads(capsys.readouterr().out)["reason"] == reason

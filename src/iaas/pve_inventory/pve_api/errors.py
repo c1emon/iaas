@@ -33,6 +33,10 @@ class PveApiAuthenticationError(PveApiError):
     diagnostic_code = "authentication_failed"
 
 
+class PveApiTlsError(PveApiError):
+    """TLS failure that must not be reduced to an optional observation gap."""
+
+
 class PveApiNotConfiguredError(PveApiError):
     """Optional endpoint is missing or not configured (404)."""
 
