@@ -29,6 +29,8 @@
 - Pyright、改动范围 Ruff、4 项 import-linter 合同及 OpenSpec strict validate 通过。
 - 修改前执行 GitNexus impact；API 共享调用及 TLS 错误分类为 HIGH／CRITICAL，saved-plan 准入和 provider 环境为 HIGH，重点回归 read／plan／apply／verify。各阶段提交前执行 detect_changes，结果无 partial／truncated，结合实际 diff 核对范围；图报告 critical 不等同于真实环境故障或验收结果。
 
-本次未发布镜像，未执行真实 PVE 或 infra-ops Runner 验收。接入方式见
-[运行时操作说明](../../../docs/operations/06-oci-runtime.md#pve-vm-private-ca-and-saved-plans)，
-实际测试环境与复验命令见 [开发验证](../../../docs/development-validation.md#pve-vm-private-ca)。
+后续本地实测：macOS Python 两条 API 路径通过，原生 provider 的正确 CA 场景受已确认平台限制影响，按用户要求记录而不强行通过；本机 Docker Linux 连接真实 PVE 的 urllib、proxmoxer、provider 三类客户端各执行正确 CA、无 CA、错误 CA，共 9/9 场景通过。测试仅只读，容器及临时材料已清理。
+
+本次未发布镜像，未执行 ONE Runner、真实 VM 生命周期或跨 Runner saved-plan 验收。接入方式见
+[运行时操作说明](../../../../docs/operations/06-oci-runtime.md#pve-vm-private-ca-and-saved-plans)，
+实际测试环境与复验命令见 [开发验证](../../../../docs/development-validation.md#pve-vm-private-ca)。

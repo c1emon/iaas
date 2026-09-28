@@ -63,10 +63,10 @@ apply／verify 使用已保存 CA，校验相对路径、文件存在和摘要�
 
 实现已在 `feat/support-pve-vm-private-ca` 分支完成，扩展现有可选输入与伴随材料并运行定向回归。infra-ops 接入时需选择包含此实现的新 runtime，固定 image digest，并提供 `files.api_ca` 生成新计划；当前软件验证不代表镜像已发布。未使用该入口的调用方保持现有行为。若回退 runtime，继续遵守既有 runtime／plan 绑定，重新生成需要执行的计划，不转换已保存材料。
 
-实际 provider TLS 检查使用仓库 fixture lock 固定的 bpg/proxmox 0.111.1、OpenTofu 1.12.6 和本地 Linux arm64 runtime 依赖镜像挂载当前源码；只连接本地 HTTPS stub。结果与复验命令见 [开发验证](../../../docs/development-validation.md#pve-vm-private-ca)。
+实际 provider TLS 检查使用仓库 fixture lock 固定的 bpg/proxmox 0.111.1、OpenTofu 1.12.6 和本地 Linux arm64 runtime 依赖镜像挂载当前源码。先完成本地 HTTPS stub 测试，后续本机 Docker 连接真实 PVE 的 9 项只读检查全部通过；macOS 原生 provider 的平台限制单独记录，ONE Runner 与真实 VM 生命周期仍未验收。结果与复验命令见 [开发验证](../../../../docs/development-validation.md#pve-vm-private-ca)。
 
 ## References
 
 - [bpg/proxmox v0.111.0 TLS connection](https://github.com/bpg/terraform-provider-proxmox/blob/v0.111.0/proxmox/api/client.go)：`NewConnection` 使用 Go 默认根信任及显式 insecure 配置。
 - [Go system certificate pool](https://pkg.go.dev/crypto/x509#SystemCertPool)：`SSL_CERT_FILE` 是默认根加载配置，不是单个 provider 或目标域名的隔离配置。
-- [Saved-plan baseline](../../specs/runtime-saved-plan-execution/spec.md)
+- [Saved-plan baseline](../../../specs/runtime-saved-plan-execution/spec.md)

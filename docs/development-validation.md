@@ -62,3 +62,49 @@ fixture lock 固定的 bpg/proxmox 0.111.1。无 CA 严格模式拒绝、私有 
 后续无 CA 任务仍拒绝、insecure 加无效 CA 成功，四项均通过。
 该脚本只访问 loopback HTTPS stub，并允许下载锁定 provider；不访问真实 PVE。
 这些结果不代表新镜像已发布，也不代表 infra-ops Runner、现场网络或 PVE 已验收。
+
+### 本机连接真实 PVE（2026-09-28）
+
+macOS arm64，项目 `uv` 环境 Python 3.12.11／OpenSSL 3.0.16，OpenTofu
+1.12.6、锁定 bpg/proxmox 0.111.1（Go 1.26.0 构建）。目标使用既有 PVE IP
+端点及调用方 CA，凭据经 1Password 临时读取，始终 `insecure: false`。
+
+| 客户端 | 正确 CA | 无 CA | 错误 CA |
+| --- | --- | --- | --- |
+| urllib | 成功读取 2 个节点 | 按预期拒绝 | 按预期拒绝 |
+| proxmoxer | 成功读取 2 个节点 | 按预期拒绝 | 按预期拒绝 |
+| macOS 原生 provider | **未通过：certificate is not trusted** | 按预期拒绝 | 按预期拒绝 |
+
+本次共 9 个场景，8 项符合预期；不能记为全部通过。provider 使用当前
+`prepare_provider_environment` 生成合并 bundle；其 Go 1.26 在 macOS 的
+系统根加载不采用 `SSL_CERT_FILE`，见 [该版本上游实现](https://github.com/golang/go/blob/go1.26.0/src/crypto/x509/cert_pool.go#L96-L111)。
+因此不能用此 macOS provider 的失败推断 Linux runtime 的 CA 注入失败。
+本地测试阶段已完成；经用户确认，将此项作为已知平台限制记录，不要求
+macOS provider 强行通过，也不为此修改系统信任、替换 provider 或扩大平台支持。
+
+实际操作仅为 Python API GET 和 provider 的 nodes data-source-only plan，
+`init -backend=false`，未配置远端 backend、保存 state、执行 apply 或修改 VM；
+临时 provider 工作目录已清理。未修改系统钥匙串、关闭 TLS 校验或启动 Linux
+runtime。后续本机 Docker 的 Linux 验证结果见下节。
+
+### 本机 Docker 连接真实 PVE（2026-09-28）
+
+本机 Colima，Linux arm64，现有 `iaas-runtime:refactor-local` 依赖镜像
+（image ID `54c435d310a6`）只读挂载当前源码。Python 3.12.12／OpenSSL
+3.0.20，OpenTofu 1.12.6、锁定 bpg/proxmox 0.111.1。连接同一真实 PVE，
+凭据在本机经 1Password 读取后仅通过容器 stdin 注入，不写入文件或 Docker
+环境配置；保持 `insecure: false`。
+
+| 客户端 | 正确 CA | 无 CA | 错误 CA |
+| --- | --- | --- | --- |
+| urllib | 成功读取 2 个节点 | 按预期拒绝 | 按预期拒绝 |
+| proxmoxer | 成功读取 2 个节点 | 按预期拒绝 | 按预期拒绝 |
+| Linux provider | nodes 数据源读取成功 | 按预期拒绝 | 按预期拒绝 |
+
+9/9 场景通过，确认当前 API adapter 与 provider 的任务级 CA 注入在 Linux
+上可用于该真实 PVE。provider 仍为 `init -backend=false` 和仅含 nodes 数据源
+的 plan，无远端 backend、state 文件、apply 或 VM 变更。测试容器、临时
+provider 工作目录、共享脚本和本机临时测试文件均已清理，保留原有基础镜像。
+
+这是本机 Docker 加当前源码的只读验证，不代表新发布镜像、ONE Runner、
+VM 创建／删除、跨 Runner saved-plan 执行或业务验收已经通过。
