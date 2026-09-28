@@ -21,9 +21,9 @@
 
 ## 4. launcher、测试与交付
 
-- [ ] 4.1 暴露 accept/snippet-cleanup 及只读原执行查询，声明 start 写入与 observe 只读效果，完成 original_execution_dir/cleanup_evidence_dir 的只读文件发现及 local/DinD 传输；更新 capability/version，保留 TLS、SSH 主机校验、凭据隔离及脱敏。
-- [ ] 4.2 运行模板成功、检查失败/超时、清理失败、跨 Runner 重复观察/缺材料；snippet 正常/缺席/引用/摘要不符/权限不足/部分失败，以及 retry_of 合法/非法绑定、无 state 验收遗留 snippet 和来源切换拒绝的定向测试。
-- [ ] 4.3 运行改动相关 Python/Go、lint、schema/OpenSpec 校验及提交前图变更检查；记录实际覆盖范围，不做无依据的全量扩张。
-- [ ] 4.4 交付稳定合同入口、双方共用正反例、launcher 调用示例、helper 最小权限和版本说明；明确 infra-ops 只在必需检查与清理全部通过后推广。
+- [x] 4.1 暴露 accept/snippet-cleanup 及只读原执行查询，声明 start 写入与 observe 只读效果，完成 original_execution_dir/cleanup_evidence_dir 的只读文件发现及 local/DinD 传输；更新 capability/version，保留 TLS、SSH 主机校验、凭据隔离及脱敏。
+- [x] 4.2 运行模板成功、检查失败/超时、清理失败、跨 Runner 重复观察/缺材料；snippet 正常/缺席/引用/摘要不符/权限不足/部分失败，以及 retry_of 合法/非法绑定、无 state 验收遗留 snippet 和来源切换拒绝的定向测试。
+- [x] 4.3 运行改动相关 Python/Go、lint、schema/OpenSpec 校验及提交前图变更检查；记录实际覆盖范围，不做无依据的全量扩张。
+- [x] 4.4 交付稳定合同入口、双方共用正反例、launcher 调用示例、helper 最小权限和版本说明；明确 infra-ops 只在必需检查与清理全部通过后推广。
 
 真实 PVE 验证不作为上述软件任务的隐含阶段；另行提供固定目标和创建/删除授权窗口后，仅执行一次代表性验收。当前不执行发布、合并、现场操作或 infra-ops 修改。

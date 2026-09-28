@@ -1,6 +1,6 @@
-# PVE acceptance / snippet cleanup v1 合同草案
+# PVE acceptance / snippet cleanup v1 设计合同
 
-状态：待实现，当前 runtime 尚不支持下列新入口。实现交付时将稳定入口、JSON schema 和共用 JSON fixtures 放到 `docs/contracts/`、`automation/schemas/`、`docs/examples/`，由 capability 声明实际支持的 kind/version；不预先声称某个已发布 runtime 支持。
+状态：已实现于当前源码。稳定入口见 [交付合同](../../../../docs/contracts/pve-acceptance-cleanup-v1.md)，字段和状态以该文档链接的 JSON schema 与共享 fixtures 为准。本文件保留设计语义；不代表 runtime 已发布或真实 PVE 验收完成。
 
 ## 通用规则
 
@@ -36,7 +36,7 @@
 | `timeouts` | 有界正整数：`work_seconds`、`guest_seconds`、`cleanup_seconds`；guest 期限受剩余工作期限约束，cleanup 有独立预算。 |
 | `authorization` | `create_temporary_vm: true`、`delete_temporary_resources: true`，准确约束 temporary_vm 及本次新建附属资源；还需独立的完整 execution admission。 |
 
-入口草案：`iaas run --component pve-template --operation accept`；start 在 environment 中以 `files.acceptance_request` 和 `files.execution_admission` 提供固定材料；observe 按上节提供原目录，不要求新的 admission。沿用 `--execution-id`、`--output`、runtime/environment/engine 参数。只读查询亦可沿用 `pve-template read` 并以原执行 journal 区分操作，不能重放 accept。
+入口：`iaas run --component pve-template --operation accept`；start 在 environment 中以 `files.acceptance_request` 和 `files.execution_admission` 提供固定材料；observe 按上节提供原目录，不要求新的 admission。沿用 `--execution-id`、`--output`、runtime/environment/engine 参数。只读查询亦可沿用 `pve-template read` 并以原执行 journal 区分操作，不能重放 accept。
 
 ## `pve-template-acceptance-result/v1`
 
@@ -68,7 +68,7 @@
 | `retry_of` | 必填，首次独立 cleanup 为 null；补执行为前一次 cleanup execution ID，不能等于本次 ID。acceptance 后首次独立清理仍为 null，以 origin/original_execution_id 关联验收。 |
 | `retry_materials` | retry_of 为 null 时必须为 null；否则必须含前次 cleanup 的 request、journal 及已有 result 引用（result 可为 null），绑定 execution ID、request digest 和原清单。 |
 
-入口草案：`iaas run --component pve --operation snippet-cleanup`；start 在 environment 中提供 `files.snippet_cleanup_request`、原关联材料和新 `files.execution_admission`；observe 按通用规则提供原目录。request 中所有证据引用均为 `files.cleanup_evidence_dir` 只读目录内的受限相对路径，使用现有文件映射机制传输，拒绝缺失核心材料、路径逃逸及符号链接。该操作不要求 S3 凭据、不初始化 backend，也不修改已保存 state 材料。
+入口：`iaas run --component pve --operation snippet-cleanup`；start 在 environment 中提供 `files.snippet_cleanup_request`、原关联材料和新 `files.execution_admission`；observe 按通用规则提供原目录。request 中所有证据引用均为 `files.cleanup_evidence_dir` 只读目录内的受限相对路径，使用现有文件映射机制传输，拒绝缺失核心材料、路径逃逸及符号链接。该操作不要求 S3 凭据、不初始化 backend，也不修改已保存 state 材料。
 
 补执行使用新的 cleanup execution ID/admission；加载 retry_materials 后核对 retry_of、前次 request digest、origin、target、original_vm/original_execution_id、原删除/授权/所有权材料及完整 snippets 清单。比较加载后的材料及既有摘要，不把 Runner 挂载路径当资源身份。只允许更新本次超时预算和补执行关联，不能切换 origin、增加/替换文件或换摘要。缺前次 final result 可用完整绑定的 journal，但原 mutation 未确认终止或核心材料缺失时禁止补清理写入。逐项重新检查，原已删除项可返回 already_absent；原结果不可改写。同 ID 重复调用只能 observe。
 
@@ -93,7 +93,7 @@ acceptance 分支仅用于原验收 VM 已确认删除后剩余的专属 snippet
 
 ## 共用软件验收用例
 
-实现时交付 machine-readable fixtures 与期望状态，由 IaaS 测试加载，供 infra-ops 复用；以下是用例范围，不是已执行测试结果。
+已交付 machine-readable fixtures 与期望状态，由 IaaS 测试加载，供 infra-ops 复用；以下是用例范围，不是已执行测试结果。
 
 | 用例 | 必须断言 |
 | --- | --- |

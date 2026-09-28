@@ -319,3 +319,74 @@ The runtime reports its actual architecture, and rejects a mismatch before an
 operation. Caller-supplied providers and dependency bundles must support that
 architecture. Host image architecture does not change PVE guest/template
 architecture or qualify real PVE, K3s, OPNsense or template builds.
+
+### PVE 模板验收和 snippet 清理（当前合同）
+
+`pve-template accept` 与 `pve snippet-cleanup` 使用独立的 v1 request/result，
+capabilities 的 `lifecycle_versions` 分别声明 `acceptance_request`/`acceptance_result`
+和 `snippet_cleanup_request`/`snippet_cleanup_result`。launcher 拒绝版本缺失或不匹配。
+`execution_modes` 声明 `start` 写基础设施但不访问 state，`observe` 只读基础设施；
+两种模式都只在新的 output 写收集结果。
+
+```yaml
+schema_version: 1
+environment: acceptance
+components:
+  pve-template:
+    inputs: {}
+    files:
+      acceptance_request: ./acceptance-request.json
+      execution_admission: ./acceptance-admission.json
+      api_ca: ./pve-ca.pem
+    options:
+      execution_mode: start
+```
+
+```sh
+iaas run --runtime-config runtime.json --engine local --environment acceptance.yml \
+  --component pve-template --operation accept --scope pve1 \
+  --execution-id accept-001 --output ./results/accept-001
+```
+
+观察时显式改为 `execution_mode: observe`，设置 `files.original_execution_dir` 为原输出
+`diagnostics/execution` 目录（包含 request.json、journal.json 和可能存在的 result.json），
+使用原 execution-id 和新的 output 路径。`pve-template read` 也可通过该目录查询原验收，
+不需新 admission，不重放写操作。缺核心材料返回 unknown，不重建历史成功。
+
+独立清理改用 component `pve`、operation `snippet-cleanup` 和
+`files.snippet_cleanup_request`，通过 `files.cleanup_evidence_dir` 提供绑定证据，
+必要时同时提供 `original_execution_dir`。目录在 local Docker 与 DinD 都只读映射；
+只选择当前操作文件，不读取 backend 或 artifact_locator。
+清理 SSH 使用 `files.ssh_key`、`files.known_hosts`，连接目标固定在清理 request 的
+`ssh: {host: "pve1.example.invalid", user: "automation", port: 22}` 中，与请求摘要及 admission 绑定。
+严格验证主机身份，不从 `PVE_SSH_HOST`、`PVE_SSH_USER` 或 `PVE_SSH_PORT` 环境变量选择目标。
+验收不接收 artifact 下载凭据，清理不接收 state 后端凭据。
+首次清理及补清理都必须是独立授权的新 start；observe 永远不自动补执行。
+
+上述接口与软件测试不代表真实 PVE 验收；现场创建、启动和删除 VM 需另行限定目标和授权窗口。
+
+观察已有 `accept-001`（新目录可位于另一个父目录，末级仍绑定原执行 ID）：
+
+```yaml
+schema_version: 1
+environment: acceptance-observe
+components:
+  pve-template:
+    inputs: {}
+    files:
+      original_execution_dir: ./results/accept-001/diagnostics/execution
+    options:
+      execution_mode: observe
+```
+
+```sh
+iaas run --runtime-config runtime.json --engine local --environment observe.yml \
+  --component pve-template --operation accept --scope pve1 \
+  --execution-id accept-001 --output ./observations/accept-001
+```
+
+观察不需要新 admission，也不创建 API 客户端。原 request/journal/result 不完整时失败且无远程写入；
+即使原结果 passed，观察结果收集失败也不能成功退出，launcher 保留任务存储供恢复。
+请求字段和共享正反例见 [验收合同示例](examples/pve-acceptance/acceptance-request.json)。
+
+安装与最小 sudo 权限见 [PVE snippet cleanup helper](operations/pve-snippet-cleanup.md)。

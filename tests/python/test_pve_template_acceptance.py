@@ -22,7 +22,10 @@ def request():
     config.update(template=1, smbios1='uuid=' + value['template_record']['smbios_uuid'],
                   scsi0='local-lvm:vm-9000-disk-0,size=8G', ide2='local-lvm:vm-9000-cloudinit,media=cdrom,size=4M',
                   cores=2, memory=2048, agent='1', net0='virtio,bridge=vmbr0', digest='source')
-    value['template_record']['volumes'] = {'scsi0': config['scsi0']}
+    record = value['template_record']
+    value['template_record'] = mod.pve._record_from_config(
+        {'version': 'template', 'target': value['target'], 'vmid': record['vmid'],
+         'artifact_digest': record['artifact_digest']}, config, record['execution_id'])
     return value
 
 

@@ -30,7 +30,7 @@ func TestSelectionAndOperationBoundary(t *testing.T) {
 	if valid.validate() == nil {
 		t.Fatal("unqualified platform accepted")
 	}
-	caps := Capabilities{1, []int{1}, []string{"linux/amd64"}, map[string]map[string]Effects{"k3s": {"snapshot": {Network: true, InfrastructureWrite: true}}}}
+	caps := Capabilities{InterfaceVersion: 1, SchemaVersions: []int{1}, Platforms: []string{"linux/amd64"}, Operations: map[string]map[string]Effects{"k3s": {"snapshot": {Network: true, InfrastructureWrite: true}}}}
 	effect, err := caps.operation("k3s", "snapshot", "linux/amd64")
 	if err != nil || !effect.InfrastructureWrite {
 		t.Fatal("snapshot must advertise remote writes")

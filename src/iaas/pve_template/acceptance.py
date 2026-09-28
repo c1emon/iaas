@@ -122,7 +122,7 @@ class Acceptance:
               and pve._config_uuid(config) == self.record['smbios_uuid']
               and config.get('template') in (1, '1'), 'source_changed')
         if initial:
-            check(pve._disk_slots(config) == self.record['volumes'], 'source_volumes_changed')
+            check(pve.template_identity(config)['disks'] == self.record['volumes'], 'source_volumes_changed')
             check(not config.get('hookscript') and not any(re.fullmatch(r'(hostpci|usb|unused)\d+', key) for key in config),
                   'source_has_unbounded_devices')
             check(not config.get('args'), 'source_has_unbounded_devices')

@@ -20,7 +20,7 @@ from .components import IMPLEMENTATION, run_component
 from .credentials import AWS_FILE_VARIABLES, prepare_file_credentials
 from .dependencies import prepare_dependencies
 from .execution import Execution
-from .operations import capabilities, credential_names, operation_for, process_environment
+from .operations import DIAGNOSE, capabilities, credential_names, operation_for, process_environment
 from .outputs import TaskOutputs
 from .plans import apply_saved_plan, prepare_plan
 from .root import materialize_root
@@ -54,7 +54,11 @@ def main(argv: list[str] | None = None) -> int:
         mapping = json.loads(args.input_map.read_text()) if args.input_map else None
         reader = SourceReader(mapping)
         selected = load_operation(args.environment, args.component, args.operation, args.scenario, reader)
-        mutation = ((args.component == 'opnsense' and args.operation == 'apply')
+        bounded = ((args.component == "pve-template" and args.operation == "accept")
+                   or (args.component == "pve" and args.operation == "snippet-cleanup"))
+        if bounded and selected.options.get("execution_mode") == "observe":
+            effects = DIAGNOSE
+        mutation = (bounded or (args.component == 'opnsense' and args.operation == 'apply')
                     or (args.component in {'pve', 'pve-template'} and args.operation == 'apply')
                     or (args.component == 'image' and args.operation in {'build', 'test', 'clean', 'read'}))
         if mutation:
@@ -68,6 +72,11 @@ def main(argv: list[str] | None = None) -> int:
             require(not args.execution_id, 'execution identity is only supported for apply')
         render_names = rendering_credentials(selected, args.operation)
         allowed = credential_names(args.component, args.operation, render_names)
+        readonly_original = ((bounded and selected.options.get("execution_mode") == "observe")
+                             or (args.component == "pve-template" and args.operation == "read"
+                                 and "original_execution_dir" in selected.files))
+        if readonly_original:
+            allowed = set()
         # Explicit aliases win over host file channels, before the launcher
         # attempts to discover or transfer any stale host paths.
         allowed -= {variable for alias, variable in AWS_FILE_VARIABLES.items() if alias in selected.files}
@@ -90,6 +99,9 @@ def main(argv: list[str] | None = None) -> int:
             protected.append(args.plan)
         outputs = TaskOutputs.create(args.output, IMPLEMENTATION, protected)
         environ = process_environment(args.component, args.operation, os.environ, render_names)
+        if readonly_original:
+            for name in credential_names(args.component, args.operation, render_names):
+                environ.pop(name, None)
         api_insecure = False
         if args.component == "pve" and "api_ca" in selected.files:
             if args.operation in {"plan", "read"}:
@@ -107,6 +119,15 @@ def main(argv: list[str] | None = None) -> int:
             from iaas.image.runtime import run as run_image
             run_image(selected, args.operation, execution, execution_id=args.execution_id,
                       runtime_digest=args.image_digest or None)
+        elif args.component == "pve" and args.operation == "snippet-cleanup":
+            from iaas.pve_snippet_cleanup.runtime import run as run_cleanup
+            run_cleanup(selected, args.operation, args.scope, execution, args.image_digest,
+                        execution_id=args.execution_id)
+        elif args.component == "pve-template" and (args.operation == "accept" or (
+                args.operation == "read" and "original_execution_dir" in selected.files)):
+            from iaas.pve_template.acceptance import run as run_acceptance
+            run_acceptance(selected, args.operation, args.scope, execution, args.image_digest,
+                           execution_id=args.execution_id)
         elif args.component == "pve-template":
             from iaas.pve_template.runtime import run as run_template
             run_template(selected, args.operation, args.scope, execution, args.image_digest,
@@ -164,7 +185,30 @@ def main(argv: list[str] | None = None) -> int:
                 code = phases[-1].get("exit_code") or 2
             retained = any(item.get("retain_storage", False) for item in phases)
             try:
-                execution.outputs.summary({"status": "failed", "phases": phases, "retain_storage": retained})
+                domain_summary = {}
+                if ((args.component == "pve-template" and (args.operation == "accept" or (args.operation == "read"
+                            and "original_execution_dir" in selected.files)))
+                        or (args.component == "pve" and args.operation == "snippet-cleanup")):
+                    # Preserve only public domain outcomes from this new output;
+                    # never forward arbitrary native error or evidence fields.
+                    summary_path = execution.outputs.root / "summary.json"
+                    try:
+                        with summary_path.open() as stream:
+                            prior = json.loads(stream.read(16385))
+                    except (OSError, ValueError):
+                        prior = {}
+                    if isinstance(prior, dict):
+                        overall = prior.get("overall", prior.get("status"))
+                        if overall in ("failed", "unknown"):
+                            domain_summary["overall"] = overall
+                        if prior.get("reason_code") in ("original_evidence_unavailable", "original_result_missing",
+                                                        "original_material_unavailable"):
+                            domain_summary["reason_code"] = prior["reason_code"]
+                        identity = prior.get("execution_id")
+                        if isinstance(identity, str) and re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", identity):
+                            domain_summary["execution_id"] = identity
+                execution.outputs.summary({**domain_summary, "status": "failed", "phases": phases,
+                                           "retain_storage": retained})
             except OSError:
                 retained = True
         # Only literal, value-free diagnostics are safe to surface. Never

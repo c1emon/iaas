@@ -129,8 +129,8 @@ func run(args []string) error {
 
 func validateExecutionID(options Options) error {
 	mutation := (options.Component == "opnsense" && options.Operation == "apply") ||
-		(options.Component == "pve" && options.Operation == "apply") ||
-		(options.Component == "pve-template" && options.Operation == "apply") ||
+		(options.Component == "pve" && (options.Operation == "apply" || options.Operation == "snippet-cleanup")) ||
+		(options.Component == "pve-template" && (options.Operation == "apply" || options.Operation == "accept")) ||
 		(options.Component == "image" && (options.Operation == "build" || options.Operation == "test" || options.Operation == "clean" || options.Operation == "read"))
 	if options.ExecutionID == "" {
 		if mutation {
