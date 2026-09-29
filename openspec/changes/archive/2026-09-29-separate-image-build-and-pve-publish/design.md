@@ -1,6 +1,6 @@
 ## Context
 
-以下背景记录 2026-09-23 设计时的原实现，不描述当前分支或部署状态。两仓实现已合并；最终结果与剩余验收范围见[验证摘要](../../../docs/operations/image-publish-implementation.md)。
+以下背景记录 2026-09-23 设计时的原实现，不描述当前分支或部署状态。两仓实现已合并；最终结果与剩余验收范围见[验证摘要](../../../../docs/operations/image-publish-implementation.md)。
 
 2026-09-23 当前分支 `feat/adapt-pve-ci-lifecycle` 的实际代码已不同于旧 foundation 描述：`automation/packer/proxmox/debian-13/packer.pkr.hcl` 只有变量，没有 builder/build；同目录 `build-template.sh` 已 fail closed。真正的加工在 `iaas-pve-template-worker`：下载并 SHA-512 校验、复制镜像、virt-customize 设置 Debian 软件源/包/时区/locale、virt-sysprep 清理，再 qm create/importdisk/set/template。当前配置验证不等同于来宾启动验收。
 
@@ -111,4 +111,4 @@ image clean直接选择原任务，在同一资源锁内核对进程已停和路
 - [PVE Storage API](https://github.com/proxmox/pve-storage/blob/master/src/PVE/API2/Storage/Status.pm)
 - [PVE download implementation](https://github.com/proxmox/pve-common/blob/master/src/PVE/Tools.pm)
 - [PVE Qemu API](https://github.com/proxmox/qemu-server/blob/master/src/PVE/API2/Qemu.pm)
-- [Existing lifecycle change](../archive/2026-09-23-adapt-pve-ci-lifecycle/design.md)
+- [Existing lifecycle change](../2026-09-23-adapt-pve-ci-lifecycle/design.md)

@@ -52,7 +52,13 @@
     "firmware": "bios"
   },
   "cloud_init": {
-    "hostname": "debian-template"
+    "hostname": "debian-template",
+    "snippet_storage": "local",
+    "ssh": {
+      "host": "pve.example.invalid",
+      "user": "iaas",
+      "port": 22
+    }
   },
   "required_checks": [
     "full_clone",

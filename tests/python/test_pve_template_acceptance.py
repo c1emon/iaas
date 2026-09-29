@@ -36,6 +36,67 @@ def admission(value):
             'pending': {'record_id': 'p-1'}, 'serialization': {'held': True, 'context_id': 'c-1'}}
 
 
+class Snippets:
+    def inspect(self):
+        return {'complete': True, 'local_node': 'pve1', 'nodes': ['pve1'], 'vmids': [],
+                'references': [], 'reference_strategy': 'all_storage_aliases_by_filename'}
+
+    def upload(self, snippet, content):
+        import yaml
+        data = yaml.safe_load(content)
+        assert 'user' not in data and isinstance(data['users'], list)
+
+    def delete(self, snippet):
+        return {'schema_version': 1, 'status': 'deleted', 'reason_code': 'deleted'}
+
+
+def test_template_user_is_preserved_without_deprecated_scalar(tmp_path):
+    import yaml
+    value = request()
+    value['template_record']['configuration']['ciuser'] = 'debian'
+    api = API(value)
+    journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
+    data = yaml.safe_load(mod.acceptance_snippets.user_data(value))
+    assert data['users'] == [{'name': 'debian', 'lock_passwd': True}]
+    assert 'user' not in data
+    result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets()).execute()
+    assert result['overall'] == 'passed'
+    assert api.source['ciuser'] == 'debian'
+    assert journal['snippets'][0]['uploaded'] is True
+    assert journal['snippets'][0]['cleanup']['status'] == 'deleted'
+
+
+@pytest.mark.parametrize('fault', ['upload', 'referenced', 'delete'])
+def test_snippet_failure_never_reports_success(tmp_path, fault):
+    class Broken(Snippets):
+        inspections = 0
+
+        def upload(self, snippet, content):
+            if fault == 'upload':
+                raise TimeoutError('unknown remote outcome')
+
+        def inspect(self):
+            self.inspections += 1
+            snapshot = super().inspect()
+            if fault == 'referenced' and self.inspections > 1:
+                snapshot['references'] = [journal['snippets'][0]['file_name']]
+            return snapshot
+
+        def delete(self, snippet):
+            assert fault != 'referenced'
+            raise TimeoutError('unknown remote outcome')
+
+    value = request()
+    api = API(value)
+    journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
+    result = mod.Acceptance(api, value, journal, tmp_path / 'original', Broken()).execute()
+    assert result['overall'] == 'unknown'
+    assert result['cleanup']['snippets']['status'] == 'unknown'
+    assert any(x['kind'] == 'snippet' for x in result['residuals']['items'])
+    if fault == 'upload':
+        assert not any(p.endswith('/status/start') for _, p, _, _ in api.calls)
+
+
 class API:
     def __init__(self, value, fault=''):
         self.value, self.fault = value, fault
@@ -121,7 +182,7 @@ def execute(tmp_path, fault=''):
     value = request()
     journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
     api = API(value, fault)
-    result = mod.Acceptance(api, value, journal, tmp_path / 'original').execute()
+    result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets()).execute()
     return result, journal, api
 
 
@@ -129,7 +190,7 @@ def test_full_lifecycle_checks_and_cleanup(tmp_path):
     result, journal, api = execute(tmp_path)
     assert result['overall'] == 'passed'
     assert all(item['status'] == 'passed' for item in result['checks'])
-    assert result['cleanup']['snippets']['status'] == 'not_required'
+    assert result['cleanup']['snippets']['status'] == 'passed'
     assert api.clone is None and api.volumes == []
     assert journal['vm_delete']['status'] == 'deleted'
     assert 'local-lvm:vm-9100-cloudinit' in journal['temporary_vm']['volumes']
@@ -157,6 +218,7 @@ def test_runtime_observe_different_output_never_constructs_client(tmp_path, monk
     value = request()
     api = API(value)
     monkeypatch.setattr(mod.pve, '_client', lambda *args: api)
+    monkeypatch.setattr(mod.acceptance_snippets, 'Snippets', lambda *args: Snippets())
     reqfile, admfile = tmp_path / 'request.json', tmp_path / 'admission.json'
     reqfile.write_text(json.dumps(value))
     admfile.write_text(json.dumps(admission(value)))
@@ -188,7 +250,7 @@ def test_guest_timeout_uses_independent_cleanup_budget(tmp_path, monkeypatch):
         return original(method, path, **kwargs)
     api.request = call
     journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
-    result = mod.Acceptance(api, value, journal, tmp_path / 'original').execute()
+    result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets()).execute()
     assert result['overall'] == 'failed'
     assert result['failure_stage'] == 'guest_agent'
     assert result['cleanup']['vm']['status'] == 'passed'
@@ -206,7 +268,7 @@ def test_inherited_cloudinit_volume_is_never_adopted_or_deleted(tmp_path):
         return result
     api.request = call
     journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
-    result = mod.Acceptance(api, value, journal, tmp_path / 'original').execute()
+    result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets()).execute()
     assert result['overall'] == 'unknown'
     assert not any(method == 'DELETE' for method, *_ in api.calls)
     assert not result['residuals']['inventory_complete']
@@ -217,7 +279,7 @@ def test_disk_bound_rejected_before_clone(tmp_path):
     value['temporary_vm']['disk_limit_bytes'] = 1024
     api = API(value)
     journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
-    result = mod.Acceptance(api, value, journal, tmp_path / 'original').execute()
+    result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets()).execute()
     assert result['overall'] == 'failed'
     assert not any(method != 'GET' for method, *_ in api.calls)
 
@@ -233,7 +295,7 @@ def test_cloudinit_residual_is_reported_even_if_system_disk_deleted(tmp_path):
         return result
     api.request = call
     journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
-    result = mod.Acceptance(api, value, journal, tmp_path / 'original').execute()
+    result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets()).execute()
     assert result['overall'] == 'failed'
     assert result['cleanup']['vm']['status'] == 'passed'
     assert [x['identity'] for x in result['residuals']['items']] == ['local-lvm:vm-9100-cloudinit']
@@ -244,6 +306,37 @@ def test_metadata_volumes_count_against_disk_limit(tmp_path):
     value['temporary_vm']['disk_limit_bytes'] = 8 * 1024 ** 3
     api = API(value)
     journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
-    result = mod.Acceptance(api, value, journal, tmp_path / 'original').execute()
+    result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets()).execute()
     assert result['overall'] == 'failed'
     assert not any(method != 'GET' for method, *_ in api.calls)
+
+
+@pytest.mark.parametrize('fault', ['', 'missing', 'duplicate', 'wrong-owner', 'invalid-size', 'over-limit'])
+def test_missing_config_size_requires_exact_storage_evidence(tmp_path, fault):
+    value = request()
+    value['template_record']['configuration']['ide2'] = 'local-lvm:vm-9000-cloudinit,media=cdrom'
+    if fault == 'over-limit':
+        value['temporary_vm']['disk_limit_bytes'] = 8 * 1024 ** 3
+    api = API(value)
+    original = api.request
+
+    def call(method, path, **kwargs):
+        result = original(method, path, **kwargs)
+        if path.endswith('/content'):
+            source = {'volid': 'local-lvm:vm-9000-cloudinit', 'vmid': 9000, 'size': 4 * 1024 ** 2}
+            if fault == 'wrong-owner':
+                source['vmid'] = 9001
+            if fault == 'invalid-size':
+                source['size'] = True
+            result = [] if fault == 'missing' else [source] * (2 if fault == 'duplicate' else 1)
+            result += [{'volid': vol, 'vmid': 9100, 'size': 4 * 1024 ** 2} for vol in api.volumes]
+        if method == 'GET' and path.endswith('/9100/config'):
+            result['ide2'] = 'local-lvm:vm-9100-cloudinit,media=cdrom'
+        return result
+
+    api.request = call
+    journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
+    result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets()).execute()
+    assert result['overall'] == ('failed' if fault else 'passed')
+    if fault:
+        assert not any(method != 'GET' for method, *_ in api.calls)

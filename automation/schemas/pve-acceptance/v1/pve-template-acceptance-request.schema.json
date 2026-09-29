@@ -24,6 +24,14 @@
     "CloudInit": {
       "additionalProperties": false,
       "properties": {
+        "snippet_storage": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Snippet Storage",
+          "type": "string"
+        },
+        "ssh": {
+          "$ref": "#/$defs/SSHConnection"
+        },
         "hostname": {
           "pattern": "^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$",
           "title": "Hostname",
@@ -31,9 +39,43 @@
         }
       },
       "required": [
+        "snippet_storage",
+        "ssh",
         "hostname"
       ],
       "title": "CloudInit",
+      "type": "object"
+    },
+    "SSHConnection": {
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "maxLength": 253,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9:][A-Za-z0-9.:-]*$",
+          "title": "Host",
+          "type": "string"
+        },
+        "user": {
+          "maxLength": 32,
+          "minLength": 1,
+          "pattern": "^[a-z_][a-z0-9_-]*$",
+          "title": "User",
+          "type": "string"
+        },
+        "port": {
+          "maximum": 65535,
+          "minimum": 1,
+          "title": "Port",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "host",
+        "user",
+        "port"
+      ],
+      "title": "SSHConnection",
       "type": "object"
     },
     "Target": {

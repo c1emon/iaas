@@ -12,6 +12,25 @@ ROOT = Path(__file__).resolve().parents[2]
 WRAPPER = ROOT / "automation" / "pve-node" / "bin" / "iaas-pve-snippet-upload"
 
 
+def test_create_only_never_overwrites_existing_file_or_symlink(tmp_path):
+    filename = 'accept-9005-user-data.yml'
+    target = tmp_path / 'snippets' / filename
+    target.parent.mkdir()
+    fake = make_fake_pvesm(tmp_path, target)
+    env = os.environ | {'IAAS_PVE_SNIPPET_UPLOAD_PVESM': str(fake), 'FAKE_PVESM_TARGET': str(target)}
+    args = ['bash', str(WRAPPER), '--create-only', '--storage', 'local', '--filename', filename]
+    created = subprocess.run(args, input='#cloud-config\nusers: [default]\n', text=True, capture_output=True, env=env)
+    assert created.returncode == 0
+    original = target.read_bytes()
+    assert subprocess.run(args, input='replacement', text=True, capture_output=True, env=env).returncode != 0
+    assert target.read_bytes() == original
+    target.unlink()
+    victim = tmp_path / 'victim'
+    target.symlink_to(victim)
+    assert subprocess.run(args, input='replacement', text=True, capture_output=True, env=env).returncode != 0
+    assert not victim.exists()
+
+
 def make_fake_pvesm(tmp_path: Path, target_path: Path) -> Path:
     script = tmp_path / "pvesm"
     script.write_text(

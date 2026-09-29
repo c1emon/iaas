@@ -85,7 +85,29 @@ class TemporaryVM(Contract):
     firmware: Literal['bios', 'uefi']
 
 
+class SSHConnection(Contract):
+    host: Annotated[str, Field(min_length=1, max_length=253, pattern=r'^[A-Za-z0-9:][A-Za-z0-9.:-]*$')]
+    user: Annotated[str, Field(min_length=1, max_length=32, pattern=r'^[a-z_][a-z0-9_-]*$')]
+    port: Annotated[int, Field(ge=1, le=65535)]
+
+    @model_validator(mode='after')
+    def fixed_connection(self):
+        if self.user == 'root':
+            raise ValueError('snippet helper requires an unprivileged SSH account')
+        try:
+            ip_address(self.host)
+        except ValueError:
+            if ':' in self.host or all(c in '0123456789.' for c in self.host):
+                raise ValueError('SSH host must be a DNS name or IP address') from None
+            labels = self.host.rstrip('.').split('.')
+            if any(re.fullmatch(r'[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?', label) is None for label in labels):
+                raise ValueError('SSH host must be a DNS name or IP address') from None
+        return self
+
+
 class CloudInit(Contract):
+    snippet_storage: Identifier
+    ssh: SSHConnection
     hostname: Annotated[str, Field(pattern=r'^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$')]
 
 
@@ -211,26 +233,6 @@ class Snippet(Contract):
     def exact_identity(self):
         if self.file_id != f'{self.storage}:snippets/{self.file_name}':
             raise ValueError('snippet identity conflicts')
-        return self
-
-
-class SSHConnection(Contract):
-    host: Annotated[str, Field(min_length=1, max_length=253, pattern=r'^[A-Za-z0-9:][A-Za-z0-9.:-]*$')]
-    user: Annotated[str, Field(min_length=1, max_length=32, pattern=r'^[a-z_][a-z0-9_-]*$')]
-    port: Annotated[int, Field(ge=1, le=65535)]
-
-    @model_validator(mode='after')
-    def fixed_connection(self):
-        if self.user == 'root':
-            raise ValueError('snippet helper requires an unprivileged SSH account')
-        try:
-            ip_address(self.host)
-        except ValueError:
-            if ':' in self.host or all(c in '0123456789.' for c in self.host):
-                raise ValueError('SSH host must be a DNS name or IP address') from None
-            labels = self.host.rstrip('.').split('.')
-            if any(re.fullmatch(r'[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?', label) is None for label in labels):
-                raise ValueError('SSH host must be a DNS name or IP address') from None
         return self
 
 

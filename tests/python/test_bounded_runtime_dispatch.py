@@ -102,7 +102,7 @@ def test_bounded_dispatch_to_dedicated_entrypoint(tmp_path, monkeypatch, compone
 
 
 def test_actual_acceptance_entrypoint_roundtrip_and_collection_failure(tmp_path, monkeypatch):
-    from test_pve_template_acceptance import API, DIGEST, admission, request
+    from test_pve_template_acceptance import API, DIGEST, Snippets, admission, request
     from iaas.pve_template import acceptance
 
     value = request()
@@ -116,6 +116,7 @@ def test_actual_acceptance_entrypoint_roundtrip_and_collection_failure(tmp_path,
                          'options': {'execution_mode': 'start'}}}}))
     api = API(value)
     monkeypatch.setattr(acceptance.pve, '_client', lambda *args: api)
+    monkeypatch.setattr(acceptance.acceptance_snippets, 'Snippets', lambda *args: Snippets())
     args = ['--environment', str(entry), '--component', 'pve-template', '--operation', 'accept',
             '--scope', 'pve1', '--image-digest', DIGEST, '--execution-id', 'accept-001']
     started = tmp_path / 'start'

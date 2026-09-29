@@ -1,7 +1,8 @@
 # PVE acceptance and snippet cleanup v1
 
 Current source implementation adds `pve-template accept` and `pve snippet-cleanup`.
-It has not been published as a runtime release or qualified on a live PVE node.
+It has not been published as a runtime release. Scoped live validation of the
+source path is separate from qualification of a release image.
 Launcher interface remains v1; capabilities advertise acceptance request/result v1
 and snippet cleanup request/result v1. Existing publication record/result versions
 remain v2. Consumers must check advertised capabilities before invoking an image.
@@ -59,9 +60,15 @@ The fixed guest checks use agent ping, `cloud-init status --format json`, and
 agent hostname. Cloud-init must report enabled, completed, nondegraded execution
 without errors; missing tools/output, unchanged hostname, failures and deadlines
 do not pass. Raw output and hostname remain in protected execution materials.
-PVE-generated cloud-init supplies the hostname; inherited `cicustom` is detached,
-not deleted. This implementation creates no dedicated snippets, so acceptance
-snippet cleanup is `not_required`.
+The runtime generates an execution-owned user-data snippet with the injected
+hostname and a `users` list preserving the template `ciuser` (or the image default).
+Passwords are locked and package updates are disabled for this bounded technical
+check. The request binds `cloud_init.snippet_storage` and `cloud_init.ssh`; start
+requires isolated `files.ssh_key` and `files.known_hosts`. The upload helper must
+support `--create-only`; an existing file is never overwritten. Inherited
+`cicustom` is detached, not deleted. After confirmed VM deletion, the restricted
+cleanup helper checks complete cluster references and the exact snippet digest.
+Unknown upload/deletion outcomes retain evidence and fail closed.
 
 Cleanup has a separate budget and runs after check failure/timeouts. It verifies
 ownership and native task inactivity, stops/deletes only the clone, checks exact
@@ -94,8 +101,8 @@ result. The authoritative native plan identity is its digest; `plan_id` is the
 caller's correlation label. Acceptance origin consumes the original acceptance
 request/journal, exact snippet records and confirmed VM delete UPID, without a
 plan or state backend. Insufficient original records are refused rather than
-reconstructed. The current acceptance path creates no snippets; the evidence
-branch is exercised by synthetic recorded-snippet fixtures.
+reconstructed. Acceptance journals retain the generated snippet record, upload confirmation
+and cleanup result for this evidence branch.
 
 A first cleanup sets `retry_of` and `retry_materials` to null. A retry uses a new
 execution/admission and the previous request/journal/available result, proving
@@ -123,3 +130,9 @@ fixtures, current deployment producer materials, and launcher local/DinD transpo
 fixtures. No live PVE, shared storage, actual DinD daemon, release or deployment is
 implied. A real acceptance needs separately fixed node/VMID/storage and a bounded
 creation/deletion authorization window.
+
+The VM module assigns a fresh SMBIOS UUID at creation and ignores subsequent
+UUID expression changes. The UUID is retained in native state, creation results
+and deletion plans; missing historical UUID evidence is still refused. Deployment
+targets are cluster-scoped: node binding comes from the matching plan and snapshot
+VM records, rather than a nonexistent target.node field.

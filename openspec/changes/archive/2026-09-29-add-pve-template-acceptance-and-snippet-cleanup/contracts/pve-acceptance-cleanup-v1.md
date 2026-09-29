@@ -1,6 +1,6 @@
 # PVE acceptance / snippet cleanup v1 设计合同
 
-状态：已实现于当前源码。稳定入口见 [交付合同](../../../../docs/contracts/pve-acceptance-cleanup-v1.md)，字段和状态以该文档链接的 JSON schema 与共享 fixtures 为准。本文件保留设计语义；不代表 runtime 已发布或真实 PVE 验收完成。
+状态：已实现于当前源码。稳定入口见 [交付合同](../../../../../docs/contracts/pve-acceptance-cleanup-v1.md)，字段和状态以该文档链接的 JSON schema 与共享 fixtures 为准。本文件保留设计语义；限定现场验收已完成，见 [validation](../validation.md)，不代表 runtime 镜像已发布。
 
 ## 通用规则
 
@@ -111,3 +111,9 @@ acceptance 分支仅用于原验收 VM 已确认删除后剩余的专属 snippet
 | 验收遗留 snippet | 临时 VM 删除已确认后可用 acceptance 证据分支单独清理，无需 plan/state；原 VM 身份/授权不符或删除未知则拒绝，不产生 clone/VM delete/state 调用。 |
 
 版本说明同时列出新 kind/version、两个入口、helper 最小版本和安装/权限变化。launcher 接口仍使用当前 v1，旧 runtime 不广告新能力并应拒绝未知操作；不建设历史数据迁移或兼容矩阵。
+
+### 现场修正：验收 cloud-init 与原生 VM 身份
+
+验收请求的 `cloud_init` 固定 `hostname`、`snippet_storage` 和 `ssh.host/user/port`。运行时生成专属 user-data，以 `users` 列表保留模板声明的用户；不采用 PVE 原生标量 `user`，不放宽 degraded 判定。上传使用 create-only，原 journal 保存文件摘要与上传状态；VM 删除确认后经完整引用检查和精确 helper 清理。未知上传不重试写入、不猜测归属。
+
+普通 VM 模块在创建时设置 UUID，并在同一资源后续计划中保留该值。创建结果、原 state 和删除计划使用该 UUID 关联；部署 target 是集群级，节点由 VM 原生记录绑定。历史材料缺 UUID 时仍拒绝清理。

@@ -20,7 +20,8 @@ FIXTURE = Path(__file__).resolve().parents[2] / 'docs/examples/pve-acceptance/cl
 def producer_materials(tmp_path):
     request = json.loads(FIXTURE.read_text())
     vm = request['original_vm']
-    target = {**request['target'], 'root_id': 'root1', 'storage_id': 'local', 'ssh_host': 'pve.example.invalid', 'ssh_user': 'iaas'}
+    target = {'api_endpoint': request['target']['api_endpoint'], 'insecure': False,
+              'storage_id': 'local', 'ssh_host': 'pve.example.invalid', 'ssh_port': 22, 'ssh_user': 'iaas'}
     backend = S3Backend({'bucket': 'state', 'key': 'vm.tfstate', 'region': 'local',
                          'endpoint': 'https://state.example.invalid', 'use_lockfile': True,
                          'use_path_style': True}, 'default')
@@ -79,6 +80,21 @@ def write_materials(tmp_path, request, documents):
 def test_real_producer_shapes_bind_original_deployment(tmp_path):
     request, docs = producer_materials(tmp_path)
     validate_original(write_materials(tmp_path, request, docs), tmp_path)
+
+
+@pytest.mark.parametrize('fault', ['missing_upload_uuid', 'missing_delete_uuid', 'wrong_node', 'insecure'])
+def test_cluster_target_still_requires_exact_vm_identity(tmp_path, fault):
+    request, docs = producer_materials(tmp_path)
+    if fault == 'missing_upload_uuid':
+        docs['uploaded']['expectations'][0]['native_identity'] = []
+    elif fault == 'missing_delete_uuid':
+        docs['metadata']['changes'][0]['change']['before']['smbios'] = []
+    elif fault == 'wrong_node':
+        docs['uploaded']['expectations'][0]['node'] = 'other'
+    else:
+        docs['uploaded']['target']['insecure'] = True
+    with pytest.raises(ValueError):
+        validate_original(write_materials(tmp_path, request, docs), tmp_path)
 
 
 @pytest.mark.parametrize('conflict', ['delete_target', 'admission_target', 'backend', 'state', 'manifest_digest',

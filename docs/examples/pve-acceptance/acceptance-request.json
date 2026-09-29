@@ -52,7 +52,13 @@
     "firmware": "bios"
   },
   "cloud_init": {
-    "hostname": "accept-001"
+    "hostname": "accept-001",
+    "snippet_storage": "local",
+    "ssh": {
+      "host": "pve.example.invalid",
+      "user": "iaas",
+      "port": 22
+    }
   },
   "required_checks": [
     "full_clone",

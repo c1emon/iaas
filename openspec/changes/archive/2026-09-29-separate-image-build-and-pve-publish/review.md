@@ -2,11 +2,11 @@
 
 ## Scope and status
 
-这是 2026-09-23 的设计复核记录。两仓实现已合并，原实施分支已清理；现场结果和剩余验收范围见[验证摘要](../../../docs/operations/image-publish-implementation.md)。
+这是 2026-09-23 的设计复核记录。两仓实现已合并，原实施分支已清理；现场结果和剩余验收范围见[验证摘要](../../../../docs/operations/image-publish-implementation.md)。
 
 设计阶段修正了六项过度门禁；本节以下描述的是当时的设计决议，不代表当前部署状态。
 
-对应 [infra-ops review](../../../../infra-ops/openspec/changes/integrate-image-build-and-pve-publish/review.md)。权威字段为 [contract](contracts/image-publish-v1.md)，设计选择为 [design](design.md)，未来执行与验收为 [tasks](tasks.md)。
+对应 [infra-ops review](../../../../../infra-ops/openspec/changes/integrate-image-build-and-pve-publish/review.md)。权威字段为 [contract](contracts/image-publish-v1.md)，设计选择为 [design](design.md)，未来执行与验收为 [tasks](tasks.md)。
 
 ## Independent reviews and resolutions
 

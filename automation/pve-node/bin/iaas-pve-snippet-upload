@@ -8,7 +8,7 @@ readonly RM='/bin/rm'
 readonly MKTEMP='/usr/bin/mktemp'
 
 usage() {
-  printf 'usage: %s [--verify --sha256 SHA256] --storage STORAGE --filename PREFIX-N-{user-data,network-config}.yml\n' "$0" >&2
+  printf 'usage: %s [--create-only | --verify --sha256 SHA256] --storage STORAGE --filename PREFIX-N-{user-data,network-config}.yml\n' "$0" >&2
 }
 
 die() {
@@ -21,6 +21,7 @@ die() {
 storage_id=''
 filename=''
 verify='false'
+create_only='false'
 expected_sha256=''
 
 while [[ $# -gt 0 ]]; do
@@ -32,6 +33,10 @@ while [[ $# -gt 0 ]]; do
     --filename)
       filename=${2-}
       shift 2
+      ;;
+    --create-only)
+      create_only='true'
+      shift
       ;;
     --verify)
       verify='true'
@@ -57,6 +62,8 @@ done
 [[ ${storage_id} =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die 'storage id must use conservative characters only'
 [[ ${filename} =~ ^[A-Za-z0-9][A-Za-z0-9._-]*-[0-9]+-(user-data|network-config)\.yml$ ]] || die 'filename must match PREFIX-N-{user-data,network-config}.yml with a conservative prefix'
 [[ ${filename} != *'/'* ]] || die 'filename must not contain path separators'
+
+[[ ${verify} != 'true' || ${create_only} != 'true' ]] || die '--create-only and --verify are mutually exclusive'
 
 if [[ ${verify} == 'true' ]]; then
   [[ -n ${expected_sha256} ]] || die 'sha256 is required for verify'
@@ -154,4 +161,20 @@ fi
 # Snippets may live on shared NFS storage with root-squash enabled. Do not force
 # root ownership here; let the storage backend assign the owner while this
 # wrapper constrains the destination path and mode.
-${INSTALL} -m "${install_mode}" "${tmp_file}" "${target_path}"
+if [[ ${create_only} == 'true' ]]; then
+  python3 - "${tmp_file}" "${target_path}" "${install_mode}" <<'PYTHON'
+import os
+import pathlib
+import sys
+
+payload = pathlib.Path(sys.argv[1]).read_bytes()
+# Exclusive creation refuses existing files and symlinks, including dangling ones.
+fd = os.open(sys.argv[2], os.O_WRONLY | os.O_CREAT | os.O_EXCL, int(sys.argv[3], 8))
+with os.fdopen(fd, 'wb') as output:
+    output.write(payload)
+    output.flush()
+    os.fsync(output.fileno())
+PYTHON
+else
+  ${INSTALL} -m "${install_mode}" "${tmp_file}" "${target_path}"
+fi

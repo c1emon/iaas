@@ -14,6 +14,7 @@ from iaas.pve_acceptance_contracts import canonical_digest, load_strict_json, va
 from iaas.runtime_execution.execution import OperationFailed
 from . import runtime as pve
 from .acceptance_execution import begin, observe, save
+from . import acceptance_snippets
 
 CHECKS = ('full_clone', 'disk_boot', 'guest_agent', 'cloud_init', 'injected_hostname', 'source_unchanged')
 
@@ -43,7 +44,7 @@ def attachments(config: dict[str, Any]) -> dict[str, str]:
 
 
 class Acceptance:
-    def __init__(self, client: Any, request: dict[str, Any], journal: dict[str, Any], root: Path) -> None:
+    def __init__(self, client: Any, request: dict[str, Any], journal: dict[str, Any], root: Path, snippets: Any = None) -> None:
         self.client, self.request, self.journal, self.root = client, request, journal, root
         self.temporary = request['temporary_vm']
         self.record = request['template_record']
@@ -55,6 +56,48 @@ class Acceptance:
         self.owned: dict[str, Any] | None = None
         self.remaining_volumes: list[str] | None = None
         self.result: dict[str, Any] = {}
+        self.snippets = snippets
+
+    def upload_user_data(self) -> dict:
+        check(self.snippets is not None, 'snippet_transport_missing')
+        snapshot = self.snippets.inspect()
+        check(snapshot.get('complete') is True and snapshot.get('local_node') == self.temporary['node'],
+              'snippet_scope_unconfirmed')
+        content = acceptance_snippets.user_data(self.request)
+        snippet = acceptance_snippets.record(self.request, content)
+        self.journal['snippets'] = [snippet]
+        self.journal['mutation_active'] = True
+        self.persist()
+        self.snippets.deadline = self.deadline
+        self.snippets.upload(snippet, content)
+        snippet['uploaded'] = True
+        self.journal['mutation_active'] = False
+        self.persist()
+        return snippet
+
+    def cleanup_snippets(self) -> None:
+        records = self.journal.get('snippets', [])
+        if not records:
+            return
+        check(not self.journal['mutation_active'] and all(s['uploaded'] for s in records)
+              and self.result['cleanup']['vm']['status'] == 'passed', 'snippet_ownership_unconfirmed')
+        self.snippets.deadline = self.deadline
+        snapshot = self.snippets.inspect()
+        check(snapshot.get('complete') is True and snapshot.get('local_node') == self.temporary['node']
+              and snapshot.get('reference_strategy') == 'all_storage_aliases_by_filename'
+              and isinstance(snapshot.get('vmids'), list) and isinstance(snapshot.get('references'), list)
+              and self.temporary['vmid'] not in snapshot['vmids'], 'snippet_scope_unconfirmed')
+        self.snippets.original_vmid = self.temporary['vmid']
+        for snippet in records:
+            check(snippet['file_name'] not in snapshot['references'], 'snippet_still_referenced')
+            self.journal['mutation_active'] = True
+            self.persist()
+            answer = self.snippets.delete(snippet)
+            self.journal['mutation_active'] = False
+            snippet['cleanup'] = answer
+            self.persist()
+            check(answer.get('status') in {'deleted', 'already_absent'}, 'snippet_cleanup_failed')
+        self.result['cleanup']['snippets'] = {'status': 'passed', 'reason_code': 'deleted', 'evidence_ref': 'journal.json'}
 
     def persist(self) -> None:
         save(self.root / 'journal.json', self.journal)
@@ -143,12 +186,21 @@ class Acceptance:
 
     def disk_bound(self, config: dict[str, Any]) -> None:
         total = 0
-        for slot in attachments(config):
+        for slot, volume in attachments(config).items():
             value = str(config[slot])
             match = re.search(r'(?:^|,)size=(\d+(?:\.\d+)?)([KMGT]?)B?(?:,|$)', value)
-            check(match is not None, 'disk_size_unknown')
-            assert match is not None
-            total += int(float(match[1]) * 1024 ** (' KMGT'.index(match[2]) if match[2] else 0))
+            if match is not None:
+                total += int(float(match[1]) * 1024 ** (' KMGT'.index(match[2]) if match[2] else 0))
+                continue
+            # PVE can omit size from generated cloud-init disk configuration.
+            owner = self.record if config.get('template') in (1, '1') else self.temporary
+            storage = volume.split(':', 1)[0]
+            rows = self.api('GET', f"/api2/json/nodes/{quote(owner['node'], safe='')}/storage/{quote(storage, safe='')}/content")
+            check(isinstance(rows, list) and all(isinstance(row, dict) for row in rows), 'disk_size_unknown')
+            matches = [row for row in rows if row.get('volid') == volume]
+            check(len(matches) == 1 and str(matches[0].get('vmid')) == str(owner['vmid'])
+                  and type(matches[0].get('size')) is int and matches[0]['size'] > 0, 'disk_size_unknown')
+            total += matches[0]['size']
         check(0 < total <= self.temporary['disk_limit_bytes'], 'disk_limit_exceeded')
 
     def claim(self) -> dict[str, Any]:
@@ -175,14 +227,16 @@ class Acceptance:
 
     def configure(self, config: dict[str, Any]) -> None:
         vm = self.temporary
+        snippet = self.upload_user_data()
         fields = {'name': self.request['cloud_init']['hostname'], 'cores': vm['cpus'], 'sockets': 1,
                   'memory': vm['memory_mib'], 'agent': 'enabled=1', 'onboot': 0,
                   'boot': 'order=' + vm['boot'], 'net0': f"virtio,bridge={vm['bridge']}",
-                  'ipconfig0': vm['ip_config'], 'digest': config.get('digest', '')}
+                  'ipconfig0': vm['ip_config'], 'digest': config.get('digest', ''),
+                  'cicustom': 'user=' + snippet['file_id']}
         if vm['vlan_tag'] is not None:
             fields['net0'] += f",tag={vm['vlan_tag']}"
         delete = [key for key in config if (re.fullmatch(r'(net|ipconfig)\d+', key) and key not in {'net0', 'ipconfig0'})
-                  or key in {'cicustom', 'nameserver', 'searchdomain', 'cipassword', 'sshkeys'}]
+                  or key in {'nameserver', 'searchdomain', 'cipassword', 'sshkeys'}]
         if delete:
             fields['delete'] = ','.join(sorted(delete))
         self.mutation('configure', 'PUT', self.base + '/config', fields=fields, task=False)
@@ -198,7 +252,7 @@ class Acceptance:
               and f"bridge={vm['bridge']}" in str(actual.get('net0', '')).split(',')
               and (vm['vlan_tag'] is None or f"tag={vm['vlan_tag']}" in str(actual.get('net0', '')).split(','))
               and not any(re.fullmatch(r'(net|ipconfig)\d+', key) and key not in {'net0', 'ipconfig0'} for key in actual)
-              and not actual.get('cicustom')
+              and actual.get('cicustom') == 'user=' + snippet['file_id']
               and any('cloudinit' in str(value) for value in actual.values()), 'disk_boot_mismatch')
 
     def identity(self, config: Any) -> None:
@@ -332,9 +386,16 @@ class Acceptance:
                 resources = self.resources()
                 self.result['residuals'] = {'inventory_complete': self.owned is not None,
                     'items': [{**resource, 'existence': 'present' if self.remaining_volumes is not None else 'unknown', 'reason_code': 'cleanup_incomplete'}
-                              for resource in resources
+                              for resource in resources if resource['kind'] != 'snippet'
                               if self.result['cleanup']['vm' if resource['kind'] == 'vm' else 'volumes']['status'] != 'passed'
                               and (self.remaining_volumes is None or resource['identity'] in self.remaining_volumes)]}
+            try:
+                self.cleanup_snippets()
+            except Exception:
+                self.result['cleanup']['snippets'] = {'status': 'unknown', 'reason_code': 'cleanup_incomplete', 'evidence_ref': 'journal.json'}
+                self.result['residuals']['items'].extend(
+                    {**resource, 'existence': 'unknown', 'reason_code': 'cleanup_incomplete'}
+                    for resource in self.resources() if resource['kind'] == 'snippet')
             try:
                 self.source_check(initial=False)
                 self.mark('source_unchanged', 'passed', 'verified')
@@ -352,7 +413,9 @@ class Acceptance:
         common = {'node': self.temporary['node'], 'created_by': self.journal['execution_id'],
                   'ownership': 'owned' if self.owned else 'unknown'}
         return [{**common, 'kind': 'vm', 'identity': str(self.temporary['vmid'])}] + [
-            {**common, 'kind': 'volume', 'identity': volume} for volume in (self.owned or {}).get('volumes', [])]
+            {**common, 'kind': 'volume', 'identity': volume} for volume in (self.owned or {}).get('volumes', [])] + [
+            {**common, 'kind': 'snippet', 'identity': s['file_id'],
+             'ownership': 'owned' if s['uploaded'] else 'unknown'} for s in self.journal.get('snippets', [])]
 
 
 def run(selected: Any, operation: str, scope: str, execution: Any, image_digest: str, execution_id: str = '') -> None:
@@ -400,7 +463,8 @@ def run(selected: Any, operation: str, scope: str, execution: Any, image_digest:
         if ca_file:
             # Publisher client loads the caller CA; retain the system roots too.
             client.context.load_default_certs()
-        result = Acceptance(client, request, journal, root).execute()
+        snippets = acceptance_snippets.Snippets(selected, execution, request['timeouts']['work_seconds'], request['cloud_init']['ssh'])
+        result = Acceptance(client, request, journal, root, snippets).execute()
         journal.update(status='finished', result_digest=canonical_digest(result))
         save(root / 'journal.json', journal)
     save(root / 'result.json', result)

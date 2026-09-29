@@ -42,16 +42,17 @@ Help and results SHALL distinguish offline checks, generation, dependency prepar
 #### Scenario: Request an unsupported operation or missing target
 - **WHEN** a component has no supported requested operation or an online operation lacks its explicit target/scope
 - **THEN** the launcher SHALL fail without executing an alternative or selecting all devices
-- **AND** Ansible check mode, device validation and OpenTofu plans SHALL NOT be reported as equivalent guarantees
+- **AND** Ansible check mode, device validation, Packer configuration validation and OpenTofu native plans SHALL NOT be reported as equivalent guarantees
 
 #### Scenario: Expose the first-release component operations
 - **WHEN** the launcher publishes supported component operations
 - **THEN** it SHALL retain selected-input offline checks/generation, OPNsense diagnostics and read/plan/apply/verify, switch readonly facts, services/foundation checks/generation, foundation health and existing K3s operations
 - **AND** PVE SHALL expose preflight/health, explicit dependency preparation and read/plan/apply/verify, with apply exclusively consuming a selected native plan
-- **AND** pve-template SHALL expose independent check/read/plan/apply/verify for build and explicit cleanup previews, without requiring VM declarations or S3
+- **AND** image SHALL expose passive check/read/verify and direct local build/test/clean, independent of PVE targets, state and mandatory preview/apply
+- **AND** pve-template SHALL expose check/read/plan/apply/verify with publish, cleanup or retire previews, without requiring VM declarations, OpenTofu state or image construction
 - **AND** PVE configuration verify SHALL be read-only without implicit backend initialization, while PVE state observations SHALL declare state access
 - **AND** native PVE planning SHALL disclose backend locking and explicitly admitted empty-state initialization separately from read-only observation and VM mutation
-- **AND** snapshot and template build/cleanup apply SHALL be classified as remote writes
+- **AND** image build/test/clean SHALL disclose their local guest/file/network effects, while snapshot and template publish/cleanup/retire apply SHALL disclose remote writes
 - **AND** help and representative dispatch tests SHALL reflect supported operations without arbitrary command passthrough
 
 #### Scenario: OPNsense online plan is not a native state plan
@@ -108,9 +109,9 @@ The launcher SHALL isolate task-owned resources, propagate available execution f
 - **AND** cleanup SHALL NOT affect another task or shared state
 
 #### Scenario: Controller is lost while a remote task may continue
-- **WHEN** termination prevents final local reporting or disconnects a remote template worker
+- **WHEN** termination prevents final local reporting or disconnects observation of a native PVE API task
 - **THEN** absence of a final result SHALL NOT imply remote stop or success
-- **AND** callers SHALL be able to query available retained evidence using the original execution identity
+- **AND** callers SHALL be able to query retained journal, task and object evidence using the original execution association
 - **AND** the launcher SHALL NOT promise delivery from a terminated controller or automatically replay remote work
 
 #### Scenario: Recovery or result collection fails
@@ -134,12 +135,13 @@ Outputs SHALL distinguish non-sensitive generated configuration, diagnostics, se
 - **AND** sensitive plans, state and temporary data SHALL NOT be included in ordinary generated exports or automatically committed
 
 ### Requirement: Versioned PVE execution identity and entrypoint cutover
-The launcher SHALL discover and enforce PVE plan/result and template helper compatibility, bind each mutation to an explicit execution identity, and reject obsolete execution paths rather than bypass new admission.
+The launcher SHALL enforce exact supported runtime, native plan/result and new template request/preview/record schemas, bind each mutation to an explicit execution identity, and reject obsolete execution paths without translation or helper write fallback.
 
 #### Scenario: Invoke PVE lifecycle with matching contracts
-- **WHEN** a caller provides a supported runtime/helper and fresh mutation execution ID
-- **THEN** discovery, selected inputs and retained results SHALL associate that same execution with its exact reviewed plan or preview
-- **AND** local Docker and DinD SHALL preserve identical associations, permissions and credential requirements
+- **WHEN** a caller provides a supported runtime and schema with a fresh mutation execution ID
+- **THEN** discovery, selected inputs and retained results SHALL associate that same execution with its exact reviewed native plan or publication/recovery preview
+- **AND** supported execution topologies SHALL preserve identical associations, permissions and credential requirements; unsupported capabilities SHALL fail explicitly
+- **AND** publication SHALL require neither a retired template worker protocol nor a new space-probe helper, and independent VM snippet-helper requirements SHALL remain separate
 
 #### Scenario: Admit a caller-reserved mutation
 - **WHEN** a VM or template mutation is submitted
@@ -149,9 +151,9 @@ The launcher SHALL discover and enforce PVE plan/result and template helper comp
 - **AND** persistent one-time consumption and prevention of replay across runners SHALL remain caller responsibilities, without a second IaaS deployment ledger
 
 #### Scenario: Invoke a legacy or incompatible write entrypoint
-- **WHEN** a caller requests prepare-plan/apply-saved-plan, an old helper protocol or a repository legacy direct-write path lacking the new contract
-- **THEN** it SHALL fail with migration guidance or delegate exclusively to the new contract with all required explicit inputs
-- **AND** it SHALL NOT silently translate old saved artifacts, inject missing approvals or fall back to force replacement
+- **WHEN** a caller requests prepare-plan/apply-saved-plan, combined node template build, an old helper protocol or a repository legacy direct-write path lacking the new contract
+- **THEN** it SHALL fail with migration guidance and require a new request and plan through the supported capability
+- **AND** it SHALL NOT delegate to a legacy alias, translate saved artifacts or records, inject missing approvals, fall back to force replacement or invoke node CLI writes
 
 ### Requirement: Caller-owned private CA input for PVE VM operations
 The launcher SHALL accept optional `files.api_ca` for PVE VM online operations through its existing selected-file transport contract. The CA SHALL remain caller-owned and SHALL NOT require embedding site certificates in the generic runtime image.
@@ -169,3 +171,57 @@ The launcher SHALL accept optional `files.api_ca` for PVE VM online operations t
 - **WHEN** a caller selects apply or verify with a saved plan that includes private CA material
 - **THEN** the launcher SHALL transfer and retain that material with the selected companions in both local Docker and DinD modes
 - **AND** it SHALL NOT require the original caller CA path or substitute the current environment's `files.api_ca`
+
+### Requirement: Separate image executor and template publisher capabilities
+The launcher SHALL dispatch image and pve-template through the common component interface while preserving distinct operation sets, effects and credential requirements rather than forcing local image work into deployment plan/apply.
+
+#### Scenario: Select a build runtime
+- **WHEN** image build or test runs
+- **THEN** the launcher SHALL select the pinned image-builder runtime with explicit KVM device/work mounts and resources
+- **AND** it SHALL NOT expose broad privileged mode, host Docker socket or unrelated PVE/state/bootstrap credentials
+- **AND** unsupported execution topology SHALL fail without hidden emulation or host modifications
+
+#### Scenario: Use passive checks or PVE publication
+- **WHEN** image check/read/verify or pve-template operations run
+- **THEN** they SHALL NOT acquire unnecessary build virtualization permissions
+- **AND** PVE publication SHALL only receive its artifact access and API/trust credentials, without node SSH or a space-probe helper
+- **AND** check/read/verify and PVE plan SHALL NOT start guests, and PVE publication/cleanup/retire mutations SHALL require apply with exact preview association
+
+#### Scenario: Clean local image resources
+- **WHEN** image clean selects a stopped task and its resource record
+- **THEN** the launcher SHALL dispatch direct local cleanup under the original task lock without a plan/apply workflow or deployment admission
+- **AND** only task-owned local resources SHALL be eligible and the cleanup attempt SHALL be recorded
+
+#### Scenario: Switch contracts directly
+- **WHEN** a caller supplies legacy combined template build inputs or an unsupported schema/runtime
+- **THEN** dispatch SHALL reject with migration guidance without translating inputs, parsing old records or invoking old helpers
+- **AND** new outputs, help, generation and VM consumers SHALL use the new contract directly
+
+### Requirement: Bounded PVE acceptance and snippet cleanup entrypoints
+The shared launcher SHALL expose fixed-request template acceptance and standalone VM snippet cleanup with current versioned contracts, machine-readable capabilities, common consumer fixtures and truthful effect declarations.
+
+#### Scenario: Discover or invoke the new operations
+- **WHEN** a caller uses pve-template accept or pve snippet-cleanup
+- **THEN** the launcher SHALL require explicit start or observe mode, validate the corresponding request/admission or original execution materials, advertise start as infrastructure-writing without state writes and observe as read-only, and dispatch through the existing runtime
+- **AND** missing or unsupported capability versions SHALL be rejected without adapting historical records or invoking prerequisite preparation implicitly
+
+#### Scenario: Map original execution and cleanup evidence across Runners
+- **WHEN** observe or a new cleanup execution consumes prior protected materials
+- **THEN** files.original_execution_dir and files.cleanup_evidence_dir SHALL be explicitly mapped read-only as applicable, with confined relative references and identity/digest validation
+- **AND** observe SHALL require no new execution admission, SHALL write only to its new collection output and SHALL NOT mutate PVE or overwrite original evidence
+- **AND** missing core material SHALL prevent mutation rather than cause start fallback or reconstruction of historical success
+
+#### Scenario: Preserve isolated trust and credentials
+- **WHEN** the launcher transports acceptance or cleanup materials through local Docker or DinD
+- **THEN** it SHALL preserve current TLS/private-CA validation, strict SSH host verification, protected file mapping and operation-scoped credentials
+- **AND** acceptance SHALL NOT receive artifact-download credentials, snippet cleanup SHALL NOT receive state-backend credentials, and public output SHALL exclude raw guest, cloud-init and credential material
+
+#### Scenario: Return incomplete or unknown execution
+- **WHEN** mutation or result collection is incomplete
+- **THEN** the launcher SHALL retain protected original evidence, expose failed/unknown outcomes and avoid a success exit for incomplete acceptance/cleanup
+- **AND** read-only observation SHALL NOT replay an execution or manufacture historical success
+
+#### Scenario: Deliver software capability without site qualification
+- **WHEN** implementation is released
+- **THEN** IaaS SHALL ship current request/result schemas, shared positive/negative examples, invocation/version notes and minimal helper installation/permissions
+- **AND** software fixture results SHALL NOT be described as real PVE qualification; real VM creation/deletion SHALL require a separately bounded caller authorization

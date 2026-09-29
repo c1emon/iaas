@@ -42,7 +42,8 @@ def execution_materials(root: Path, refs: dict[str, Any], operation: str) -> tup
 
 def _target_matches(actual: dict, expected: dict) -> bool:
     return (actual.get('api_endpoint') == expected['api_endpoint']
-            and actual.get('node') == expected['node']
+            # Deployment targets span nodes; the plan and snapshot bind the VM's node below.
+            and ('node' not in actual or actual['node'] == expected['node'])
             and actual.get('tls_verify', not actual.get('insecure', True)) is True)
 
 

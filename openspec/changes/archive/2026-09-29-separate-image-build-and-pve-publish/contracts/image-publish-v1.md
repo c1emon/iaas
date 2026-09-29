@@ -1,6 +1,6 @@
 # Image build / PVE publish contract v1
 
-Status: implementation; site validation and paired rollout pending. Owner: iaas. Consumer: infra-ops [paired change](../../../../../infra-ops/openspec/changes/integrate-image-build-and-pve-publish/proposal.md). Paths here are logical CLI inputs/outputs, not deployed files. `v1` below is the contract edition; all schema discriminators are exact and unsupported versions MUST be rejected, never inferred from filename. This document is normative alongside the delta specs.
+Status: implemented; scoped site validation and pinned runtime/schema handoff completed. Owner: iaas. Consumer: infra-ops [paired change](../../../../../../infra-ops/openspec/changes/integrate-image-build-and-pve-publish/proposal.md). Paths here are logical CLI inputs/outputs, not deployed files. `v1` below is the contract edition; all schema discriminators are exact and unsupported versions MUST be rejected, never inferred from filename. This document is normative alongside the delta specs.
 
 ## 1. Operations and authority
 

@@ -24,6 +24,10 @@ resource "proxmox_virtual_environment_vm" "protected" {
   scsi_hardware   = var.template.scsi_controller
   stop_on_destroy = true
 
+  smbios {
+    uuid = uuid()
+  }
+
   clone {
     node_name    = var.template.node
     vm_id        = var.template.vmid
@@ -86,6 +90,7 @@ resource "proxmox_virtual_environment_vm" "protected" {
 
   lifecycle {
     ignore_changes = [
+      smbios[0].uuid,
       initialization[0].user_data_file_id,
       initialization[0].network_data_file_id,
     ]
@@ -115,6 +120,10 @@ resource "proxmox_virtual_environment_vm" "unprotected" {
   scsi_hardware   = var.template.scsi_controller
   stop_on_destroy = true
 
+  smbios {
+    uuid = uuid()
+  }
+
   clone {
     node_name    = var.template.node
     vm_id        = var.template.vmid
@@ -177,6 +186,7 @@ resource "proxmox_virtual_environment_vm" "unprotected" {
 
   lifecycle {
     ignore_changes = [
+      smbios[0].uuid,
       initialization[0].user_data_file_id,
       initialization[0].network_data_file_id,
     ]

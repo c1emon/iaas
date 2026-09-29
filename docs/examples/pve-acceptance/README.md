@@ -4,7 +4,7 @@
 
 `cases.json` 是 IaaS 和 infra-ops 共用入口，列出每个 JSON 的 kind 和预期接受/拒绝；IaaS 的 `tests/python/test_pve_acceptance_contracts.py` 直接加载这份清单。文件名 `reject-*` 表示合同拒绝用例。结果成功样例也只是合同样例。
 
-- `acceptance-request.json`：固定 publication record、临时 VM、注入 hostname、六项检查和三个有限期限。
+- `acceptance-request.json`：固定 publication record、临时 VM、注入 hostname、专用 snippet storage/SSH 目标、六项检查和三个有限期限。
 - `cleanup-deployment-request.json`：原已批准删除计划、执行 admission、删除与 state 写回引用。
 - `cleanup-acceptance-request.json`：原验收 request/journal、确认的临时 VM 删除与专属 snippet 所有权引用，无 plan/state。
 - `cleanup-retry-request.json`：新执行使用原清单及前次 request/journal 引用。首次清理的 `retry_of` 和 `retry_materials` 必须同时为 null。
@@ -17,3 +17,5 @@
 公共 `reason_code` 使用短小 snake_case，不能拼接异常、路径、guest 输出或秘密。固定检查 ID 为 `full_clone`、`disk_boot`、`guest_agent`、`cloud_init`、`injected_hostname`、`source_unchanged`。检查 `not_attempted` 表示因前序已知阻断未执行，不能用于已尝试但结果未知的检查。
 
 独立 snippet 清理的 `ssh.host/user/port` 是固定请求的一部分，纳入 request digest 与 admission。使用非 root helper 账户；SSH 私钥及 known_hosts 仍由既有受保护文件通道提供，不内嵌请求。修改连接目标必须创建新的经批准请求，补执行不得换目标。
+
+模板验收 start 同时映射 `files.ssh_key`、`files.known_hosts`；`cloud_init.ssh` 绑定受限 helper 账户。上传 helper 需支持 `--create-only`，删除 helper 需按 bootstrap playbook 安装。原模板 `ciuser` 通过专用 user-data 的 `users` 列表表达，验收不注入登录凭据，也不运行软件包更新。

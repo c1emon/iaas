@@ -16,7 +16,7 @@
   "delete_plan": null,
   "acceptance_evidence": {
     "execution_id": "accept-001",
-    "request_digest": "sha256:6c47221c8b892edeedc6315664f22b73b5887542d7591d932b9be2a5eac6dcbf",
+    "request_digest": "sha256:25c5f9e14002dbff8e71440f93c5f33df1e2da9e7d02427214e73acc8f892cb4",
     "request": {
       "path": "accept/request.json",
       "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -64,7 +64,7 @@
   "retry_of": "cleanup-001",
   "retry_materials": {
     "execution_id": "cleanup-001",
-    "request_digest": "sha256:6410a0072dd683ba29c10a9b5a83c27604512ae2688e5ba6c9a2bbc27c2a5d7c",
+    "request_digest": "sha256:6e1eb20cd78b8cdd2663f35f583750595097867b024c024f9c6e0b6da79d032d",
     "request": {
       "path": "cleanup/request.json",
       "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"

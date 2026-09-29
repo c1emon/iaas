@@ -230,7 +230,7 @@ def load_operation(entry: Path, component: str, operation: str, scenario: str | 
                 files.add("execution_admission")
         selected_aliases = {request}
         if mode == "start":
-            selected_aliases |= ({"api_ca"} if component == "pve-template" else {"ssh_key", "known_hosts"})
+            selected_aliases |= ({"api_ca", "ssh_key", "known_hosts"} if component == "pve-template" else {"ssh_key", "known_hosts"})
         files |= selected_aliases & metadata.file_paths.keys()
     elif component == "pve" and operation in PVE_WORKFLOW_OPERATIONS:
         # PVE lifecycle inputs intentionally differ by phase.  Read and plan

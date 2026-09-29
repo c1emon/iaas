@@ -1,7 +1,7 @@
 # 镜像构建与 PVE 发布验证摘要
 
 通用接口与操作规则见 [镜像发布手册](image-publish.md)、[PVE 手册](03-pve.md)和
-[合同](../../openspec/changes/separate-image-build-and-pve-publish/contracts/image-publish-v1.md)。
+[合同](../../openspec/changes/archive/2026-09-29-separate-image-build-and-pve-publish/contracts/image-publish-v1.md)。
 本站执行器、制品和 CI 配置见 infra-ops 的
 [接入说明](../../../infra-ops/docs/operations/image-build-pve-publish.md)。
 
@@ -23,4 +23,4 @@
 - PVE 模板的配置验证不等于来宾启动或业务验收。ONE 上的一次性来宾测试只证明镜像构建/测试路径；模板推广仍由调用方独立决定。
 - 通过 PVE HTTPS API 发布可避开 TrueNAS 插件写入 stdout 对 `pvesh` JSON 解析的干扰；本次未修改 TrueNAS 插件。旧模板 helper 曾将共享 `/run/lock` 改成 `0700` 并影响 pveproxy，已退役；迁移和恢复边界见[迁移说明](image-publish-migration.md)。
 - 镜像制品上传后的状态是 `uploaded/unverified`：发布端仍须按固定对象身份下载并核对大小和 SHA-256。发布失败或响应未知时保留原执行与 pending，不以当前模板存在推断原执行成功。
-- [OpenSpec 任务 5.4](../../openspec/changes/separate-image-build-and-pve-publish/tasks.md)中的“同一制品再次发布而不重建”尚无现场验收；本次 CI 的新制品发布不能替代它。
+- 同一制品重复发布已于 2026-09-29 在 ONE → cohe 的授权窗口验证：`one-publish-20260929-9004` 与 `fix-publish-9004` 均成功，复用 `astra-debian13-20260928-001/20260928-1`，artifact digest 均为 `sha256:bb3d79ae7510f346d708a8c32078b61ebacee7060b62aa1dcb15a13ef3f6ff03`，未重建镜像制品。后一次模板克隆的六项技术验收、独立 VM 创建/删除和 snippet 清理通过；模板 9004、VM 9005 及测试资源已清理。该结果不替代最终运行时发布镜像的完整构建资格。

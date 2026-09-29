@@ -2,7 +2,7 @@
   "kind": "pve-template-acceptance-result",
   "schema_version": 1,
   "execution_id": "accept-001",
-  "request_digest": "sha256:6c47221c8b892edeedc6315664f22b73b5887542d7591d932b9be2a5eac6dcbf",
+  "request_digest": "sha256:25c5f9e14002dbff8e71440f93c5f33df1e2da9e7d02427214e73acc8f892cb4",
   "runtime": {
     "image_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
   },
