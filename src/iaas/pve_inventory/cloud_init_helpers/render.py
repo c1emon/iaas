@@ -8,12 +8,14 @@ import yaml
 
 from iaas.common.errors import ValidationError, require
 from iaas.common.io import load_json
+from iaas.common.proxy_names import require_guest_credential_name
 
 from ..secrets import hash_cloud_init_password
 from .model import CloudInitSnippet, sha256_hex, snippet_storage_path, validate_storage_id
 
 
 def read_required_env(name: str) -> str:
+    require_guest_credential_name(name)
     value = os.environ.get(name, "").strip()
     require(bool(value), f"missing required environment variable: {name}")
     return value
@@ -100,6 +102,8 @@ def build_cloud_init_user(user: dict[str, Any], env: dict[str, str]) -> dict[str
     sudo_list = cast(list[str], sudo)
     password_env_str = cast(str, password_env)
     public_key_env_str = cast(str, public_key_env)
+    require_guest_credential_name(password_env_str)
+    require_guest_credential_name(public_key_env_str)
     require(password_env_str in env, f"missing required environment variable: {password_env_str}")
     require(public_key_env_str in env, f"missing required environment variable: {public_key_env_str}")
     return {
@@ -165,6 +169,7 @@ def render_snippets(tfvars_path: Path, storage_id: str) -> list[CloudInitSnippet
         for field in ("password_env", "public_key_env"):
             value = user.get(field)
             require(isinstance(value, str) and value, f"{tfvars_path}: cluster.automation.cloud_init.users entries must define {field}")
+            require_guest_credential_name(value)
             if value not in required_env_vars:
                 required_env_vars.append(value)
     env = {name: read_required_env(name) for name in required_env_vars}
