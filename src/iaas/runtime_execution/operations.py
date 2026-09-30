@@ -10,6 +10,8 @@ from iaas.common.errors import require
 from iaas.runtime_config.selection import runtime_platform
 from .state import PVE_ENV, S3_ENV
 from .pve_contracts import PLAN_METADATA_VERSION, RESULT_VERSION
+from .network_proxy import normalize_proxy_environment
+from iaas.common.proxy_names import require_guest_credential_name
 
 
 @dataclass(frozen=True)
@@ -57,7 +59,7 @@ def operation_for(component: str, operation: str) -> Operation:
 
 
 def capabilities() -> dict[str, Any]:
-    return {"interface_version": 1, "schema_versions": [1], "platforms": [runtime_platform()],
+    return {"interface_version": 1, "network_proxy_version": 1, "schema_versions": [1], "platforms": [runtime_platform()],
             "lifecycle_versions": {
                 "pve": {"plan": PLAN_METADATA_VERSION, "result": RESULT_VERSION,
                         "snippet_cleanup_request": 2, "snippet_cleanup_result": 2},
@@ -89,6 +91,7 @@ def credential_names(component: str, operation: str, render_names: tuple[str, ..
     }.get(component, set())
     if operation in {"plan"}:
         for name in render_names:
+            require_guest_credential_name(name)
             require(re.fullmatch(r"[A-Z][A-Z0-9_]*", name) is not None
                     and not name.startswith(("OP_", "AWS_", "DOCKER_", "TF_"))
                     and name not in {"PATH", "HOME", "PYTHONPATH", "LD_PRELOAD", "BASH_ENV", "ENV"},
@@ -110,4 +113,6 @@ def process_environment(component: str, operation: str, supplied: Mapping[str, s
         # to the task workspace; do not expose it to unrelated components.
         runtime_names.add("PACKER_PLUGIN_PATH")
     allowed = runtime_names | credential_names(component, operation, render_names)
-    return {name: value for name, value in supplied.items() if name in allowed}
+    environ = {name: value for name, value in supplied.items() if name in allowed}
+    environ.update(normalize_proxy_environment(supplied, network=operation_for(component, operation).network))
+    return environ

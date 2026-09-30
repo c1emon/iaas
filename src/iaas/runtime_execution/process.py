@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import BinaryIO
 
 from iaas.common.errors import ValidationError
+from .network_proxy import ProxyRedactor
 
 
 @dataclass(frozen=True)
@@ -27,12 +28,17 @@ class ProcessResult:
 
 
 def _capture_output(source: BinaryIO, destination: BinaryIO, failures: list[bool], *, limit: int | None = None,
-                    process: subprocess.Popen[bytes] | None = None) -> None:
+                    process: subprocess.Popen[bytes] | None = None,
+                    redactor: ProxyRedactor | None = None) -> None:
     """Drain even after disk failure; never fall back to terminal output."""
     try:
         written = 0
-        while chunk := source.read(65536):
-            if limit is not None and written + len(chunk) > limit:
+        received = 0
+        while True:
+            raw = source.read(65536)
+            received += len(raw)
+            chunk = redactor.feed(raw, final=not raw) if redactor else raw
+            if limit is not None and (received > limit or written + len(chunk) > limit):
                 allowed = max(0, limit - written)
                 if allowed:
                     destination.write(memoryview(chunk)[:allowed])
@@ -55,6 +61,8 @@ def _capture_output(source: BinaryIO, destination: BinaryIO, failures: list[bool
                     written += len(chunk)
                 except OSError:
                     failures.append(True)
+            if not raw:
+                break
         if not failures:
             try:
                 destination.flush()
@@ -99,7 +107,8 @@ def run_protected(
         raise ValidationError("runtime executable could not start; protected capture retained") from None
     assert process.stdout is not None
     worker = threading.Thread(target=_capture_output, args=(process.stdout, sink, failures),
-                              kwargs={"limit": max_output_bytes, "process": process}, daemon=True)
+                              kwargs={"limit": max_output_bytes, "process": process,
+                                      "redactor": ProxyRedactor(environ)}, daemon=True)
     worker.start()
 
     def finish_capture() -> None:

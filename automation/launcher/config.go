@@ -24,6 +24,7 @@ type Effects struct {
 }
 
 type Capabilities struct {
+	NetworkProxyVersion   int                                      `json:"network_proxy_version"`
 	OperationCapabilities map[string]map[string]map[string]bool    `json:"operation_capabilities"`
 	LifecycleVersions     map[string]map[string]int                `json:"lifecycle_versions"`
 	ExecutionModes        map[string]map[string]map[string]Effects `json:"execution_modes"`

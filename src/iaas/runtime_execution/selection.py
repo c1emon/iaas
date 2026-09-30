@@ -339,5 +339,9 @@ def rendering_credentials(selected: SelectedConfig, operation: str) -> tuple[str
     if selected.component != "pve" or operation != "plan":
         return ()
     tfvars = json.loads(compile_documents(selected)["pve.tfvars.json"])
-    return tuple(sorted({user[field] for user in tfvars["cluster"]["automation"]["cloud_init"]["users"]
-                         for field in ("password_env", "public_key_env")}))
+    from iaas.common.proxy_names import require_guest_credential_name
+    names = tuple(sorted({user[field] for user in tfvars["cluster"]["automation"]["cloud_init"]["users"]
+                          for field in ("password_env", "public_key_env")}))
+    for name in names:
+        require_guest_credential_name(name)
+    return names

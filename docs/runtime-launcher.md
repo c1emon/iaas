@@ -61,6 +61,47 @@ publication is a controller-side HTTPS capability. A capability response is
 the compatibility gate: old PVE operation names and combined template-build
 inputs are rejected instead of being silently translated.
 
+## Controlled network proxy
+
+For operations whose effective effects allow network access, the launcher accepts
+`HTTP_PROXY/http_proxy`, `HTTPS_PROXY/https_proxy` and `NO_PROXY/no_proxy` as a
+separate channel from facility credentials. Trimmed empty values are absent;
+nonempty values in a pair must match exactly. Each selected value is passed in
+both cases. HTTP and HTTPS settings are independent. A nonempty setting, including
+only NO_PROXY, requires runtime `network_proxy_version: 1`.
+
+Endpoints must use `http://` or `https://`, a valid host and optional port, with
+no query, fragment or path other than `/`. Basic userinfo is supported, including
+valid percent encoding; usernames must be nonempty and passwords may be empty.
+Resolve authentication in the caller environment, never in command arguments or
+input YAML. The daemon administrator can inspect container environment values.
+Proxy authentication is protected in runtime errors and persisted tool diagnostics;
+native state and recovery files keep their existing handling. Proxy values are
+not added to saved plans, summaries or dependency archives.
+
+Local and DinD execution use the same controlled channel. All helper containers
+and offline execution explicitly clear supported and ALL_PROXY/FTP_PROXY names,
+overriding Docker client proxy defaults and image ENV. Offline operations retain
+`--network none` and do not parse proxy settings. Proxy names are reserved against
+case-insensitive cloud-init credential-name conflicts. Arbitrary host variables,
+SOCKS/FTP proxies and ALL_PROXY are not forwarded.
+
+The channel covers actual network tool subprocesses and existing environment-aware
+clients such as image base downloads through urllib. PVE explicit HTTPS clients,
+uploads and template downloads retain their direct transports. It does not proxy
+SSH, raw sockets or Docker daemon image pulls, and is not an egress firewall.
+NO_PROXY uses each tool's native matching rules; no internal address is added
+automatically. The endpoint must be reachable from the runtime container; DinD
+localhost identifies its container, not the caller host.
+
+No configuration preserves direct access. Invalid configuration fails before
+network tools start; tool failures retain their nonzero phase result and protected
+diagnostic location. There is no retry with proxies removed or TLS weakened.
+`pve prepare-dependencies` retains no facility/backend/state inputs, readonly
+provider locks and native checksum validation. Restore checks archive members and
+lock equality; provider integrity additionally requires native readonly init using
+the returned `.terraform/providers` directory as `-plugin-dir`.
+
 ## Select inputs and an operation
 
 The [environment schema](runtime-configuration.md) selects component input files,

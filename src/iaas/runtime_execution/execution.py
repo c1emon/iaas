@@ -11,6 +11,7 @@ from iaas.common.errors import ValidationError
 
 from .outputs import TaskOutputs
 from .process import ProcessResult, run_protected
+from .network_proxy import proxy_configured
 
 
 class OperationFailed(ValidationError):
@@ -26,6 +27,7 @@ class Execution:
     def record(self, phase: str, result: ProcessResult, cwd: Path) -> None:
         recovery = self.outputs.retain_state(cwd)
         item = {"phase": phase, "exit_code": result.returncode,
+                "proxy_configured": proxy_configured(self.environ),
                 "capture_complete": result.capture_complete, "interrupted": result.interrupted,
                 "capture": str(result.capture), **recovery}
         if not result.capture_complete:

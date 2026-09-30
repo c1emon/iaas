@@ -101,6 +101,9 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := proxyAdmission(capabilities, effects); err != nil {
+		return err
+	}
 	if effects.Network && options.Scope == "" {
 		return errors.New("online operation requires explicit --scope")
 	}

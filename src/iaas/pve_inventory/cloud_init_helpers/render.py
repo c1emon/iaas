@@ -169,7 +169,7 @@ def render_snippets(tfvars_path: Path, storage_id: str) -> list[CloudInitSnippet
         for field in ("password_env", "public_key_env"):
             value = user.get(field)
             require(isinstance(value, str) and value, f"{tfvars_path}: cluster.automation.cloud_init.users entries must define {field}")
-            require_guest_credential_name(value)
+            require_guest_credential_name(cast(str, value))
             if value not in required_env_vars:
                 required_env_vars.append(value)
     env = {name: read_required_env(name) for name in required_env_vars}
