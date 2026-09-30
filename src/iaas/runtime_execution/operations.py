@@ -35,10 +35,10 @@ OPERATIONS = {
                   "verify": DIAGNOSE},
     "switch": {"check": OFFLINE, "generate": OFFLINE, "diagnose": DIAGNOSE},
     "pve": {"check": OFFLINE, "generate": OFFLINE, "preflight": DIAGNOSE,
-            "health": DIAGNOSE, "prepare-dependencies": DIAGNOSE,
+            "health": DIAGNOSE, "prepare-dependencies": DIAGNOSE, "snippet-cleanup": MUTATE,
             "read": PLAN, "plan": PLAN, "apply": APPLY, "verify": DIAGNOSE},
     "pve-template": {"check": OFFLINE, "read": DIAGNOSE, "plan": DIAGNOSE,
-                     "apply": MUTATE, "verify": OFFLINE},
+                     "apply": MUTATE, "accept": MUTATE, "verify": OFFLINE},
     "image": {"check": OFFLINE, "build": Operation(network=True), "test": Operation(network=True),
               "read": OFFLINE, "verify": OFFLINE, "clean": OFFLINE},
     "services": {"check": OFFLINE, "generate": OFFLINE},
@@ -59,10 +59,14 @@ def operation_for(component: str, operation: str) -> Operation:
 def capabilities() -> dict[str, Any]:
     return {"interface_version": 1, "schema_versions": [1], "platforms": [runtime_platform()],
             "lifecycle_versions": {
-                "pve": {"plan": PLAN_METADATA_VERSION, "result": RESULT_VERSION},
-                "pve-template": {"preview": 2, "result": 2, "record": 2},
+                "pve": {"plan": PLAN_METADATA_VERSION, "result": RESULT_VERSION,
+                        "snippet_cleanup_request": 1, "snippet_cleanup_result": 1},
+                "pve-template": {"preview": 2, "result": 2, "record": 2,
+                                 "acceptance_request": 1, "acceptance_result": 1},
                 "image": {"artifact": 1, "build_request": 1, "test_request": 1, "test_result": 1},
             },
+            "execution_modes": {component: {operation: {"start": asdict(MUTATE), "observe": asdict(DIAGNOSE)}}
+                                for component, operation in (("pve-template", "accept"), ("pve", "snippet-cleanup"))},
             "operations": {component: {name: asdict(value) for name, value in entries.items()}
                            for component, entries in OPERATIONS.items()}}
 
@@ -75,7 +79,7 @@ def credential_names(component: str, operation: str, render_names: tuple[str, ..
     if effects.state:
         names |= S3_ENV
     names |= {
-        "pve": PVE_ENV,
+        "pve": set() if operation == "snippet-cleanup" else PVE_ENV,
         "pve-template": {"PVE_API_TOKEN", "PVE_API_CA"} | ({"PVE_ARTIFACT_URL"} if operation == "apply" else set()),
         "opnsense": {"OPNSENSE_API_KEY", "OPNSENSE_API_SECRET"},
         "switch": {"SWITCH_SSH_USER", "SWITCH_SSH_PASSWORD", "SWITCH_SSH_PORT"},

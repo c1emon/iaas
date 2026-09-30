@@ -213,6 +213,25 @@ def load_operation(entry: Path, component: str, operation: str, scenario: str | 
                 files.add("recovery")
         else:
             files.add("candidate")
+    elif ((component == "pve-template" and operation == "accept")
+          or (component == "pve" and operation == "snippet-cleanup")
+          or (component == "pve-template" and operation == "read"
+              and "original_execution_dir" in metadata.file_paths)):
+        inputs = set()
+        mode = metadata.options.get("execution_mode")
+        if operation == "read":
+            require(mode in {None, "observe"}, "read only supports observe mode")
+        else:
+            require(mode in {"start", "observe"}, "explicit execution_mode start or observe is required")
+        request = "snippet_cleanup_request" if component == "pve" else "acceptance_request"
+        if mode == "start":
+            files.add(request)
+            if "execution_admission" in metadata.file_paths:
+                files.add("execution_admission")
+        selected_aliases = {request}
+        if mode == "start":
+            selected_aliases |= ({"api_ca", "ssh_key", "known_hosts"} if component == "pve-template" else {"ssh_key", "known_hosts"})
+        files |= selected_aliases & metadata.file_paths.keys()
     elif component == "pve" and operation in PVE_WORKFLOW_OPERATIONS:
         # PVE lifecycle inputs intentionally differ by phase.  Read and plan
         # inspect the complete root and selected backend; apply consumes only
@@ -289,6 +308,17 @@ def load_operation(entry: Path, component: str, operation: str, scenario: str | 
         files |= {name for name in ("aws_credentials", "aws_config", "aws_ca", "aws_web_identity")
                   if name in metadata.file_paths}
     selected = load_environment(entry, component, scenario, reader, input_names=inputs, file_names=files)
+    if ((component == "pve-template" and operation in {"accept", "read"})
+            or (component == "pve" and operation == "snippet-cleanup")):
+        directory_names = {"original_execution_dir"}
+        if selected.options.get("execution_mode") == "start":
+            directory_names.add("cleanup_evidence_dir")
+        for name in sorted(directory_names):
+            if name in metadata.file_paths:
+                logical = metadata.file_paths[name]
+                selected.files[name] = reader.locate(logical, allow_directory=True)
+                require(selected.files[name].is_dir(), "execution evidence must be a directory")
+                selected.file_paths[name] = logical
     if component == "image":
         _map_image_external_paths(selected, operation)
     if component == "pve-template":

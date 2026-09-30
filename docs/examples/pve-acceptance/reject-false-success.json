@@ -1,0 +1,91 @@
+{
+  "kind": "pve-template-acceptance-result",
+  "schema_version": 1,
+  "execution_id": "accept-001",
+  "request_digest": "sha256:25c5f9e14002dbff8e71440f93c5f33df1e2da9e7d02427214e73acc8f892cb4",
+  "runtime": {
+    "image_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "template": {
+    "record_id": "template-9000",
+    "execution_id": "publish-001",
+    "artifact_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "node": "pve1",
+    "vmid": 9000,
+    "smbios_uuid": "11111111-1111-4111-8111-111111111111"
+  },
+  "temporary_resources": [
+    {
+      "kind": "vm",
+      "node": "pve1",
+      "identity": "9100",
+      "created_by": "accept-001",
+      "ownership": "owned"
+    }
+  ],
+  "checks": [
+    {
+      "id": "full_clone",
+      "status": "passed",
+      "reason_code": "check_passed",
+      "evidence_ref": "private/checks.json"
+    },
+    {
+      "id": "disk_boot",
+      "status": "passed",
+      "reason_code": "check_passed",
+      "evidence_ref": "private/checks.json"
+    },
+    {
+      "id": "guest_agent",
+      "status": "passed",
+      "reason_code": "check_passed",
+      "evidence_ref": "private/checks.json"
+    },
+    {
+      "id": "cloud_init",
+      "status": "passed",
+      "reason_code": "check_passed",
+      "evidence_ref": "private/checks.json"
+    },
+    {
+      "id": "injected_hostname",
+      "status": "passed",
+      "reason_code": "check_passed",
+      "evidence_ref": "private/checks.json"
+    },
+    {
+      "id": "source_unchanged",
+      "status": "passed",
+      "reason_code": "check_passed",
+      "evidence_ref": "private/checks.json"
+    }
+  ],
+  "failure_stage": null,
+  "cleanup": {
+    "vm": {
+      "status": "failed",
+      "reason_code": "absence_confirmed",
+      "evidence_ref": "private/cleanup.json"
+    },
+    "volumes": {
+      "status": "failed",
+      "reason_code": "absence_confirmed",
+      "evidence_ref": "private/cleanup.json"
+    },
+    "snippets": {
+      "status": "not_required",
+      "reason_code": "no_owned_snippets",
+      "evidence_ref": null
+    }
+  },
+  "residuals": {
+    "inventory_complete": true,
+    "items": []
+  },
+  "overall": "passed",
+  "collection": {
+    "status": "complete",
+    "reason_code": "collection_complete"
+  }
+}

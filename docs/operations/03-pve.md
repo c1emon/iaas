@@ -80,6 +80,12 @@ cloud-init snippet transfer where the selected VM workflow requires it. Its
 SSH key and known_hosts are separate operation inputs; it is not a template
 build or publication transport.
 
+Current source also provides one-shot `pve-template accept` and independent
+`pve snippet-cleanup`. Their [v1 delivery contract](../contracts/pve-acceptance-cleanup-v1.md)
+separates complete technical acceptance/cleanup from caller promotion. The
+[restricted cleanup helper](pve-snippet-cleanup.md) has its own installation and
+permissions; software fixture results do not establish live PVE qualification.
+
 ## 3.4 `pve-cluster.yml` 参数
 
 ### 集群、VMID 和存储

@@ -9,7 +9,7 @@
 - 提供通用 `image` 能力：直接build/test/clean，以Packer QEMU构建、复用定制和libguestfs清理，支持独立测试既有镜像，输出自包含qcow2、SHA-256和真实结果；不为本地可重建任务强制plan/apply。
 - 将 `pve-template` 改为消费已构建镜像的 HTTPS 发布能力：预检查、传输校验、导入、配置、转模板、验证、定向清理及退役。
 - 将镜像加工移出PVE节点，发布不要求节点SSH或空间helper；只保留独立snippet能力所需helper，不保留第二套构建/发布写入路径。
-- iaas 定义 [权威交接合同](contracts/image-publish-v1.md)；infra-ops 提供站点配置、执行器/CI、凭据、S3 上传与保留、推广及互斥。对应 [infra-ops change](../../../../infra-ops/openspec/changes/integrate-image-build-and-pve-publish/proposal.md) 同期规划、独立实施。
+- iaas 定义 [权威交接合同](contracts/image-publish-v1.md)；infra-ops 提供站点配置、执行器/CI、凭据、S3 上传与保留、推广及互斥。对应 [infra-ops change](../../../../../infra-ops/openspec/changes/integrate-image-build-and-pve-publish/proposal.md) 同期规划、独立实施。
 - **BREAKING**：停止接受旧的 template `action=build` 及加工参数；升级模板 preview/result/record 版本，VM消费方直接采用新record，不提供旧schema适配层。旧材料仅保留原始文件供人工调查，迁移后不得执行或隐式重建。
 - 共享launcher分发、隔离与结果规则：image直接工具操作，PVE发布/清理/退役仍plan/apply；移除重复整盘回读与JSON字节门禁，已验证模板的已知静止暂存残留独立跟踪，不阻断发布。
 

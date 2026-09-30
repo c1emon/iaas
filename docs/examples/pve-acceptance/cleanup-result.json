@@ -1,0 +1,53 @@
+{
+  "kind": "pve-snippet-cleanup-result",
+  "schema_version": 1,
+  "execution_id": "cleanup-001",
+  "request_digest": "sha256:6e1eb20cd78b8cdd2663f35f583750595097867b024c024f9c6e0b6da79d032d",
+  "runtime": {
+    "image_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "origin": "acceptance",
+  "original_vm": {
+    "node": "pve1",
+    "vmid": 9100,
+    "smbios_uuid": "22222222-2222-4222-8222-222222222222"
+  },
+  "original_execution_id": "accept-001",
+  "delete_plan_digest": null,
+  "acceptance_request_digest": "sha256:25c5f9e14002dbff8e71440f93c5f33df1e2da9e7d02427214e73acc8f892cb4",
+  "deletion_execution_id": "accept-001",
+  "retry_of": null,
+  "scope_check": {
+    "status": "passed",
+    "nodes": [
+      "pve1"
+    ],
+    "storages": [
+      "local"
+    ],
+    "permissions_complete": true,
+    "inventory_complete": true,
+    "reason_code": "scope_complete"
+  },
+  "items": [
+    {
+      "node": "pve1",
+      "storage": "local",
+      "file_id": "local:snippets/accept-001.yaml",
+      "file_name": "accept-001.yaml",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "record_ref": "accept-001.yaml",
+      "status": "deleted",
+      "reason_code": "absence_confirmed"
+    }
+  ],
+  "residuals": {
+    "inventory_complete": true,
+    "items": []
+  },
+  "overall": "passed",
+  "collection": {
+    "status": "complete",
+    "reason_code": "collection_complete"
+  }
+}

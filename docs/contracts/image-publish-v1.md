@@ -2,7 +2,7 @@
 
 This is the stable consumer entrypoint for the image/PVE handoff. The
 normative OpenSpec source is
-[`contracts/image-publish-v1.md`](../../openspec/changes/separate-image-build-and-pve-publish/contracts/image-publish-v1.md);
+[`contracts/image-publish-v1.md`](../../openspec/changes/archive/2026-09-29-separate-image-build-and-pve-publish/contracts/image-publish-v1.md);
 the JSON schemas shipped below are the machine-readable subset of that
 contract.
 

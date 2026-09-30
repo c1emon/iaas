@@ -1,0 +1,54 @@
+---
+- name: Install restricted PVE snippet cleanup helper v1
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Require the existing caller-selected automation account
+      ansible.builtin.assert:
+        that:
+          - pve_bootstrap_user is defined
+          - pve_bootstrap_user is string
+          - pve_bootstrap_user is match('^[a-z_][a-z0-9_-]{0,31}$')
+          - pve_bootstrap_user != 'root'
+    - name: Verify the account already exists
+      ansible.builtin.getent:
+        database: passwd
+        key: "{{ pve_bootstrap_user }}"
+        fail_key: true
+    - name: Inspect helper installation parent directories
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        follow: false
+      loop:
+        - /usr
+        - /usr/local
+        - /usr/local/sbin
+      register: pve_cleanup_parent_directories
+    - name: Require root-controlled helper parent directories
+      ansible.builtin.assert:
+        that:
+          - item.stat.isdir | default(false)
+          - not (item.stat.islnk | default(false))
+          - item.stat.uid | default(-1) == 0
+          - not (item.stat.wgrp | default(true))
+          - not (item.stat.woth | default(true))
+        fail_msg: Administrator must provide existing root-owned non-writable helper parent directories
+      loop: "{{ pve_cleanup_parent_directories.results }}"
+    - name: Install exact snippet cleanup helper
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../../pve-node/bin/iaas-pve-snippet-delete"
+        dest: /usr/local/sbin/iaas-pve-snippet-delete
+        owner: root
+        group: root
+        mode: "0755"
+    - name: Grant only the restricted helper command
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/iaas-pve-snippet-delete
+        owner: root
+        group: root
+        mode: "0440"
+        validate: /usr/sbin/visudo -cf %s
+        content: |
+          # Managed by bootstrap-pve-snippet-cleanup.yml
+          {{ pve_bootstrap_user }} ALL=(root) NOPASSWD: /usr/local/sbin/iaas-pve-snippet-delete

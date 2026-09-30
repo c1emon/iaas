@@ -1,0 +1,87 @@
+{
+  "kind": "pve-acceptance-contract-cases",
+  "schema_version": 1,
+  "evidence_scope": "synthetic_contract_fixtures_not_live_pve",
+  "cases": [
+    {
+      "file": "acceptance-request.json",
+      "valid": true,
+      "kind": "pve-template-acceptance-request"
+    },
+    {
+      "file": "cleanup-acceptance-request.json",
+      "valid": true,
+      "kind": "pve-snippet-cleanup-request"
+    },
+    {
+      "file": "cleanup-deployment-request.json",
+      "valid": true,
+      "kind": "pve-snippet-cleanup-request"
+    },
+    {
+      "file": "cleanup-retry-request.json",
+      "valid": true,
+      "kind": "pve-snippet-cleanup-request"
+    },
+    {
+      "file": "acceptance-result.json",
+      "valid": true,
+      "kind": "pve-template-acceptance-result"
+    },
+    {
+      "file": "cleanup-result.json",
+      "valid": true,
+      "kind": "pve-snippet-cleanup-result"
+    },
+    {
+      "file": "reject-origin-switch.json",
+      "valid": false,
+      "kind": "pve-snippet-cleanup-request"
+    },
+    {
+      "file": "reject-retry-without-materials.json",
+      "valid": false,
+      "kind": "pve-snippet-cleanup-request"
+    },
+    {
+      "file": "reject-unknown-version.json",
+      "valid": false,
+      "kind": "pve-template-acceptance-request"
+    },
+    {
+      "file": "reject-missing-check.json",
+      "valid": false,
+      "kind": "pve-template-acceptance-request"
+    },
+    {
+      "file": "reject-unbounded-timeout.json",
+      "valid": false,
+      "kind": "pve-template-acceptance-request"
+    },
+    {
+      "file": "reject-template-vmid.json",
+      "valid": false,
+      "kind": "pve-template-acceptance-request"
+    },
+    {
+      "file": "reject-old-hostname.json",
+      "valid": false,
+      "kind": "pve-template-acceptance-request"
+    },
+    {
+      "file": "reject-path-escape.json",
+      "valid": false,
+      "kind": "pve-snippet-cleanup-request"
+    },
+    {
+      "file": "reject-wildcard.json",
+      "valid": false,
+      "kind": "pve-snippet-cleanup-request"
+    },
+    {
+      "file": "reject-false-success.json",
+      "valid": false,
+      "kind": "pve-template-acceptance-result"
+    }
+  ]
+}

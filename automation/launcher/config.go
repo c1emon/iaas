@@ -24,10 +24,12 @@ type Effects struct {
 }
 
 type Capabilities struct {
-	InterfaceVersion int                           `json:"interface_version"`
-	SchemaVersions   []int                         `json:"schema_versions"`
-	Platforms        []string                      `json:"platforms"`
-	Operations       map[string]map[string]Effects `json:"operations"`
+	LifecycleVersions map[string]map[string]int                `json:"lifecycle_versions"`
+	ExecutionModes    map[string]map[string]map[string]Effects `json:"execution_modes"`
+	InterfaceVersion  int                                      `json:"interface_version"`
+	SchemaVersions    []int                                    `json:"schema_versions"`
+	Platforms         []string                                 `json:"platforms"`
+	Operations        map[string]map[string]Effects            `json:"operations"`
 }
 
 func readRuntime(path string) (RuntimeConfig, error) {
@@ -90,6 +92,19 @@ func (c Capabilities) operation(component, operation, selectedPlatform string) (
 	operationEffects, ok := c.Operations[component][operation]
 	if !ok {
 		return Effects{}, fmt.Errorf("unsupported component/operation: %s/%s", component, operation)
+	}
+	if (component == "pve-template" && operation == "accept") || (component == "pve" && operation == "snippet-cleanup") {
+		prefix := "acceptance"
+		if operation == "snippet-cleanup" {
+			prefix = "snippet_cleanup"
+		}
+		versions := c.LifecycleVersions[component]
+		modes := c.ExecutionModes[component][operation]
+		start, hasStart := modes["start"]
+		observe, hasObserve := modes["observe"]
+		if versions[prefix+"_request"] != 1 || versions[prefix+"_result"] != 1 || !hasStart || !hasObserve || !start.InfrastructureWrite || start.State || observe.InfrastructureWrite || observe.State {
+			return Effects{}, errors.New("image does not support current bounded execution contracts and modes")
+		}
 	}
 	return operationEffects, nil
 }

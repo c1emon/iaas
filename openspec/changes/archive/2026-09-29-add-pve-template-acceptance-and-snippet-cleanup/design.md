@@ -8,7 +8,7 @@
 
 ### 1. 两个明确入口，保留原生命周期
 
-拟增加 `pve-template accept` 和 `pve snippet-cleanup`，均由 `iaas run` 调用；start 模式标记 `network=true`、`infrastructure_write=true`、`state=false`，observe 为只读观察且无 PVE/state 写入。固定请求和已有执行准入直接授权动作，无需另外设计审批或预览协议。使用现有规范化摘要绑定请求与 admission；不让调用方拼接原生命令。
+增加 `pve-template accept` 和 `pve snippet-cleanup`，均由 `iaas run` 调用；start 模式标记 `network=true`、`infrastructure_write=true`、`state=false`，observe 为只读观察且无 PVE/state 写入。固定请求和已有执行准入直接授权动作，无需另外设计审批或预览协议。使用现有规范化摘要绑定请求与 admission；不让调用方拼接原生命令。
 
 `accept` 通过已有 HTTPS 客户端及 native task 观察机制驱动临时 full clone。该 VM 明确归本次验收执行所有，不进入普通 VM OpenTofu state；不增加临时 root、S3 state 或 create/destroy 两套计划。普通长期 VM 继续走现有 plan/apply。补清理入口根据来源只读普通部署的原删除计划/执行材料，或临时验收的原 request/journal/删除确认；两者均不运行 OpenTofu、不读取或修改实时 state backend。
 
@@ -48,9 +48,9 @@
 
 ### 5. helper、信任与凭据
 
-优先复用现有受限 SSH 传输，新增专用 `iaas-pve-snippet-cleanup` helper，避免扩大 upload helper 的隐含权限。root-owned helper 与父目录不可由调用账户写入，建议沿用现有安装模式；sudo 只新增该固定程序，不授权 `rm`、shell、任意 `pvesm` 或编辑配置。helper 独立校验固定字段、路径、摘要和引用检查依据；不能把节点扫描不完整转交给 caller 布尔值跳过。
+优先复用现有受限 SSH 传输，新增专用 `iaas-pve-snippet-delete` helper，避免扩大 upload helper 的隐含权限。root-owned helper 与父目录不可由调用账户写入，建议沿用现有安装模式；sudo 只新增该固定程序，不授权 `rm`、shell、任意 `pvesm` 或编辑配置。helper 独立校验固定字段、路径、摘要和引用检查依据；不能把节点扫描不完整转交给 caller 布尔值跳过。
 
-实现阶段需按选定 PVE 支持接口明确引用扫描在 API 与 helper 的分工，给出精确的权限清单和安装命令，覆盖共享范围、快照/pending 的代表性 fixture；不足则报告 unsupported/unknown，不用试删探测权限。远端系统 Python 属于节点 helper 依赖，本地开发仍通过项目 uv 环境管理。
+引用扫描由 root 受限 helper 读取 quorate pmxcfs 完整视图，核对 `.vmlist` 与所有节点 QEMU/LXC 配置，并扫描 current/pending/snapshot 引用；按文件名跨存储别名保守保留，避免 ACL 过滤列表的空结果被视为无引用。固定 SSH host/user/port 进入 cleanup request 摘要；安装和权限见交付文档。不足则报告 unknown，不用试删探测权限。远端系统 Python 属于节点 helper 依赖，本地开发仍通过项目 uv 环境管理。
 
 保留当前 PVE TLS/私有 CA 规则、严格 SSH known_hosts、按动作筛选的凭据和日志脱敏。accept 不获得镜像下载凭据；snippet cleanup 不获得 S3 凭据。guest 输出、cloud-init 内容和 SSH 原始诊断留在受保护材料，公共结果只含批准字段与 reason code。
 

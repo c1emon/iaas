@@ -1,0 +1,406 @@
+{
+  "$defs": {
+    "CleanupItem": {
+      "additionalProperties": false,
+      "properties": {
+        "node": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Node",
+          "type": "string"
+        },
+        "storage": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Storage",
+          "type": "string"
+        },
+        "file_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*:snippets/[A-Za-z0-9][A-Za-z0-9_.-]*$",
+          "title": "File Id",
+          "type": "string"
+        },
+        "file_name": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "File Name",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "record_ref": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Record Ref",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "deleted",
+            "already_absent",
+            "referenced",
+            "mismatch",
+            "failed",
+            "unknown"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "reason_code": {
+          "pattern": "^[a-z][a-z0-9_]{0,95}$",
+          "title": "Reason Code",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node",
+        "storage",
+        "file_id",
+        "file_name",
+        "sha256",
+        "record_ref",
+        "status",
+        "reason_code"
+      ],
+      "title": "CleanupItem",
+      "type": "object"
+    },
+    "Collection": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "complete",
+            "failed",
+            "unknown"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "reason_code": {
+          "pattern": "^[a-z][a-z0-9_]{0,95}$",
+          "title": "Reason Code",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "reason_code"
+      ],
+      "title": "Collection",
+      "type": "object"
+    },
+    "OriginalVM": {
+      "additionalProperties": false,
+      "properties": {
+        "node": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Node",
+          "type": "string"
+        },
+        "vmid": {
+          "maximum": 999999999,
+          "minimum": 100,
+          "title": "Vmid",
+          "type": "integer"
+        },
+        "smbios_uuid": {
+          "title": "Smbios Uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node",
+        "vmid",
+        "smbios_uuid"
+      ],
+      "title": "OriginalVM",
+      "type": "object"
+    },
+    "Residual": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "vm",
+            "volume",
+            "snippet"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "node": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Node",
+          "type": "string"
+        },
+        "identity": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Identity",
+          "type": "string"
+        },
+        "created_by": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Created By",
+          "type": "string"
+        },
+        "ownership": {
+          "enum": [
+            "owned",
+            "not_owned",
+            "unknown"
+          ],
+          "title": "Ownership",
+          "type": "string"
+        },
+        "existence": {
+          "enum": [
+            "present",
+            "unknown"
+          ],
+          "title": "Existence",
+          "type": "string"
+        },
+        "reason_code": {
+          "pattern": "^[a-z][a-z0-9_]{0,95}$",
+          "title": "Reason Code",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "node",
+        "identity",
+        "created_by",
+        "ownership",
+        "existence",
+        "reason_code"
+      ],
+      "title": "Residual",
+      "type": "object"
+    },
+    "Residuals": {
+      "additionalProperties": false,
+      "properties": {
+        "inventory_complete": {
+          "title": "Inventory Complete",
+          "type": "boolean"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/Residual"
+          },
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "inventory_complete",
+        "items"
+      ],
+      "title": "Residuals",
+      "type": "object"
+    },
+    "RuntimeIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "image_digest": {
+          "pattern": "^(?:[^@\\s]+@)?sha256:[0-9a-f]{64}$",
+          "title": "Image Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "image_digest"
+      ],
+      "title": "RuntimeIdentity",
+      "type": "object"
+    },
+    "ScopeCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "unknown"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "nodes": {
+          "items": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+            "type": "string"
+          },
+          "title": "Nodes",
+          "type": "array"
+        },
+        "storages": {
+          "items": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+            "type": "string"
+          },
+          "title": "Storages",
+          "type": "array"
+        },
+        "permissions_complete": {
+          "title": "Permissions Complete",
+          "type": "boolean"
+        },
+        "inventory_complete": {
+          "title": "Inventory Complete",
+          "type": "boolean"
+        },
+        "reason_code": {
+          "pattern": "^[a-z][a-z0-9_]{0,95}$",
+          "title": "Reason Code",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "nodes",
+        "storages",
+        "permissions_complete",
+        "inventory_complete",
+        "reason_code"
+      ],
+      "title": "ScopeCheck",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "execution_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Execution Id",
+      "type": "string"
+    },
+    "request_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Request Digest",
+      "type": "string"
+    },
+    "runtime": {
+      "$ref": "#/$defs/RuntimeIdentity"
+    },
+    "residuals": {
+      "$ref": "#/$defs/Residuals"
+    },
+    "overall": {
+      "enum": [
+        "passed",
+        "failed",
+        "unknown"
+      ],
+      "title": "Overall",
+      "type": "string"
+    },
+    "collection": {
+      "$ref": "#/$defs/Collection"
+    },
+    "kind": {
+      "const": "pve-snippet-cleanup-result",
+      "title": "Kind",
+      "type": "string"
+    },
+    "origin": {
+      "enum": [
+        "deployment",
+        "acceptance"
+      ],
+      "title": "Origin",
+      "type": "string"
+    },
+    "original_vm": {
+      "$ref": "#/$defs/OriginalVM"
+    },
+    "original_execution_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Original Execution Id",
+      "type": "string"
+    },
+    "delete_plan_digest": {
+      "anyOf": [
+        {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Delete Plan Digest"
+    },
+    "acceptance_request_digest": {
+      "anyOf": [
+        {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Acceptance Request Digest"
+    },
+    "deletion_execution_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Deletion Execution Id",
+      "type": "string"
+    },
+    "retry_of": {
+      "anyOf": [
+        {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Retry Of"
+    },
+    "scope_check": {
+      "$ref": "#/$defs/ScopeCheck"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/CleanupItem"
+      },
+      "maxItems": 256,
+      "minItems": 1,
+      "title": "Items",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "execution_id",
+    "request_digest",
+    "runtime",
+    "residuals",
+    "overall",
+    "collection",
+    "kind",
+    "origin",
+    "original_vm",
+    "original_execution_id",
+    "delete_plan_digest",
+    "acceptance_request_digest",
+    "deletion_execution_id",
+    "retry_of",
+    "scope_check",
+    "items"
+  ],
+  "title": "CleanupResult",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iaas.invalid/schemas/pve-acceptance/v1/pve-snippet-cleanup-result.schema.json"
+}

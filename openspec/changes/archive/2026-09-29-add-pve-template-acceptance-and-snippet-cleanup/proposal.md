@@ -26,7 +26,7 @@
 
 预计涉及 `src/iaas/pve_template/`、`src/iaas/pve_inventory/cloud_init_helpers/`、`src/iaas/runtime_execution/`、`automation/launcher/`、`automation/pve-node/`、节点 bootstrap，以及相应 schema、文档和定向测试。实现量级 M（2–5 天），按合同、执行、清理、launcher/测试分段；以 A/B 必要正确性及定向安全检查为范围。
 
-本 change 以当前代码及 `separate-image-build-and-pve-publish` 的已实现合同为基础；该 change 尚未完成的现场重复发布验收不在此补做，不修改它的证据或任务完成状态。现有普通 VM 的 guest/business 外部验收语义不变。
+本 change 以当前代码及 `separate-image-build-and-pve-publish` 的已实现合同为基础；规划时未将该 change 的现场重复发布验收纳入本 change 的隐含范围；随后用户单独授权的现场测试已提供其完成证据，两项任务分别记录。现有普通 VM 的 guest/business 外部验收语义不变。
 
 ## Non-goals and delivery boundary
 
