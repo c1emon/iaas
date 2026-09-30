@@ -15,6 +15,7 @@ from iaas.runtime_execution.execution import OperationFailed
 from . import runtime as pve
 from .acceptance_execution import begin, observe, save
 from . import acceptance_snippets
+from .deadlines import DeadlineBudget, DeadlineExpired, LocalTimeout
 
 CHECKS = ('full_clone', 'disk_boot', 'guest_agent', 'cloud_init', 'injected_hostname', 'source_unchanged')
 
@@ -44,13 +45,17 @@ def attachments(config: dict[str, Any]) -> dict[str, str]:
 
 
 class Acceptance:
-    def __init__(self, client: Any, request: dict[str, Any], journal: dict[str, Any], root: Path, snippets: Any = None) -> None:
+    def __init__(self, client: Any, request: dict[str, Any], journal: dict[str, Any], root: Path, snippets: Any = None,
+                 budget: DeadlineBudget | None = None) -> None:
         self.client, self.request, self.journal, self.root = client, request, journal, root
         self.temporary = request['temporary_vm']
         self.record = request['template_record']
         self.base = f"/api2/json/nodes/{quote(self.temporary['node'], safe='')}/qemu/{self.temporary['vmid']}"
         self.source = f"/api2/json/nodes/{quote(self.record['node'], safe='')}/qemu/{self.record['vmid']}"
-        self.deadline = time.monotonic() + request['timeouts']['work_seconds']
+        self.budget = budget or DeadlineBudget(request['deadlines'])
+        self.budget.limit('work', request['timeouts']['work_seconds'])
+        self.phase = 'work'
+        self.deadline = min(self.budget.bounds['work'], self.budget.local['work'])
         self.stage = 'full_clone'
         self.source_before: dict[str, Any] | None = None
         self.owned: dict[str, Any] | None = None
@@ -59,7 +64,10 @@ class Acceptance:
         self.snippets = snippets
 
     def upload_user_data(self) -> dict:
+        self.remaining()
         check(self.snippets is not None, 'snippet_transport_missing')
+        self.snippets.budget, self.snippets.phase = self.budget, self.phase
+        self.snippets.deadline = self.deadline
         snapshot = self.snippets.inspect()
         check(snapshot.get('complete') is True and snapshot.get('local_node') == self.temporary['node'],
               'snippet_scope_unconfirmed')
@@ -67,9 +75,19 @@ class Acceptance:
         snippet = acceptance_snippets.record(self.request, content)
         self.journal['snippets'] = [snippet]
         self.journal['mutation_active'] = True
+        previous_writes = self.journal['facility_writes']
+        self.journal['facility_writes'] = 'unknown'
         self.persist()
         self.snippets.deadline = self.deadline
+        self.snippets.budget, self.snippets.phase = self.budget, self.phase
+        try:
+            self.remaining()
+        except (DeadlineExpired, LocalTimeout):
+            self.journal.update(mutation_active=False, facility_writes=previous_writes)
+            self.persist()
+            raise
         self.snippets.upload(snippet, content)
+        self.journal['facility_writes'] = 'issued'
         snippet['uploaded'] = True
         self.journal['mutation_active'] = False
         self.persist()
@@ -82,6 +100,7 @@ class Acceptance:
         check(not self.journal['mutation_active'] and all(s['uploaded'] for s in records)
               and self.result['cleanup']['vm']['status'] == 'passed', 'snippet_ownership_unconfirmed')
         self.snippets.deadline = self.deadline
+        self.snippets.budget, self.snippets.phase = self.budget, self.phase
         snapshot = self.snippets.inspect()
         check(snapshot.get('complete') is True and snapshot.get('local_node') == self.temporary['node']
               and snapshot.get('reference_strategy') == 'all_storage_aliases_by_filename'
@@ -89,10 +108,20 @@ class Acceptance:
               and self.temporary['vmid'] not in snapshot['vmids'], 'snippet_scope_unconfirmed')
         self.snippets.original_vmid = self.temporary['vmid']
         for snippet in records:
+            self.remaining()
             check(snippet['file_name'] not in snapshot['references'], 'snippet_still_referenced')
             self.journal['mutation_active'] = True
+            previous_writes = self.journal['facility_writes']
+            self.journal['facility_writes'] = 'unknown'
             self.persist()
+            try:
+                self.remaining()
+            except (DeadlineExpired, LocalTimeout):
+                self.journal.update(mutation_active=False, facility_writes=previous_writes)
+                self.persist()
+                raise
             answer = self.snippets.delete(snippet)
+            self.journal['facility_writes'] = 'issued'
             self.journal['mutation_active'] = False
             snippet['cleanup'] = answer
             self.persist()
@@ -100,24 +129,39 @@ class Acceptance:
         self.result['cleanup']['snippets'] = {'status': 'passed', 'reason_code': 'deleted', 'evidence_ref': 'journal.json'}
 
     def persist(self) -> None:
+        self.journal['deadline_outcome'] = dict(self.budget.outcome)
         save(self.root / 'journal.json', self.journal)
 
     def api(self, method: str, path: str, **kwargs: Any) -> Any:
-        remaining = self.deadline - time.monotonic()
-        if remaining <= 0:
-            raise AcceptanceFailure('deadline_exceeded')
+        remaining = self.remaining()
         self.client.timeout = min(30, remaining)
         return self.client.request(method, path, **kwargs)
 
+    def remaining(self) -> float:
+        return self.budget.remaining(self.phase)
+
+    def pause(self) -> None:
+        time.sleep(min(.2, self.remaining()))
+
     def mutation(self, phase: str, method: str, path: str, *, fields: dict[str, Any] | None = None,
                  task: bool = True, node: str | None = None) -> None:
-        check(time.monotonic() < self.deadline, 'deadline_exceeded')
+        self.remaining()
         item: dict[str, Any] = {'phase': phase, 'status': 'intent', 'node': node or self.temporary['node']}
         self.journal['tasks'].append(item)
         self.journal['mutation_active'] = True
+        previous_writes = self.journal['facility_writes']
+        self.journal['facility_writes'] = 'unknown'
         self.persist()
         try:
-            value = self.api(method, path, fields=fields)
+            try:
+                self.remaining()
+                value = self.api(method, path, fields=fields)
+            except (DeadlineExpired, LocalTimeout):
+                item['status'] = 'not_sent'
+                self.journal.update(mutation_active=False, facility_writes=previous_writes)
+                self.persist()
+                raise
+            self.journal['facility_writes'] = 'issued'
             if task:
                 item['upid'] = pve._normalize_upid(value, item['node'])
                 item['status'] = 'running'
@@ -127,7 +171,7 @@ class Acceptance:
                 item['status'] = 'succeeded'
                 self.journal['mutation_active'] = False
                 self.persist()
-        except AcceptanceFailure:
+        except (AcceptanceFailure, DeadlineExpired, LocalTimeout):
             raise
         except Exception:
             item['status'] = 'unknown'
@@ -135,7 +179,11 @@ class Acceptance:
             raise UnknownOutcome('native_operation_unknown') from None
 
     def wait_task(self, item: dict[str, Any]) -> None:
-        while time.monotonic() < self.deadline:
+        while True:
+            try:
+                self.remaining()
+            except (DeadlineExpired, LocalTimeout):
+                raise UnknownOutcome('native_task_unknown') from None
             row = self.api('GET', f"/api2/json/nodes/{quote(item['node'], safe='')}/tasks/{quote(item['upid'], safe='')}/status")
             if isinstance(row, dict) and row.get('status') == 'stopped':
                 item['status'] = 'succeeded' if row.get('exitstatus') == 'OK' else 'failed'
@@ -143,8 +191,7 @@ class Acceptance:
                 self.persist()
                 check(item['status'] == 'succeeded', 'native_task_failed')
                 return
-            time.sleep(min(.2, max(0, self.deadline - time.monotonic())))
-        raise UnknownOutcome('native_task_unknown')
+            self.pause()
 
     def vm_absent(self) -> bool:
         path = f"/vms/{self.temporary['vmid']}"
@@ -262,7 +309,8 @@ class Acceptance:
               and not config.get('lock') and config.get('template', 0) in (0, '0'), 'temporary_identity_changed')
 
     def guest(self) -> None:
-        guest_deadline = min(self.deadline, time.monotonic() + self.request['timeouts']['guest_seconds'])
+        self.budget.limit('work', self.request['timeouts']['guest_seconds'])
+        guest_deadline = min(self.budget.bounds['work'], self.budget.local['work'])
         self.deadline = guest_deadline
         self.stage = 'guest_agent'
         while True:
@@ -272,23 +320,42 @@ class Acceptance:
             except OperationFailed:
                 if time.monotonic() >= guest_deadline:
                     raise AcceptanceFailure('guest_timeout') from None
-                time.sleep(.2)
+                self.pause()
         self.mark('guest_agent', 'passed', 'verified')
         self.stage = 'cloud_init'
         while time.monotonic() < guest_deadline:
             # JSON body preserves the API's array command type; no shell or caller program.
-            process = self.api('POST', self.base + '/agent/exec',
-                               body=json.dumps({'command': ['cloud-init', 'status', '--format', 'json']}).encode(),
-                               content_type='application/json')
+            self.remaining()
+            intent: dict[str, Any] = {'phase': 'guest_exec', 'status': 'intent'}
+            self.journal['tasks'].append(intent)
+            self.journal['mutation_active'] = True
+            previous_writes = self.journal['facility_writes']
+            self.journal['facility_writes'] = 'unknown'
+            self.persist()
+            try:
+                process = self.api('POST', self.base + '/agent/exec',
+                                   body=json.dumps({'command': ['cloud-init', 'status', '--format', 'json']}).encode(),
+                                   content_type='application/json')
+            except (DeadlineExpired, LocalTimeout):
+                intent['status'] = 'not_sent'
+                self.journal.update(mutation_active=False, facility_writes=previous_writes)
+                self.persist()
+                raise
             check(isinstance(process, dict) and type(process.get('pid')) is int, 'guest_response_invalid')
+            intent.update(status='running', pid=process['pid'])
+            self.journal['facility_writes'] = 'issued'
+            self.persist()
             while True:
                 status = self.api('GET', self.base + '/agent/exec-status', fields={'pid': process['pid']})
                 check(isinstance(status, dict), 'guest_response_invalid')
                 if status.get('exited') in (True, 1):
+                    intent['status'] = 'succeeded' if status.get('exitcode') == 0 else 'failed'
+                    self.journal['mutation_active'] = False
+                    self.persist()
                     break
                 if time.monotonic() >= guest_deadline:
                     raise AcceptanceFailure('guest_timeout')
-                time.sleep(.2)
+                self.pause()
             save(self.root / 'cloud-init-status.json', status)
             check(not status.get('out-truncated') and status.get('exitcode') == 0, 'cloud_init_failed')
             try:
@@ -297,7 +364,7 @@ class Acceptance:
                 raise AcceptanceFailure('cloud_init_unparseable') from None
             check(isinstance(cloud, dict), 'cloud_init_unparseable')
             if cloud.get('status') in {'running', 'not started'}:
-                time.sleep(.2)
+                self.pause()
                 continue
             check(cloud.get('status') == 'done' and cloud.get('extended_status') == 'done'
                   and cloud.get('errors') == [] and cloud.get('recoverable_errors') == {}
@@ -321,9 +388,13 @@ class Acceptance:
                             evidence_ref=evidence if (self.root / evidence).is_file() else None)
 
     def cleanup(self) -> None:
-        self.deadline = time.monotonic() + self.request['timeouts']['cleanup_seconds']
+        self.phase = 'cleanup'
+        self.budget.limit('cleanup', self.request['timeouts']['cleanup_seconds'])
+        self.deadline = min(self.budget.bounds['cleanup'], self.budget.local['cleanup'])
+        self.remaining()
         cleanup = self.result['cleanup']
-        if self.journal['mutation_active'] or (self.owned is None and self.journal['tasks']):
+        sent_tasks = [item for item in self.journal['tasks'] if item['status'] != 'not_sent']
+        if self.journal['mutation_active'] or (self.owned is None and sent_tasks):
             raise UnknownOutcome('ownership_or_task_unknown')
         if self.owned is None:
             return
@@ -348,15 +419,18 @@ class Acceptance:
         cleanup['volumes'] = {'status': 'passed', 'reason_code': 'deleted', 'evidence_ref': 'journal.json'}
 
     def execute(self) -> dict[str, Any]:
-        self.result = {'kind': 'pve-template-acceptance-result', 'schema_version': 1,
+        self.result = {'kind': 'pve-template-acceptance-result', 'schema_version': 2,
+            'deadlines': self.request['deadlines'], 'deadline_outcome': self.budget.outcome,
+            'facility_writes': self.journal['facility_writes'],
             'execution_id': self.journal['execution_id'], 'request_digest': self.journal['request_digest'],
             'runtime': self.journal['runtime'],
             'template': {key: self.record[key] for key in ('record_id', 'execution_id', 'artifact_digest', 'node', 'vmid', 'smbios_uuid')},
-            'temporary_resources': {},
+            'temporary_resources': [],
             'checks': [{'id': name, 'status': 'not_attempted', 'reason_code': 'not_attempted', 'evidence_ref': None} for name in CHECKS],
             'failure_stage': None, 'cleanup': {name: {'status': 'not_required', 'reason_code': 'not_created', 'evidence_ref': None} for name in ('vm', 'volumes', 'snippets')},
             'residuals': {'inventory_complete': True, 'items': []}, 'overall': 'unknown', 'collection': {'status': 'complete', 'reason_code': 'collected'}}
         try:
+            self.budget.admit()
             self.source_check(initial=True)
             check(self.vm_absent(), 'vmid_occupied')
             self.storage_permissions()
@@ -371,15 +445,21 @@ class Acceptance:
             self.mutation('start', 'POST', self.base + '/status/start')
             self.guest()
         except Exception as exc:
-            unknown = not isinstance(exc, AcceptanceFailure) or self.journal['mutation_active']
+            unknown = not isinstance(exc, (AcceptanceFailure, DeadlineExpired, LocalTimeout)) or self.journal['mutation_active']
             self.mark(self.stage, 'unknown' if unknown else 'failed',
-                      str(exc) if isinstance(exc, AcceptanceFailure) else 'observation_unknown')
+                      str(exc) if isinstance(exc, (AcceptanceFailure, DeadlineExpired, LocalTimeout)) else 'observation_unknown')
             self.result['failure_stage'] = self.stage
         finally:
+            if self.budget.outcome['status'] == 'rejected':
+                self.journal['deadline_outcome'] = dict(self.budget.outcome)
+                self.result['deadline_outcome'] = self.budget.outcome
+                self.result['facility_writes'] = self.journal['facility_writes']
+                self.result['overall'] = 'failed'
+                return validate_acceptance_result(self.result)
             try:
                 self.cleanup()
             except Exception as exc:
-                status = 'failed' if isinstance(exc, AcceptanceFailure) and not self.journal['mutation_active'] else 'unknown'
+                status = 'failed' if isinstance(exc, (AcceptanceFailure, DeadlineExpired, LocalTimeout)) and not self.journal['mutation_active'] else 'unknown'
                 for name in ('vm', 'volumes'):
                     if self.result['cleanup'][name]['status'] != 'passed':
                         self.result['cleanup'][name] = {'status': status, 'reason_code': 'cleanup_incomplete', 'evidence_ref': 'journal.json'}
@@ -402,13 +482,16 @@ class Acceptance:
             except Exception as exc:
                 self.mark('source_unchanged', 'failed' if isinstance(exc, AcceptanceFailure) and str(exc) != 'deadline_exceeded' else 'unknown', 'source_recheck_failed')
         self.result['temporary_resources'] = self.resources()
+        self.result['deadline_outcome'] = self.budget.outcome
+        self.journal['deadline_outcome'] = dict(self.budget.outcome)
+        self.result['facility_writes'] = self.journal['facility_writes']
         statuses = [item['status'] for item in self.result['checks']] + [item['status'] for item in self.result['cleanup'].values()]
         self.result['overall'] = ('unknown' if 'unknown' in statuses or any(x['existence'] == 'unknown' for x in self.result['residuals']['items']) or not self.result['residuals']['inventory_complete'] else 'passed'
                                   if all(item in {'passed', 'not_required'} for item in statuses) else 'failed')
         return validate_acceptance_result(self.result)
 
     def resources(self) -> list[dict[str, Any]]:
-        if not self.journal['tasks']:
+        if not any(item['status'] != 'not_sent' for item in self.journal['tasks']):
             return []
         common = {'node': self.temporary['node'], 'created_by': self.journal['execution_id'],
                   'ownership': 'owned' if self.owned else 'unknown'}
@@ -450,6 +533,7 @@ def run(selected: Any, operation: str, scope: str, execution: Any, image_digest:
             raise ValidationError('acceptance_request is required')
         admission_path = selected.files.get('execution_admission')
         admission = load_strict_json(Path(admission_path)) if admission_path else selected.options.get('admission')
+        budget = DeadlineBudget(request['deadlines'])
         journal = begin(root, 'accept', request, admission, execution_id, image_digest)
         ca_file = execution.environ.get('PVE_API_CA')
         if ca_file:
@@ -465,7 +549,7 @@ def run(selected: Any, operation: str, scope: str, execution: Any, image_digest:
             # Publisher client loads the caller CA; retain the system roots too.
             client.context.load_default_certs()
         snippets = acceptance_snippets.Snippets(selected, execution, request['timeouts']['work_seconds'], request['cloud_init']['ssh'])
-        result = Acceptance(client, request, journal, root, snippets).execute()
+        result = Acceptance(client, request, journal, root, snippets, budget).execute()
         journal.update(status='finished', result_digest=canonical_digest(result))
         save(root / 'journal.json', journal)
     save(root / 'result.json', result)

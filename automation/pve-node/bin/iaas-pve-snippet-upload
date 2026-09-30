@@ -8,7 +8,7 @@ readonly RM='/bin/rm'
 readonly MKTEMP='/usr/bin/mktemp'
 
 usage() {
-  printf 'usage: %s [--create-only | --verify --sha256 SHA256] --storage STORAGE --filename PREFIX-N-{user-data,network-config}.yml\n' "$0" >&2
+  printf 'usage: %s [--mode ordinary|acceptance] [--deadline-at UTC] [--create-only | --verify --sha256 SHA256] --storage STORAGE --filename PREFIX-N-{user-data,network-config}.yml\n' "$0" >&2
 }
 
 die() {
@@ -23,9 +23,19 @@ filename=''
 verify='false'
 create_only='false'
 expected_sha256=''
+mode='ordinary'
+deadline_at=''
 
 while [[ $# -gt 0 ]]; do
   case $1 in
+    --mode)
+      mode=${2-}
+      shift 2
+      ;;
+    --deadline-at)
+      deadline_at=${2-}
+      shift 2
+      ;;
     --storage)
       storage_id=${2-}
       shift 2
@@ -57,6 +67,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+[[ ${mode} == 'ordinary' || ${mode} == 'acceptance' ]] || die 'mode must be ordinary or acceptance'
+[[ ${mode} != 'acceptance' || -n ${deadline_at} ]] || die 'deadline-at is required for acceptance mode'
+[[ ${mode} != 'ordinary' || -z ${deadline_at} ]] || die 'deadline-at is only valid for acceptance mode'
+
 [[ -n ${storage_id} ]] || die 'storage is required'
 [[ -n ${filename} ]] || die 'filename is required'
 [[ ${storage_id} =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die 'storage id must use conservative characters only'
@@ -75,6 +89,95 @@ fi
 
 if [[ ! -x ${IAAS_PVE_SNIPPET_UPLOAD_PVESM:-${PVESM}} ]]; then
   die 'pvesm is required'
+fi
+
+# The acceptance mode is explicit and cannot fall back to the ordinary upload
+# path. Its remote checks bound subprocess/input waits and guard final creation.
+if [[ ${mode} == 'acceptance' ]]; then
+  [[ ${create_only} == 'true' || ${verify} == 'true' ]] || die 'acceptance requires create-only or verify'
+  exec python3 /dev/fd/3 "${IAAS_PVE_SNIPPET_UPLOAD_PVESM:-${PVESM}}" "${storage_id}" "${filename}" "${deadline_at}" "${verify}" "${expected_sha256}" 3<<'PYTHON'
+from datetime import datetime, timezone
+import hashlib
+import os
+from pathlib import Path
+import re
+import select
+import subprocess
+import sys
+import time
+
+pvesm, storage, filename, value, verify, expected = sys.argv[1:]
+try:
+    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z', value):
+        raise ValueError('deadline must use YYYY-MM-DDTHH:mm:ssZ')
+    cutoff = datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc).timestamp()
+    monotonic_limit = time.monotonic() + cutoff - time.time()
+
+    def remaining():
+        global monotonic_limit
+        monotonic_limit = min(monotonic_limit, time.monotonic() + cutoff - time.time())
+        budget = monotonic_limit - time.monotonic()
+        if budget <= 0:
+            raise TimeoutError('work_deadline_expired')
+        return budget
+
+    resolved = subprocess.run([pvesm, 'path', f'{storage}:snippets/{filename}'],
+                              check=True, text=True, capture_output=True,
+                              timeout=min(20, remaining())).stdout.strip()
+    target = Path(resolved)
+    if not target.is_absolute() or '\n' in resolved or target.parts[-2:] != ('snippets', filename) or '..' in target.parts:
+        raise ValueError('pvesm returned an invalid snippet path')
+    if verify == 'true':
+        import yaml
+        remaining()
+        payload = target.read_bytes()
+        if not payload or hashlib.sha256(payload).hexdigest() != expected:
+            raise ValueError('checksum mismatch or empty snippet')
+        yaml.safe_load(payload.decode('utf-8'))
+        remaining()
+    else:
+        chunks = []
+        while True:
+            if not select.select([sys.stdin.buffer], [], [], min(20, remaining()))[0]:
+                remaining()
+                continue
+            chunk = os.read(sys.stdin.fileno(), 1024 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        mode = 0o600
+        if Path('/usr/bin/findmnt').exists() or Path('/bin/findmnt').exists():
+            result = subprocess.run(['findmnt', '-no', 'FSTYPE', '--target', str(target.parent.parent)],
+                                    text=True, capture_output=True, timeout=min(20, remaining()))
+            if result.stdout.strip() in ('nfs', 'nfs4'):
+                mode = 0o644
+        elif str(target.parent.parent).startswith('/mnt/pve/'):
+            mode = 0o644
+        remaining()
+        missing = []
+        directory = target.parent
+        while not directory.exists():
+            missing.append(directory)
+            directory = directory.parent
+        for directory in reversed(missing):
+            remaining()
+            directory.mkdir()
+        payload = b''.join(chunks)
+        # Check after path resolution, input, and mount inspection immediately
+        # before the facility create. Existing files/symlinks remain protected.
+        remaining()
+        descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)
+        with os.fdopen(descriptor, 'wb') as output:
+            output.write(payload)
+            output.flush()
+            os.fsync(output.fileno())
+except (subprocess.TimeoutExpired, TimeoutError):
+    print('error: work_deadline_expired', file=sys.stderr)
+    raise SystemExit(1)
+except (OSError, ValueError, subprocess.SubprocessError) as exc:
+    print(f'error: {exc}', file=sys.stderr)
+    raise SystemExit(1)
+PYTHON
 fi
 
 resolve_target_path() {

@@ -34,11 +34,14 @@ def record(request: dict, content: str) -> dict:
 
 class Snippets(Helper):
     def upload(self, snippet: dict, content: str) -> None:
+        require(self.budget is not None, 'acceptance upload requires frozen deadlines')
+        assert self.budget is not None
         args = ['sudo', '-n', '/usr/local/sbin/iaas-pve-snippet-upload',
-                '--storage', snippet['storage'], '--filename', snippet['file_name']]
+                '--storage', snippet['storage'], '--filename', snippet['file_name'],
+                '--mode', 'acceptance', '--deadline-at', self.budget.deadlines['work_deadline_at']]
         for suffix, payload in [(['--create-only'], content),
                                 (['--verify', '--sha256', snippet['sha256']], None)]:
-            remaining = self.deadline - time.monotonic()
+            remaining = min(self.deadline - time.monotonic(), self.budget.remaining('work'))
             require(remaining > 0, 'snippet deadline expired')
             subprocess.run([*self.command, shlex.join([*args, *suffix])], input=payload,
                            env=self.env, capture_output=True, text=True, timeout=remaining, check=True)

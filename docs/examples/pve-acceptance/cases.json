@@ -82,6 +82,21 @@
       "file": "reject-false-success.json",
       "valid": false,
       "kind": "pve-template-acceptance-result"
+    },
+    {
+      "file": "cleanup-expired-request.json",
+      "kind": "pve-snippet-cleanup-request",
+      "valid": true
+    },
+    {
+      "file": "cleanup-expired-result.json",
+      "kind": "pve-snippet-cleanup-result",
+      "valid": true
+    },
+    {
+      "file": "reject-missing-deadlines.json",
+      "kind": "pve-template-acceptance-request",
+      "valid": false
     }
   ]
 }

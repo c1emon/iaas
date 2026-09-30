@@ -1,0 +1,70 @@
+{
+  "schema_version": 2,
+  "deadlines": {
+    "work_deadline_at": "2000-01-01T00:00:00Z",
+    "cleanup_deadline_at": "2000-01-01T00:10:00Z"
+  },
+  "deadline_outcome": {
+    "phase": "admission",
+    "status": "rejected"
+  },
+  "facility_writes": "none",
+  "execution_id": "cleanup-expired-001",
+  "request_digest": "sha256:853c46e28de6bb8fe466f87e8e584cfdb3c3e3dd9cefb0023964c1ac06224858",
+  "runtime": {
+    "image_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "residuals": {
+    "inventory_complete": false,
+    "items": [
+      {
+        "kind": "snippet",
+        "node": "pve1",
+        "identity": "local:snippets/accept-001.yaml",
+        "created_by": "accept-001",
+        "ownership": "unknown",
+        "existence": "unknown",
+        "reason_code": "not_checked"
+      }
+    ]
+  },
+  "overall": "unknown",
+  "collection": {
+    "status": "complete",
+    "reason_code": "result_collected"
+  },
+  "kind": "pve-snippet-cleanup-result",
+  "origin": "acceptance",
+  "original_vm": {
+    "node": "pve1",
+    "vmid": 9100,
+    "smbios_uuid": "22222222-2222-4222-8222-222222222222"
+  },
+  "original_execution_id": "accept-001",
+  "delete_plan_digest": null,
+  "acceptance_request_digest": "sha256:91f84d25bc4c3043d54c49d41442581906963635218afcaea2ebf1c10715fd15",
+  "deletion_execution_id": "accept-001",
+  "retry_of": null,
+  "scope_check": {
+    "status": "unknown",
+    "nodes": [],
+    "storages": [
+      "local"
+    ],
+    "permissions_complete": false,
+    "inventory_complete": false,
+    "reason_code": "work_deadline_expired"
+  },
+  "items": [
+    {
+      "node": "pve1",
+      "storage": "local",
+      "file_id": "local:snippets/accept-001.yaml",
+      "file_name": "accept-001.yaml",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "record_ref": "accept-001.yaml",
+      "status": "unknown",
+      "reason_code": "not_checked"
+    }
+  ]
+}

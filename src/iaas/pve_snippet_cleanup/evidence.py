@@ -28,10 +28,13 @@ def execution_materials(root: Path, refs: dict[str, Any], operation: str) -> tup
     require(digest == refs['request_digest'] == journal.get('request_digest')
             and refs['execution_id'] == journal.get('execution_id')
             and journal.get('kind') == 'pve-one-shot-journal' and journal.get('schema_version') == 1
+            and journal.get('deadlines') == request['deadlines']
             and journal.get('operation') == operation and journal.get('target') == request.get('target')
             and journal.get('mutation_active') is False, 'original execution binding or inactivity is unknown')
     validate_execution_admission(journal.get('admission'), digest=digest.removeprefix('sha256:'),
                                  execution_id=refs['execution_id'], target=request['target'])
+    require(journal['admission'].get('deadlines') == request['deadlines'],
+            'original admission deadlines conflict')
     if refs['result'] is not None:
         result = material(root, refs['result'])
         require(journal.get('status') == 'finished' and journal.get('result_digest') == canonical_digest(result)
@@ -137,7 +140,7 @@ def validate_original(request: dict, root: Path) -> None:
         previous, _ = execution_materials(root, request['retry_materials'], 'snippet-cleanup')
         # Path relocations are transport details: compare loaded evidence plus
         # original digests, while preserving every identity in the full list.
-        ignored = {'timeout_seconds', 'retry_of', 'retry_materials'}
+        ignored = {'timeout_seconds', 'retry_of', 'retry_materials', 'deadlines'}
         def resolved(value):
             if isinstance(value, dict):
                 if set(value) == {'path', 'sha256'}:

@@ -31,7 +31,7 @@ def request():
 
 def admission(value):
     return {'schema_version': 1, 'execution_id': 'accept-001',
-            'plan_digest': canonical_digest(value).removeprefix('sha256:'), 'target': value['target'],
+            'plan_digest': canonical_digest(value).removeprefix('sha256:'), 'target': value['target'], 'deadlines': value['deadlines'],
             'approved': True, 'consumption': {'reserved': True, 'reservation_id': 'r-1'},
             'pending': {'record_id': 'p-1'}, 'serialization': {'held': True, 'context_id': 'c-1'}}
 
@@ -240,6 +240,8 @@ def test_guest_timeout_uses_independent_cleanup_budget(tmp_path, monkeypatch):
     def sleep(seconds):
         clock.now += seconds
     monkeypatch.setattr(mod, 'time', SimpleNamespace(monotonic=lambda: clock.now, sleep=sleep))
+    from iaas.pve_template import deadlines
+    monkeypatch.setattr(deadlines.time, 'monotonic', lambda: clock.now)
     value = request()
     value['timeouts']['guest_seconds'] = 1
     api = API(value)
