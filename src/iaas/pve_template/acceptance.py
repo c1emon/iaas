@@ -446,7 +446,8 @@ def run(selected: Any, operation: str, scope: str, execution: Any, image_digest:
                                        'status': 'failed', 'overall': 'unknown', 'reason_code': 'original_result_missing'})
             raise OperationFailed('original acceptance result is incomplete; no mutation performed')
     else:
-        require(request is not None, 'acceptance_request is required')
+        if request is None:
+            raise ValidationError('acceptance_request is required')
         admission_path = selected.files.get('execution_admission')
         admission = load_strict_json(Path(admission_path)) if admission_path else selected.options.get('admission')
         journal = begin(root, 'accept', request, admission, execution_id, image_digest)

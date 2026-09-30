@@ -21,6 +21,8 @@ HELPER = '/usr/local/sbin/iaas-pve-snippet-delete'
 
 
 class Helper:
+    original_vmid: int
+
     def __init__(self, selected: Any, execution: Any, timeout: int, ssh: dict[str, Any]):
         self.deadline = time.monotonic() + timeout
         self.env = execution.environ

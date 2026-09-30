@@ -49,6 +49,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     execution = None
     outputs = None
+    selected = None
     try:
         effects = operation_for(args.component, args.operation)
         mapping = json.loads(args.input_map.read_text()) if args.input_map else None
@@ -186,7 +187,7 @@ def main(argv: list[str] | None = None) -> int:
             retained = any(item.get("retain_storage", False) for item in phases)
             try:
                 domain_summary = {}
-                if ((args.component == "pve-template" and (args.operation == "accept" or (args.operation == "read"
+                if selected is not None and ((args.component == "pve-template" and (args.operation == "accept" or (args.operation == "read"
                             and "original_execution_dir" in selected.files)))
                         or (args.component == "pve" and args.operation == "snippet-cleanup")):
                     # Preserve only public domain outcomes from this new output;
