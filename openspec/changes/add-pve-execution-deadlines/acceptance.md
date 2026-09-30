@@ -11,6 +11,6 @@
 
 ## 发布状态与限制
 
-runtime/launcher 新固定版本尚未发布，未完成的交付任务保持未勾选。交互式 gh 的 1Password 授权连续超时，尚不能推送、创建 PR 或触发正式 release；等待本机授权恢复。本机 Docker CLI 缺少 buildx，现有 runtime 构建脚本因此未能执行；没有用其他构建流程替代正式 release 校验。
+runtime/launcher 新固定版本尚未发布，未完成的交付任务保持未勾选。实现分支已正常推送，GitHub 连接器可读取提交并用于 PR/CI；交互式 gh 的 1Password 授权仍超时，正式 release 操作的可用通道待确认。本机 Docker CLI 缺少 buildx，现有 runtime 构建脚本因此未能执行；没有用其他构建流程替代正式 release 校验。
 
 恢复后使用既有 CI/release 流程，以实际发布产物确定新版本、manifest/platform digests、launcher checksums 及 v2 能力，再更新本记录。不覆盖历史版本。本地软件/传输 fixtures 和 launcher 构建不是实际 DinD daemon、真实 PVE、共享存储或生产资格证据；未执行现场设施写入。
