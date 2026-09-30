@@ -2,9 +2,7 @@ import base64
 import hashlib
 import io
 import os
-from pathlib import Path
 import sys
-from urllib.request import Request, urlopen
 
 import pytest
 

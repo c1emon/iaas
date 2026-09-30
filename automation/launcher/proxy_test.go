@@ -34,7 +34,7 @@ func TestProxyNormalizationAndAdmission(t *testing.T) {
 			}
 		})
 	}
-	for _, value := range []string{"socks5://proxy", "http://", "http://proxy/path", "http://proxy?query", "http://proxy#fragment", "http://proxy#", "http://proxy/%2f", "http://proxy/%2F", "http://proxy%25", "HTTP://proxy", "Https://proxy", "http://proxy:", "http://proxy:0", "http://proxy:65536", "http://:secret@proxy", "http://user:p%zz@proxy", "http://user:p%0a@proxy", "http://user%3Aname:password@proxy", "http://user%00:password@proxy", "http://user:password@proxy host"} {
+	for _, value := range []string{"socks5://proxy", "http://", "http://proxy/path", "http://proxy?query", "http://proxy#fragment", "http://proxy#", "http://proxy/%2f", "http://proxy/%2F", "http://proxy%25", "HTTP://proxy", "Https://proxy", "http://proxy:", "http://proxy:0", "http://proxy:65536", "http://:secret@proxy", "http://user@name:password@proxy", "http://user:p%zz@proxy", "http://user:p%0a@proxy", "http://user%3Aname:password@proxy", "http://user%00:password@proxy", "http://user:password@proxy host"} {
 		_, err := normalizedProxy(true, func(name string) string {
 			if name == "HTTP_PROXY" {
 				return value

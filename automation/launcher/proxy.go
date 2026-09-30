@@ -47,7 +47,7 @@ func normalizedProxy(network bool, lookup func(string) string) (map[string]strin
 }
 
 func validProxyEndpoint(value string) bool {
-	if (!strings.HasPrefix(value, "http://") && !strings.HasPrefix(value, "https://")) || strings.ContainsAny(value, "?#") || strings.ContainsFunc(value, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) {
+	if (!strings.HasPrefix(value, "http://") && !strings.HasPrefix(value, "https://")) || strings.Count(value, "@") > 1 || strings.ContainsAny(value, "?#") || strings.ContainsFunc(value, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) {
 		return false
 	}
 	parsed, err := url.Parse(value)

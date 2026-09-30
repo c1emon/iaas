@@ -10,4 +10,4 @@ GitNexus impact/detect-changes 已执行。共享捕获、库存校验和凭据�
 
 ## 固定发布与真实消费
 
-待发布固定版本并记录 digest/checksums。ONE SSH/Docker 可达（Linux amd64，Docker 29.7.2）；正式 local/真实 DinD 的隔离网络下载、Basic 正反例、NO_PROXY、离线与诱饵边界尚未执行，任务 4 保持未勾选。测试结束将清理本次容器、网络、卷及临时文件，不改变现有基础设施。
+`v0.1.0-rc.17` 固定到 `e66a863b0a9da4218722c5213c24baec4a82cdd9`，发布作业 `36750953794` 的 amd64 仓库检查为 1931 passed、3 failed、4 skipped：三项旧 private-CA 测试断言未包含新增阶段诊断字段；runtime 镜像未完成发布。修正断言并增加代理认证反射的 TLS 诊断验证后发布新版本，不覆盖 rc.17。待记录成功版本 digest/checksums。ONE SSH/Docker 可达（Linux amd64，Docker 29.7.2）；正式 local/真实 DinD 的隔离网络下载、Basic 正反例、NO_PROXY、离线与诱饵边界尚未执行，任务 4 保持未勾选。测试结束将清理本次容器、网络、卷及临时文件，不改变现有基础设施。
