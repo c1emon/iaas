@@ -7,7 +7,7 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 import os
 import re
-from urllib.parse import quote, quote_plus, unquote, urlsplit
+from urllib.parse import quote, quote_plus, unquote, unquote_to_bytes, urlsplit
 import urllib.request
 
 from iaas.common.errors import ValidationError
@@ -104,6 +104,7 @@ class ProxyRedactor:
 
     def __init__(self, environ: Mapping[str, str]):
         secrets: set[str] = set()
+        byte_secrets: set[bytes] = set()
         for name in PROXY_NAMES:
             value = environ.get(name, "")
             if not value:
@@ -120,10 +121,19 @@ class ProxyRedactor:
                             username, password))
             authorization = base64.b64encode(f"{username}:{password}".encode()).decode()
             secrets.update((authorization, f"Basic {authorization}"))
+            # Go clients preserve percent-decoded URL bytes when constructing
+            # Basic authentication; these need not be valid UTF-8 text.
+            raw_user = unquote_to_bytes(parsed.username or "")
+            raw_password = unquote_to_bytes(parsed.password or "")
+            raw_userinfo = raw_user + b":" + raw_password
+            raw_authorization = base64.b64encode(raw_userinfo)
+            byte_secrets.update((raw_user, raw_password, raw_userinfo,
+                                 raw_authorization, b"Basic " + raw_authorization))
         for value in tuple(secrets):
             if value:
                 secrets.update((quote(value, safe=""), quote_plus(value, safe="")))
-        tokens = sorted({value.encode() for value in secrets if value}, key=len, reverse=True)
+        tokens = sorted({value.encode() for value in secrets if value} | {value for value in byte_secrets if value},
+                        key=len, reverse=True)
         def encoded_pattern(token: bytes) -> bytes:
             def hex_pair(match: re.Match[bytes]) -> bytes:
                 return b"%" + b"".join(bytes((value,)) if value < 65 else

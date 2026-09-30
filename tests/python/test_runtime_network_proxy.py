@@ -145,3 +145,17 @@ def test_existing_image_download_consumes_authenticated_proxy_and_checksum(tmp_p
         server.shutdown()
         server.server_close()
         worker.join()
+
+
+def test_basic_authentication_preserves_non_utf8_percent_decoded_bytes(tmp_path):
+    proxy = 'http://synthetic%FFuser:synthetic%FEpassword@proxy.example:3128'
+    environ = normalize_proxy_environment({'HTTP_PROXY': proxy}, network=True)
+    raw_user, raw_password = b'synthetic\xffuser', b'synthetic\xfepassword'
+    basic = base64.b64encode(raw_user + b':' + raw_password)
+    text = b'407 Basic ' + basic + b' ' + raw_user + b' ' + raw_password + b'\n'
+    capture = tmp_path / 'capture.raw'
+    failures = []
+    with capture.open('wb') as destination:
+        _capture_output(io.BytesIO(text), destination, failures, redactor=ProxyRedactor(environ))
+    assert not failures
+    assert capture.read_bytes() == b'407 [REDACTED] [REDACTED] [REDACTED]\n'
