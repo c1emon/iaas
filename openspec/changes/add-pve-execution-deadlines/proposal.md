@@ -28,4 +28,4 @@
 
 预计涉及 acceptance/cleanup contracts、execution admission 的这两个入口校验、原生执行、受限 snippet helpers、能力发现、launcher、schemas/examples 和定向测试。实施预计 M（2–5 天），按 A/B 必要正确性及已知风险定向加固处理。复用已有 journal、原生任务记录及 release 流程，不建审批台账、时间服务、签名链或新证据框架，不影响普通 VM plan/apply 和模板 publication 合同。
 
-infra-ops 负责从合法目标开始时间及批准策略计算并持久化截止时间；IaaS 仅验证绑定并在原生内部落实。真实 PVE、共享环境及生产资格测试需另行限定授权。本轮仅建立并校验 change；不实现、不发布。
+infra-ops 负责从合法目标开始时间及批准策略计算并持久化截止时间；IaaS 仅验证绑定并在原生内部落实。真实 PVE、共享环境及生产资格测试需另行限定授权。当前实施与固定版本交付证据见 [acceptance.md](acceptance.md)。

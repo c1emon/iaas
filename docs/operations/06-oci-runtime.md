@@ -6,15 +6,26 @@ versioned lifecycle contracts consumed by callers:
 
 ```json
 "lifecycle_versions": {
-  "pve": {"plan": 2, "result": 1},
-  "pve-template": {"preview": 2, "result": 2, "record": 2},
+  "pve": {"plan": 2, "result": 1, "snippet_cleanup_request": 2, "snippet_cleanup_result": 2},
+  "pve-template": {"preview": 2, "result": 2, "record": 2, "acceptance_request": 2, "acceptance_result": 2},
   "image": {"artifact": 1, "build_request": 1, "test_request": 1, "test_result": 1}
+},
+"operation_capabilities": {
+  "pve-template": {"accept": {"absolute_deadlines": true}},
+  "pve": {"snippet-cleanup": {"absolute_deadlines": true}}
 }
 ```
 
 Select a published version compatible with the launcher interface and these
 component contracts, then pin its repository digest. Historical `v0.1.0-rc.2`
 provides only the legacy Make interface and is not launcher-compatible.
+
+`v0.1.0-rc.16` publishes both absolute-deadline operations above. Its fixed runtime
+reference is `ghcr.io/c1emon/iaas-runtime@sha256:c180df3e1c25c2119b6de721e7d91d6b81fca95d157fdd9a4b0486b01590b238`.
+Download the versioned launcher and `SHA256SUMS` from the
+[release](https://github.com/c1emon/iaas/releases/tag/v0.1.0-rc.16); platform digests,
+checksums and the actual software verification scope are recorded in the
+[delivery record](../../openspec/changes/add-pve-execution-deadlines/acceptance.md).
 
 Builds support Linux amd64 and arm64; the Release workflow publishes both under
 one version manifest. Use the digest from the selected successful release;

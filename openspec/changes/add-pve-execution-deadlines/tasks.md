@@ -23,5 +23,5 @@
 ## 4. 固定版本交付
 
 - [x] 4.1 更新版本说明与 infra-ops 消费示例，明确 caller 计算期限、原生执行检查、helper 升级要求及证据边界。
-- [ ] 4.2 通过现有 release 流程发布新的 runtime 和 launcher，核对实际产物、manifest/platform digests、SHA256SUMS 和 v2 能力；不覆盖历史版本。
-- [ ] 4.3 记录可固定消费的版本/摘要与软件验证结果；不将发布或 fixtures 表述为真实设施验收。
+- [x] 4.2 通过现有 release 流程发布新的 runtime 和 launcher，核对实际产物、manifest/platform digests、SHA256SUMS 和 v2 能力；不覆盖历史版本。
+- [x] 4.3 记录可固定消费的版本/摘要与软件验证结果；不将发布或 fixtures 表述为真实设施验收。
