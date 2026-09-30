@@ -20,7 +20,7 @@
 
 ## 4. 固定版本与消费验收
 
-- [ ] 4.1 按现有 release 流程发布 runtime/launcher，记录固定版本/digest/checksums 与代理 capability，不覆盖历史版本。
-- [ ] 4.2 在已授权 ONE/等价隔离环境，通过固定版本正式 launcher 的 local 和真实 DinD 完成无直连/有代理的 PVE prepare-dependencies 正反例及 Basic 认证成功/失败，确认实际下载、合锁归档和公开材料无认证泄露。
-- [ ] 4.3 验证非 loopback 目标 NO_PROXY 命中/不命中、失效代理非零可诊断、离线仍隔离及设施凭据/state 诱饵无访问，不修改共享网络策略。
-- [ ] 4.4 更新简明验收记录，区分 fixtures、实际容器/网络消费与设施验收，按实际结果勾选任务；合并/PR 前同步真实状态。
+- [x] 4.1 按现有 release 流程发布 runtime/launcher，记录固定版本/digest/checksums 与代理 capability，不覆盖历史版本。
+- [x] 4.2 在已授权 ONE/等价隔离环境，通过固定版本正式 launcher 的 local 和真实 DinD 完成无直连/有代理的 PVE prepare-dependencies 正反例及 Basic 认证成功/失败，确认实际下载、合锁归档和公开材料无认证泄露。
+- [x] 4.3 验证非 loopback 目标 NO_PROXY 命中/不命中、失效代理非零可诊断、离线仍隔离及设施凭据/state 诱饵无访问，不修改共享网络策略。
+- [x] 4.4 更新简明验收记录，区分 fixtures、实际容器/网络消费与设施验收，按实际结果勾选任务；合并/PR 前同步真实状态。

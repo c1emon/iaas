@@ -93,6 +93,8 @@ SSH, raw sockets or Docker daemon image pulls, and is not an egress firewall.
 NO_PROXY uses each tool's native matching rules; no internal address is added
 automatically. The endpoint must be reachable from the runtime container; DinD
 localhost identifies its container, not the caller host.
+For a remote TCP Docker daemon, callers must include its control endpoint in
+NO_PROXY so the Docker CLI can contact it directly when HTTP_PROXY is set.
 
 No configuration preserves direct access. Invalid configuration fails before
 network tools start; tool failures retain their nonzero phase result and protected
@@ -226,6 +228,8 @@ and collects results back into the client. It does not assume host path sharing.
 The engine must support named-volume file subpaths; local tests used Docker
 29.5.2 and a nested 29.8.0 daemon. A short root-owned transfer container only
 prepares volume permissions; operation containers use the client's UID/GID.
+ONE rc.19 consumption uses a nested Docker 29.8.1 daemon. Docker 28's file-subpath
+mount failed before runtime startup in that environment; use a tested daemon.
 
 The launcher uses the caller's Docker context or `DOCKER_HOST`. Never overlap
 state/snippet workflows: CI must serialize the complete plan/apply sequence, and

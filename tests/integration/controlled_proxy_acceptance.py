@@ -113,11 +113,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--launcher", type=Path, required=True)
     parser.add_argument("--image", required=True)
-    parser.add_argument("--dind-image", default="docker:28-dind")
+    parser.add_argument("--dind-image", required=True, help="immutable tested DinD image digest (Docker 29 file-subpath support required)")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--engines", nargs="+", choices=["local", "dind"], default=["local", "dind"])
     args = parser.parse_args()
     assert "@sha256:" in args.image, "use an immutable published image digest"
+    assert "@sha256:" in args.dind_image, "use an immutable DinD image digest"
     args.launcher = args.launcher.resolve()
     args.output = args.output.resolve()
     args.output.mkdir(mode=0o700, parents=True, exist_ok=False)
@@ -184,7 +185,7 @@ def main() -> None:
             wrapper.mkdir()
             # Formal launcher remains unchanged. Only the task daemon routing
             # is selected; explicit offline network none is always preserved.
-            wrapper_code = '#!/usr/bin/env python3\nimport os,sys,json\na=sys.argv[1:]\nwith open(os.environ["TEST_DOCKER_AUDIT"],"a") as f: f.write(json.dumps(a)+"\\n")\nif a and a[0] in ("run","create") and "--network" not in a and os.environ["TEST_TASK_NETWORK"]:\n a[1:1]=["--network",os.environ["TEST_TASK_NETWORK"]]\nos.execv(os.environ["TEST_REAL_DOCKER"],[os.environ["TEST_REAL_DOCKER"],*a])\n'
+            wrapper_code = '#!/usr/bin/env python3\nimport os,sys,json,subprocess\na=sys.argv[1:]\nwith open(os.environ["TEST_DOCKER_AUDIT"],"a") as f: f.write(json.dumps(a)+"\\n")\nif a and a[0] in ("run","create") and "--network" not in a and os.environ["TEST_TASK_NETWORK"]:\n a[1:1]=["--network",os.environ["TEST_TASK_NETWORK"]]\nreal=os.environ["TEST_REAL_DOCKER"]\nif a and a[-1]=="capabilities":\n names=[n for upper in ("HTTP_PROXY","HTTPS_PROXY","NO_PROXY","ALL_PROXY","FTP_PROXY") for n in (upper,upper.lower())]\n safe=all(n+"=" in a and n not in a for n in names)\n result=subprocess.run([real,*a],stdout=subprocess.PIPE,stderr=subprocess.PIPE)\n if result.returncode and safe:\n  with open(os.environ["TEST_CAPABILITY_ERROR"],"ab") as f:\n   f.write(b"capabilities docker exit="+str(result.returncode).encode()+b"\\n"+result.stdout+result.stderr+b"\\n")\n sys.stdout.buffer.write(result.stdout)\n sys.stderr.buffer.write(result.stderr)\n sys.exit(result.returncode)\nos.execv(real,[real,*a])\n'
             (wrapper / "docker").write_text(wrapper_code)
             (wrapper / "docker").chmod(0o700)
             lock = repo / "tests/fixtures/runtime-root/.terraform.lock.hcl"
@@ -198,16 +199,19 @@ def main() -> None:
             runtime.write_text(json.dumps({"interface_version": 1, "image": args.image, "platform": "linux/amd64"}))
             for engine in args.engines:
                 env = {k: v for k, v in os.environ.items() if not k.upper().endswith("_PROXY") and not k.startswith(("PVE_", "AWS_", "TF_VAR_"))}
-                env.update(TEST_TASK_NETWORK=network, TEST_REAL_DOCKER=docker, TEST_DOCKER_AUDIT=str(args.output / f"{engine}-docker-audit.jsonl"), PVE_API_TOKEN="facility-decoy-must-not-forward", AWS_SECRET_ACCESS_KEY="state-decoy-must-not-forward", TF_VAR_pve_api_token_secret="provider-decoy-must-not-forward")
+                env.update(TEST_TASK_NETWORK=network, TEST_REAL_DOCKER=docker, TEST_DOCKER_AUDIT=str(args.output / f"{engine}-docker-audit.jsonl"), TEST_CAPABILITY_ERROR=str(args.output / f"{engine}-capability-error.log"), PVE_API_TOKEN="facility-decoy-must-not-forward", AWS_SECRET_ACCESS_KEY="state-decoy-must-not-forward", TF_VAR_pve_api_token_secret="provider-decoy-must-not-forward")
                 env["PATH"] = str(wrapper) + os.pathsep + env["PATH"]
                 if engine == "dind":
                     env["TEST_TASK_NETWORK"] = ""
                     daemon = identity + "-dind"
                     containers.append(daemon)
-                    dc("run", "-d", "--privileged", "--name", daemon, "--network", network, "--env", "DOCKER_TLS_CERTDIR=", "-p", "127.0.0.1::2375", args.dind_image)
+                    dc("run", "-d", "--privileged", "--name", daemon, "--network", network, "--env", "DOCKER_TLS_CERTDIR=", args.dind_image)
                     dc("network", "connect", "bridge", daemon)
-                    mapping = dc("port", daemon, "2375/tcp").stdout.decode().strip()
-                    env["DOCKER_HOST"] = "tcp://" + mapping
+                    daemon_ip = inspect_ip(daemon)
+                    env["DOCKER_HOST"] = "tcp://" + daemon_ip + ":2375"
+                    # Docker's control API must stay direct when the caller
+                    # configures HTTP_PROXY for runtime/module downloads.
+                    env["NO_PROXY"] = daemon_ip
                     for _ in range(60):
                         if dc("info", env=env, check=False, timeout=10).returncode == 0:
                             break
@@ -217,15 +221,26 @@ def main() -> None:
                     # Preserve repository digest by pulling before isolation.
                     dc("pull", args.image, env=env)
                     dc("network", "disconnect", "bridge", daemon)
+                    dc("info", env=env)
+                    dc("image", "inspect", args.image, env=env)
                 for case, proxy, success in [("direct", "", False), ("plain", f"http://{plain_ip}:3128", True), ("basic", f"http://{username}:{password}@{auth_ip}:3128", True), ("bad-basic", f"http://{username}:{wrong_password}@{auth_ip}:3128", False), ("unreachable", f"http://{plain_ip}:1", False)]:
                     case_env = dict(env)
                     if proxy:
                         case_env["HTTPS_PROXY"] = proxy
                     output = args.output / f"{engine}-{case}"
                     result = command([str(args.launcher), "run", "--runtime-config", str(runtime), "--environment", str(entry), "--engine", engine, "--component", "pve", "--operation", "prepare-dependencies", "--scope", "proxy-acceptance", "--output", str(output)], env=case_env, check=False)
-                    assert (result.returncode == 0) == success, f"{engine}/{case}: unexpected exit {result.returncode}"
+                    safe_stdout = result.stdout
+                    for secret in forbidden:
+                        safe_stdout = safe_stdout.replace(secret, b"[REDACTED]")
+                    (args.output / f"{engine}-{case}.log").write_bytes(safe_stdout)
+                    assert (result.returncode == 0) == success, f"{engine}/{case}: unexpected exit {result.returncode}; protected public log persisted"
+                    assert not any(secret in result.stdout for secret in forbidden), "authentication in public output"
                     assert (root / lock.name).read_bytes() == lock.read_bytes(), "caller lock mutated"
-                    (args.output / f"{engine}-{case}.log").write_bytes(result.stdout)
+                    if not success:
+                        summaries = list(output.rglob("summary.json"))
+                        assert summaries, f"{engine}/{case}: operation did not reach runtime execution"
+                        phases = json.loads(summaries[0].read_text()).get("phases", [])
+                        assert any(phase.get("phase") == "prepare-dependencies" and phase.get("exit_code", 0) != 0 for phase in phases), f"{engine}/{case}: no native dependency download failure"
                     archive = list(output.rglob("dependencies.tar.gz")) if output.exists() else []
                     if success:
                         assert len(archive) == 1, "dependency archive missing"
@@ -252,7 +267,9 @@ def main() -> None:
                     case = "no-proxy-match" if bypass else "no-proxy-miss"
                     before_proxy = dc("logs", identity + "-plain").stdout.count(target_ip.encode())
                     before_target = dc("logs", target_name).stdout.count(b'"status": 200')
-                    module_env = dict(env, HTTP_PROXY=f"http://{plain_ip}:3128", NO_PROXY=target_ip if bypass else "unmatched.invalid")
+                    exclusions = [env["NO_PROXY"]] if "NO_PROXY" in env else []
+                    exclusions.append(target_ip if bypass else "unmatched.invalid")
+                    module_env = dict(env, HTTP_PROXY=f"http://{plain_ip}:3128", NO_PROXY=",".join(exclusions))
                     output = args.output / f"{engine}-{case}"
                     result = command([str(args.launcher), "run", "--runtime-config", str(runtime), "--environment", str(module_entry), "--engine", engine, "--component", "pve", "--operation", "prepare-dependencies", "--scope", "proxy-acceptance", "--output", str(output)], env=module_env, check=False)
                     (args.output / f"{engine}-{case}.log").write_bytes(result.stdout)
@@ -301,9 +318,17 @@ def main() -> None:
         for path in args.output.rglob("*"):
             if path.is_file() and path.name != "dependencies.tar.gz":
                 assert not any(secret in path.read_bytes() for secret in forbidden), "authentication persisted in diagnostics"
-        (args.output / "acceptance.json").write_text(json.dumps({"image": args.image, "launcher_sha256": hashlib.sha256(args.launcher.read_bytes()).hexdigest(), "network": "task-specific internal", "results": results}, indent=2) + "\n")
+        (args.output / "acceptance.json").write_text(json.dumps({"image": args.image, "dind_image": args.dind_image, "launcher_sha256": hashlib.sha256(args.launcher.read_bytes()).hexdigest(), "network": "task-specific internal", "results": results}, indent=2) + "\n")
         print(json.dumps({"status": "passed", "cases": len(results)}))
     finally:
+        # Persist only sanitized task-daemon diagnostics, before its owned
+        # anonymous storage disappears. No caller environment is printed.
+        for name in containers:
+            if name.endswith("-dind"):
+                diagnostic = dc("logs", name, check=False).stdout
+                for secret in forbidden:
+                    diagnostic = diagnostic.replace(secret, b"[REDACTED]")
+                (args.output / "dind-daemon.log").write_bytes(diagnostic)
         residual = []
         for name in reversed(containers):
             dc("rm", "-f", "-v", name, check=False)
