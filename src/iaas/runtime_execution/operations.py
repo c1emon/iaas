@@ -60,11 +60,13 @@ def capabilities() -> dict[str, Any]:
     return {"interface_version": 1, "schema_versions": [1], "platforms": [runtime_platform()],
             "lifecycle_versions": {
                 "pve": {"plan": PLAN_METADATA_VERSION, "result": RESULT_VERSION,
-                        "snippet_cleanup_request": 1, "snippet_cleanup_result": 1},
+                        "snippet_cleanup_request": 2, "snippet_cleanup_result": 2},
                 "pve-template": {"preview": 2, "result": 2, "record": 2,
-                                 "acceptance_request": 1, "acceptance_result": 1},
+                                 "acceptance_request": 2, "acceptance_result": 2},
                 "image": {"artifact": 1, "build_request": 1, "test_request": 1, "test_result": 1},
             },
+            "operation_capabilities": {component: {operation: {"absolute_deadlines": True}}
+                                       for component, operation in (("pve-template", "accept"), ("pve", "snippet-cleanup"))},
             "execution_modes": {component: {operation: {"start": asdict(MUTATE), "observe": asdict(DIAGNOSE)}}
                                 for component, operation in (("pve-template", "accept"), ("pve", "snippet-cleanup"))},
             "operations": {component: {name: asdict(value) for name, value in entries.items()}

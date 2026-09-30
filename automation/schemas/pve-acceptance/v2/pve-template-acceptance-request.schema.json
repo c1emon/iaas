@@ -46,6 +46,27 @@
       "title": "CloudInit",
       "type": "object"
     },
+    "Deadlines": {
+      "additionalProperties": false,
+      "properties": {
+        "work_deadline_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+          "title": "Work Deadline At",
+          "type": "string"
+        },
+        "cleanup_deadline_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+          "title": "Cleanup Deadline At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "work_deadline_at",
+        "cleanup_deadline_at"
+      ],
+      "title": "Deadlines",
+      "type": "object"
+    },
     "SSHConnection": {
       "additionalProperties": false,
       "properties": {
@@ -235,9 +256,12 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 1,
+      "const": 2,
       "title": "Schema Version",
       "type": "integer"
+    },
+    "deadlines": {
+      "$ref": "#/$defs/Deadlines"
     },
     "target": {
       "$ref": "#/$defs/Target"
@@ -281,6 +305,7 @@
   "required": [
     "kind",
     "schema_version",
+    "deadlines",
     "target",
     "template_record",
     "temporary_vm",
@@ -292,5 +317,5 @@
   "title": "AcceptanceRequest",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://iaas.invalid/schemas/pve-acceptance/v1/pve-template-acceptance-request.schema.json"
+  "$id": "https://iaas.invalid/schemas/pve-acceptance/v2/pve-template-acceptance-request.schema.json"
 }

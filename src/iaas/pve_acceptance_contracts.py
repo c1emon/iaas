@@ -5,6 +5,7 @@ execution admission still require validation by the runtime before mutation.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from ipaddress import ip_address
 import re
 from typing import Annotated, Any, Literal
@@ -30,6 +31,51 @@ Reason = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{0,95}$")]
 
 class Contract(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True, regex_engine='python-re')
+
+
+UTCDeadline = Annotated[str, Field(pattern=r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$')]
+
+
+def deadline_timestamp(value: str) -> float:
+    """Parse the fixed UTC seconds contract, including calendar validation."""
+    return datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc).timestamp()
+
+
+class Deadlines(Contract):
+    work_deadline_at: UTCDeadline
+    cleanup_deadline_at: UTCDeadline
+
+    @model_validator(mode='after')
+    def ordered(self):
+        if deadline_timestamp(self.work_deadline_at) > deadline_timestamp(self.cleanup_deadline_at):
+            raise ValueError('work deadline exceeds cleanup deadline')
+        return self
+
+
+class DeadlineOutcome(Contract):
+    phase: Literal['admission', 'work', 'cleanup'] | None
+    status: Literal['not_exceeded', 'rejected', 'exceeded']
+
+    @model_validator(mode='after')
+    def consistent(self):
+        if ((self.status == 'not_exceeded') != (self.phase is None)
+                or (self.status == 'rejected') != (self.phase == 'admission')):
+            raise ValueError('deadline outcome phase conflicts')
+        return self
+
+
+class OneShotAdmission(Contract):
+    """Structural admission schema; existing runtime checks nested associations."""
+    schema_version: Literal[1]
+    execution_id: Identifier
+    plan_digest: SHA256
+    target: dict[str, Any]
+    deadlines: Deadlines
+    approved: Literal[True]
+    consumption: dict[str, Any]
+    pending: dict[str, Any]
+    serialization: dict[str, Any]
+    recovery_of: Identifier | None = None
 
 
 class Target(Contract):
@@ -137,7 +183,8 @@ class Authorization(Contract):
 
 class AcceptanceRequest(Contract):
     kind: Literal['pve-template-acceptance-request']
-    schema_version: Literal[1]
+    schema_version: Literal[2]
+    deadlines: Deadlines
     target: Target
     template_record: dict[str, Any]
     temporary_vm: TemporaryVM
@@ -238,7 +285,8 @@ class Snippet(Contract):
 
 class CleanupRequest(Contract):
     kind: Literal['pve-snippet-cleanup-request']
-    schema_version: Literal[1]
+    schema_version: Literal[2]
+    deadlines: Deadlines
     ssh: SSHConnection
     origin: Literal['deployment', 'acceptance']
     target: Target
@@ -332,13 +380,24 @@ class TemplateIdentity(Contract):
 
 
 class ResultBase(Contract):
-    schema_version: Literal[1]
+    schema_version: Literal[2]
+    deadlines: Deadlines
+    deadline_outcome: DeadlineOutcome
+    facility_writes: Literal['none', 'issued', 'unknown']
     execution_id: Identifier
     request_digest: Digest
     runtime: RuntimeIdentity
     residuals: Residuals
     overall: Literal['passed', 'failed', 'unknown']
     collection: Collection
+
+    @model_validator(mode='after')
+    def deadline_facts(self):
+        if self.deadline_outcome.status == 'rejected' and self.facility_writes != 'none':
+            raise ValueError('deadline admission rejection must have no facility writes')
+        if self.deadline_outcome.status != 'not_exceeded' and self.overall == 'passed':
+            raise ValueError('deadline-blocked execution cannot pass')
+        return self
 
 
 class AcceptanceResult(ResultBase):
@@ -454,12 +513,13 @@ def contract_schemas() -> dict[str, dict[str, Any]]:
         'pve-template-acceptance-result': AcceptanceResult,
         'pve-snippet-cleanup-request': CleanupRequest,
         'pve-snippet-cleanup-result': CleanupResult,
+        'pve-one-shot-execution-admission': OneShotAdmission,
     }
     schemas = {}
     for name, model in models.items():
         schema = model.model_json_schema()
         schema.update({'$schema': 'https://json-schema.org/draft/2020-12/schema',
-                       '$id': f'https://iaas.invalid/schemas/pve-acceptance/v1/{name}.schema.json'})
+                       '$id': f'https://iaas.invalid/schemas/pve-acceptance/v2/{name}.schema.json'})
         if model is AcceptanceRequest:
             schema['properties']['required_checks'].update(minItems=6, maxItems=6, uniqueItems=True)
         if model is CleanupRequest:

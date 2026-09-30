@@ -1,6 +1,6 @@
 {
   "kind": "pve-snippet-cleanup-result",
-  "schema_version": 1,
+  "schema_version": 2,
   "execution_id": "cleanup-001",
   "request_digest": "sha256:6e1eb20cd78b8cdd2663f35f583750595097867b024c024f9c6e0b6da79d032d",
   "runtime": {
@@ -14,7 +14,7 @@
   },
   "original_execution_id": "accept-001",
   "delete_plan_digest": null,
-  "acceptance_request_digest": "sha256:25c5f9e14002dbff8e71440f93c5f33df1e2da9e7d02427214e73acc8f892cb4",
+  "acceptance_request_digest": "sha256:91f84d25bc4c3043d54c49d41442581906963635218afcaea2ebf1c10715fd15",
   "deletion_execution_id": "accept-001",
   "retry_of": null,
   "scope_check": {
@@ -49,5 +49,14 @@
   "collection": {
     "status": "complete",
     "reason_code": "collection_complete"
-  }
+  },
+  "deadlines": {
+    "work_deadline_at": "2099-01-01T00:00:00Z",
+    "cleanup_deadline_at": "2099-01-01T00:10:00Z"
+  },
+  "deadline_outcome": {
+    "phase": null,
+    "status": "not_exceeded"
+  },
+  "facility_writes": "issued"
 }

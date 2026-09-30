@@ -1,11 +1,47 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestBoundedExecutionTransferPreservesFrozenDeadlines(t *testing.T) {
+	// Exercise the real local snapshot and Docker archive transfer paths with
+	// synthetic transport; no real daemon or facility qualification is claimed.
+	for _, engine := range []string{"local", "dind"} {
+		t.Run(engine, func(t *testing.T) {
+			root := t.TempDir()
+			source := filepath.Join(root, "request.json")
+			contents := []byte(`{"schema_version":2,"deadlines":{"work_deadline_at":"2026-10-01T10:00:00Z","cleanup_deadline_at":"2026-10-01T10:05:00Z"}}`)
+			if err := os.WriteFile(source, contents, 0600); err != nil {
+				t.Fatal(err)
+			}
+			work := task{options: Options{Component: "pve-template", Operation: "accept", Engine: engine}, directory: root, seed: "transfer", mapping: map[string]string{}}
+			transferred := filepath.Join(root, "inputs/files/000000")
+			if engine == "dind" {
+				transferred = filepath.Join(root, "remote-request.json")
+				t.Setenv("DEADLINE_TRANSFER_TARGET", transferred)
+				script := "#!/bin/sh\n[ \"$1\" = cp ] && [ \"$2\" = -a ] && [ \"$4\" = transfer:/inputs/files/000000 ] || exit 1\ncp \"$3\" \"$DEADLINE_TRANSFER_TARGET\"\n"
+				if err := os.WriteFile(filepath.Join(root, "docker"), []byte(script), 0700); err != nil {
+					t.Fatal(err)
+				}
+				t.Setenv("PATH", root+string(os.PathListSeparator)+os.Getenv("PATH"))
+			} else if err := os.MkdirAll(filepath.Dir(transferred), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := work.addInput(source); err != nil {
+				t.Fatal(err)
+			}
+			actual, err := os.ReadFile(transferred)
+			if err != nil || !bytes.Equal(actual, contents) {
+				t.Fatalf("frozen request bytes changed during %s transfer: %v", engine, err)
+			}
+		})
+	}
+}
 
 func TestBoundedExecutionContractsAndReadOnlyInputs(t *testing.T) {
 	for _, target := range [][2]string{{"pve-template", "accept"}, {"pve", "snippet-cleanup"}} {
@@ -19,14 +55,18 @@ func TestBoundedExecutionContractsAndReadOnlyInputs(t *testing.T) {
 		if _, err := c.operation(component, operation, "linux/amd64"); err == nil {
 			t.Fatal("missing contract accepted")
 		}
-		c.LifecycleVersions = map[string]map[string]int{component: {prefix + "_request": 1, prefix + "_result": 1}}
+		c.LifecycleVersions = map[string]map[string]int{component: {prefix + "_request": 2, prefix + "_result": 2}}
 		c.ExecutionModes = map[string]map[string]map[string]Effects{component: {operation: {"start": {Network: true, InfrastructureWrite: true}, "observe": {Network: true}}}}
+		if _, err := c.operation(component, operation, "linux/amd64"); err == nil {
+			t.Fatal("missing absolute deadline capability accepted")
+		}
+		c.OperationCapabilities = map[string]map[string]map[string]bool{component: {operation: {"absolute_deadlines": true}}}
 		if _, err := c.operation(component, operation, "linux/amd64"); err != nil {
 			t.Fatal(err)
 		}
-		c.LifecycleVersions[component][prefix+"_request"] = 2
+		c.LifecycleVersions[component][prefix+"_request"] = 1
 		if _, err := c.operation(component, operation, "linux/amd64"); err == nil {
-			t.Fatal("unknown contract accepted")
+			t.Fatal("old contract accepted")
 		}
 		root := t.TempDir()
 		source := filepath.Join(root, "evidence")

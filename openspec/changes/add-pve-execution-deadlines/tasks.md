@@ -1,8 +1,8 @@
 ## 1. 合同与绑定
 
-- [ ] 1.1 更新两个 request/result 到 v2，定义严格 UTC deadlines、排序、deadline_outcome/reason codes 及独立本次 facility_writes 事实，保留 unknown 优先与更严格相对上限。
-- [ ] 1.2 为两个操作增加 admission deadlines 精确匹配及 request digest/execution 身份绑定，持久化 request/admission/journal/result；不影响普通操作。
-- [ ] 1.3 更新生成的 JSON schemas、能力声明、合同文档和共享正反 fixtures；launcher 拒绝缺能力或旧版本，不自动补期限。
+- [x] 1.1 更新两个 request/result 到 v2，定义严格 UTC deadlines、排序、deadline_outcome/reason codes 及独立本次 facility_writes 事实，保留 unknown 优先与更严格相对上限。
+- [x] 1.2 为两个操作增加 admission deadlines 精确匹配及 request digest/execution 身份绑定，持久化 request/admission/journal/result；不影响普通操作。
+- [x] 1.3 更新生成的 JSON schemas、能力声明、合同文档和共享正反 fixtures；launcher 拒绝缺能力或旧版本，不自动补期限。
 
 ## 2. 原生与 helper 执行
 

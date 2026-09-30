@@ -89,6 +89,63 @@
       "title": "Collection",
       "type": "object"
     },
+    "DeadlineOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "phase": {
+          "anyOf": [
+            {
+              "enum": [
+                "admission",
+                "work",
+                "cleanup"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Phase"
+        },
+        "status": {
+          "enum": [
+            "not_exceeded",
+            "rejected",
+            "exceeded"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "phase",
+        "status"
+      ],
+      "title": "DeadlineOutcome",
+      "type": "object"
+    },
+    "Deadlines": {
+      "additionalProperties": false,
+      "properties": {
+        "work_deadline_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+          "title": "Work Deadline At",
+          "type": "string"
+        },
+        "cleanup_deadline_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+          "title": "Cleanup Deadline At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "work_deadline_at",
+        "cleanup_deadline_at"
+      ],
+      "title": "Deadlines",
+      "type": "object"
+    },
     "OriginalVM": {
       "additionalProperties": false,
       "properties": {
@@ -273,9 +330,24 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "const": 1,
+      "const": 2,
       "title": "Schema Version",
       "type": "integer"
+    },
+    "deadlines": {
+      "$ref": "#/$defs/Deadlines"
+    },
+    "deadline_outcome": {
+      "$ref": "#/$defs/DeadlineOutcome"
+    },
+    "facility_writes": {
+      "enum": [
+        "none",
+        "issued",
+        "unknown"
+      ],
+      "title": "Facility Writes",
+      "type": "string"
     },
     "execution_id": {
       "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
@@ -382,6 +454,9 @@
   },
   "required": [
     "schema_version",
+    "deadlines",
+    "deadline_outcome",
+    "facility_writes",
     "execution_id",
     "request_digest",
     "runtime",
@@ -402,5 +477,5 @@
   "title": "CleanupResult",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://iaas.invalid/schemas/pve-acceptance/v1/pve-snippet-cleanup-result.schema.json"
+  "$id": "https://iaas.invalid/schemas/pve-acceptance/v2/pve-snippet-cleanup-result.schema.json"
 }

@@ -15,7 +15,7 @@ def materials():
     admission = {
         'schema_version': 1, 'execution_id': 'accept-001',
         'plan_digest': canonical_digest(request).removeprefix('sha256:'),
-        'target': request['target'], 'approved': True,
+        'target': request['target'], 'deadlines': request['deadlines'], 'approved': True,
         'consumption': {'reserved': True, 'reservation_id': 'reservation-001'},
         'pending': {'record_id': 'pending-001'},
         'serialization': {'held': True, 'context_id': 'complete-workflow-lock'},
@@ -96,7 +96,7 @@ def test_observation_conflicts_fail_closed(tmp_path, change):
 def finalized(tmp_path):
     root, request, journal = started(tmp_path)
     result = load_strict_json(FIXTURES / 'acceptance-result.json')
-    journal.update(status='finished', mutation_active=False, result_digest=canonical_digest(result))
+    journal.update(status='finished', mutation_active=False, facility_writes='issued', result_digest=canonical_digest(result))
     save(root / 'journal.json', journal)
     save(root / 'result.json', result)
     return root, request, journal, result

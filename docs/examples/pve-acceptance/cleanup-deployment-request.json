@@ -1,6 +1,6 @@
 {
   "kind": "pve-snippet-cleanup-request",
-  "schema_version": 1,
+  "schema_version": 2,
   "origin": "deployment",
   "target": {
     "api_endpoint": "https://pve.example.invalid:8006",
@@ -88,5 +88,9 @@
     "host": "pve.example.invalid",
     "user": "iaas",
     "port": 22
+  },
+  "deadlines": {
+    "work_deadline_at": "2099-01-01T00:00:00Z",
+    "cleanup_deadline_at": "2099-01-01T00:10:00Z"
   }
 }
