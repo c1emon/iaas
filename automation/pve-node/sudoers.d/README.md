@@ -31,3 +31,13 @@ The separately installed deletion helper uses protocol v2 and requires a cutoff
 for both inventory inspection and exact deletion. Both helpers enforce the
 cutoff remotely immediately before their facility write; local SSH timeout is
 not evidence that a remote operation was cancelled.
+
+Both installed helpers expose a read-only `--capabilities` command through these
+same wrapper-only sudo rules. No sudo access to Python, shell, pvesm, rm or
+arbitrary commands is needed for discovery. Use `sudo -n` with the absolute helper
+path and `--capabilities` alone. The `helper-capabilities/v1` JSON lists the
+supported operations and prerequisite availability; online admission refuses
+missing required capabilities. Upload bootstrap supplies the upload rule;
+`bootstrap-pve-snippet-cleanup.yml` installs the independent delete rule. Install
+both on every selected acceptance/recovery node. See
+`docs/operations/pve-snippet-cleanup.md` for capability keys and probe semantics.

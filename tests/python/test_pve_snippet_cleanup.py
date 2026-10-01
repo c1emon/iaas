@@ -191,6 +191,33 @@ def node_helper():
     return module
 
 
+def test_delete_capabilities_do_not_inspect_lock_or_resolve_storage(node_helper, tmp_path, monkeypatch, capsys):
+    import sys
+    fake = tmp_path / 'pvesm'
+    fake.write_text('#!/bin/sh\nexit 1\n')
+    fake.chmod(0o755)
+    monkeypatch.setattr(node_helper, 'PVESM', str(fake))
+    monkeypatch.setattr(sys, 'argv', ['helper', '--capabilities'])
+    def forbidden(*args, **kwargs):
+        raise AssertionError('capability discovery must not access cluster or storage')
+    monkeypatch.setattr(node_helper, 'inspect_cluster', forbidden)
+    monkeypatch.setattr(node_helper.os, 'open', forbidden)
+    monkeypatch.setattr(node_helper.subprocess, 'run', forbidden)
+    node_helper.main()
+    declaration = json.loads(capsys.readouterr().out)
+    assert declaration['schema_version'] == 'helper-capabilities/v1'
+    assert declaration['helper'] == 'delete'
+    assert all(declaration['capabilities'].values())
+    fake.unlink()
+    node_helper.main()
+    missing = json.loads(capsys.readouterr().out)['capabilities']
+    assert missing['exact_delete'] is False
+    assert missing['digest'] is False
+    monkeypatch.setattr(sys, 'argv', ['helper', '--capabilities', '--storage', 'local'])
+    with pytest.raises(SystemExit):
+        node_helper.main()
+
+
 def test_exact_helper_digest_symlink_absence(node_helper, tmp_path, monkeypatch):
     directory = tmp_path / 'snippets'
     directory.mkdir()

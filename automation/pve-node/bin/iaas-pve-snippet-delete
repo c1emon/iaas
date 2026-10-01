@@ -167,14 +167,28 @@ def inspect_cluster(root=PVE_CONFIG, deadline=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--capabilities', action='store_true', help='read-only machine capability discovery')
     parser.add_argument('--inspect-cluster', action='store_true')
-    parser.add_argument('--deadline-at', required=True)
+    parser.add_argument('--deadline-at')
     parser.add_argument('--storage')
     parser.add_argument('--filename')
     parser.add_argument('--sha256')
     parser.add_argument('--node')
     parser.add_argument('--vmid', type=int)
     args = parser.parse_args()
+    if args.capabilities:
+        if any((args.inspect_cluster, args.deadline_at, args.storage, args.filename,
+                args.sha256, args.node, args.vmid is not None)):
+            parser.error('--capabilities must be used alone')
+        pvesm_available = os.path.isfile(PVESM) and os.access(PVESM, os.X_OK)
+        print(json.dumps({'schema_version': 'helper-capabilities/v1', 'helper': 'delete',
+                          'protocol_version': 2, 'capabilities': {
+                              'inspect': True, 'exact_delete': pvesm_available,
+                              'reference': True, 'digest': pvesm_available,
+                              'deadline': True}}))
+        return
+    if not args.deadline_at:
+        parser.error('--deadline-at is required')
     try:
         deadline = Deadline(args.deadline_at)
     except ValueError as exc:

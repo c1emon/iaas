@@ -21,6 +21,20 @@ only this helper, with no arbitrary shell/rm permission. Existing upload
 permissions remain independent. This is an installation recipe, not evidence
 of installation on any live node.
 
+After both helper bootstraps, use the same SSH account to probe the restricted
+commands with `sudo -n /usr/local/sbin/iaas-pve-snippet-upload --capabilities` and
+`sudo -n /usr/local/sbin/iaas-pve-snippet-delete --capabilities`. Each returns
+`schema_version: "helper-capabilities/v1"`, its `helper` identity,
+`protocol_version: 2`, and boolean `capabilities`. Upload declares `acceptance`,
+`create_only`, `verify`, and `deadline`; delete declares `inspect`, `exact_delete`,
+`reference`, `digest`, and `deadline`. Probe arguments must be used alone. Probes
+do not read stdin, invoke pvesm, inspect cluster configuration, create directories
+or acquire a lock. Missing pvesm makes dependent capabilities false; upload also
+checks PyYAML for verification. Missing Python or a refused sudo command makes
+the helper unavailable. Admission must refuse missing required capabilities;
+`--help` success alone is insufficient. Cluster/storage/node usability is checked
+separately by online admission, rather than inferred from this declaration.
+
 Installation checks that `/usr`, `/usr/local` and `/usr/local/sbin` are existing
 root-owned directories without group/other write permission or symlinks. If
 this check fails, an administrator must resolve the directory ownership or

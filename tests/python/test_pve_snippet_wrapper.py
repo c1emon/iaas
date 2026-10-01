@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -10,6 +11,26 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 WRAPPER = ROOT / "automation" / "pve-node" / "bin" / "iaas-pve-snippet-upload"
+
+
+def test_capability_probe_is_read_only_and_reports_missing_dependency(tmp_path):
+    fake = tmp_path / 'pvesm'
+    marker = tmp_path / 'called'
+    fake.write_text(f'#!/bin/sh\ntouch "{marker}"\nexit 1\n')
+    fake.chmod(0o755)
+    env = os.environ | {'IAAS_PVE_SNIPPET_UPLOAD_PVESM': str(fake)}
+    before = set(tmp_path.iterdir())
+    result = run_wrapper(['--capabilities'], env)
+    assert result.returncode == 0
+    declaration = json.loads(result.stdout)
+    assert declaration['schema_version'] == 'helper-capabilities/v1'
+    assert declaration['helper'] == 'upload'
+    assert all(declaration['capabilities'].values())
+    assert set(tmp_path.iterdir()) == before
+    fake.unlink()
+    result = run_wrapper(['--capabilities'], env)
+    assert not any(json.loads(result.stdout)['capabilities'].values())
+    assert run_wrapper(['--capabilities', '--create-only'], env).returncode != 0
 
 
 def test_create_only_never_overwrites_existing_file_or_symlink(tmp_path):

@@ -12,7 +12,7 @@
 
 - [ ] 2.1 实现实际有效权限/条件式池授权检查与四类固定权限诊断，覆盖 privilege-separated token、0/1合法授予、缺键/非法值/请求失败/可见性不足；用源/目标/池/存储/网络/任务读的代表性正反例验证并更新权限表。
 - [ ] 2.2 汇总源身份、节点、storage/容量、network、VMID权威可见性和 SSH/helper 准入；用缺池、无权限、节点/网络冲突和 pool-only 列表不可证明空闲的测试核验克隆/上传/启动前零写入，更新联网预检说明。
-- [ ] 2.3 给现有 upload/delete helper 增加只读机器能力探测和对应 wrapper-only sudo/bootstrap 文档，证明 create-only/deadline/reference/digest 等必要支持；用本地 helper fixture 核验探测零写入、缺能力拒绝及普通上传回归。
+- [x] 2.3 给现有 upload/delete helper 增加只读机器能力探测和对应 wrapper-only sudo/bootstrap 文档，证明 create-only/deadline/reference/digest 等必要支持；用本地 helper fixture 核验探测零写入、缺能力拒绝及普通上传回归。
 
 ## 3. 模板 publication 与当前模板记录
 

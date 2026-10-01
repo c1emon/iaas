@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import shlex
 import subprocess
 import time
@@ -33,6 +34,25 @@ def record(request: dict, content: str) -> dict:
 
 
 class Snippets(Helper):
+    def capabilities(self, helper: str) -> dict:
+        require(helper in {'upload', 'delete'}, 'invalid snippet helper')
+        remaining = self.deadline - time.monotonic()
+        if self.budget is not None:
+            remaining = min(remaining, self.budget.remaining(self.phase))
+        require(remaining > 0, 'snippet deadline expired')
+        command = ['sudo', '-n', '/usr/local/sbin/iaas-pve-snippet-' + helper, '--capabilities']
+        try:
+            response = subprocess.run([*self.command, shlex.join(command)], env=self.env,
+                                      capture_output=True, text=True, timeout=remaining, check=True)
+            require(len(response.stdout) <= 16384, 'helper capability response exceeds limit')
+            declaration = json.loads(response.stdout)
+        except (OSError, subprocess.SubprocessError, ValueError):
+            from .admission import AdmissionError
+            raise AdmissionError('helper_unavailable', object=helper) from None
+        from .admission import require_helper_capabilities
+        require_helper_capabilities(declaration, helper)
+        return declaration
+
     def upload(self, snippet: dict, content: str) -> None:
         require(self.budget is not None, 'acceptance upload requires frozen deadlines')
         assert self.budget is not None

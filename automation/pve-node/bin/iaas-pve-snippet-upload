@@ -8,6 +8,7 @@ readonly RM='/bin/rm'
 readonly MKTEMP='/usr/bin/mktemp'
 
 usage() {
+  printf '       %s --capabilities (read-only JSON)\n' "$0" >&2
   printf 'usage: %s [--mode ordinary|acceptance] [--deadline-at UTC] [--create-only | --verify --sha256 SHA256] --storage STORAGE --filename PREFIX-N-{user-data,network-config}.yml\n' "$0" >&2
 }
 
@@ -17,6 +18,28 @@ die() {
 }
 
 [[ ! ${ASTRA_PVE_SNIPPET_UPLOAD_PVESM+x} ]] || die 'ASTRA_PVE_SNIPPET_UPLOAD_PVESM is no longer supported; use IAAS_PVE_SNIPPET_UPLOAD_PVESM'
+
+# Capability discovery never resolves storage, reads stdin or creates files.
+if [[ ${1-} == '--capabilities' ]]; then
+  [[ $# == 1 ]] || die '--capabilities must be used alone'
+  command -v python3 >/dev/null 2>&1 || die 'python3 is required for capability discovery'
+  exec python3 - "${IAAS_PVE_SNIPPET_UPLOAD_PVESM:-${PVESM}}" <<'PYTHON'
+import json
+import os
+import sys
+try:
+    import yaml
+    yaml_available = True
+except ImportError:
+    yaml_available = False
+pvesm_available = os.path.isfile(sys.argv[1]) and os.access(sys.argv[1], os.X_OK)
+print(json.dumps({'schema_version': 'helper-capabilities/v1', 'helper': 'upload',
+                  'protocol_version': 2, 'capabilities': {
+                      'acceptance': pvesm_available, 'create_only': pvesm_available,
+                      'verify': pvesm_available and yaml_available,
+                      'deadline': pvesm_available}}))
+PYTHON
+fi
 
 storage_id=''
 filename=''
