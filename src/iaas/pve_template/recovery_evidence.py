@@ -142,10 +142,11 @@ def load_original(request: dict, original_root: Path, evidence_root: Path) -> di
         rows = result.get('temporary_resources', [])
         if not isinstance(rows, list):
             raise RecoveryEvidenceError('original_result_resource_conflict')
-        check(len(rows) == len(expected_resources)
-              and {(r.get('kind'), r.get('node'), r.get('identity')) for r in rows} == expected_resources
-              and all(r.get('created_by') == request['original_execution_id'] and r.get('ownership') == 'owned'
-                      for r in rows), 'original_result_resource_conflict')
+        check(all(isinstance(r, dict)
+                  and (r.get('kind'), r.get('node'), r.get('identity')) in expected_resources
+                  and r.get('created_by') in (None, request['original_execution_id'])
+                  and r.get('ownership') in (None, 'owned', 'unknown') for r in rows),
+              'original_result_resource_conflict')
     previous = []
     for item in request['previous_recoveries']:
         old = material(evidence_root, item['materials']['request'])
@@ -163,8 +164,6 @@ def load_original(request: dict, original_root: Path, evidence_root: Path) -> di
                   and old_result.get('request_digest') == canonical_digest(old)
                   and old_journal.get('result_digest') == canonical_digest(old_result),
                   'previous_recovery_result_conflict')
-        check(old.get('previous_recoveries') == request['previous_recoveries'][:len(previous)],
-              'previous_recovery_chain_conflict')
         previous.append({'request': old, 'journal': old_journal, 'result': old_result})
     return {'request': original, 'journal': journal, 'result': result, 'caller': caller, 'previous': previous}
 
@@ -214,11 +213,16 @@ def _task_activity(client: Any, task: dict, node: str) -> tuple[str, str]:
         try:
             upid = _normalize_upid(upid, task.get('node', node))
             row = client.request('GET', f"/api2/json/nodes/{quote(task.get('node', node), safe='')}/tasks/{quote(upid, safe='')}/status")
-            if isinstance(row, dict) and row.get('status') == 'stopped':
-                return 'inactive', 'task_stopped'
+            if isinstance(row, dict):
+                if row.get('status') == 'stopped':
+                    return 'inactive', 'task_stopped'
+                if row.get('status') == 'running':
+                    return 'active', 'task_running'
         except Exception:
             pass
         return 'unknown', 'task_activity_unknown'
+    if task.get('status') == 'running':
+        return 'active', 'retained_running_task'
     if task.get('status') in {'not_sent', 'rejected'}:
         return 'inactive', 'retained_terminal_request'
     if task.get('status') in {'succeeded', 'failed'} and (task.get('phase') != 'guest_exec' or type(task.get('pid')) is int):
@@ -260,21 +264,24 @@ def reconcile_original(request: dict, original_root: Path, evidence_root: Path, 
         requests.append({'task_index': index, 'phase': task.get('phase'), 'original_status': task.get('status'),
                          'activity': activity, 'reason_code': reason,
                          'historical_write': 'none' if task.get('status') == 'not_sent' or reason == 'request_rejected'
-                         else 'unknown' if activity == 'unknown' else 'issued'})
+                         else 'unknown' if activity in {'unknown', 'active'} else 'issued'})
     helper_unknown = any(s.get('uploaded') is not True or s.get('cleanup', {}).get('status') == 'unknown'
                          for s in journal.get('snippets', []))
     previous_unknown = False
+    active = any(r['activity'] == 'active' for r in requests)
     for previous in originals['previous']:
         prior = previous['journal']
         rows = prior.get('tasks', [])
-        if not isinstance(rows, list) or any(_task_activity(client, row, request['target']['node'])[0] == 'unknown' for row in rows):
+        activities = [_task_activity(client, row, request['target']['node'])[0] for row in rows] if isinstance(rows, list) else ['unknown']
+        active = active or 'active' in activities
+        if 'unknown' in activities or 'active' in activities:
             previous_unknown = True
         if prior.get('mutation_active') is True and not rows:
             previous_unknown = True
         if any(isinstance(row, dict) and row.get('phase') == 'snippet_delete'
                and row.get('status') not in {'succeeded', 'not_sent', 'rejected'} for row in rows):
             previous_unknown = True
-    activity = 'unknown' if helper_unknown or previous_unknown or any(r['activity'] == 'unknown' for r in requests) else 'inactive'
+    activity = 'unknown' if active or helper_unknown or previous_unknown or any(r['activity'] == 'unknown' for r in requests) else 'inactive'
     writes = 'unknown' if any(r['historical_write'] == 'unknown' for r in requests) or helper_unknown else (
         'issued' if any(r['historical_write'] == 'issued' for r in requests) or journal.get('snippets') else 'none')
     # No global mutation_active flag can clear a missing per-request fact.
@@ -294,8 +301,13 @@ def reconcile_original(request: dict, original_root: Path, evidence_root: Path, 
                                   'identity_matches': identity_matches}
     except Exception:
         source_observation = {'status': 'unavailable'}
-    safe = activity == 'inactive' and current['ownership'] == 'confirmed'
+    # Historical uncertainty is disclosed in the reviewed preview. The existing
+    # new cleanup approval authorizes disposition; no reconstructed trace is
+    # required. Confirmed running tasks and current conflicts still block writes.
+    safe = not active and current['ownership'] == 'confirmed'
     return {'status': 'eligible' if safe else 'unknown', 'cleanup_eligible': safe,
+            'disposition': 'administrator_decision' if activity == 'unknown' else 'automatic',
+            'active_tasks': active,
             'original_activity': activity, 'original_facility_writes': writes,
             'requests': requests, 'helper_activity': 'unknown' if helper_unknown else 'inactive',
             'previous_activity': 'unknown' if previous_unknown else 'inactive',
@@ -313,20 +325,18 @@ def inspect_resources(request: dict, client: Any, snippets: Any) -> dict:
     vm = full['vm']
     node = quote(vm['node'], safe='')
     permissions = Permissions(client)
-    permissions.require(f"/vms/{vm['vmid']}", ('VM.Audit', 'VM.Allocate', 'VM.PowerMgmt'), operation='recovery_cleanup')
+    permissions.require(f"/vms/{vm['vmid']}", ('VM.Audit',), operation='recovery_inspect')
     snapshot = snippets.inspect()
     check(isinstance(snapshot, dict) and snapshot.get('complete') is True
           and snapshot.get('local_node') == vm['node'] and isinstance(snapshot.get('nodes'), list)
           and isinstance(snapshot.get('vmids'), list) and isinstance(snapshot.get('references'), list),
           'recovery_visibility_insufficient')
     nodes = client.request('GET', '/api2/json/nodes')
-    check(isinstance(nodes, list) and {row.get('node') for row in nodes if isinstance(row, dict)} == set(snapshot['nodes']),
+    check(isinstance(nodes, list) and {row.get('node') for row in nodes if isinstance(row, dict)} <= set(snapshot['nodes']),
           'recovery_cluster_visibility_conflict')
     resources = client.request('GET', '/api2/json/cluster/resources', fields={'type': 'vm'})
     check(isinstance(resources, list) and all(isinstance(row, dict) for row in resources),
           'recovery_vm_inventory_insufficient')
-    check({row.get('vmid') for row in resources} == set(snapshot['vmids']),
-          'recovery_vm_inventory_incomplete')
     external_volumes: set[str] = set()
     external_snippets: set[str] = set()
     if isinstance(snapshot.get('volume_references'), list) and isinstance(snapshot.get('snippet_references'), list):
@@ -341,6 +351,8 @@ def inspect_resources(request: dict, client: Any, snippets: Any) -> dict:
             if row['vmid'] != vm['vmid'] or row.get('node') != vm['node']:
                 external_snippets.add(row['file_name'])
     else:
+        check({row.get('vmid') for row in resources} == set(snapshot['vmids']),
+              'recovery_vm_inventory_incomplete')
         for row in resources:
             if row.get('vmid') == vm['vmid']:
                 continue
@@ -356,6 +368,7 @@ def inspect_resources(request: dict, client: Any, snippets: Any) -> dict:
     observed_pool = None
     owned = True
     if present:
+        permissions.require(f"/vms/{vm['vmid']}", ('VM.Allocate', 'VM.PowerMgmt'), operation='recovery_cleanup')
         config = client.request('GET', f'/api2/json/nodes/{node}/qemu/{vm["vmid"]}/config')
         check(isinstance(config, dict), 'recovery_vm_query_insufficient')
         owned = (_config_uuid(config) == vm['smbios_uuid'] and sorted(attachments(config).values()) == sorted(full['volumes'])
@@ -369,11 +382,13 @@ def inspect_resources(request: dict, client: Any, snippets: Any) -> dict:
     volumes = []
     for volid in full['volumes']:
         storage = volid.split(':', 1)[0]
-        permissions.require('/storage/' + storage, ('Datastore.Audit', 'Datastore.AllocateSpace'), operation='recovery_volume_cleanup')
+        permissions.require('/storage/' + storage, ('Datastore.Audit',), operation='recovery_volume_inspect')
         rows = client.request('GET', f'/api2/json/nodes/{node}/storage/{quote(storage, safe="")}/content')
         check(isinstance(rows, list), 'recovery_volume_visibility_insufficient')
         matches = [row for row in rows if isinstance(row, dict) and row.get('volid') == volid]
         check(len(matches) <= 1, 'recovery_volume_inventory_ambiguous')
+        if matches:
+            permissions.require('/storage/' + storage, ('Datastore.AllocateSpace',), operation='recovery_volume_cleanup')
         matches_owned = not matches or str(matches[0].get('vmid')) == str(vm['vmid'])
         matches_owned = matches_owned and volid not in external_volumes
         owned = owned and matches_owned

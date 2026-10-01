@@ -247,8 +247,10 @@ reconstructed. Acceptance journals retain the generated snippet record, upload c
 and cleanup result for this evidence branch.
 
 A first cleanup sets `retry_of` and `retry_materials` to null. A retry uses a new
-execution/admission and the previous request/journal/available result, proving
-inactivity and the unchanged full original list. Only timeout, newly authorized deadlines and retry association
+execution/admission and the previous request/journal/available result, preserving
+the unchanged full original list. Historical helper uncertainty or unrelated guest
+outcomes do not block a freshly approved cleanup after confirmed VM deletion and
+current complete reference checks. Only timeout, newly authorized deadlines and retry association
 may change; the old execution window and result remain unchanged. Read-only evidence references are confined paths with existing
 SHA-256 values under `files.cleanup_evidence_dir`; transport path relocation does
 not change resource identity. Cleanup never mutates a VM, state, lock or original

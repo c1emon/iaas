@@ -1,7 +1,6 @@
 """Software-only recovery cleanup/observation; no fixture authorizes real VM798."""
 from copy import deepcopy
 import json
-from pathlib import Path
 
 import pytest
 
@@ -190,6 +189,57 @@ def test_new_cutoff_expired_rejects_before_new_writes(tmp_path):
     assert data[-2].new_calls == []
 
 
+def test_reviewed_new_approval_can_clean_without_reconstructing_historical_trace(tmp_path):
+    from test_pve_acceptance_recovery_evidence import write
+    data = list(setup(tmp_path))
+    request, _, admission, original, evidence, api, snippets = data
+    caller = json.loads((evidence / 'caller.json').read_text())
+    caller.pop('dispatches')
+    request['caller_association']['material'] = write(evidence, 'caller.json', caller)
+    request['rejection_evidence'] = []
+    facts = reconcile_original(request, original, evidence, api, snippets)
+    assert facts['original_activity'] == 'unknown'
+    assert facts['disposition'] == 'administrator_decision'
+    preview = build_recovery_preview(request, facts)
+    admission.update(request_digest=canonical_digest(request), plan_digest=preview['preview_digest'].removeprefix('sha256:'))
+    data[:3] = [request, preview, admission]
+    result = invoke(tmp_path, data)
+    assert result['overall'] == 'passed'
+    assert result['original_activity'] == 'unknown'
+    assert result['original_facility_writes'] == 'unknown'
+    assert result['original_acceptance'] == 'unknown'
+    assert result['facility_writes'] == 'issued'
+
+
+def test_complete_helper_references_allow_pool_filtered_api_inventory(tmp_path):
+    data = setup(tmp_path)
+    api = data[-2]
+    original_request = api.request
+    def filtered(method, path, **kwargs):
+        rows = original_request(method, path, **kwargs)
+        if path.endswith('/cluster/resources'):
+            return [row for row in rows if row['vmid'] == 798]
+        return rows
+    api.request = filtered
+    assert invoke(tmp_path, data)['overall'] == 'passed'
+
+
+def test_absent_resources_do_not_require_unused_mutation_privileges(tmp_path):
+    data = setup(tmp_path)
+    api, snippets = data[-2:]
+    api.present = False
+    api.volumes.clear()
+    snippets.present = False
+    original_request = api.request
+    def readonly_permissions(method, path, **kwargs):
+        if path.endswith('/access/permissions'):
+            return {kwargs['fields']['path']: {'VM.Audit': 0, 'Datastore.Audit': 0}}
+        return original_request(method, path, **kwargs)
+    api.request = readonly_permissions
+    assert invoke(tmp_path, data)['overall'] == 'passed'
+    assert api.new_calls == []
+
+
 def test_later_new_authority_retains_complete_original_list_and_previous_recovery(tmp_path):
     from test_pve_acceptance_recovery_evidence import write
     data = setup(tmp_path)
@@ -220,7 +270,7 @@ def test_later_new_authority_retains_complete_original_list_and_previous_recover
         recovery.plan(request, original, evidence, api, snippets)
 
 
-def test_unknown_previous_recovery_blocks_new_cleanup_even_when_now_absent(tmp_path):
+def test_unknown_previous_recovery_is_disclosed_for_new_administrator_decision(tmp_path):
     from test_pve_acceptance_recovery_evidence import write
     data = setup(tmp_path)
     data[-2].lost = True
@@ -236,8 +286,9 @@ def test_unknown_previous_recovery_blocks_new_cleanup_even_when_now_absent(tmp_p
     api.volumes.clear()
     snippets.present = False
     preview = recovery.plan(request, original, evidence, api, snippets)
-    assert preview['reconciliation']['cleanup_eligible'] is False
+    assert preview['reconciliation']['cleanup_eligible'] is True
     assert preview['reconciliation']['previous_activity'] == 'unknown'
+    assert preview['reconciliation']['disposition'] == 'administrator_decision'
     assert len(api.new_calls) == 1
 
 

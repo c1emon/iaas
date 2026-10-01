@@ -2,8 +2,9 @@
 
 恢复先联网只读核清，再使用新的限定清理批准。它不重放原 clone、configure、start
 或 guest exec，不修改原 request/journal/result，也不把清理成功改写为验收通过。
-本轮软件样例与测试覆盖的是 fake API/helper；`run-120-1` 的现场材料、权威403证据
-和当前清理批准仍须由调用方提供。未取得这些材料时不能执行现场 VM798 清理。
+软件样例与测试覆盖的是 fake API/helper。`run-120-1` 已提供受保护原材料，当前
+限定清理批准、凭据与现场条件仍未就绪；本轮不执行 VM798 清理。历史403日志是
+辅助材料，不要求为旧执行重建 trace 或改造 PVE。
 
 ## 输入及文件映射
 
@@ -59,7 +60,9 @@ iaas run --runtime-config "$RECOVERY_INPUT_DIR/runtime.json" \
 
 plan 联网使用 GET 和只读 helper 检查，不消费批准、不创建/启动/删除设施对象。
 审查 `recovery-plan-01/plan/recovery-preview.json` 的逐请求 activity、原 issued/unknown
-写入、完整资源归属/引用以及 `cleanup_eligible`。未知准入不能作为清理许可。
+写入、完整资源归属/引用以及 `cleanup_eligible`。`disposition=administrator_decision`
+表示历史仍有未知，管理员需据此决定是否签发现有的新执行批准。eligible 只表示
+当前限定清理检查满足条件，本身不是许可；已确认活动或当前冲突仍阻断清理。
 
 批准绑定新的 execution、request/preview digest、runtime、cluster/VMID reservation、
 完整原清单、新有限截止和原 caller/native 关联。`recovery_of` 是原 native execution；
@@ -88,16 +91,18 @@ iaas run --runtime-config "$RECOVERY_INPUT_DIR/runtime.json" \
 ```
 
 observe 不使用 API/SSH 凭据、设施网络或新预算。结果缺失、摘要冲突或收集失败保留
-unknown，不会回退为 start。需要进一步清理时使用新 execution/preview/批准，按顺序
-追加 `previous_recoveries`，保留未缩减的完整原清单和每个先前执行的实际字节摘要。
+unknown，不会回退为 start。需要进一步清理时使用新 execution/preview/批准，提供
+已留存的 `previous_recoveries`，保留未缩减的完整原清单及所提供材料的实际字节摘要。
+不要求补齐历史链或消解每一次旧响应丢失；已知活动任务仍须停止后再清理。
 
 ## 权威403、活动及结果边界
 
 拒绝证据须由授权读取的权威服务端记录，或当前批准明确接受的管理员导出提供。
-request 声明 source、provenance、保护主体和来源说明；caller 材料保留唯一 dispatch
-序列、UTC 时间、POST/path/node/VMID 关联。文件 hash、文件中的 `trusted=true`、当前
-缺权限、没有 PID 或当前停止状态都不能单独消解原请求 unknown。同窗匹配歧义、
-主体/路径不同、另一 UPID 未终止或 helper 活动未知仍阻断清理。
+request 声明 source、provenance、保护主体和来源说明。已有独立 dispatch trace 时
+可与服务端记录匹配；没有 trace、关联歧义或证据不足则保留历史 unknown，不要求
+管理员补造原始记录。文件 hash、当前缺权限、没有 PID 或当前停止状态都不能单独
+证明历史请求未执行。历史 unknown 在 preview 中显式交给管理员决定；沿用现有
+限定清理批准，不增加新的批准字段、重建证明或全历史闭环门禁。
 
 恢复分别报告原请求核清、`original_activity`、`original_facility_writes`、本次
 `facility_writes`、逐项 present/absent/unknown 与 cleanup/collection。权威 guest exec
@@ -108,13 +113,14 @@ request 声明 source、provenance、保护主体和来源说明；caller 材料
 删除仅针对原 VM/UUID、完整盘集及专属 snippet。VM 已 absent 只表示当前不存在；
 独立删残盘仍须证明原/当前归属且无外部引用。stop/delete/helper 响应丢失保留 unknown
 并停止依赖操作；观察到 absent 不推定历史删除成功。只有完整清单均被安全确认 absent
-且结果收集完整，恢复 cleanup 才可 passed；原验收仍保持原 failed/unknown，新的验收
+且本次写入可判明、结果收集完整，恢复 cleanup 才可 passed；历史 activity/writes
+可以继续 unknown。原验收仍保持原 failed/unknown，新的验收
 和 caller promotion 需要另一次批准执行。
 
 ## infra-ops 承接与发布
 
 infra-ops 需要传递上述 file aliases，保存原 caller pending/consumption 与 native
-execution 关联、生成唯一 dispatch trace 和受信管理员来源声明；新增 recover plan、
+execution 关联；历史拒绝证据与已有 trace 是可选补充，不要求重建。新增 recover plan、
 新批准 start 和同 ID observe 路由，保存并串联后续 recovery 材料。它还须选择配套
 launcher/runtime/helper 能力版本并冻结实际 digest/截止；不要改写原 journal、清空
 消费记录、删除执行目录或重放旧 acceptance start。本 change 不修改 infra-ops 仓库。

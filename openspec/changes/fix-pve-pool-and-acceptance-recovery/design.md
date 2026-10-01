@@ -81,9 +81,9 @@ mutation_active 从相关任务/请求是否仍有活动未知计算。明确拒
 
 ### 5. 原执行核清与新限定清理
 
-recovery-request/v1 固定 target、cluster_scope、runtime、deadlines、timeouts.work_seconds/cleanup_seconds、authorization.cleanup_original_resources=true、original_execution_id（原生验收）、caller_association（plan_id、infra-ops execution_id 及原始关联材料引用）、original_materials 的 request/journal/可用 result 引用和现有 SHA-256、rejection_evidence，以及 full_original_resources（VM node/VMID/UUID、精确 volid、snippet file_id/digest，按原材料实际冻结清单）。first recovery 的previous_recoveries为空；后续按顺序提供先前恢复request/journal/可用result及摘要引用。资源列表须与原 journal/result 一致，不能只选择剩余项；结果按完整清单逐项报告。files.original_execution_dir 和 files.cleanup_evidence_dir 均只读映射，引用 confined；不接受符号链接、路径越界、丢失核心证据或更改摘要。
+recovery-request/v1 固定 target、cluster_scope、runtime、新有限截止、原 caller/native 关联、原 request/journal/可用 result 及 full_original_resources。完整原清单以 journal 为依据，不能缩成剩余项；旧 result 的部分/unknown 资源行是辅助信息，身份或所有权冲突仍拒绝。previous_recoveries 提供已留存关联即可，不要求补齐完整递归历史链。原材料只读，继续校验实际文件摘要、路径边界和核心绑定。
 
-服务器拒绝证据来自当前授权读取的权威服务端记录或调用方管理员导出的保护材料。管理员导出须有明确受信来源声明及当前批准绑定；文件 hash 只证明内容绑定，不独自证明来源。证据至少关联节点、受保护认证主体、方法、准确路径、HTTP 状态、时间/时区、日志来源及该次 dispatch 的唯一对应。访问日志无请求体时，可结合原 intent 的固定命令、串行调用序列和唯一匹配核清；同窗有多个无法区分的 exec、主体/路径不符或来源不明仍拒绝。仅凭当前缺权限、口头说明、VM 当前运行/停止或没有 PID，不能解除未知。
+历史日志仅作有限辅助：已有独立 dispatch trace 和可信拒绝导出时可核清；缺失或关联歧义保持 unknown，不补造 trace、不改造 PVE、不要求历史闭环。当前缺权限、VM 停止或无 PID 都不证明历史未执行。preview 显示 administrator_decision；管理员沿用现有的新 execution/request/preview 限定清理批准决定后续处置，不增加批准字段或额外证明材料。
 
 recovery plan 只读核对原请求/执行/消费关联、runtime 原记录、UPID/task 终态、guest 拒绝证据、UUID/配置/磁盘所属及 snippet 上传和引用，产出可审批的 preview。没有最终 result 可在完整绑定 journal 下报告事实；不能补造成功。新 start 必须在新 work 窗口内完成这些复核，随后在新 cleanup 窗口逐项执行；两窗口从新执行同一时间参考冻结，不能刷新原预算。preview 不替代 start 复核。
 
@@ -93,9 +93,9 @@ rc.19 的 acceptance request/result v2 和 journal v1 按原形读取、校验�
 
 当前有效清理批准绑定新 recovery execution、preview/request 摘要、原生原 execution、caller 原 pending/消费关系、full_original_resources、新 image digest 和新有限截止；使用新 execution_id 及 recovery_of，保留原 created_by。清理权限仅要求本次核清/停止/删除/参考检查所需权限，已确认拒绝的 guest exec 不需要补齐 guest 执行权才能清理。凭据可轮换，但资源所有权与受保护历史主体关联仍必须验证，凭据值不进入公开身份摘要。
 
-消解该 403 后，其他原生任务或 helper 若仍活动未知，禁止相关清理。当前 VM 存在时核 UUID、完整附属磁盘集合和原所有权，必要时 stop 后等待任务，删除只用原资源范围、不 force-unlock、不 purge 无关资源。VM 已 absent 不证明旧删除成功：记录当前不存在，另查原冻结磁盘；独立删残留磁盘只在原所有权、当前无外部引用及精确 API 权限/范围可证明时允许，否则保留。snippet 只有在 VM/所属盘安全结论满足且全局引用可见、原上传和内容 digest 匹配后删除。原生删除丢响应保留 unknown，当前 absent 不反推历史成功。
+历史 activity/writes unknown 不作为永久清理门禁；确认运行的任务仍阻断。当前 VM 核 UUID、完整盘集、锁和归属；磁盘/snippet 保留精确身份、内容和引用检查。helper 已提供完整全局引用时，不再要求 API 同时看见全部 VM；没有该引用证据时才使用完整 API 视图兜底。不存在的资源不要求无实际用途的删除权限。原生删除丢响应仍停止本次依赖写入；新执行可由管理员另行批准，不从当前 absent 反推历史成功。
 
-新恢复 result 单独保存核清结论、original_activity、original_facility_writes 的核清判断、本次 facility_writes、逐项 deleted/already_absent/mismatch/referenced/failed/unknown、cleanup、collection 和残留 existence=present/absent/unknown。原结果不改；清理成功不改变原 cloud_init/injected_hostname 或验收 overall，不授权模板推广。新恢复执行如果响应丢失，后续同 ID 只 observe；另一次清理需新 preview/批准并保留完整原清单及所有恢复关联，不重放操作。
+新恢复 result 分别记录历史 activity/writes、原验收、本次写入与逐项清理结果。当前完整清单确认 absent、本次写入可判明且收集完整即可 cleanup passed，历史 unknown 不必消解。原结果不改，不授权模板推广。同 ID 仍只 observe；后续清理使用新 preview/批准和完整原清单，不重放旧操作。独立 snippet 清理在确认 VM 删除与当前无引用后，不再要求无关旧 guest/helper 状态全部终结。
 
 ### 6. 源与容量诊断
 

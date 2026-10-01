@@ -83,6 +83,18 @@ def test_pool_permission_recheck_is_readonly_and_refuses_missing_grants():
         admit_permissions([change()], api)
 
 
+def test_pool_only_creation_does_not_require_future_acl_compilation():
+    from iaas.runtime_execution.pve_policy import admit_permissions
+    class Api:
+        def pool_detail(self, pool):
+            return {'members': []}
+        def effective_permissions(self, path):
+            if path.startswith('/pool/'):
+                return {path: {'VM.Allocate': 0}}
+            return {path: {}}
+    admit_permissions([change()], Api())
+
+
 def test_state_owned_update_is_allowed_but_replaced_identity_rejected():
     from iaas.runtime_execution.plans import _check_resource_conflicts
 

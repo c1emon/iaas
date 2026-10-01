@@ -419,6 +419,7 @@ def run(selected: Any, operation: str, scope: str, execution: Any,
             save(execution.outputs.path('plan') / 'recovery-preview.json', preview)
             execution.finish({'component': 'pve-template', 'operation': 'plan', 'action': 'recover',
                               'preview_digest': preview['preview_digest'],
+                              'disposition': preview['reconciliation']['disposition'],
                               'cleanup_eligible': preview['reconciliation']['cleanup_eligible'], 'facility_writes': 'none'})
             return
         require('recovery_preview' in files, 'recovery_preview is required')

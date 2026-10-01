@@ -155,7 +155,7 @@ def test_absent_is_idempotent_and_ssh_timeout_stays_unknown(evidence):
     assert result['overall'] == 'unknown' and journal['mutation_active'] is True
 
 
-def test_retry_preserves_full_list_and_requires_inactive_original(evidence):
+def test_retry_preserves_full_list_without_requiring_old_helper_outcome(evidence):
     root, request = evidence
     old = deepcopy(request)
     journal = begin(root / 'prior', 'snippet-cleanup', old, admission(old, 'cleanup-0'), 'cleanup-0', 'sha256:' + 'f' * 64)
@@ -172,8 +172,23 @@ def test_retry_preserves_full_list_and_requires_inactive_original(evidence):
     request['snippets'] = old['snippets']
     journal['mutation_active'] = True
     refs['journal'] = reference(root, 'prior/journal.json', journal)
-    with pytest.raises(ValueError):
-        validate_original(request, root)
+    validate_original(request, root)
+
+
+def test_snippet_cleanup_ignores_unrelated_historical_unknown(evidence):
+    root, request = evidence
+    refs = request['acceptance_evidence']
+    journal = json.loads((root / refs['journal']['path']).read_text())
+    journal['mutation_active'] = True
+    journal['tasks'].append({'phase': 'guest_exec', 'status': 'unknown'})
+    ref = reference(root, 'accept/journal.json', journal)
+    refs['journal'] = ref
+    request['deletion_evidence'].update(result=ref, vm_absence=ref)
+    request['ownership_records'] = {'manifest': ref, 'upload': ref}
+    validate_original(request, root)
+    helper = FakeHelper()
+    result, _ = execute(request, helper, root / 'new-cleanup')
+    assert result['overall'] == 'passed'
 
 
 def test_start_then_observe_without_mutation(evidence, monkeypatch):

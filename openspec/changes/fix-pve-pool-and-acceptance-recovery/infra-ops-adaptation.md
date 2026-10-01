@@ -13,8 +13,8 @@
 | 截止 | 从合法目标开始和批准策略冻结work/cleanup；迟到不能刷新；40GiB总上限不足时修改disk_limit_bytes并生成新的计划和批准 |
 | 首次dispatch | 现有pending/消费记录原子记录首次发送；同execution重复只observe，保留完整diagnostics/execution和关联材料，换Runner/output目录不得重放 |
 | 诊断展示 | 展示固定reason_code、阶段、必要对象/操作/权限、HTTP状态、容量总量；保留原始失败与清理事实，不将未知降为成功；不展示token/认证头/原日志/guest输出 |
-| 原执行核清材料 | 只读提供原acceptance request/journal/可用result及原计划/infra-ops execution到native execution的持久化关联；管理员提供可信服务端拒绝证据，准确对应原guest exec |
-| 新清理批准 | recovery plan后使用新execution_id/recovery_of，绑定原native execution、caller原pending/消费、完整原资源清单、新request/preview/runtime和有限截止；批准仅核清/限定清理，不恢复原验收预算 |
+| 原执行核清材料 | 只读提供原acceptance request/journal/可用result及原计划/caller/native持久化关联；拒绝证据和已有trace可选，缺失不要求重建，保留历史unknown |
+| 新清理批准 | recovery plan后使用现有新execution_id/recovery_of批准；preview显示administrator_decision时由管理员决定是否处置，绑定完整范围/runtime/截止，不新增批准字段或证明门禁，不恢复原验收预算 |
 | 恢复结果消费 | 新recovery结果独立入账，保存原执行created_by、逐项清理/存在性、collection和unknown；安全地记录原pending核清结论，保留原记录与消费历史，不删除或清除以允许重跑 |
 | 后续验收/推广 | 清理成功不改原验收，也不推广模板；新的完整验收必须新VMID选择、新plan、新批准和新execution；全部check/cleanup/collection达标再按调用方政策推广 |
 | 节点helper | 在调用前按新版说明安装upload/delete helper及最小sudo规则，固定SSH目标与known_hosts/key；用只读能力检查证明必要功能，禁止借bootstrap隐式写设施 |
@@ -30,7 +30,7 @@
 
 ## 正式调用形式
 
-以下入口已由软件fixture验证，现场运行仍需真实原材料、可信403证据和当前限定批准。环境文件使用files.recovery_request、files.original_execution_dir、files.cleanup_evidence_dir；start另外映射files.recovery_preview和files.execution_admission，并使用固定新runtime配置。
+以下入口已由软件fixture验证，现场运行仍需核心原材料、当前限定批准和有效现场条件；403/trace是可选辅助，历史未知由管理员据preview决定。环境文件使用files.recovery_request、files.original_execution_dir、files.cleanup_evidence_dir；start另外映射files.recovery_preview和files.execution_admission，并使用固定新runtime配置。
 
 ```sh
 iaas run --runtime-config runtime.json --engine local --environment recovery-plan.yml \

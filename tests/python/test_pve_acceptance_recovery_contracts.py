@@ -66,12 +66,20 @@ def test_passed_result_requires_complete_absent_resource_list():
     document = json.loads((EXAMPLES / 'recovery-result.json').read_text())
     for mutate in (lambda d: d['resources'].pop(),
                    lambda d: d['resources'][0].update(existence='unknown'),
-                   lambda d: d.update(original_facility_writes='unknown'),
+                   lambda d: d['reconciliation'].update(active_tasks=True),
                    lambda d: d.update(facility_writes='unknown')):
         changed = deepcopy(document)
         mutate(changed)
         with pytest.raises(ValueError):
             validate_recovery_result(changed)
+
+
+def test_cleanup_success_preserves_historical_unknown():
+    document = json.loads((EXAMPLES / 'recovery-result.json').read_text())
+    document.update(original_activity='unknown', original_facility_writes='unknown')
+    result = validate_recovery_result(document)
+    assert result['overall'] == 'passed'
+    assert result['original_acceptance'] == 'unknown'
 
 
 @pytest.mark.parametrize('mode,operation', [('plan', 'plan'), ('start', 'recover'), ('observe', 'recover')])

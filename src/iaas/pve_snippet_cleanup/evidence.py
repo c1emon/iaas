@@ -29,8 +29,8 @@ def execution_materials(root: Path, refs: dict[str, Any], operation: str) -> tup
             and refs['execution_id'] == journal.get('execution_id')
             and journal.get('kind') == 'pve-one-shot-journal' and journal.get('schema_version') == 1
             and journal.get('deadlines') == request['deadlines']
-            and journal.get('operation') == operation and journal.get('target') == request.get('target')
-            and journal.get('mutation_active') is False, 'original execution binding or inactivity is unknown')
+            and journal.get('operation') == operation and journal.get('target') == request.get('target'),
+            'original execution binding conflicts')
     if operation == 'accept':
         validate_acceptance_materials(request, journal)
     else:
@@ -79,8 +79,7 @@ def validate_original(request: dict, root: Path) -> None:
                 and all(expected_delete.get(k) == v for k, v in vm.items())
                 and deleted == journal and absent == journal, 'acceptance deletion is unconfirmed')
         require(any(x.get('phase') == 'delete' and x.get('status') == 'succeeded'
-                    and x.get('upid') == deletion['native_task'] for x in journal.get('tasks', []))
-                and all(x.get('status') in {'succeeded', 'failed'} for x in journal.get('tasks', [])),
+                    and x.get('upid') == deletion['native_task'] for x in journal.get('tasks', [])),
                 'original acceptance task completion is unconfirmed')
         require(manifest == journal and uploaded == journal, 'acceptance ownership must reference original journal')
         records = journal.get('snippets', [])

@@ -18,12 +18,12 @@ The system SHALL expose pve-template plan with action=recover and recovery reque
 - **AND** new interval boundaries SHALL NOT invalidate original VM798 ownership or authorize changing its pool
 
 #### Scenario: Original evidence is incomplete or unsafe
-- **WHEN** core request/journal/caller association is absent, original identity/digest conflicts, references escape their mapped directories, or task/resource evidence is insufficient
+- **WHEN** core request/journal/caller association is absent, original identity/digest conflicts, references escape their mapped directories, or core resource ownership evidence is insufficient
 - **THEN** recovery SHALL report failed/unknown reconciliation as applicable and refuse facility writes
 - **AND** it SHALL NOT reconstruct historical success from current resource existence or require journal edits, execution-directory removal or clearing caller consumption records
 
 ### Requirement: Reconciliation resolves only uniquely proven rejected requests
-Recovery SHALL validate server rejection evidence against the original principal, method, endpoint, node/VMID, time and dispatch sequence, accepting authoritative service records or explicitly approved administrator exports. Evidence SHALL establish that the specific request was rejected before acceptance/execution and that no conflicting operation remains active or uncertain.
+Recovery MAY use retained independent dispatch traces and trusted server rejection evidence to establish a specific pre-execution rejection. It SHALL NOT require reconstructed traces, matching IaaS identifiers in PVE logs or a complete historical evidence system. Missing or ambiguous correlation SHALL preserve historical unknown. The reviewed preview SHALL disclose uncertainty for an administrator decision through the existing new limited cleanup approval.
 
 #### Scenario: Original guest exec has authoritative permission rejection
 - **WHEN** a trusted unique match establishes that the original guest exec POST was rejected with HTTP403 before execution and all other relevant tasks/helper operations are proven inactive
@@ -32,18 +32,19 @@ Recovery SHALL validate server rejection evidence against the original principal
 
 #### Scenario: Rejection evidence cannot establish unique dispatch association
 - **WHEN** a log match is ambiguous, provenance is untrusted, principal/path differs, or the only evidence is current missing permission or absent PID
-- **THEN** the original request outcome SHALL remain unknown and dependent cleanup SHALL be refused
+- **THEN** the original request outcome SHALL remain unknown and the preview SHALL indicate administrator_decision
+- **AND** an existing new scoped approval MAY authorize cleanup after current ownership/reference checks without rewriting historical unknown
 
 #### Scenario: Another original operation remains uncertain
-- **WHEN** the guest rejection is established but a clone/start/delete/helper operation may still be active
-- **THEN** that remaining uncertainty SHALL continue to block affected resource cleanup
-- **AND** a blanket mutation_active=false assertion SHALL NOT replace per-operation evidence
+- **WHEN** an original or retained recovery native task is confirmed running
+- **THEN** that activity SHALL block affected resource cleanup
+- **AND** an old mutation_active flag or unknown helper response alone SHALL be disclosed rather than permanently block a newly approved cleanup
 
 ### Requirement: New cleanup authority preserves original scope and deadlines
 pve-template recover start SHALL require a new execution ID and current explicit limited cleanup authorization/admission binding the recovery request/preview, selected runtime digest, original native execution, caller pending/consumption association, full original resource list and new finite work/cleanup deadlines. Both cutoffs SHALL be valid UTC YYYY-MM-DDTHH:mm:ssZ with work not later than cleanup; relative limits SHALL only tighten them. Original deadlines SHALL remain immutable; recovery SHALL freeze its new bounds from a single start time reference and SHALL NOT replay original acceptance operations.
 
 #### Scenario: Clean after the original window expired
-- **WHEN** the old execution cutoff has passed but the new cleanup authority and deadlines are valid and original inactivity/ownership is established
+- **WHEN** the old execution cutoff has passed but new cleanup authority and deadlines are valid, current ownership is established and no task is confirmed running
 - **THEN** recovery SHALL perform admission/reconciliation within the new work window and only authorized cleanup within the new cleanup window
 - **AND** it SHALL NOT refresh the old window, reuse old approval, clone, configure/start the original VM or issue guest exec
 
@@ -57,11 +58,11 @@ pve-template recover start SHALL require a new execution ID and current explicit
 - **THEN** no new dependent write SHALL be issued and completed facts plus unknown residual existence/activity SHALL remain explicit
 - **AND** timeout SHALL NOT imply cancellation or rollback
 
-### Requirement: Recovery deletes only exactly owned inactive resources
-Recovery SHALL recheck actual ownership, UUID, complete frozen volume set, applicable historical pool binding, effective cleanup permissions and conflicting activity before stop/delete. Resource absence SHALL be established under sufficient visibility. Volumes and snippets SHALL receive the existing exact ownership/digest/reference safety checks, and pools SHALL remain intact.
+### Requirement: Recovery deletes only exactly owned approved resources
+Recovery SHALL recheck actual ownership, UUID, complete frozen volume set, applicable historical pool binding, effective cleanup permissions and confirmed conflicting activity before stop/delete. Resource absence SHALL be established under sufficient visibility. Complete helper reference evidence SHALL suffice without requiring an independently unfiltered API VM inventory; the API fallback SHALL require sufficient inventory visibility when helper reference evidence is unavailable. Mutation permissions SHALL be required only for present resources requiring those actions. Volumes and snippets SHALL receive exact ownership/digest/reference safety checks, and pools SHALL remain intact.
 
 #### Scenario: Clean the VM and original owned disks and snippet
-- **WHEN** the approved original VM/UUID and two exact owned volumes are confirmed, all conflicting activity is inactive, and the frozen snippet upload/digest/reference evidence is complete
+- **WHEN** the approved original VM/UUID and two exact owned volumes are confirmed, no task is confirmed running, and the frozen snippet ownership/digest/reference evidence is complete
 - **THEN** recovery SHALL stop/delete only that VM as needed, verify original volume absence, then clean only the safe frozen snippet under complete reference visibility
 - **AND** it SHALL preserve the source template, pools, ACLs and unrelated resources and retain original created_by identity
 
@@ -94,7 +95,7 @@ Recovery result/v1 SHALL retain request/preview/runtime/original-execution assoc
 - **AND** observing current absence SHALL NOT convert the lost response into historical deletion success
 
 ### Requirement: Repeated recovery uses protected observation or fresh authority
-The caller SHALL route an already dispatched recovery execution exclusively to observe using its original protected recovery directory. Observe SHALL be local read-only, credential-free and shall not construct budgets. A further cleanup SHALL require new bound materials and authority retaining the full original list and all previous recovery associations after proving relevant prior inactivity.
+The caller SHALL route an already dispatched recovery execution exclusively to observe using its original protected recovery directory. Observe SHALL be local read-only, credential-free and shall not construct budgets. Further cleanup SHALL require new bound materials and authority retaining the full original list and supplied prior recovery associations, without requiring a complete historical chain or resolution of old unknown outcomes. Partial/unknown available result resource rows SHALL be informational unless they conflict with original identity or ownership. Complete current absence and known new effects MAY establish cleanup success while original activity/writes/acceptance remain unknown.
 
 #### Scenario: Observe after expiry or on another Runner
 - **WHEN** the same recovery execution is collected after expiry using new output paths
@@ -102,6 +103,6 @@ The caller SHALL route an already dispatched recovery execution exclusively to o
 - **AND** missing materials SHALL return unknown/non-success without falling back to start
 
 #### Scenario: A later limited recovery cleans remaining items
-- **WHEN** previous recovery activity is proven stopped and a fresh plan/approval binds the unchanged full original list and prior recovery evidence
+- **WHEN** no task is confirmed running and a fresh plan/approval binds the unchanged full original list and supplied prior recovery evidence, disclosing remaining historical unknown
 - **THEN** a new recovery execution MAY safely check and clean remaining exact resources within its new window
 - **AND** it SHALL preserve completed and unknown historical facts, original consumption history and original acceptance conclusion

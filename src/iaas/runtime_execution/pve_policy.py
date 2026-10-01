@@ -85,6 +85,9 @@ def admit_permissions(changes: list[dict], api: Any) -> None:
             grants = permissions.grants(f"/vms/{value['vm_id']}")
             if 'Permissions.Modify' not in grants:
                 permissions.require(f"/vms/{value['vm_id']}", ['VM.Allocate'], operation='pool_membership')
-        permissions.placement(value['vm_id'], pool, sorted(required), future='create' in change['actions'])
+        # A not-yet-existing VM has no authoritative effective lifecycle ACL.
+        # Precheck native allocation; PVE enforces each subsequent request.
+        creating = 'create' in change['actions']
+        permissions.placement(value['vm_id'], pool, ['VM.Allocate'] if creating else sorted(required), future=creating)
         for source in after.get('clone', []) if 'create' in change['actions'] else []:
             permissions.require(f"/vms/{source['vm_id']}", ['VM.Audit', 'VM.Clone'], operation='clone_source')

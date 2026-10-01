@@ -4,7 +4,11 @@
 
 当前合同：publication request v2、preview/result/record v3；acceptance request/result v3、preview v1；acceptance/recovery one-shot admission v2；recovery request/preview/result v1。新 start 不接受旧合同；rc.19 原验收 v2 仅供恢复读取。
 
-节点需安装本版本 upload/delete helper 和 wrapper-only sudo 规则，并固定 SSH key/known_hosts。验收池权限继承的只读编译使用节点原生 PVE 权限模块；不写池或 ACL。普通/publication 无法证明未来权限时拒绝。已有 VM 的 pool 改为空值受 provider 0.111.1 限制，准入拒绝；新 VM 可不指定 pool。
+节点需安装本版本 upload/delete helper 和 wrapper-only sudo 规则，并固定 SSH key/known_hosts。验收池权限继承的只读编译使用节点原生 PVE 权限模块；不写池或 ACL。普通 VM 创建仅预检当前分配权限，后续实际权限由 PVE 执行；publication 的预检保持原范围。已有 VM 的 pool 改为空值受 provider 0.111.1 限制，准入拒绝；新 VM 可不指定 pool。
+
+后续适度工程调整（尚未发布）：历史未知不再永久阻断新批准的限定清理；preview 显示 administrator_decision，沿用现有批准，不重建 trace、不新增门禁。当前活动、归属、引用与本次响应丢失保护保留；完整 helper 引用无需重复全局 API 可见性，旧结果允许部分/unknown 信息，历史恢复链不要求补齐。独立 snippet 清理不依赖无关旧任务终态。rc.20 发布产物仍是下述原源码，不包含本次调整。
+
+调整验证：Python 全套 1802 passed、2 skipped；最后补充与调整后的定向回归 116 passed；Pyright 0 errors、Ruff、4/4 import contracts 和 OpenSpec strict 通过。无 launcher/Go/Tofu 修改，没有扩展到现场或发布复验。
 
 软件验证：完整 Python 1792 passed、2 skipped；全项目 Pyright 0 errors、Ruff 通过、4 个 import contracts 保持；Go 全套通过；OpenTofu 模块 fmt 与锁定 provider fixture init/validate 通过；OpenSpec strict 通过。API/helper、local/DinD 传输均为软件 fixture，不能作为真实 PVE 或共享环境验收。
 

@@ -189,8 +189,12 @@ def test_unproven_rejection_or_other_activity_remains_unknown(tmp_path, fault):
         request['rejection_evidence'][0]['material'] = ref
         trusted['pve-access-export']['sha256'] = ref['sha256']
     result = reconcile_original(request, original, evidence, api, Snippets(), trusted_rejection_exports=trusted)
-    assert result['cleanup_eligible'] is False
-    assert result['status'] == 'unknown'
+    blocked = fault in {'another_active', 'volume_reference'}
+    assert result['cleanup_eligible'] is not blocked
+    assert result['status'] == ('unknown' if blocked else 'eligible')
+    if not blocked:
+        assert result['original_activity'] == 'unknown'
+        assert result['disposition'] == 'administrator_decision'
     assert result['facility_writes'] == 'none'
 
 
@@ -224,6 +228,12 @@ def test_available_legacy_result_is_digest_bound_and_never_promoted(tmp_path):
     assert observed['original_acceptance'] == 'unknown'
     assert observed['cleanup_eligible'] is True
     assert (original / 'result.json').read_bytes() == before
+    # A partial unknown result is informational; the journal owns the full list.
+    result['temporary_resources'] = [dict(result['temporary_resources'][0], ownership='unknown')]
+    request['original_materials']['result'] = write(original, 'result.json', result)
+    journal['result_digest'] = canonical_digest(result)
+    request['original_materials']['journal'] = write(original, 'journal.json', journal)
+    assert load_original(request, original, evidence)['result'] == result
     result['overall'] = 'passed'
     request['original_materials']['result'] = write(original, 'result.json', result)
     with pytest.raises(RecoveryEvidenceError, match='original_result_binding_conflict'):
@@ -240,3 +250,15 @@ def test_recovery_preview_detects_pool_or_deadline_tamper(tmp_path):
     request['full_original_resources']['vm']['pool'] = 'invented'
     with pytest.raises(RecoveryEvidenceError, match='historical_pool_binding_conflict'):
         load_original(request, original, evidence)
+
+
+def test_without_helper_reference_rows_filtered_api_is_not_a_complete_fallback(tmp_path):
+    request, original, evidence, trusted = fixture(tmp_path)
+    class Filtered(API):
+        def request(self, method, path, **kwargs):
+            response = super().request(method, path, **kwargs)
+            if path.endswith('/cluster/resources'):
+                return [row for row in response if row['vmid'] == 798]
+            return response
+    with pytest.raises(RecoveryEvidenceError, match='recovery_vm_inventory_incomplete'):
+        reconcile_original(request, original, evidence, Filtered(), Snippets(), trusted_rejection_exports=trusted)

@@ -13,12 +13,15 @@ and approved for an actual recovery.
 
 `evidence/caller.json` binds the original plan, caller/native execution,
 pending/consumption reservation, request digest, original runtime and unique
-protected dispatch trace. `evidence/rejection.json` is a sanitized administrator
+protected dispatch trace in this fixture only. Trace and rejection evidence are
+optional; historical executions without them need no reconstruction.
+`evidence/rejection.json` is a sanitized administrator
 export. The request explicitly declares the authorized source, principal and
 provenance; file SHA256 alone is not trust. A real start must bind that declaration
-to the current limited cleanup approval. An ambiguous log match, another active
-request, incomplete original resource list, missing evidence or a conflicting
-UUID/reference prevents cleanup.
+to the current limited cleanup approval. An ambiguous log match stays unknown
+for an administrator decision using the existing new approval. A confirmed
+active task, incomplete core resource evidence or conflicting UUID/reference
+still prevents cleanup.
 
 Read-only reconciliation reports per-request inactivity and historical issued
 writes separately. It can resolve the uniquely rejected guest exec without
@@ -40,10 +43,11 @@ falls back to start. Missing/conflicting collection stays unknown.
 
 A further cleanup needs a new execution and approval. Append each previous
 recovery's request/journal/available-result references and actual-byte SHA256 to
-`previous_recoveries`; keep the unchanged full original VM, volume and snippet
-list, including already absent items. A prior lost request response remains
-unknown until its individual activity is proven inactive. Current resource
-absence cannot turn that lost request into historical success.
+`previous_recoveries` when retained; keep the unchanged full original VM, volume
+and snippet list, including already absent items. No complete history chain is
+required. Prior lost responses stay unknown and do not prevent an administrator
+from approving the next limited cleanup. Current absence never proves historical
+success; confirmed active tasks still block cleanup.
 
 Both new relative limits tighten deadlines from the same start reference.
 Entering cleanup does not refresh the cutoff. A stop/delete response loss stops

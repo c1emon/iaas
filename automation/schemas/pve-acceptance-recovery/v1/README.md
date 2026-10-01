@@ -14,8 +14,11 @@ cluster/VMID reservation and original caller/native identities must all match.
 
 JSON Schema checks structure. Runtime also checks canonical request/preview
 bindings, raw original-file SHA256, confined nonsymlink paths, explicitly trusted
-rejection provenance, unique dispatch association, original/full previous
-resource lists, native task inactivity and current exact ownership/references.
+optional rejection provenance/correlation, the full original resource list,
+supplied prior recovery bindings, confirmed active tasks and current exact
+ownership/references. Historical unknown is disclosed for an administrator
+decision using the existing new approval; no reconstructed trace or complete
+history chain is required. Cleanup success does not resolve historical unknown.
 Schema validity is not cleanup approval or live acceptance.
 
 Retained rc.19 acceptance request/result v2 and journal v1 are readable only as
