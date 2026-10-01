@@ -102,6 +102,11 @@
       "file": "guest-exec-rejected-result.json",
       "valid": true,
       "kind": "pve-template-acceptance-result"
+    },
+    {
+      "file": "acceptance-preview.json",
+      "valid": true,
+      "kind": "pve-template-acceptance-preview"
     }
   ]
 }

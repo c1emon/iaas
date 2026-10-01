@@ -6,9 +6,9 @@ import pytest
 
 from iaas.pve_template import deadlines as clock_module
 from iaas.pve_template.deadlines import DeadlineBudget
-from iaas.pve_template.acceptance_execution import begin, observe, save
+from iaas.pve_template.acceptance_execution import observe, save
 from iaas.pve_acceptance_contracts import validate_acceptance_request
-from test_pve_template_acceptance import API, DIGEST, Snippets, admission, request, mod
+from test_pve_template_acceptance import API, DIGEST, Snippets, admission, begin, request, mod
 
 
 def utc(seconds):
@@ -36,7 +36,7 @@ def test_admission_expired_is_known_zero_write(clock, tmp_path, work):
     api = API(value)
     root = tmp_path / 'execution'
     journal = begin(root, 'accept', value, admission(value), 'accept-001', DIGEST)
-    result = mod.Acceptance(api, value, journal, root, Snippets()).execute()
+    result = mod.Acceptance(api, value, journal, root, Snippets(api)).execute()
     assert result['deadline_outcome'] == {'phase': 'admission', 'status': 'rejected'}
     assert result['facility_writes'] == 'none'
     assert result['overall'] != 'passed' and not api.calls
@@ -69,7 +69,7 @@ def test_stage_delay_enters_cleanup_without_starting_vm(clock, tmp_path):
     api.request = call
     root = tmp_path / 'execution'
     journal = begin(root, 'accept', value, admission(value), 'accept-001', DIGEST)
-    result = mod.Acceptance(api, value, journal, root, Snippets()).execute()
+    result = mod.Acceptance(api, value, journal, root, Snippets(api)).execute()
     assert not any(path.endswith('/status/start') for _, path, _, _ in api.calls)
     assert result['cleanup']['vm']['status'] == 'passed'
     assert result['overall'] != 'passed'
@@ -81,7 +81,7 @@ def test_intent_persistence_expiry_does_not_send_clone(clock, tmp_path, monkeypa
     api = API(value)
     root = tmp_path / 'execution'
     journal = begin(root, 'accept', value, admission(value), 'accept-001', DIGEST)
-    worker = mod.Acceptance(api, value, journal, root, Snippets())
+    worker = mod.Acceptance(api, value, journal, root, Snippets(api))
     persist = worker.persist
     def delayed():
         persist()
@@ -107,7 +107,7 @@ def test_api_timeout_cannot_exceed_remaining_work(clock, tmp_path):
     api.request = call
     root = tmp_path / 'execution'
     journal = begin(root, 'accept', value, admission(value), 'accept-001', DIGEST)
-    worker = mod.Acceptance(api, value, journal, root, Snippets())
+    worker = mod.Acceptance(api, value, journal, root, Snippets(api))
     worker.api('GET', worker.source + '/config')
     clock.utc += 2
     clock.mono += 2
@@ -126,7 +126,7 @@ def test_guest_exec_response_loss_blocks_destructive_cleanup(tmp_path):
     api.request = call
     root = tmp_path / 'execution'
     journal = begin(root, 'accept', value, admission(value), 'accept-001', DIGEST)
-    result = mod.Acceptance(api, value, journal, root, Snippets()).execute()
+    result = mod.Acceptance(api, value, journal, root, Snippets(api)).execute()
     assert result['overall'] == 'unknown' and journal['mutation_active'] is True
     assert journal['tasks'][-1]['phase'] == 'guest_exec'
     assert not any(method == 'DELETE' for method, _, _, _ in api.calls)
@@ -145,7 +145,7 @@ def test_sent_task_expiry_retains_unknown_activity(clock, tmp_path):
     api.request = call
     root = tmp_path / 'execution'
     journal = begin(root, 'accept', value, admission(value), 'accept-001', DIGEST)
-    result = mod.Acceptance(api, value, journal, root, Snippets()).execute()
+    result = mod.Acceptance(api, value, journal, root, Snippets(api)).execute()
     assert result['overall'] == 'unknown' and journal['mutation_active'] is True
     assert not any(method == 'DELETE' for method, _, _, _ in api.calls)
     assert journal['tasks'][0]['upid']

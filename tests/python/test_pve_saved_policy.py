@@ -103,3 +103,36 @@ def test_state_owned_update_is_allowed_but_replaced_identity_rejected():
     api.uuid = 'replacement-uuid'
     with pytest.raises(ValidationError, match='managed VM identity changed'):
         _check_resource_conflicts([item], state, api)
+
+
+@pytest.mark.parametrize('denied', [None, 'old-pool', 'operations'])
+def test_existing_pool_move_checks_both_membership_permissions(denied):
+    from iaas.pve_template.admission import AdmissionError
+    from iaas.runtime_execution.pve_policy import admit_permissions
+
+    item = change(action='update')
+    item['change']['before'] = {'node_name': 'node-a', 'vm_id': 700, 'pool_id': 'old-pool'}
+
+    class Api:
+        def pool_detail(self, pool):
+            return {'members': []}
+
+        def effective_permissions(self, path):
+            grants = {'VM.Audit': 1, 'Permissions.Modify': 0}
+            if path != f'/pool/{denied}':
+                grants['Pool.Allocate'] = 0
+            return {path: grants}
+
+    if denied is None:
+        admit_permissions([item], Api())
+    else:
+        with pytest.raises(AdmissionError, match='permission_missing'):
+            admit_permissions([item], Api())
+
+
+def test_provider_unsupported_existing_pool_removal_refused():
+    from iaas.runtime_execution.pve_policy import admit_permissions
+    item = change(action='update', pool=None)
+    item['change']['before'] = {'node_name': 'node-a', 'vm_id': 700, 'pool_id': 'old-pool'}
+    with pytest.raises(ValidationError, match='provider cannot remove'):
+        admit_permissions([item], object())

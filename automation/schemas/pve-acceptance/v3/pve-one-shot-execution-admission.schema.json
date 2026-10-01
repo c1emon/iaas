@@ -20,13 +20,28 @@
       ],
       "title": "Deadlines",
       "type": "object"
+    },
+    "RuntimeIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "image_digest": {
+          "pattern": "^(?:[^@\\s]+@)?sha256:[0-9a-f]{64}$",
+          "title": "Image Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "image_digest"
+      ],
+      "title": "RuntimeIdentity",
+      "type": "object"
     }
   },
   "additionalProperties": false,
   "description": "Structural admission schema; existing runtime checks nested associations.",
   "properties": {
     "schema_version": {
-      "const": 1,
+      "const": 2,
       "title": "Schema Version",
       "type": "integer"
     },
@@ -39,6 +54,19 @@
       "pattern": "^[0-9a-f]{64}$",
       "title": "Plan Digest",
       "type": "string"
+    },
+    "request_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Request Digest",
+      "type": "string"
+    },
+    "runtime": {
+      "$ref": "#/$defs/RuntimeIdentity"
+    },
+    "vmid_reservation": {
+      "additionalProperties": true,
+      "title": "Vmid Reservation",
+      "type": "object"
     },
     "target": {
       "additionalProperties": true,
@@ -86,6 +114,9 @@
     "schema_version",
     "execution_id",
     "plan_digest",
+    "request_digest",
+    "runtime",
+    "vmid_reservation",
     "target",
     "deadlines",
     "approved",

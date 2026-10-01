@@ -34,6 +34,21 @@ def record(request: dict, content: str) -> dict:
 
 
 class Snippets(Helper):
+    def prospective_permissions(self, principal: str, vmid: int, pool: str) -> dict:
+        require(self.budget is not None, 'permission inspection requires frozen deadlines')
+        assert self.budget is not None
+        cutoff = self.budget.deadlines[f'{self.phase}_deadline_at']
+        return self.call(['--prospective-permissions', '--principal', principal,
+                          '--vmid', str(vmid), '--pool', pool, '--deadline-at', cutoff])
+
+    def inspect_file(self, snippet: dict) -> dict:
+        require(self.budget is not None, 'snippet inspection requires frozen deadlines')
+        assert self.budget is not None
+        cutoff = self.budget.deadlines[f'{self.phase}_deadline_at']
+        return self.call(['--inspect-file', '--storage', snippet['storage'],
+                          '--filename', snippet['file_name'], '--sha256', snippet['sha256'],
+                          '--deadline-at', cutoff])
+
     def capabilities(self, helper: str) -> dict:
         require(helper in {'upload', 'delete'}, 'invalid snippet helper')
         remaining = self.deadline - time.monotonic()

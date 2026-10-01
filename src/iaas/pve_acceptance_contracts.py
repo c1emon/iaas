@@ -66,9 +66,12 @@ class DeadlineOutcome(Contract):
 
 class OneShotAdmission(Contract):
     """Structural admission schema; existing runtime checks nested associations."""
-    schema_version: Literal[1]
+    schema_version: Literal[2]
     execution_id: Identifier
     plan_digest: SHA256
+    request_digest: Digest
+    runtime: RuntimeIdentity
+    vmid_reservation: dict[str, Any]
     target: dict[str, Any]
     deadlines: Deadlines
     approved: Literal[True]
@@ -76,6 +79,13 @@ class OneShotAdmission(Contract):
     pending: dict[str, Any]
     serialization: dict[str, Any]
     recovery_of: Identifier | None = None
+
+    @model_validator(mode='before')
+    @classmethod
+    def explicit_approval(cls, value):
+        if not isinstance(value, dict) or value.get('approved') is not True or type(value.get('schema_version')) is not int:
+            raise ValueError('explicit current approval is required')
+        return value
 
 
 class Target(Contract):
@@ -235,6 +245,18 @@ class DeletePlan(Contract):
     execution_id: Identifier
     metadata: EvidenceRef
     admission: EvidenceRef
+
+
+class AcceptancePreview(Contract):
+    kind: Literal['pve-template-acceptance-preview']
+    schema_version: Literal[1]
+    fixed_input: AcceptanceRequest
+    request_digest: Digest
+    runtime: RuntimeIdentity
+    target: Target
+    observed: dict[str, Any]
+    facility_writes: Literal['none']
+    preview_digest: Digest
 
 
 class ExecutionMaterials(Contract):
@@ -423,6 +445,8 @@ class AcceptanceResult(ResultBase):
     cluster_scope: Identifier
     pool: Identifier
     vmid_policy: VMIDPolicy
+    preview_digest: Digest
+    capacity: dict[str, Any] | None
     template: TemplateIdentity
     temporary_resources: list[Resource]
     checks: list[Check]
@@ -533,6 +557,7 @@ def contract_schemas() -> dict[str, dict[str, Any]]:
     models = {
         'pve-template-acceptance-request': AcceptanceRequest,
         'pve-template-acceptance-result': AcceptanceResult,
+        'pve-template-acceptance-preview': AcceptancePreview,
         'pve-snippet-cleanup-request': CleanupRequest,
         'pve-snippet-cleanup-result': CleanupResult,
         'pve-one-shot-execution-admission': OneShotAdmission,

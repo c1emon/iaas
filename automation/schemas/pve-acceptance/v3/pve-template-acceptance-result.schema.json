@@ -478,6 +478,23 @@
     "vmid_policy": {
       "$ref": "#/$defs/VMIDPolicy"
     },
+    "preview_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Preview Digest",
+      "type": "string"
+    },
+    "capacity": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Capacity"
+    },
     "template": {
       "$ref": "#/$defs/TemplateIdentity"
     },
@@ -526,6 +543,8 @@
     "cluster_scope",
     "pool",
     "vmid_policy",
+    "preview_digest",
+    "capacity",
     "template",
     "temporary_resources",
     "checks",

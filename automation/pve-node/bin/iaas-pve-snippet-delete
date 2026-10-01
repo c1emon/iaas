@@ -15,6 +15,35 @@ import time
 PVESM = '/usr/sbin/pvesm'
 PVE_CONFIG = Path('/etc/pve')
 
+# Native ACL parser/compiler: prospective membership changes this process's
+# cloned data only. Never initialize RPC request state or write pmxcfs.
+PROSPECTIVE_PERL = r'''
+use strict;
+use warnings;
+use JSON::PP qw(encode_json);
+use Storable qw(dclone);
+use PVE::AccessControl;
+use PVE::RPCEnvironment;
+my ($principal, $vmid, $pool) = @ARGV;
+open(my $input, '<', '/etc/pve/user.cfg') or die "acl_read_failed\n";
+local $/;
+my $raw = <$input>;
+close($input);
+my $cfg = PVE::AccessControl::parse_user_config('user.cfg', $raw);
+die "pool_not_found\n" if !exists($cfg->{pools}->{$pool});
+my $current = bless { user_cfg => dclone($cfg), aclcache => {} }, 'PVE::RPCEnvironment';
+my $direct = $current->permissions($principal, "/vms/$vmid");
+my $pooled = $current->permissions($principal, "/pool/$pool");
+my $future_cfg = dclone($cfg);
+$future_cfg->{pools}->{$pool}->{vms}->{$vmid} = 1;
+my $future = bless { user_cfg => $future_cfg, aclcache => {} }, 'PVE::RPCEnvironment';
+my $grants = $future->permissions($principal, "/vms/$vmid");
+print encode_json({ schema_version => 2, complete => JSON::PP::true,
+    principal => $principal, vmid => 0 + $vmid, pool => $pool,
+    current_direct => $direct, current_pool => $pooled, grants => $grants,
+    strategy => 'native-pve-in-memory-pool-membership' });
+'''
+
 
 class DeadlineExpired(Exception):
     pass
@@ -115,6 +144,8 @@ def inspect_cluster(root=PVE_CONFIG, deadline=None):
             raise ValueError()
         observed = {}
         references = set()
+        volume_references = []
+        snippet_references = []
         nodes = []
         for node in sorted((root / 'nodes').iterdir()):
             if deadline is not None:
@@ -138,6 +169,14 @@ def inspect_cluster(root=PVE_CONFIG, deadline=None):
                         raise ValueError()
                     observed[vmid] = {'node': node.name, 'type': kind}
                     data = config.read_text()
+                    # Include pending/snapshot rows with exact VM ownership. The
+                    # existing basename set remains the conservative delete gate.
+                    for volid in sorted(set(re.findall(r'[A-Za-z0-9][A-Za-z0-9._-]*:[A-Za-z0-9._/-]+', data))):
+                        if ':snippets/' in volid:
+                            snippet_references.append({'node': node.name, 'vmid': int(vmid),
+                                                       'file_name': volid.rsplit('/', 1)[-1], 'volid': volid})
+                        else:
+                            volume_references.append({'node': node.name, 'vmid': int(vmid), 'volid': volid})
                     # cicustom is a comma-separated set of storage volume IDs.
                     # Parse all occurrences, including pending/snapshot sections.
                     for value in re.findall(r'(?m)^(?:cicustom|hookscript):\s*(.+)$', data):
@@ -158,6 +197,7 @@ def inspect_cluster(root=PVE_CONFIG, deadline=None):
             deadline.remaining()
         return {'complete': True, 'reason_code': 'pmxcfs_complete', 'nodes': nodes, 'local_node': local_node,
                 'vmids': sorted(int(key) for key in observed), 'references': sorted(references),
+                'volume_references': volume_references, 'snippet_references': snippet_references,
                 'reference_strategy': 'all_storage_aliases_by_filename'}
     except DeadlineExpired:
         return {'complete': False, 'reason_code': 'cleanup_deadline_expired'}
@@ -165,10 +205,93 @@ def inspect_cluster(root=PVE_CONFIG, deadline=None):
         return {'complete': False, 'reason_code': 'cluster_inventory_incomplete'}
 
 
+def inspect_file(storage, filename, expected, deadline):
+    """Read a single confined snippet with no locks, writes or file contents."""
+    unknown = {'existence': 'unknown', 'sha256': None, 'digest_matches': None}
+    if (not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', storage)
+            or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}', filename)
+            or not re.fullmatch(r'[a-f0-9]{64}', expected)):
+        return {**unknown, 'reason_code': 'invalid_exact_target'}
+    try:
+        deadline.remaining()
+        resolved = subprocess.run([PVESM, 'path', f'{storage}:snippets/{filename}'],
+                                  capture_output=True, text=True, check=True,
+                                  timeout=min(20, deadline.remaining())).stdout.strip()
+        path = Path(resolved)
+        if not path.is_absolute() or '\n' in resolved or path.parts[-2:] != ('snippets', filename) or '..' in path.parts:
+            return {**unknown, 'reason_code': 'unsafe_path'}
+        directory = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            for part in path.parts[1:-1]:
+                child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+                os.close(directory)
+                directory = child
+            try:
+                before = os.stat(filename, dir_fd=directory, follow_symlinks=False)
+            except FileNotFoundError:
+                return {'existence': 'absent', 'sha256': None, 'digest_matches': None, 'reason_code': 'exact_target_absent'}
+            if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > 4 * 1024 * 1024:
+                return {**unknown, 'reason_code': 'unsafe_or_oversized_file'}
+            descriptor = os.open(filename, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory)
+            try:
+                opened = os.fstat(descriptor)
+                digest = hashlib.sha256()
+                size = 0
+                while chunk := os.read(descriptor, 1024 * 1024):
+                    deadline.remaining()
+                    size += len(chunk)
+                    if size > 4 * 1024 * 1024:
+                        return {**unknown, 'reason_code': 'unsafe_or_oversized_file'}
+                    digest.update(chunk)
+                after = os.stat(filename, dir_fd=directory, follow_symlinks=False)
+                identity = lambda item: (item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns, item.st_ctime_ns)
+                if identity(before) != identity(opened) or identity(opened) != identity(after):
+                    return {**unknown, 'reason_code': 'content_or_identity_changed'}
+                deadline.remaining()
+                actual = digest.hexdigest()
+                return {'existence': 'present', 'sha256': actual, 'digest_matches': actual == expected,
+                        'reason_code': 'digest_confirmed' if actual == expected else 'digest_mismatch'}
+            finally:
+                os.close(descriptor)
+        finally:
+            os.close(directory)
+    except (DeadlineExpired, subprocess.TimeoutExpired):
+        return {**unknown, 'reason_code': 'inspection_deadline_expired'}
+    except (OSError, subprocess.SubprocessError):
+        return {**unknown, 'reason_code': 'inspection_unconfirmed'}
+
+
+def prospective_permissions(principal, vmid, pool, deadline):
+    if (not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*@[A-Za-z0-9][A-Za-z0-9._-]*![A-Za-z0-9][A-Za-z0-9._-]*', principal)
+            or type(vmid) is not int or not 100 <= vmid <= 999999999
+            or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', pool)):
+        return {'complete': False, 'reason_code': 'permission_evidence_insufficient'}
+    try:
+        result = subprocess.run(['/usr/bin/perl', '-e', PROSPECTIVE_PERL, principal, str(vmid), pool],
+                                capture_output=True, text=True, check=True,
+                                timeout=min(20, deadline.remaining()),
+                                env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C'})
+        deadline.remaining()
+        if len(result.stdout) > 16384:
+            raise ValueError()
+        answer = json.loads(result.stdout)
+        if not isinstance(answer, dict):
+            raise ValueError()
+        return answer
+    except (DeadlineExpired, OSError, ValueError, subprocess.SubprocessError):
+        # Native parser errors can contain identity/configuration details. Never
+        # forward stdout/stderr or exception text from a failed compilation.
+        return {'complete': False, 'reason_code': 'permission_evidence_insufficient'}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--capabilities', action='store_true', help='read-only machine capability discovery')
     parser.add_argument('--inspect-cluster', action='store_true')
+    parser.add_argument('--inspect-file', action='store_true')
+    parser.add_argument('--prospective-permissions', action='store_true')
+    parser.add_argument('--principal')
+    parser.add_argument('--pool')
     parser.add_argument('--deadline-at')
     parser.add_argument('--storage')
     parser.add_argument('--filename')
@@ -177,7 +300,8 @@ def main():
     parser.add_argument('--vmid', type=int)
     args = parser.parse_args()
     if args.capabilities:
-        if any((args.inspect_cluster, args.deadline_at, args.storage, args.filename,
+        if any((args.inspect_cluster, args.inspect_file, args.prospective_permissions, args.principal, args.pool,
+                args.deadline_at, args.storage, args.filename,
                 args.sha256, args.node, args.vmid is not None)):
             parser.error('--capabilities must be used alone')
         pvesm_available = os.path.isfile(PVESM) and os.access(PVESM, os.X_OK)
@@ -185,7 +309,9 @@ def main():
                           'protocol_version': 2, 'capabilities': {
                               'inspect': True, 'exact_delete': pvesm_available,
                               'reference': True, 'digest': pvesm_available,
-                              'deadline': True}}))
+                              'deadline': True, 'inspect_file': pvesm_available,
+                              'prospective_permissions': (Path('/usr/share/perl5/PVE/AccessControl.pm').is_file()
+                                                          and Path('/usr/share/perl5/PVE/RPCEnvironment.pm').is_file())}}))
         return
     if not args.deadline_at:
         parser.error('--deadline-at is required')
@@ -194,10 +320,22 @@ def main():
     except ValueError as exc:
         parser.error(str(exc))
     if args.inspect_cluster:
-        if args.storage or args.filename or args.sha256 or args.node or args.vmid:
+        if args.inspect_file or args.prospective_permissions or args.principal or args.pool or args.storage or args.filename or args.sha256 or args.node or args.vmid:
             parser.error('inspection does not accept file arguments')
         print(json.dumps({'schema_version': 2, **inspect_cluster(deadline=deadline)}))
         return
+    if args.inspect_file:
+        if not all((args.storage, args.filename, args.sha256)) or args.prospective_permissions or args.principal or args.pool or args.node or args.vmid:
+            parser.error('file inspection requires only exact storage, filename and digest')
+        print(json.dumps({'schema_version': 2, **inspect_file(args.storage, args.filename, args.sha256, deadline)}))
+        return
+    if args.prospective_permissions:
+        if not all((args.principal, args.pool, args.vmid)) or args.storage or args.filename or args.sha256 or args.node:
+            parser.error('prospective permissions requires only principal, pool and VMID')
+        print(json.dumps({'schema_version': 2, **prospective_permissions(args.principal, args.vmid, args.pool, deadline)}))
+        return
+    if args.principal or args.pool:
+        parser.error('principal and pool are only valid for prospective permissions')
     if not all((args.storage, args.filename, args.sha256, args.node, args.vmid)):
         parser.error('exact storage, filename, digest, node and original VMID are required')
     try:

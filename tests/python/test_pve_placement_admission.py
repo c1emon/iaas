@@ -106,6 +106,53 @@ def test_existing_vm_update_does_not_require_allocate(request_data):
     assert Permissions(api).placement(9100, 'acceptance', ('VM.Config.Network',), future=False)
 
 
+@pytest.mark.parametrize('case', ['pool_only', 'direct_noaccess', 'pool_noaccess', 'token_intersection'])
+def test_native_prospective_evidence_handles_pool_and_token_boundaries(request_data, case):
+    api = API(request_data)
+    api.token = 'caller@pve!automation=never-transmit-this-secret'
+    api.permissions['/vms/9100'] = {}
+    api.permissions['/pool/acceptance'] = dict.fromkeys(ACCEPTANCE_PRIVILEGES, 0)
+    class Compiler(Helpers):
+        def capabilities(self, name):
+            declaration = super().capabilities(name)
+            declaration['capabilities']['prospective_permissions'] = True
+            return declaration
+        def prospective_permissions(self, principal, vmid, pool):
+            assert principal == 'caller@pve!automation'
+            assert vmid == 9100 and pool == 'acceptance'
+            # Representative native output: NoAccess takes precedence, and
+            # separated-token grants use the user/token intersection.
+            grants = dict.fromkeys(ACCEPTANCE_PRIVILEGES, 0)
+            if case in ('direct_noaccess', 'pool_noaccess'):
+                grants = {}
+            if case == 'token_intersection':
+                grants.pop('VM.PowerMgmt')
+            return {'schema_version': 2, 'complete': True, 'principal': principal, 'vmid': vmid,
+                    'pool': pool, 'current_direct': api.permissions['/vms/9100'],
+                    'current_pool': api.permissions['/pool/acceptance'], 'grants': grants,
+                    'strategy': 'native-pve-in-memory-pool-membership'}
+    if case == 'pool_only':
+        result = Permissions(api, compiler=Compiler()).placement(9100, 'acceptance', ACCEPTANCE_PRIVILEGES)
+        assert result['permission_strategy'] == 'native-pve-in-memory-pool-membership'
+    else:
+        with pytest.raises(AdmissionError, match='permission_missing'):
+            Permissions(api, compiler=Compiler()).placement(9100, 'acceptance', ACCEPTANCE_PRIVILEGES)
+
+
+def test_native_prospective_evidence_requires_current_api_identity_scope_and_grants(request_data):
+    api = API(request_data)
+    api.token = 'caller@pve!automation=secret'
+    api.permissions['/vms/9100'] = {}
+    class Wrong(Helpers):
+        def capabilities(self, name):
+            return super().capabilities(name) | {'capabilities': {'prospective_permissions': True}}
+        def prospective_permissions(self, principal, vmid, pool):
+            return {'schema_version': 2, 'complete': True, 'principal': 'other@pve!token',
+                    'vmid': vmid, 'pool': pool, 'grants': dict.fromkeys(ACCEPTANCE_PRIVILEGES, 0)}
+    with pytest.raises(AdmissionError, match='permission_evidence_insufficient'):
+        Permissions(api, compiler=Wrong()).placement(9100, 'acceptance', ACCEPTANCE_PRIVILEGES)
+
+
 def test_guest_unrestricted_satisfies_informational_and_exec_permissions(request_data):
     api = API(request_data)
     assert 'VM.GuestAgent.Audit' not in ACCEPTANCE_PRIVILEGES
@@ -113,7 +160,7 @@ def test_guest_unrestricted_satisfies_informational_and_exec_permissions(request
     api.permissions['/vms/9100'] = {name: 0 for name in ACCEPTANCE_PRIVILEGES if name != 'VM.GuestAgent.Unrestricted'}
     api.permissions['/pool/acceptance'] = {'VM.Allocate': 0, 'VM.GuestAgent.Audit': 0}
     with pytest.raises(AdmissionError, match='permission_missing'):
-        admit_acceptance(api, request_data, helpers=Helpers())
+        Permissions(api).placement(9100, 'acceptance', ACCEPTANCE_PRIVILEGES)
 
 
 def test_complete_helper_occupancy_rejects_filtered_or_foreign_cluster():

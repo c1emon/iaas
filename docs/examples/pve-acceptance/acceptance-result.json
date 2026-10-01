@@ -104,5 +104,21 @@
       9199
     ]
   },
-  "pool": "acceptance"
+  "pool": "acceptance",
+  "preview_digest": "sha256:8008e4792a0ede832f82bdac2c793e5062e782ef5ecc358abdbd76a8fa16539a",
+  "capacity": {
+    "disk_limit_bytes": 34359738368,
+    "total_required_bytes": 8594128896,
+    "disks": [
+      {
+        "slot": "scsi0",
+        "required_bytes": 8589934592
+      },
+      {
+        "slot": "ide2",
+        "required_bytes": 4194304
+      }
+    ],
+    "storage_available_bytes": 107374182400
+  }
 }

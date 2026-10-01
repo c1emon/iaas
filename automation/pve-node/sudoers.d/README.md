@@ -41,3 +41,10 @@ missing required capabilities. Upload bootstrap supplies the upload rule;
 `bootstrap-pve-snippet-cleanup.yml` installs the independent delete rule. Install
 both on every selected acceptance/recovery node. See
 `docs/operations/pve-snippet-cleanup.md` for capability keys and probe semantics.
+
+Acceptance prospective permission checks use the same delete helper rule with
+`--prospective-permissions`; its explicit capability requires the native PVE
+Perl ACL modules. No separate sudo rule for Perl or ACL modification is granted.
+The helper compiles an in-memory selected-pool membership only. Send the API
+token's principal identifier, never its value. Recovery's `--inspect-file` also
+uses this rule and returns only exact existence/digest evidence.

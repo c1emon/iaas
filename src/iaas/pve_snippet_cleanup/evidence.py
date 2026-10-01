@@ -9,7 +9,7 @@ from typing import Any
 from iaas.common.errors import require
 from iaas.pve_acceptance_contracts import (canonical_digest, load_strict_json,
     validate_acceptance_request, validate_snippet_cleanup_request)
-from iaas.pve_template.acceptance_execution import confined
+from iaas.pve_template.acceptance_execution import confined, validate_acceptance_materials
 from iaas.runtime_execution.pve_contracts import validate_execution_admission
 
 
@@ -31,8 +31,11 @@ def execution_materials(root: Path, refs: dict[str, Any], operation: str) -> tup
             and journal.get('deadlines') == request['deadlines']
             and journal.get('operation') == operation and journal.get('target') == request.get('target')
             and journal.get('mutation_active') is False, 'original execution binding or inactivity is unknown')
-    validate_execution_admission(journal.get('admission'), digest=digest.removeprefix('sha256:'),
-                                 execution_id=refs['execution_id'], target=request['target'])
+    if operation == 'accept':
+        validate_acceptance_materials(request, journal)
+    else:
+        validate_execution_admission(journal.get('admission'), digest=digest.removeprefix('sha256:'),
+                                     execution_id=refs['execution_id'], target=request['target'])
     require(journal['admission'].get('deadlines') == request['deadlines'],
             'original admission deadlines conflict')
     if refs['result'] is not None:
@@ -40,6 +43,12 @@ def execution_materials(root: Path, refs: dict[str, Any], operation: str) -> tup
         require(journal.get('status') == 'finished' and journal.get('result_digest') == canonical_digest(result)
                 and result.get('request_digest') == digest and result.get('execution_id') == refs['execution_id'],
                 'original result binding conflicts')
+        if operation == 'accept':
+            require(result.get('preview_digest') == journal['preview_digest']
+                    and result.get('runtime') == journal['runtime']
+                    and result.get('cluster_scope') == request['cluster_scope']
+                    and result.get('pool') == request['temporary_vm']['pool']
+                    and result.get('vmid_policy') == request['vmid_policy'], 'original acceptance result snapshot conflicts')
     return request, journal
 
 

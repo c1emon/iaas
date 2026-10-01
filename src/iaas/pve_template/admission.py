@@ -12,6 +12,7 @@ from urllib.parse import quote
 
 from iaas.runtime_execution.execution import OperationFailed
 from . import runtime as pve
+from .deadlines import DeadlineExpired, LocalTimeout
 
 
 class AdmissionError(OperationFailed):
@@ -29,13 +30,51 @@ class AdmissionError(OperationFailed):
 
 
 def _status(exc: Exception) -> int | None:
-    value = getattr(exc, 'status_code', None)
+    value = getattr(exc, 'http_status', None)
+    if value is None:
+        value = getattr(exc, 'status_code', None)
     return value if type(value) is int and 100 <= value <= 599 else None
 
 
 class Permissions:
-    def __init__(self, client: Any):
+    def __init__(self, client: Any, *, compiler: Any = None):
         self.client = client
+        self.compiler = compiler
+
+    def prospective(self, vmid: int, pool: str, direct: dict, pooled: dict) -> dict:
+        # Identity is extracted from the actual configured API credential. The
+        # secret after '=' is never transmitted to the node or diagnostics.
+        principal = getattr(self.client, 'principal', None)
+        if principal is None:
+            token = getattr(self.client, 'token', None)
+            principal = token.partition('=')[0] if isinstance(token, str) and '=' in token else None
+        if (not isinstance(principal, str) or not re.fullmatch(
+                r'[A-Za-z0-9][A-Za-z0-9._-]*@[A-Za-z0-9][A-Za-z0-9._-]*![A-Za-z0-9][A-Za-z0-9._-]*', principal)
+                or self.compiler is None):
+            raise AdmissionError('permission_evidence_insufficient', object=f'/vms/{vmid}', operation='prospective_pool_membership')
+        try:
+            declaration = self.compiler.capabilities('delete')
+            if declaration.get('capabilities', {}).get('prospective_permissions') is not True:
+                raise AdmissionError('helper_capability_missing', object='delete', operation='prospective_permissions')
+            answer = self.compiler.prospective_permissions(principal, vmid, pool)
+        except (DeadlineExpired, LocalTimeout):
+            raise
+        except AdmissionError:
+            raise
+        except Exception:
+            raise AdmissionError('permission_evidence_insufficient', object=f'/vms/{vmid}', operation='prospective_pool_membership') from None
+        if (not isinstance(answer, dict) or answer.get('complete') is not True
+                or answer.get('schema_version') != 2 or answer.get('principal') != principal
+                or type(answer.get('vmid')) is not int or answer['vmid'] != vmid or answer.get('pool') != pool
+                or answer.get('strategy') != 'native-pve-in-memory-pool-membership'
+                or answer.get('current_direct') != direct or answer.get('current_pool') != pooled
+                or not isinstance(answer.get('grants'), dict)):
+            raise AdmissionError('permission_evidence_insufficient', object=f'/vms/{vmid}', operation='prospective_pool_membership')
+        grants = answer['grants']
+        if any(not isinstance(name, str) or type(value) not in (int, bool) or value not in (0, 1)
+               for name, value in grants.items()):
+            raise AdmissionError('permission_value_invalid', object=f'/vms/{vmid}', operation='prospective_pool_membership')
+        return grants
 
     def grants(self, path: str) -> dict:
         try:
@@ -43,6 +82,8 @@ class Permissions:
                 response = self.client.effective_permissions(path)
             else:
                 response = self.client.request('GET', '/api2/json/access/permissions', fields={'path': path})
+        except (DeadlineExpired, LocalTimeout):
+            raise
         except Exception as exc:
             raise AdmissionError('permission_query_failed', object=path, http_status=_status(exc)) from None
         if not isinstance(response, dict) or not isinstance(response.get(path), dict):
@@ -69,6 +110,8 @@ class Permissions:
                 response = self.client.pool_detail(pool)
             else:
                 response = self.client.request('GET', path)
+        except (DeadlineExpired, LocalTimeout):
+            raise
         except Exception as exc:
             code = 'pool_not_found' if _status(exc) == 404 else 'permission_query_failed'
             raise AdmissionError(code, object='/pool/' + pool, operation='placement', http_status=_status(exc)) from None
@@ -94,8 +137,20 @@ class Permissions:
             return {'permission_path': path, 'prospective': future}
         if future and pooled and all(name in pooled for name in lifecycle):
             if not direct:
-                raise AdmissionError('permission_evidence_insufficient', object=path, operation='prospective_pool_membership')
+                compiled = self.prospective(vmid, str(pool), direct, pooled)
+                missing = [name for name in lifecycle if name not in compiled]
+                if missing:
+                    raise AdmissionError('permission_missing', object=path, operation='lifecycle', missing_privileges=missing)
+                return {'permission_path': path, 'prospective': True,
+                        'permission_strategy': 'native-pve-in-memory-pool-membership'}
             return {'permission_path': '/pool/' + str(pool), 'prospective': True}
+        if future and pool and self.compiler is not None:
+            compiled = self.prospective(vmid, pool, direct, pooled)
+            missing = [name for name in lifecycle if name not in compiled]
+            if not missing:
+                return {'permission_path': path, 'prospective': True,
+                        'permission_strategy': 'native-pve-in-memory-pool-membership'}
+            raise AdmissionError('permission_missing', object=path, operation='lifecycle', missing_privileges=missing)
         raise AdmissionError('permission_missing', object=path, operation='lifecycle',
                              missing_privileges=[name for name in lifecycle if name not in direct])
 
@@ -171,7 +226,7 @@ def admit_acceptance(client: Any, request: dict, *, helpers: Any) -> dict:
     target's local node and complete pmxcfs scope to the selected API cluster.
     """
     vm, record = request['temporary_vm'], request['template_record']
-    permissions = Permissions(client)
+    permissions = Permissions(client, compiler=helpers)
     pool = vm.get('pool')
     permissions.pool(pool)
     permissions.require(f"/vms/{record['vmid']}", ('VM.Audit', 'VM.Clone'), operation='source_clone')
@@ -182,6 +237,8 @@ def admit_acceptance(client: Any, request: dict, *, helpers: Any) -> dict:
     def get(path: str, reason: str) -> Any:
         try:
             return client.request('GET', path)
+        except (DeadlineExpired, LocalTimeout):
+            raise
         except Exception as exc:
             raise AdmissionError(reason, object=path, http_status=_status(exc)) from None
 
@@ -247,6 +304,8 @@ def admit_acceptance(client: Any, request: dict, *, helpers: Any) -> dict:
             require_helper_capabilities(helpers.capabilities(helper), helper)
         snapshot = helpers.inspect()
     except AdmissionError:
+        raise
+    except (DeadlineExpired, LocalTimeout):
         raise
     except Exception:
         raise AdmissionError('helper_unavailable', operation='readonly_probe') from None

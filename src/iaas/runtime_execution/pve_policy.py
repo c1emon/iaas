@@ -67,6 +67,8 @@ def admit_permissions(changes: list[dict], api: Any) -> None:
         before, after = change.get('before') or {}, change.get('after') or {}
         value = after or before
         pool = value.get('pool_id')
+        require(not (change['actions'] == ['update'] and before.get('pool_id') and pool is None),
+                'provider cannot remove existing pool membership; use an explicit destination pool')
         required = {'VM.Audit'}
         if 'create' in change['actions'] or 'delete' in change['actions']:
             required.add('VM.Allocate')
@@ -77,6 +79,12 @@ def admit_permissions(changes: list[dict], api: Any) -> None:
                 required.add(fields.get(name, 'VM.Config.Options'))
         if pool is not None:
             permissions.pool(pool)
+        if change['actions'] == ['update'] and before.get('pool_id') != after.get('pool_id'):
+            for changed_pool in sorted({p for p in (before.get('pool_id'), pool) if p is not None}):
+                permissions.require(f'/pool/{changed_pool}', ['Pool.Allocate'], operation='pool_membership')
+            grants = permissions.grants(f"/vms/{value['vm_id']}")
+            if 'Permissions.Modify' not in grants:
+                permissions.require(f"/vms/{value['vm_id']}", ['VM.Allocate'], operation='pool_membership')
         permissions.placement(value['vm_id'], pool, sorted(required), future='create' in change['actions'])
         for source in after.get('clone', []) if 'create' in change['actions'] else []:
             permissions.require(f"/vms/{source['vm_id']}", ['VM.Audit', 'VM.Clone'], operation='clone_source')

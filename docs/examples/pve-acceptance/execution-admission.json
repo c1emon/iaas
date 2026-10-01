@@ -1,7 +1,7 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "execution_id": "accept-001",
-  "plan_digest": "91f84d25bc4c3043d54c49d41442581906963635218afcaea2ebf1c10715fd15",
+  "plan_digest": "8008e4792a0ede832f82bdac2c793e5062e782ef5ecc358abdbd76a8fa16539a",
   "target": {
     "api_endpoint": "https://pve.example.invalid:8006",
     "node": "pve1",
@@ -21,6 +21,19 @@
   },
   "serialization": {
     "held": true,
+    "context_id": "complete-workflow-lock"
+  },
+  "request_digest": "sha256:e22d06e5e2254975385bdfe2ad92157dac97a605e400a7aae430528c7a5a0968",
+  "runtime": {
+    "image_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "recovery_of": null,
+  "vmid_reservation": {
+    "cluster_scope": "fixture-cluster",
+    "vmids": [
+      9100
+    ],
+    "reservation_id": "reservation-001",
     "context_id": "complete-workflow-lock"
   }
 }

@@ -13,7 +13,8 @@ import pytest
 from iaas.pve_acceptance_contracts import canonical_digest, validate_snippet_cleanup_request
 from iaas.pve_snippet_cleanup.evidence import validate_original
 from iaas.pve_snippet_cleanup.runtime import cleanup, initial_result, run
-from iaas.pve_template.acceptance_execution import begin, save
+from iaas.pve_template.acceptance_execution import begin as _begin, save
+from iaas.pve_template.acceptance_plan import build_preview
 from iaas.runtime_execution.execution import Execution, OperationFailed
 from iaas.runtime_execution.outputs import TaskOutputs
 
@@ -32,15 +33,29 @@ def reference(root, name, value):
 
 
 def admission(request, execution_id):
-    return {'schema_version': 1, 'execution_id': execution_id, 'plan_digest': canonical_digest(request).removeprefix('sha256:'),
+    value = {'schema_version': 1, 'execution_id': execution_id, 'plan_digest': canonical_digest(request).removeprefix('sha256:'),
             'target': request['target'], 'deadlines': request['deadlines'], 'approved': True, 'consumption': {'reserved': True, 'reservation_id': 'r1'},
             'pending': {'record_id': 'p1'}, 'serialization': {'held': True, 'context_id': 'c1'}}
+    if request['kind'] == 'pve-template-acceptance-request':
+        planned = build_preview(request, {'readiness': {'status': 'ready'}}, image_digest=request['runtime']['image_digest'])
+        value.update(schema_version=2, plan_digest=planned['preview_digest'].removeprefix('sha256:'),
+                     request_digest=canonical_digest(request), runtime=request['runtime'],
+                     vmid_reservation={'cluster_scope': request['cluster_scope'], 'vmids': [request['temporary_vm']['vmid']],
+                                       'reservation_id': 'r1', 'context_id': 'c1'})
+    return value
+
+
+def begin(root, operation, request, admitted, execution_id, image_digest):
+    planned = (build_preview(request, {'readiness': {'status': 'ready'}}, image_digest=image_digest)
+               if operation == 'accept' else None)
+    return _begin(root, operation, request, admitted, execution_id, image_digest, preview=planned)
 
 
 @pytest.fixture
 def evidence(tmp_path):
     request = load('cleanup-acceptance-request.json')
     original = load('acceptance-request.json')
+    original['runtime'] = {'image_digest': 'sha256:' + 'f' * 64}
     vm = request['original_vm']
     original['temporary_vm'].update(node=vm['node'], vmid=vm['vmid'])
     original_id = request['original_execution_id']
@@ -207,7 +222,8 @@ def test_delete_capabilities_do_not_inspect_lock_or_resolve_storage(node_helper,
     declaration = json.loads(capsys.readouterr().out)
     assert declaration['schema_version'] == 'helper-capabilities/v1'
     assert declaration['helper'] == 'delete'
-    assert all(declaration['capabilities'].values())
+    assert all(value for name, value in declaration['capabilities'].items() if name != 'prospective_permissions')
+    assert type(declaration['capabilities']['prospective_permissions']) is bool
     fake.unlink()
     node_helper.main()
     missing = json.loads(capsys.readouterr().out)['capabilities']
@@ -216,6 +232,39 @@ def test_delete_capabilities_do_not_inspect_lock_or_resolve_storage(node_helper,
     monkeypatch.setattr(sys, 'argv', ['helper', '--capabilities', '--storage', 'local'])
     with pytest.raises(SystemExit):
         node_helper.main()
+
+
+def test_prospective_helper_uses_native_parser_copied_membership_and_sanitized_transport(node_helper, monkeypatch):
+    calls = []
+    answer = {'schema_version': 2, 'complete': True, 'principal': 'caller@pve!token',
+              'vmid': 9100, 'pool': 'acceptance', 'current_direct': {},
+              'current_pool': {'VM.Allocate': 0}, 'grants': {'VM.Allocate': 0},
+              'strategy': 'native-pve-in-memory-pool-membership'}
+    def run(args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(stdout=json.dumps(answer))
+    monkeypatch.setattr(node_helper.subprocess, 'run', run)
+    deadline = node_helper.Deadline('2099-01-01T00:00:00Z')
+    assert node_helper.prospective_permissions('caller@pve!token', 9100, 'acceptance', deadline) == answer
+    command, options = calls[0]
+    assert command[0] == '/usr/bin/perl'
+    script = command[2]
+    assert 'PVE::AccessControl::parse_user_config' in script
+    assert 'dclone($cfg)' in script and '$future_cfg->{pools}->{$pool}->{vms}->{$vmid} = 1' in script
+    assert '->permissions($principal' in script
+    assert 'cfs_write' not in script and 'init_request' not in script
+    assert options['env'] == {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LC_ALL': 'C'}
+    assert options['timeout'] <= 20
+    assert node_helper.prospective_permissions('caller@pve!token=secret', 9100, 'acceptance', deadline)['complete'] is False
+    assert len(calls) == 1
+
+
+def test_native_parser_failure_does_not_expose_acl_or_identity_details(node_helper, monkeypatch):
+    def failed(*args, **kwargs):
+        raise node_helper.subprocess.CalledProcessError(1, [], stderr='private ACL details')
+    monkeypatch.setattr(node_helper.subprocess, 'run', failed)
+    answer = node_helper.prospective_permissions('caller@pve!token', 9100, 'acceptance', node_helper.Deadline('2099-01-01T00:00:00Z'))
+    assert answer == {'complete': False, 'reason_code': 'permission_evidence_insufficient'}
 
 
 def test_exact_helper_digest_symlink_absence(node_helper, tmp_path, monkeypatch):
@@ -242,11 +291,42 @@ def test_pmxcfs_scans_shared_pending_snapshot_and_rejects_incomplete(node_helper
             (tmp_path / 'nodes' / node / kind).mkdir(parents=True)
     (tmp_path / 'local').symlink_to(tmp_path / 'nodes/pve1')
     config = tmp_path / 'nodes/pve2/qemu-server/200.conf'
-    config.write_text('[PENDING]\ncicustom: user=shared:snippets/pending.yaml\n[snap1]\ncicustom: user=alias:snippets/snapshot.yaml\n')
+    config.write_text('[PENDING]\nscsi0: shared:vm-200-disk-0,size=8G\ncicustom: user=shared:snippets/pending.yaml\n[snap1]\ncicustom: user=alias:snippets/snapshot.yaml\n')
     scan = node_helper.inspect_cluster(tmp_path)
     assert scan['complete'] and scan['references'] == ['pending.yaml', 'snapshot.yaml']
+    assert scan['volume_references'] == [{'node': 'pve2', 'vmid': 200, 'volid': 'shared:vm-200-disk-0'}]
+    assert scan['snippet_references'] == [
+        {'node': 'pve2', 'vmid': 200, 'file_name': 'snapshot.yaml', 'volid': 'alias:snippets/snapshot.yaml'},
+        {'node': 'pve2', 'vmid': 200, 'file_name': 'pending.yaml', 'volid': 'shared:snippets/pending.yaml'}]
     config.unlink()
     assert not node_helper.inspect_cluster(tmp_path)['complete']
+
+
+def test_readonly_file_inspection_confines_and_hashes_exact_target(node_helper, tmp_path, monkeypatch):
+    directory = tmp_path / 'snippets'
+    directory.mkdir()
+    path = directory / 'accept-100-user-data.yml'
+    payload = b'private cloud config'
+    path.write_bytes(payload)
+    monkeypatch.setattr(node_helper.subprocess, 'run', lambda *a, **k: SimpleNamespace(stdout=str(path)))
+    deadline = node_helper.Deadline('2099-01-01T00:00:00Z')
+    expected = hashlib.sha256(payload).hexdigest()
+    before = path.stat()
+    answer = node_helper.inspect_file('local', path.name, expected, deadline)
+    assert answer['existence'] == 'present' and answer['sha256'] == expected and answer['digest_matches'] is True
+    assert path.read_bytes() == payload and path.stat().st_mtime_ns == before.st_mtime_ns
+    assert payload.decode() not in str(answer)
+    assert node_helper.inspect_file('local', path.name, 'f' * 64, deadline)['digest_matches'] is False
+    path.unlink()
+    assert node_helper.inspect_file('local', path.name, expected, deadline)['existence'] == 'absent'
+    path.symlink_to(tmp_path / 'victim')
+    assert node_helper.inspect_file('local', path.name, expected, deadline)['existence'] == 'unknown'
+    path.unlink()
+    path.write_bytes(b'x' * (4 * 1024 * 1024 + 1))
+    assert node_helper.inspect_file('local', path.name, expected, deadline)['existence'] == 'unknown'
+    assert node_helper.inspect_file('local', '../escape', expected, deadline)['existence'] == 'unknown'
+    expired = node_helper.Deadline('2000-01-01T00:00:00Z')
+    assert node_helper.inspect_file('local', path.name, expected, expired)['reason_code'] == 'inspection_deadline_expired'
 
 
 def test_partial_cleanup_preserves_completed_facts(evidence):

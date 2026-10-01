@@ -10,11 +10,13 @@ from iaas.pve_acceptance_contracts import (
     validate_acceptance_request, validate_acceptance_result,
     validate_snippet_cleanup_request, validate_snippet_cleanup_result,
 )
+from iaas.pve_template.acceptance_plan import validate_preview
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / 'docs/examples/pve-acceptance'
 CASES = json.loads((FIXTURES / 'cases.json').read_text())['cases']
 VALIDATORS = {
+    'pve-template-acceptance-preview': validate_preview,
     'pve-template-acceptance-request': validate_acceptance_request,
     'pve-template-acceptance-result': validate_acceptance_result,
     'pve-snippet-cleanup-request': validate_snippet_cleanup_request,
