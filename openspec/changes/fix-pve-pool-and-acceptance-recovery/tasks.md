@@ -65,4 +65,6 @@
 固定 rc.20：release工作流36862950966全部成功；amd64/arm64各2093 passed、4 skipped；匿名digest拉取及capabilities平台调用、registry manifest/platform摘要、两个launcher SHA256SUMS和macOS版本输出已核。实际值见[delivery.md](delivery.md)。API/helper与local/DinD传输均为软件fixture，没有现场设施结论；仅8.1未完成。
 
 - [x] 9.4 修正 infra-ops 审核发现的两处P1：当前UPID查询失败/异常或恢复活动未知阻断全部清理写入；仅缺失旧guest-exec关联可由现有新批准处置；普通VM创建恢复完整必要权限预检。软件反例与回归通过，不执行设施操作。
-- [ ] 9.5 发布包含审核修正的固定rc.21镜像及launcher，核实际digest/资产与CI消费结果，并同步交接给infra-ops；现场8.1仍为外部未完成。
+- [x] 9.5 发布包含审核修正的固定rc.21镜像及launcher，核实际digest/资产与CI消费结果，并同步交接给infra-ops；现场8.1仍为外部未完成。
+
+rc.21 实际交付：源码92b85aa，工作流36890195933全部成功；amd64/arm64各2105 passed、4 skipped，两个平台匿名digest消费通过；registry manifest/platform摘要、launcher SHA256SUMS与macOS版本输出均核验。固定digest与资产值见delivery.md。现场8.1交由infra-ops，仍未执行。
