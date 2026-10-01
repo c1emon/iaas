@@ -50,6 +50,8 @@
 
 ## 8. 本轮现场恢复验收
 
+用户已于 2026-10-01 决定暂时后置本项；本轮完成软件实施和固定版本交付，不继续现场操作。重启条件见 delivery.md。
+
 - [ ] 8.1 收到原材料、权威403证据及当前限定清理批准后，固定新版digest按正式入口核清run-120-1并精确清理VM798/两盘/snippet；记录实际逐项存在性、完整性和原验收仍未通过，不重放原操作。资料/权限不足时保留unknown与本项未完成，不阻断诚实的软件版本交付。
 
 软件验证：本地 Python 1792 passed、2 skipped；全项目 Pyright 0 errors、Ruff及4/4 import contracts通过；Go含实际runtime集成通过；OpenTofu锁定provider0.111.1的fixture init/validate、模块fmt及OpenSpec strict通过。GitNexus已重新索引并完成提交前检测；代码阶段风险critical，以调用链/源码和回归测试核边界，不将graph零影响当作验收。

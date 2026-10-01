@@ -20,4 +20,4 @@
 
 固定镜像为 `ghcr.io/c1emon/iaas-runtime@sha256:4e2eb186b1d3123f6e3b492d117ecf81e2458e8de35f175fd9759de8e020b117`。已读取 registry descriptor 核 manifest/platform 摘要；下载两个 launcher 并核 SHA256SUMS，macOS launcher `--version` 返回 `iaas v0.1.0-rc.20`。正式恢复输入与命令见 [操作说明](../../../docs/operations/pve-acceptance-recovery.md)。
 
-task8.1 尚未执行：缺 run-120-1 受保护原材料、可唯一关联 guest exec 的可信403及当前限定清理批准。VM798、两盘和 snippet 的实际存在性仍未知；原验收没有通过或晋升结论。清理成功也不会改变原验收。
+task8.1 按用户 2026-10-01 的决定暂时后置，保持未完成。后续启动条件是 run-120-1 受保护原材料、可唯一关联 guest exec 的可信403及当前限定清理批准齐备。VM798、两盘和 snippet 的实际存在性仍未知；原验收没有通过或晋升结论。清理成功也不会改变原验收。
