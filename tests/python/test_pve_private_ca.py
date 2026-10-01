@@ -158,6 +158,10 @@ def test_invalid_ca_cannot_be_hidden_by_public_roots(tmp_path):
 @pytest.mark.parametrize("failure", ["identity", "invalid_ca"])
 def test_runtime_health_retains_tls_failure_in_protected_phase(certificates, tmp_path, monkeypatch, capsys, failure):
     from iaas.runtime_execution.__main__ import main
+    from iaas.runtime_execution.network_proxy import PROXY_NAMES, NEUTRALIZED_NAMES
+
+    for name in PROXY_NAMES | NEUTRALIZED_NAMES:
+        monkeypatch.delenv(name, raising=False)
 
     repo = Path(__file__).resolve().parents[2]
     ca = certificates / "ca.pem"
@@ -182,7 +186,8 @@ def test_runtime_health_retains_tls_failure_in_protected_phase(certificates, tmp
         assert requests == []
     public = json.loads(capsys.readouterr().out)
     assert public["status"] == "failed"
-    assert public["phases"] == [{"phase": "health", "exit_code": 1}]
+    assert public["phases"] == [{"phase": "health", "exit_code": 1, "proxy_configured": False,
+                                 "capture": str(output / "recovery" / "health.raw")}]
     assert public["output"] == str(output)
     assert "synthetic-secret" not in json.dumps(public)
     summary = json.loads((output / "summary.json").read_text())
@@ -207,9 +212,19 @@ def test_result_verification_does_not_swallow_tls_failure(certificates):
         assert requests == []
 
 
-def test_runtime_direct_api_tls_failure_has_protected_capture(certificates, tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize("configured_proxy", [False, True])
+def test_runtime_direct_api_tls_failure_has_protected_capture(certificates, tmp_path, monkeypatch, capsys,
+                                                            configured_proxy):
     import iaas.runtime_execution.__main__ as dispatch
+    from iaas.runtime_execution.network_proxy import PROXY_NAMES, NEUTRALIZED_NAMES
     from test_runtime_dispatch import config, REPO
+
+    for name in PROXY_NAMES | NEUTRALIZED_NAMES:
+        monkeypatch.delenv(name, raising=False)
+    proxy = "http://fixture-proxy-user:fixture-proxy-password@127.0.0.1:1"
+    if configured_proxy:
+        monkeypatch.setenv("https_proxy", proxy)
+        monkeypatch.setenv("no_proxy", "127.0.0.1")
 
     entry = config(tmp_path, "pve", {"cluster": str(REPO / "tests/fixtures/runtime/pve-cluster.yml"),
                                     "vms": str(REPO / "tests/fixtures/runtime/vms.yml")},
@@ -222,7 +237,14 @@ def test_runtime_direct_api_tls_failure_has_protected_capture(certificates, tmp_
     def direct_api(selected, operation, scope, execution, **kwargs):
         client = api_client({"api_endpoint": execution.environ["TF_VAR_pve_endpoint"], "insecure": False},
                             execution.environ)
-        client.vm_config("fixture", 100)
+        try:
+            client.vm_config("fixture", 100)
+        except PveApiTlsError as exc:
+            if configured_proxy:
+                # Represent a client reflecting configured credentials; the
+                # TLS error still comes from the original local API request.
+                raise PveApiTlsError(f"{exc}; {proxy}; fixture-proxy-user fixture-proxy-password") from None
+            raise
 
     monkeypatch.setattr(dispatch, "run_component", direct_api)
     output = tmp_path / "direct"
@@ -233,10 +255,18 @@ def test_runtime_direct_api_tls_failure_has_protected_capture(certificates, tmp_
         assert requests == []
     public = json.loads(capsys.readouterr().out)
     assert public["status"] == "failed"
-    assert public["phases"] == [{"phase": "pve-api-tls", "exit_code": 2}]
+    assert public["phases"] == [{"phase": "pve-api-tls", "exit_code": 2,
+                                 "proxy_configured": configured_proxy,
+                                 "capture": str(output / "recovery" / "pve-api-tls.raw")}]
     assert endpoint not in json.dumps(public) and "synthetic-secret" not in json.dumps(public)
     summary = json.loads((output / "summary.json").read_text())
     capture = Path(summary["phases"][0]["capture"])
     assert capture == output / "recovery" / "pve-api-tls.raw"
     assert capture.stat().st_mode & 0o777 == 0o600
     assert "CERTIFICATE_VERIFY_FAILED" in capture.read_text()
+    if configured_proxy:
+        assert "[REDACTED]" in capture.read_text()
+        for secret in (proxy, "fixture-proxy-user", "fixture-proxy-password"):
+            assert secret not in json.dumps(public)
+            assert secret not in json.dumps(summary)
+            assert secret not in capture.read_text()

@@ -1,0 +1,75 @@
+{
+  "kind": "pve-snippet-cleanup-request",
+  "schema_version": 2,
+  "origin": "acceptance",
+  "target": {
+    "api_endpoint": "https://pve.example.invalid:8006",
+    "node": "pve1",
+    "tls_verify": true
+  },
+  "original_vm": {
+    "node": "pve1",
+    "vmid": 9100,
+    "smbios_uuid": "22222222-2222-4222-8222-222222222222"
+  },
+  "original_execution_id": "accept-001",
+  "delete_plan": null,
+  "acceptance_evidence": {
+    "execution_id": "accept-001",
+    "request_digest": "sha256:91f84d25bc4c3043d54c49d41442581906963635218afcaea2ebf1c10715fd15",
+    "request": {
+      "path": "accept/request.json",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "journal": {
+      "path": "accept/journal.json",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "result": null
+  },
+  "deletion_evidence": {
+    "execution_id": "accept-001",
+    "native_task": "UPID:pve1:00000001:00000001:00000001:qmdestroy:9100:root@pam:",
+    "result": {
+      "path": "accept/journal.json",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "vm_absence": {
+      "path": "accept/journal.json",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "state_persistence": null
+  },
+  "ownership_records": {
+    "manifest": {
+      "path": "accept/journal.json",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "upload": {
+      "path": "accept/journal.json",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  },
+  "snippets": [
+    {
+      "node": "pve1",
+      "storage": "local",
+      "file_id": "local:snippets/accept-001.yaml",
+      "file_name": "accept-001.yaml",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "record_ref": "accept-001.yaml"
+    }
+  ],
+  "timeout_seconds": 120,
+  "retry_of": null,
+  "retry_materials": null,
+  "ssh": {
+    "host": "pve.example.invalid",
+    "user": "iaas",
+    "port": 22
+  },
+  "deadlines": {
+    "work_deadline_at": "2000-01-01T00:00:00Z",
+    "cleanup_deadline_at": "2000-01-01T00:10:00Z"
+  }
+}

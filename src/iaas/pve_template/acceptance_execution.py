@@ -58,6 +58,7 @@ def begin(root: Path, operation: str, request: dict[str, Any], admission: dict[s
     digest = canonical_digest(request)
     admission = validate_execution_admission(admission, digest=digest.removeprefix("sha256:"),
                                              execution_id=execution_id, target=request["target"])
+    require(admission.get('deadlines') == request['deadlines'], 'execution admission deadlines conflict')
     require(image_digest, "resolved runtime image digest is required")
     root.mkdir(mode=0o700, parents=True, exist_ok=False)
     marker = root / "started"
@@ -66,6 +67,7 @@ def begin(root: Path, operation: str, request: dict[str, Any], admission: dict[s
     journal = {"kind": "pve-one-shot-journal", "schema_version": 1, "operation": operation,
                "execution_id": execution_id, "request_digest": digest, "target": request["target"],
                "admission": admission, "runtime": {"image_digest": image_digest},
+               "deadlines": request['deadlines'], "facility_writes": "none",
                "status": "running", "mutation_active": False, "tasks": [], "resources": {}}
     save(root / "request.json", request)
     save(root / "journal.json", journal)
@@ -87,6 +89,9 @@ def observe(root: Path, operation: str, request: dict[str, Any] | None,
     digest = canonical_digest(original)
     require(journal.get("request_digest") == digest and journal.get("target") == original.get("target"),
             "original execution request binding conflicts")
+    require(journal.get('deadlines') == original['deadlines']
+            and journal.get('admission', {}).get('deadlines') == original['deadlines'],
+            'original execution deadline binding conflicts')
     if request is not None:
         require(canonical_digest(request) == digest, "observed request conflicts with original execution")
     validate_execution_admission(journal.get("admission"), digest=digest.removeprefix("sha256:"),
@@ -97,6 +102,9 @@ def observe(root: Path, operation: str, request: dict[str, Any] | None,
         require(isinstance(result, dict) and result.get("execution_id") == journal["execution_id"]
                 and result.get("request_digest") == digest
                 and result.get("runtime") == journal.get("runtime"), "original result binding conflicts")
+        require(result.get('deadlines') == original['deadlines']
+                and result.get('facility_writes') == journal.get('facility_writes'),
+                'original result deadline/write facts conflict')
         if result.get("overall") == "unknown":
             require(journal.get("status") in {"running", "interrupted", "finished"}
                     and type(journal.get("mutation_active")) is bool,

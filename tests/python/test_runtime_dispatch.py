@@ -18,9 +18,13 @@ REPO = Path(__file__).resolve().parents[2]
 
 def test_capabilities_advertise_lifecycle_contract_versions() -> None:
     assert capabilities()["lifecycle_versions"] == {
-        "pve": {"plan": 2, "result": 1, "snippet_cleanup_request": 1, "snippet_cleanup_result": 1},
-        "pve-template": {"preview": 2, "result": 2, "record": 2, "acceptance_request": 1, "acceptance_result": 1},
+        "pve": {"plan": 2, "result": 1, "snippet_cleanup_request": 2, "snippet_cleanup_result": 2},
+        "pve-template": {"preview": 2, "result": 2, "record": 2, "acceptance_request": 2, "acceptance_result": 2},
         "image": {"artifact": 1, "build_request": 1, "test_request": 1, "test_result": 1},
+    }
+    assert capabilities()["operation_capabilities"] == {
+        "pve-template": {"accept": {"absolute_deadlines": True}},
+        "pve": {"snippet-cleanup": {"absolute_deadlines": True}},
     }
 
 

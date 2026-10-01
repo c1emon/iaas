@@ -24,12 +24,14 @@ type Effects struct {
 }
 
 type Capabilities struct {
-	LifecycleVersions map[string]map[string]int                `json:"lifecycle_versions"`
-	ExecutionModes    map[string]map[string]map[string]Effects `json:"execution_modes"`
-	InterfaceVersion  int                                      `json:"interface_version"`
-	SchemaVersions    []int                                    `json:"schema_versions"`
-	Platforms         []string                                 `json:"platforms"`
-	Operations        map[string]map[string]Effects            `json:"operations"`
+	NetworkProxyVersion   int                                      `json:"network_proxy_version"`
+	OperationCapabilities map[string]map[string]map[string]bool    `json:"operation_capabilities"`
+	LifecycleVersions     map[string]map[string]int                `json:"lifecycle_versions"`
+	ExecutionModes        map[string]map[string]map[string]Effects `json:"execution_modes"`
+	InterfaceVersion      int                                      `json:"interface_version"`
+	SchemaVersions        []int                                    `json:"schema_versions"`
+	Platforms             []string                                 `json:"platforms"`
+	Operations            map[string]map[string]Effects            `json:"operations"`
 }
 
 func readRuntime(path string) (RuntimeConfig, error) {
@@ -102,8 +104,8 @@ func (c Capabilities) operation(component, operation, selectedPlatform string) (
 		modes := c.ExecutionModes[component][operation]
 		start, hasStart := modes["start"]
 		observe, hasObserve := modes["observe"]
-		if versions[prefix+"_request"] != 1 || versions[prefix+"_result"] != 1 || !hasStart || !hasObserve || !start.InfrastructureWrite || start.State || observe.InfrastructureWrite || observe.State {
-			return Effects{}, errors.New("image does not support current bounded execution contracts and modes")
+		if versions[prefix+"_request"] != 2 || versions[prefix+"_result"] != 2 || !c.OperationCapabilities[component][operation]["absolute_deadlines"] || !hasStart || !hasObserve || !start.InfrastructureWrite || start.State || observe.InfrastructureWrite || observe.State {
+			return Effects{}, errors.New("image does not support current bounded execution contracts, absolute deadlines and modes")
 		}
 	}
 	return operationEffects, nil

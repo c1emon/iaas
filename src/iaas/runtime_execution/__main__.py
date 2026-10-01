@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import ExitStack
 from dataclasses import asdict
 import json
 import os
@@ -26,6 +27,7 @@ from .plans import apply_saved_plan, prepare_plan
 from .root import materialize_root
 from .selection import load_operation, rendering_credentials
 from .state import S3Backend
+from .network_proxy import ProxyConfigurationError, ProxyRedactor, process_proxy_environment, proxy_configured
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -50,6 +52,7 @@ def main(argv: list[str] | None = None) -> int:
     execution = None
     outputs = None
     selected = None
+    proxy_context = ExitStack()
     try:
         effects = operation_for(args.component, args.operation)
         mapping = json.loads(args.input_map.read_text()) if args.input_map else None
@@ -100,6 +103,7 @@ def main(argv: list[str] | None = None) -> int:
             protected.append(args.plan)
         outputs = TaskOutputs.create(args.output, IMPLEMENTATION, protected)
         environ = process_environment(args.component, args.operation, os.environ, render_names)
+        proxy_context.enter_context(process_proxy_environment(environ))
         if readonly_original:
             for name in credential_names(args.component, args.operation, render_names):
                 environ.pop(name, None)
@@ -178,7 +182,7 @@ def main(argv: list[str] | None = None) -> int:
                 capture = execution.outputs.path("recovery") / "pve-api-tls.raw"
                 failure = {"phase": "pve-api-tls", "exit_code": 2, "capture": str(capture)}
                 try:
-                    write_text(capture, str(exc) + "\n", secure=True)
+                    write_text(capture, ProxyRedactor(execution.environ).text(str(exc)) + "\n", secure=True)
                 except OSError:
                     failure["retain_storage"] = True
                 phases.append(failure)
@@ -260,12 +264,16 @@ def main(argv: list[str] | None = None) -> int:
             "components", "scenarios", "selected scenario", "selected component",
             "component inputs", "facts", "component files", "component options",
         ) for problem in ("must be a mapping", "keys must be strings")}
-        reason = str(exc) if str(exc) in safe_reasons else "selected operation failed validation, setup or execution"
+        reason = str(exc) if isinstance(exc, ProxyConfigurationError) or str(exc) in safe_reasons else "selected operation failed validation, setup or execution"
         print(json.dumps({"status": "failed", "reason": reason,
                           "output": str(outputs.root) if outputs else None,
                           "exit_code": code, "retain_storage": retained,
-                          "phases": [{"phase": item["phase"], "exit_code": item.get("exit_code")} for item in phases]}))
+                          "phases": [{"phase": item["phase"], "exit_code": item.get("exit_code"),
+                                      "proxy_configured": item.get("proxy_configured", proxy_configured(execution.environ) if execution else False),
+                                      "capture": item.get("capture")} for item in phases]}))
         return code
+    finally:
+        proxy_context.close()
 
 
 if __name__ == "__main__":

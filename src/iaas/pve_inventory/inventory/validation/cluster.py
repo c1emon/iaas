@@ -6,6 +6,7 @@ import ipaddress
 import re
 from typing import Any, cast
 
+from iaas.common.proxy_names import require_guest_credential_name
 from iaas.common.errors import ValidationError, require
 from iaas.common.validation import as_list, as_mapping, require_bool, require_non_empty_string, require_positive_int, require_unknown_keys
 
@@ -120,6 +121,8 @@ def validate_automation(cluster_doc: dict[str, Any], storage_roles: dict[str, An
         public_key_env = cast(str, user_map["public_key_env"])
         require(re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", password_env), f"{uctx}: password_env must match ^[A-Za-z_][A-Za-z0-9_]*$")
         require(re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", public_key_env), f"{uctx}: public_key_env must match ^[A-Za-z_][A-Za-z0-9_]*$")
+        require_guest_credential_name(password_env)
+        require_guest_credential_name(public_key_env)
         require(name not in seen_names, f"{uctx}: duplicate user name {name}")
         require(password_env not in seen_env_vars, f"{uctx}: duplicate environment variable {password_env}")
         require(public_key_env not in seen_env_vars, f"{uctx}: duplicate environment variable {public_key_env}")

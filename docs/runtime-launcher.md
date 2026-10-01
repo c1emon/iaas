@@ -61,6 +61,49 @@ publication is a controller-side HTTPS capability. A capability response is
 the compatibility gate: old PVE operation names and combined template-build
 inputs are rejected instead of being silently translated.
 
+## Controlled network proxy
+
+For operations whose effective effects allow network access, the launcher accepts
+`HTTP_PROXY/http_proxy`, `HTTPS_PROXY/https_proxy` and `NO_PROXY/no_proxy` as a
+separate channel from facility credentials. Trimmed empty values are absent;
+nonempty values in a pair must match exactly. Each selected value is passed in
+both cases. HTTP and HTTPS settings are independent. A nonempty setting, including
+only NO_PROXY, requires runtime `network_proxy_version: 1`.
+
+Endpoints must use `http://` or `https://`, a valid host and optional port, with
+no query, fragment or path other than `/`. Basic userinfo is supported, including
+valid percent encoding; usernames must be nonempty and passwords may be empty.
+Resolve authentication in the caller environment, never in command arguments or
+input YAML. The daemon administrator can inspect container environment values.
+Proxy authentication is protected in runtime errors and persisted tool diagnostics;
+native state and recovery files keep their existing handling. Proxy values are
+not added to saved plans, summaries or dependency archives.
+
+Local and DinD execution use the same controlled channel. All helper containers
+and offline execution explicitly clear supported and ALL_PROXY/FTP_PROXY names,
+overriding Docker client proxy defaults and image ENV. Offline operations retain
+`--network none` and do not parse proxy settings. Proxy names are reserved against
+case-insensitive cloud-init credential-name conflicts. Arbitrary host variables,
+SOCKS/FTP proxies and ALL_PROXY are not forwarded.
+
+The channel covers actual network tool subprocesses and existing environment-aware
+clients such as image base downloads through urllib. PVE explicit HTTPS clients,
+uploads and template downloads retain their direct transports. It does not proxy
+SSH, raw sockets or Docker daemon image pulls, and is not an egress firewall.
+NO_PROXY uses each tool's native matching rules; no internal address is added
+automatically. The endpoint must be reachable from the runtime container; DinD
+localhost identifies its container, not the caller host.
+For a remote TCP Docker daemon, callers must include its control endpoint in
+NO_PROXY so the Docker CLI can contact it directly when HTTP_PROXY is set.
+
+No configuration preserves direct access. Invalid configuration fails before
+network tools start; tool failures retain their nonzero phase result and protected
+diagnostic location. There is no retry with proxies removed or TLS weakened.
+`pve prepare-dependencies` retains no facility/backend/state inputs, readonly
+provider locks and native checksum validation. Restore checks archive members and
+lock equality; provider integrity additionally requires native readonly init using
+the returned `.terraform/providers` directory as `-plugin-dir`.
+
 ## Select inputs and an operation
 
 The [environment schema](runtime-configuration.md) selects component input files,
@@ -185,6 +228,8 @@ and collects results back into the client. It does not assume host path sharing.
 The engine must support named-volume file subpaths; local tests used Docker
 29.5.2 and a nested 29.8.0 daemon. A short root-owned transfer container only
 prepares volume permissions; operation containers use the client's UID/GID.
+ONE rc.19 consumption uses a nested Docker 29.8.1 daemon. Docker 28's file-subpath
+mount failed before runtime startup in that environment; use a tested daemon.
 
 The launcher uses the caller's Docker context or `DOCKER_HOST`. Never overlap
 state/snippet workflows: CI must serialize the complete plan/apply sequence, and
@@ -322,11 +367,35 @@ architecture or qualify real PVE, K3s, OPNsense or template builds.
 
 ### PVE 模板验收和 snippet 清理（当前合同）
 
-`pve-template accept` 与 `pve snippet-cleanup` 使用独立的 v1 request/result，
+`pve-template accept` 与 `pve snippet-cleanup` 使用独立的 v2 request/result，
 capabilities 的 `lifecycle_versions` 分别声明 `acceptance_request`/`acceptance_result`
-和 `snippet_cleanup_request`/`snippet_cleanup_result`。launcher 拒绝版本缺失或不匹配。
+和 `snippet_cleanup_request`/`snippet_cleanup_result`；`operation_capabilities` 的
+`pve-template.accept` 与 `pve.snippet-cleanup` 各自声明 `absolute_deadlines: true`。
+launcher 拒绝版本缺失、不匹配或截止能力缺失，不从相对 timeout 推导新授权。
 `execution_modes` 声明 `start` 写基础设施但不访问 state，`observe` 只读基础设施；
 两种模式都只在新的 output 写收集结果。
+
+调用方（例如 infra-ops）根据合法目标开始时间及已批准策略，计算并持久化
+request 和 execution admission 中相同的 `deadlines`：
+
+```json
+{"deadlines":{"work_deadline_at":"2026-10-01T10:00:00Z","cleanup_deadline_at":"2026-10-01T10:05:00Z"}}
+```
+
+字段使用严格 UTC 秒精度 `YYYY-MM-DDTHH:mm:ssZ`，work 不晚于 cleanup；
+`now >= deadline` 到期。示例时间仅说明格式，实际 start 必须使用当前有效的批准窗口。
+两个期限进入 request 摘要与执行身份绑定，local/DinD 按原字节传输。
+原生执行在 start 同时冻结两个 monotonic 上限，并在每次新的设施写入前检查对应期限；
+helper v2 在验收上传/删除模式的最终 create/unlink 前检查截止。
+升级 runtime 时须同步升级节点 helper，安装方式见下方操作文档。
+launcher 能力检查只是兼容性准入，不能替代这些原生检查。
+
+work 到期后只允许在 cleanup 窗口内清理已证明所属且无活动冲突的资源。
+cleanup 到期停止新增写入并保留残留、活动任务及未知事实；已发出的操作
+可能继续在设施完成，本地超时不能证明已取消或回滚。
+`deadline_outcome` 与独立的 `facility_writes` 区分截止拒绝和本次写入事实；
+资源存在性 unknown 不代表本次可能写入，整体结论仍遵守 unknown 优先。
+清理成功不能把失败验收变成通过。
 
 ```yaml
 schema_version: 1
@@ -362,6 +431,9 @@ iaas run --runtime-config runtime.json --engine local --environment acceptance.y
 严格验证主机身份，不从 `PVE_SSH_HOST`、`PVE_SSH_USER` 或 `PVE_SSH_PORT` 环境变量选择目标。
 验收不接收 artifact 下载凭据，清理不接收 state 后端凭据。
 首次清理及补清理都必须是独立授权的新 start；observe 永远不自动补执行。
+补清理使用新的 request/admission/execution_id 和有效 deadlines，保留原资源全清单、
+所有权及 retry 关联；不得改写旧执行或延长旧窗口。observe 可在原期限过期后
+读取原绑定材料，不刷新预算或重新启动副作用。
 
 上述接口与软件测试不代表真实 PVE 验收；现场创建、启动和删除 VM 需另行限定目标和授权窗口。
 

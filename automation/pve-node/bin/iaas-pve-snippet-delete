@@ -1,6 +1,7 @@
 #!/usr/bin/python3
-"""Restricted exact snippet deletion helper, protocol version 1."""
+"""Restricted exact snippet deletion helper, protocol version 2."""
 import argparse
+from datetime import datetime, timezone
 import fcntl
 import hashlib
 import json
@@ -9,12 +10,33 @@ from pathlib import Path
 import re
 import stat
 import subprocess
+import time
 
 PVESM = '/usr/sbin/pvesm'
 PVE_CONFIG = Path('/etc/pve')
 
 
-def delete_exact(storage, filename, expected):
+class DeadlineExpired(Exception):
+    pass
+
+
+class Deadline:
+    """Freeze one cutoff at helper start; wall clock jumps can only tighten it."""
+    def __init__(self, value):
+        if not isinstance(value, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z', value):
+            raise ValueError('deadline must use YYYY-MM-DDTHH:mm:ssZ')
+        self.epoch = datetime.strptime(value, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc).timestamp()
+        self.monotonic_limit = time.monotonic() + self.epoch - time.time()
+
+    def remaining(self):
+        self.monotonic_limit = min(self.monotonic_limit, time.monotonic() + self.epoch - time.time())
+        remaining = self.monotonic_limit - time.monotonic()
+        if remaining <= 0:
+            raise DeadlineExpired()
+        return remaining
+
+
+def delete_exact(storage, filename, expected, deadline):
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', storage):
         return 'mismatch', 'invalid_storage'
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}', filename):
@@ -22,8 +44,9 @@ def delete_exact(storage, filename, expected):
     if not re.fullmatch(r'[a-f0-9]{64}', expected):
         return 'mismatch', 'invalid_digest'
     try:
+        deadline.remaining()
         resolved = subprocess.run([PVESM, 'path', f'{storage}:snippets/{filename}'],
-                                  capture_output=True, text=True, check=True, timeout=20).stdout.strip()
+                                  capture_output=True, text=True, check=True, timeout=min(20, deadline.remaining())).stdout.strip()
         path = Path(resolved)
         if not path.is_absolute() or '\n' in resolved or path.parts[-2:] != ('snippets', filename) or '..' in path.parts:
             return 'mismatch', 'unsafe_path'
@@ -46,12 +69,14 @@ def delete_exact(storage, filename, expected):
                 opened = os.fstat(descriptor)
                 digest = hashlib.sha256()
                 while chunk := os.read(descriptor, 1024 * 1024):
+                    deadline.remaining()
                     digest.update(chunk)
                 current = os.stat(filename, dir_fd=directory, follow_symlinks=False)
                 def identity(s):
                     return (s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
                 if identity(info) != identity(opened) or identity(opened) != identity(current) or digest.hexdigest() != expected:
                     return 'mismatch', 'content_or_identity_changed'
+                deadline.remaining()
                 os.unlink(filename, dir_fd=directory)
                 try:
                     os.stat(filename, dir_fd=directory, follow_symlinks=False)
@@ -62,13 +87,15 @@ def delete_exact(storage, filename, expected):
                 os.close(descriptor)
         finally:
             os.close(directory)
+    except DeadlineExpired:
+        return 'failed', 'cleanup_deadline_expired'
     except PermissionError:
         return 'failed', 'permission_denied'
     except (OSError, subprocess.SubprocessError):
         return 'unknown', 'path_or_delete_unconfirmed'
 
 
-def inspect_cluster(root=PVE_CONFIG):
+def inspect_cluster(root=PVE_CONFIG, deadline=None):
     """pmxcfs root view includes configurations hidden by token ACL filters.
 
     Snapshot and pending sections live in these same configuration files. Match
@@ -76,6 +103,8 @@ def inspect_cluster(root=PVE_CONFIG):
     target if an unrelated storage has an identically named referenced file.
     """
     try:
+        if deadline is not None:
+            deadline.remaining()
         members = json.loads((root / '.members').read_text())
         if members.get('cluster', {}).get('quorate') != 1:
             return {'complete': False, 'reason_code': 'cluster_not_quorate'}
@@ -88,6 +117,8 @@ def inspect_cluster(root=PVE_CONFIG):
         references = set()
         nodes = []
         for node in sorted((root / 'nodes').iterdir()):
+            if deadline is not None:
+                deadline.remaining()
             if node.is_symlink() or not node.is_dir():
                 raise ValueError()
             nodes.append(node.name)
@@ -96,6 +127,8 @@ def inspect_cluster(root=PVE_CONFIG):
                 if not directory.is_dir() or directory.is_symlink():
                     raise ValueError()
                 for config in sorted(directory.iterdir()):
+                    if deadline is not None:
+                        deadline.remaining()
                     if not config.name.endswith('.conf'):
                         continue
                     if config.is_symlink() or not config.is_file() or not config.stem.isdecimal():
@@ -121,9 +154,13 @@ def inspect_cluster(root=PVE_CONFIG):
         local_node = (root / 'local').resolve(strict=True).name
         if local_node not in nodes:
             raise ValueError()
+        if deadline is not None:
+            deadline.remaining()
         return {'complete': True, 'reason_code': 'pmxcfs_complete', 'nodes': nodes, 'local_node': local_node,
                 'vmids': sorted(int(key) for key in observed), 'references': sorted(references),
                 'reference_strategy': 'all_storage_aliases_by_filename'}
+    except DeadlineExpired:
+        return {'complete': False, 'reason_code': 'cleanup_deadline_expired'}
     except (OSError, ValueError, KeyError, TypeError):
         return {'complete': False, 'reason_code': 'cluster_inventory_incomplete'}
 
@@ -131,38 +168,47 @@ def inspect_cluster(root=PVE_CONFIG):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--inspect-cluster', action='store_true')
+    parser.add_argument('--deadline-at', required=True)
     parser.add_argument('--storage')
     parser.add_argument('--filename')
     parser.add_argument('--sha256')
     parser.add_argument('--node')
     parser.add_argument('--vmid', type=int)
     args = parser.parse_args()
+    try:
+        deadline = Deadline(args.deadline_at)
+    except ValueError as exc:
+        parser.error(str(exc))
     if args.inspect_cluster:
         if args.storage or args.filename or args.sha256 or args.node or args.vmid:
             parser.error('inspection does not accept file arguments')
-        print(json.dumps({'schema_version': 1, **inspect_cluster()}))
+        print(json.dumps({'schema_version': 2, **inspect_cluster(deadline=deadline)}))
         return
     if not all((args.storage, args.filename, args.sha256, args.node, args.vmid)):
         parser.error('exact storage, filename, digest, node and original VMID are required')
     try:
+        deadline.remaining()
         descriptor = os.open('/run/lock/iaas-pve-snippet-cleanup.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
         with os.fdopen(descriptor, 'w') as lock:
             info = os.fstat(lock.fileno())
             if info.st_uid != 0 or info.st_mode & 0o077 or not stat.S_ISREG(info.st_mode):
                 raise OSError()
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            current = inspect_cluster()
+            deadline.remaining()
+            current = inspect_cluster(deadline=deadline)
             if not current.get('complete'):
-                status, reason = 'unknown', 'cluster_inventory_incomplete'
+                status, reason = ('failed', 'cleanup_deadline_expired') if current.get('reason_code') == 'cleanup_deadline_expired' else ('unknown', 'cluster_inventory_incomplete')
             elif current['local_node'] != args.node or args.vmid in current['vmids']:
                 status, reason = 'mismatch', 'node_or_vm_identity_conflict'
             elif args.filename in current['references']:
                 status, reason = 'referenced', 'cluster_configuration_reference'
             else:
-                status, reason = delete_exact(args.storage, args.filename, args.sha256)
+                status, reason = delete_exact(args.storage, args.filename, args.sha256, deadline)
+    except DeadlineExpired:
+        status, reason = 'failed', 'cleanup_deadline_expired'
     except OSError:
         status, reason = 'unknown', 'helper_lock_unavailable'
-    print(json.dumps({'schema_version': 1, 'status': status, 'reason_code': reason}))
+    print(json.dumps({'schema_version': 2, 'status': status, 'reason_code': reason}))
 
 
 if __name__ == '__main__':

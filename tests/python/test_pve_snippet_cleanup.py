@@ -33,7 +33,7 @@ def reference(root, name, value):
 
 def admission(request, execution_id):
     return {'schema_version': 1, 'execution_id': execution_id, 'plan_digest': canonical_digest(request).removeprefix('sha256:'),
-            'target': request['target'], 'approved': True, 'consumption': {'reserved': True, 'reservation_id': 'r1'},
+            'target': request['target'], 'deadlines': request['deadlines'], 'approved': True, 'consumption': {'reserved': True, 'reservation_id': 'r1'},
             'pending': {'record_id': 'p1'}, 'serialization': {'held': True, 'context_id': 'c1'}}
 
 
@@ -147,7 +147,9 @@ def test_retry_preserves_full_list_and_requires_inactive_original(evidence):
     refs = {'execution_id': 'cleanup-0', 'request_digest': canonical_digest(old),
             'request': reference(root, 'prior/request.json', old),
             'journal': reference(root, 'prior/journal.json', journal), 'result': None}
-    request.update(retry_of='cleanup-0', retry_materials=refs, timeout_seconds=30)
+    request.update(retry_of='cleanup-0', retry_materials=refs, timeout_seconds=30,
+                   deadlines={'work_deadline_at': '2031-01-01T00:00:00Z',
+                              'cleanup_deadline_at': '2031-01-01T00:05:00Z'})
     validate_original(request, root)
     request['snippets'][0]['record_ref'] = 'different'
     with pytest.raises(ValueError):
@@ -166,7 +168,7 @@ def test_start_then_observe_without_mutation(evidence, monkeypatch):
     save(files['snippet_cleanup_request'], request)
     save(files['execution_admission'], admission(request, 'cleanup-1'))
     helper = FakeHelper()
-    monkeypatch.setattr('iaas.pve_snippet_cleanup.runtime.Helper', lambda *_: helper)
+    monkeypatch.setattr('iaas.pve_snippet_cleanup.runtime.Helper', lambda *_, **kwargs: helper)
     output = root / 'output'
     output.mkdir()
     execution = Execution(TaskOutputs(output), {})
@@ -196,13 +198,13 @@ def test_exact_helper_digest_symlink_absence(node_helper, tmp_path, monkeypatch)
     path.write_bytes(b'private-content')
     monkeypatch.setattr(node_helper.subprocess, 'run', lambda *a, **k: SimpleNamespace(stdout=str(path)))
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    assert node_helper.delete_exact('local', path.name, '0' * 64)[0] == 'mismatch'
+    assert node_helper.delete_exact('local', path.name, '0' * 64, node_helper.Deadline('2099-01-01T00:00:00Z'))[0] == 'mismatch'
     assert path.exists()
-    assert node_helper.delete_exact('local', path.name, digest)[0] == 'deleted'
-    assert node_helper.delete_exact('local', path.name, digest)[0] == 'already_absent'
+    assert node_helper.delete_exact('local', path.name, digest, node_helper.Deadline('2099-01-01T00:00:00Z'))[0] == 'deleted'
+    assert node_helper.delete_exact('local', path.name, digest, node_helper.Deadline('2099-01-01T00:00:00Z'))[0] == 'already_absent'
     path.symlink_to(directory / 'other.yml')
-    assert node_helper.delete_exact('local', path.name, digest)[0] == 'mismatch'
-    assert node_helper.delete_exact('local', '../unsafe.yml', digest)[0] == 'mismatch'
+    assert node_helper.delete_exact('local', path.name, digest, node_helper.Deadline('2099-01-01T00:00:00Z'))[0] == 'mismatch'
+    assert node_helper.delete_exact('local', '../unsafe.yml', digest, node_helper.Deadline('2099-01-01T00:00:00Z'))[0] == 'mismatch'
 
 
 def test_pmxcfs_scans_shared_pending_snapshot_and_rejects_incomplete(node_helper, tmp_path):
@@ -282,6 +284,106 @@ def test_helper_permission_denied_is_not_absence(node_helper, monkeypatch):
     def denied(*args, **kwargs):
         raise PermissionError('synthetic permission failure')
     monkeypatch.setattr(node_helper.subprocess, 'run', denied)
-    assert node_helper.delete_exact('local', 'vm-9100.yaml', 'a' * 64) == ('failed', 'permission_denied')
+    assert node_helper.delete_exact('local', 'vm-9100.yaml', 'a' * 64, node_helper.Deadline('2099-01-01T00:00:00Z')) == ('failed', 'permission_denied')
     monkeypatch.setattr(node_helper.Path, 'read_text', denied)
     assert node_helper.inspect_cluster()['complete'] is False
+
+
+def frozen_clock(monkeypatch, request):
+    from iaas.pve_acceptance_contracts import deadline_timestamp
+    from iaas.pve_template.deadlines import DeadlineBudget
+    clock = {'utc': deadline_timestamp(request['deadlines']['work_deadline_at']) - 10, 'mono': 50.0}
+    monkeypatch.setattr('iaas.pve_template.deadlines.time.time', lambda: clock['utc'])
+    monkeypatch.setattr('iaas.pve_template.deadlines.time.monotonic', lambda: clock['mono'])
+    return clock, DeadlineBudget(request['deadlines'])
+
+
+def test_cleanup_expired_admission_records_no_write_and_unknown_resources(evidence, monkeypatch):
+    root, request = evidence
+    request['deadlines'] = {'work_deadline_at': '2000-01-01T00:00:00Z',
+                            'cleanup_deadline_at': '2000-01-01T00:01:00Z'}
+    files = {'snippet_cleanup_request': root / 'expired-request.json', 'cleanup_evidence_dir': root,
+             'execution_admission': root / 'expired-admission.json'}
+    save(files['snippet_cleanup_request'], request)
+    save(files['execution_admission'], admission(request, 'cleanup-expired'))
+    monkeypatch.setattr('iaas.pve_snippet_cleanup.runtime.Helper', lambda *a, **k: pytest.fail('expired start created helper'))
+    monkeypatch.setattr('iaas.pve_snippet_cleanup.runtime.validate_original', lambda *a: pytest.fail('expired start read inventory'))
+    output = root / 'expired-output'
+    output.mkdir()
+    with pytest.raises(OperationFailed):
+        run(SimpleNamespace(files=files, options={'execution_mode': 'start'}), 'snippet-cleanup', '',
+            Execution(TaskOutputs(output), {}), 'sha256:' + 'f' * 64, 'cleanup-expired')
+    result = json.loads((output / 'pve-snippet-cleanup-result.json').read_text())
+    assert result['deadline_outcome'] == {'phase': 'admission', 'status': 'rejected'}
+    assert result['facility_writes'] == 'none' and result['overall'] == 'unknown'
+    assert result['items'][0]['status'] == 'unknown' and not result['scope_check']['inventory_complete']
+    original = output / 'diagnostics/execution'
+    observed = root / 'expired-observed'
+    observed.mkdir()
+    monkeypatch.setattr('iaas.pve_snippet_cleanup.runtime.DeadlineBudget', lambda *a: pytest.fail('observe refreshed budget'))
+    with pytest.raises(OperationFailed):
+        run(SimpleNamespace(files={'original_execution_dir': original}, options={'execution_mode': 'observe'}),
+            'snippet-cleanup', '', Execution(TaskOutputs(observed), {}), 'sha256:' + 'f' * 64, 'cleanup-expired')
+    assert json.loads((observed / 'pve-snippet-cleanup-result.json').read_text()) == result
+
+
+def test_cleanup_delayed_inventory_cannot_start_delete(evidence, monkeypatch):
+    root, request = evidence
+    clock, budget = frozen_clock(monkeypatch, request)
+    helper = FakeHelper()
+    inspect = helper.inspect
+    def delayed():
+        snapshot = inspect()
+        clock['mono'] = budget.bounds['work']
+        return snapshot
+    helper.inspect = delayed
+    result = cleanup(request, helper, initial_result(request, 'cleanup-late', 'sha256:' + 'f' * 64),
+                     {'mutation_active': False, 'facility_writes': 'none'}, root / 'late', budget)
+    assert not helper.calls
+    assert helper.phase == 'work'
+    assert result['deadline_outcome'] == {'phase': 'work', 'status': 'exceeded'}
+    assert result['scope_check']['reason_code'] == 'work_deadline_expired'
+    assert result['facility_writes'] == 'none' and result['overall'] == 'unknown'
+
+
+def test_cleanup_cutoff_preserves_completed_items_and_stops_next_write(evidence, monkeypatch):
+    root, request = evidence
+    second = {**request['snippets'][0], 'file_name': 'second.yaml',
+              'file_id': 'local:snippets/second.yaml', 'record_ref': 'second.yaml'}
+    request['snippets'].append(second)
+    clock, budget = frozen_clock(monkeypatch, request)
+    helper = FakeHelper()
+    delete = helper.delete
+    def delayed(snippet):
+        assert helper.phase == 'cleanup'
+        answer = delete(snippet)
+        clock['mono'] = budget.bounds['cleanup']
+        return answer
+    helper.delete = delayed
+    journal = {'mutation_active': False, 'facility_writes': 'none'}
+    result = cleanup(request, helper, initial_result(request, 'cleanup-cutoff', 'sha256:' + 'f' * 64),
+                     journal, root / 'cutoff', budget)
+    assert len(helper.calls) == 1
+    assert [item['status'] for item in result['items']] == ['deleted', 'unknown']
+    assert result['deadline_outcome'] == {'phase': 'cleanup', 'status': 'exceeded'}
+    assert result['facility_writes'] == 'issued' and journal['mutation_active'] is False
+
+
+def test_cleanup_relative_timeout_after_intent_is_zero_send_not_deadline(evidence, monkeypatch):
+    root, request = evidence
+    request['timeout_seconds'] = 1
+    clock, budget = frozen_clock(monkeypatch, request)
+    helper = FakeHelper()
+    original_save = save
+    def delayed_save(path, value):
+        original_save(path, value)
+        if path.name == 'journal.json' and value.get('mutation_active') is True:
+            clock['mono'] = budget.local['cleanup']
+    monkeypatch.setattr('iaas.pve_snippet_cleanup.runtime.save', delayed_save)
+    journal = {'mutation_active': False, 'facility_writes': 'none'}
+    result = cleanup(request, helper, initial_result(request, 'cleanup-relative', 'sha256:' + 'f' * 64),
+                     journal, root / 'relative', budget)
+    assert not helper.calls
+    assert result['deadline_outcome'] == {'phase': None, 'status': 'not_exceeded'}
+    assert result['items'][0]['reason_code'] == 'cleanup_timeout'
+    assert result['facility_writes'] == 'none' and journal['mutation_active'] is False

@@ -106,6 +106,10 @@ func (t *task) savedPlan() ([]string, error) {
 }
 
 func execute(options Options, configuration RuntimeConfig, image string, effects Effects, docker Docker) (resultError error) {
+	proxy, err := normalizedProxy(effects.Network, os.Getenv)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(options.Output), 0700); err != nil {
 		return err
 	}
@@ -158,6 +162,9 @@ func execute(options Options, configuration RuntimeConfig, image string, effects
 	// client path, never a credential value into the Docker command line.
 	childEnvironment := os.Environ()
 	for _, name := range ready.CredentialNames {
+		if reservedProxyName(name) {
+			return errors.New("image requested a reserved proxy name as a facility credential")
+		}
 		if strings.HasPrefix(name, "OP_") {
 			return errors.New("image requested an unsupported bootstrap credential")
 		}
@@ -187,6 +194,8 @@ func execute(options Options, configuration RuntimeConfig, image string, effects
 	}
 	base = append(base, t.mounts(true)...)
 	base = append(base, credentials...)
+	proxyArgs, childEnvironment := proxyContainerEnvironment(childEnvironment, proxy)
+	base = append(base, proxyArgs...)
 	if err := t.writeMap(); err != nil {
 		return err
 	}

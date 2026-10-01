@@ -6,7 +6,7 @@ changes a VM. Use a new execution ID/admission for a new cleanup attempt; use
 `options.execution_mode: observe` and a read-only original execution directory
 for a repeated execution ID.
 
-Install helper protocol v1 on each node used for cleanup, after provisioning the
+Install helper protocol v2 on each node used for cleanup, after provisioning the
 existing automation account and known-host trust:
 
 ```sh
@@ -73,7 +73,32 @@ parents, symlinks and inaccessible paths never count as an absent file.
 Retain `diagnostics/execution` outside the temporary runtime. Map that directory
 as `files.original_execution_dir` for observe. A retry uses a new execution ID
 with previous request/journal/available-result references and the unchanged
-original ownership list. Only the timeout and retry association may change.
+original ownership list. Only the timeout, deadlines and retry association may change.
 An interrupted SSH mutation stays active/unknown; a new retry must wait for
 protected evidence that the original mutation terminated. Never edit old
 journals to invent termination or overwrite the original acceptance result.
+
+Protocol v2 requires `--deadline-at YYYY-MM-DDTHH:mm:ssZ` for both cluster
+inspection and exact deletion. The runner supplies the work cutoff during
+admission and the cleanup cutoff during compensation. Offsets, fractional
+seconds, invalid calendar dates and missing values are refused. At `now >=
+deadline` the helper stops; after cluster/reference and digest/inode checks it
+checks again immediately before unlink. Its pvesm subprocess timeout is bounded
+by the remaining window, and the nonblocking lock never waits beyond it. An
+expired delete returns `schema_version: 2`, `status: failed`, and
+`reason_code: cleanup_deadline_expired`; it does not claim the file is absent.
+
+Install the current upload helper using the existing SSH-user bootstrap when
+acceptance uses snippets. Acceptance calls must explicitly select `--mode
+acceptance --deadline-at WORK_CUTOFF` with `--create-only` or checksum verification.
+Ordinary cloud-init upload keeps its existing default `ordinary` mode without a
+deadline. Acceptance cannot downgrade to ordinary mode after helper rejection.
+The upload helper checks immediately before directory/file creation and bounds
+pvesm, mount inspection and input waits to its remaining work window.
+
+Node and runner UTC clocks must be reasonably synchronized. Each helper freezes
+a monotonic upper limit at process start; wall clock jumps only tighten that
+limit. A runner SSH timeout does not prove the remote helper stopped or rolled
+back an issued unlink/create. Preserve unknown/active evidence until confirmed,
+and use a newly admitted request with new deadlines for later cleanup rather
+than extending the old execution.

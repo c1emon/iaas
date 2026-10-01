@@ -1,15 +1,15 @@
-# PVE acceptance and snippet cleanup v1
+# PVE acceptance and snippet cleanup v2
 
 Current source implementation adds `pve-template accept` and `pve snippet-cleanup`.
-It has not been published as a runtime release. Scoped live validation of the
-source path is separate from qualification of a release image.
-Launcher interface remains v1; capabilities advertise acceptance request/result v1
-and snippet cleanup request/result v1. Existing publication record/result versions
+The absolute-deadline implementation is pending release. Software fixtures are
+separate from qualification of a released image or a real facility.
+Launcher interface remains v1; capabilities advertise acceptance request/result v2
+and snippet cleanup request/result v2. Existing publication record/result versions
 remain v2. Consumers must check advertised capabilities before invoking an image.
 
 ## Contract artifacts
 
-- [JSON schemas](../../automation/schemas/pve-acceptance/v1/README.md): four current request/result schemas.
+- [JSON schemas](../../automation/schemas/pve-acceptance/v2/README.md): current request/result and scoped admission schemas.
 - [Shared fixtures](../examples/pve-acceptance/README.md): normal and rejected inputs, used by the Python contract tests.
 - [Launcher examples](../runtime-launcher.md): file mappings and start/observe commands.
 - [Cleanup helper installation and permissions](../operations/pve-snippet-cleanup.md): protocol v1, exact evidence references and platform limits.
@@ -41,11 +41,49 @@ materials return unknown/nonzero; a missing final result preserves the journal
 without inventing success. A bound unknown result remains unknown even when the
 original mutation may still be active.
 
+## Frozen absolute deadlines
+
+Both request/result contracts are v2. `deadlines.work_deadline_at` and
+`deadlines.cleanup_deadline_at` are required UTC `YYYY-MM-DDTHH:mm:ssZ` calendar
+values (seconds, no offset/fraction/leap second), with work <= cleanup. The same
+object is required in execution-admission/v1 for these two operations and binds
+through the canonical request digest, execution ID and private materials.
+infra-ops computes and persists them from lawful target start and approved
+policy. IaaS never grants a new window from arrival, retry or phase entry.
+
+Start freezes both monotonic upper bounds from one UTC/monotonic reference.
+Each stage and send rechecks remaining absolute and monotonic budget; relative
+limits can only tighten calls. Acceptance clone/config/upload/start/guest uses
+work; ownership-safe compensation uses cleanup. Standalone cleanup must finish
+original-evidence and initial complete scope admission within work before
+performing per-item cleanup within cleanup. UTC rollback cannot extend either
+start-frozen bound; forward jumps tighten it. Runner/node UTC synchronization
+remains an operational prerequisite.
+
+Deadline-aware helper v2 requires a cutoff in explicit acceptance-upload and
+snippet-delete modes, rechecking after locks/scans/content checks before actual
+create/unlink. Ordinary VM cloud-init upload retains its existing mode semantics.
+Acceptance cannot fall back to ordinary mode. Missing helper support rejects the
+write. At cleanup cutoff no new write or active online polling starts; protected
+local collection continues. Already dispatched API/guest/helper operations may
+outlive the local call and remain unknown; timeout is not cancellation/rollback.
+
+Results retain `deadlines`, `deadline_outcome` (phase admission/work/cleanup or
+null; status rejected/exceeded/not_exceeded), and separate `facility_writes`
+(none/issued/unknown) facts for this execution. Admission rejection returns
+nonzero and records zero writes even when uninspected resource existence and
+overall remain unknown. Resource unknown alone does not imply a possible write
+by this execution. Phase failure, cleanup incompleteness and unknown effects
+remain separate; cleanup success never promotes failed acceptance to passed.
+Observe validates historical materials read-only, without constructing budgets.
+New cleanup authority binds new deadlines and a new execution while preserving
+the complete original resource scope and proving prior inactivity.
+
 ## Template acceptance
 
 The request fixes a published `pve-template-record/v2`, temporary node/VMID,
 storage, bridge/VLAN/IP configuration, CPU/memory/total-disk limits, boot disk and
-firmware, fresh hostname, all six checks, work/guest/cleanup deadlines, and
+firmware, fresh hostname, all six checks, relative work/guest/cleanup upper limits and absolute deadlines, and
 explicit create/delete authorization. The hostname must differ from the known
 template baseline. No arbitrary guest commands are accepted.
 
@@ -70,7 +108,7 @@ support `--create-only`; an existing file is never overwritten. Inherited
 cleanup helper checks complete cluster references and the exact snippet digest.
 Unknown upload/deletion outcomes retain evidence and fail closed.
 
-Cleanup has a separate budget and runs after check failure/timeouts. It verifies
+Cleanup has a separate frozen deadline and relative upper limit, and runs after check failure/timeouts. It verifies
 ownership and native task inactivity, stops/deletes only the clone, checks exact
 VM and owned-volume absence, and rechecks source identity/configuration. Unknown
 native outcomes or changed ownership retain resources. A lost delete response
@@ -106,8 +144,8 @@ and cleanup result for this evidence branch.
 
 A first cleanup sets `retry_of` and `retry_materials` to null. A retry uses a new
 execution/admission and the previous request/journal/available result, proving
-inactivity and the unchanged full original list. Only timeout/retry association
-may change. Read-only evidence references are confined paths with existing
+inactivity and the unchanged full original list. Only timeout, newly authorized deadlines and retry association
+may change; the old execution window and result remain unchanged. Read-only evidence references are confined paths with existing
 SHA-256 values under `files.cleanup_evidence_dir`; transport path relocation does
 not change resource identity. Cleanup never mutates a VM, state, lock or original
 acceptance result.

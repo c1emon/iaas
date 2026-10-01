@@ -1,6 +1,6 @@
 {
   "kind": "pve-template-acceptance-request",
-  "schema_version": 1,
+  "schema_version": 2,
   "target": {
     "api_endpoint": "https://pve.example.invalid:8006",
     "node": "pve1",
@@ -76,5 +76,9 @@
   "authorization": {
     "create_temporary_vm": true,
     "delete_temporary_resources": true
+  },
+  "deadlines": {
+    "work_deadline_at": "2099-01-01T00:00:00Z",
+    "cleanup_deadline_at": "2099-01-01T00:10:00Z"
   }
 }

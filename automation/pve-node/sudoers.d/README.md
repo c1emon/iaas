@@ -21,3 +21,13 @@ managed marker from this playbook or its former `bootstrap-pve-ops.yml` name.
 Selecting broader commands replaces that managed override for the selected user.
 An unrecognized file or symlink blocks the playbook before account changes and
 requires explicit caller resolution; other site sudoers files are untouched.
+
+The installed upload helper accepts explicit `--mode acceptance` only with a
+strict UTC `--deadline-at` and create-only or verify operation. The default
+ordinary cloud-init mode retains its existing arguments. Install the current
+helper on each acceptance node before enabling absolute-deadline requests;
+missing deadline support must refuse acceptance rather than trigger a fallback.
+The separately installed deletion helper uses protocol v2 and requires a cutoff
+for both inventory inspection and exact deletion. Both helpers enforce the
+cutoff remotely immediately before their facility write; local SSH timeout is
+not evidence that a remote operation was cancelled.

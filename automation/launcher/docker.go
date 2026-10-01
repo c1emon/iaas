@@ -20,6 +20,10 @@ type ExitError struct {
 func (e *ExitError) Error() string { return fmt.Sprintf("operation exited with status %d", e.Code) }
 
 func (d Docker) call(args ...string) ([]byte, error) {
+	if len(args) > 0 && (args[0] == "run" || args[0] == "create") {
+		cleared, _ := proxyContainerEnvironment(nil, nil)
+		args = append(append([]string{args[0]}, cleared...), args[1:]...)
+	}
 	cmd := exec.Command("docker", args...)
 	var output, privateError bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &output, &privateError

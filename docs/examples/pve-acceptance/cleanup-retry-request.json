@@ -1,6 +1,6 @@
 {
   "kind": "pve-snippet-cleanup-request",
-  "schema_version": 1,
+  "schema_version": 2,
   "origin": "acceptance",
   "target": {
     "api_endpoint": "https://pve.example.invalid:8006",
@@ -16,7 +16,7 @@
   "delete_plan": null,
   "acceptance_evidence": {
     "execution_id": "accept-001",
-    "request_digest": "sha256:25c5f9e14002dbff8e71440f93c5f33df1e2da9e7d02427214e73acc8f892cb4",
+    "request_digest": "sha256:91f84d25bc4c3043d54c49d41442581906963635218afcaea2ebf1c10715fd15",
     "request": {
       "path": "accept/request.json",
       "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -79,5 +79,9 @@
     "host": "pve.example.invalid",
     "user": "iaas",
     "port": 22
+  },
+  "deadlines": {
+    "work_deadline_at": "2099-01-01T00:00:00Z",
+    "cleanup_deadline_at": "2099-01-01T00:10:00Z"
   }
 }
