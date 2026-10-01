@@ -205,8 +205,16 @@ class Acceptance:
         return not any(str(row['vmid']) == str(self.temporary['vmid']) for row in rows)
 
     def source_check(self, *, initial: bool) -> None:
-        config = self.api('GET', self.source + '/config')
-        check(isinstance(config, dict), 'source_config_invalid')
+        if not initial and self.source_before is None:
+            raise UnknownOutcome('source_snapshot_missing')
+        try:
+            config = self.api('GET', self.source + '/config')
+        except (DeadlineExpired, LocalTimeout):
+            raise
+        except Exception:
+            raise UnknownOutcome('source_query_failed') from None
+        if not isinstance(config, dict):
+            raise UnknownOutcome('source_evidence_insufficient')
         expected = self.record['configuration'] if initial else self.source_before
         check(expected is not None and stable(config) == stable(expected)
               and pve._config_uuid(config) == self.record['smbios_uuid']
@@ -480,7 +488,8 @@ class Acceptance:
                 self.source_check(initial=False)
                 self.mark('source_unchanged', 'passed', 'verified')
             except Exception as exc:
-                self.mark('source_unchanged', 'failed' if isinstance(exc, AcceptanceFailure) and str(exc) != 'deadline_exceeded' else 'unknown', 'source_recheck_failed')
+                reason = str(exc) if isinstance(exc, (AcceptanceFailure, UnknownOutcome, DeadlineExpired, LocalTimeout)) else 'source_query_failed'
+                self.mark('source_unchanged', 'failed' if isinstance(exc, AcceptanceFailure) else 'unknown', reason)
         self.result['temporary_resources'] = self.resources()
         self.result['deadline_outcome'] = self.budget.outcome
         self.journal['deadline_outcome'] = dict(self.budget.outcome)

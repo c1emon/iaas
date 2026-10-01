@@ -116,6 +116,14 @@ cannot be converted to historical success just because the VM is now absent.
 The source comparison excludes transient lock/digest fields; it is not a disk-byte
 integrity attestation. No guest SSH, external connectivity or business test runs.
 
+Source diagnostics retain the first failure stage and reason. A capacity failure
+before the source baseline is saved reports `source_snapshot_missing` (unknown),
+not a changed template. Recheck transport/API failure is `source_query_failed`,
+and malformed evidence is `source_evidence_insufficient`, both unknown. Only a
+confirmed baseline identity/configuration mismatch is `source_changed` (failed).
+Overall aggregation gives unknown priority even when the original capacity
+failure is known; the original check still reports `disk_limit_exceeded`.
+
 The HTTPS token needs `VM.Audit` on source/temporary VM, `VM.Clone` on source,
 `VM.Allocate`, `VM.Config.CPU`, `VM.Config.Memory`, `VM.Config.Network`,
 `VM.Config.Options`, `VM.Config.Cloudinit`, `VM.PowerMgmt`, and

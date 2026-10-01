@@ -1,6 +1,6 @@
 # Tasks
 
-当前仅规划，以下为后续实施/交付任务，均未执行。实施前按 AGENTS.md 确认实现分支及工作树；本 change 不修改 infra-ops。
+实施分支为 `implement/fix-pve-pool-and-acceptance-recovery`；仅按实际完成的工作勾选。本 change 不修改 infra-ops。
 
 ## 1. 普通 VM 的 pool 与 VMID 策略
 
@@ -24,7 +24,9 @@
 - [ ] 4.1 增加 action=accept 的离线 check/联网 plan、acceptance request/result v3 和 preview/v1，绑定 pool、验收区间、具体 VMID、runtime 与 deadlines；用无凭据离线成功、缺字段、摘要/镜像/池/范围/截止冲突和零设施写入 plan 测试验证并更新输入文档。
 - [ ] 4.2 将完整准入用于 plan/start；clone 直接传池，claim/启动/清理前核实际池、权限、UUID和完整磁盘归属；用入池完整验收/精确清理且池保留、被移池或资源变更失败关闭的代表性测试验证。
 - [ ] 4.3 引入脱敏的明确拒绝和未知请求结果，逐请求消解活动并保留历史 issued；用 guest exec 权威403立即失败且允许安全清理、另有活动未知仍拒绝、超时/丢响应仍unknown与零清理的测试验证，更新固定reason codes和结果示例。
-- [ ] 4.4 修正 source_changed/source_snapshot_missing/source_query_failed/source_evidence_insufficient，并保留原始 failure_stage/reason；用容量失败无快照、确实身份变化和查询失败测试验证结果与 unknown-first 聚合，更新源一致性说明。
+- [x] 4.4 修正 source_changed/source_snapshot_missing/source_query_failed/source_evidence_insufficient，并保留原始 failure_stage/reason；用容量失败无快照、确实身份变化和查询失败测试验证结果与 unknown-first 聚合，更新源一致性说明。
+
+  软件证据：`uv run pytest tests/python/test_pve_template_acceptance.py -q`（30 passed）；`uv run pyright src/iaas/pve_template/acceptance.py`（0 errors）。无现场设施操作。
 - [ ] 4.5 在 plan/start 克隆前输出总磁盘上限、所需总量与必要明细，检查目标存储容量且继续克隆后核验；用40GiB+4MiB、EFI/TPM代表盘、缺大小证据/存储容量不足测试验证不自动抬高上限，更新容量口径和新计划示例。
 
 ## 5. 原验收受控恢复

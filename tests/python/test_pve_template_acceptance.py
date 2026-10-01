@@ -282,8 +282,43 @@ def test_disk_bound_rejected_before_clone(tmp_path):
     api = API(value)
     journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
     result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets()).execute()
-    assert result['overall'] == 'failed'
+    assert result['overall'] == 'unknown'
+    checks = {item['id']: item for item in result['checks']}
+    assert checks['full_clone']['reason_code'] == 'disk_limit_exceeded'
+    assert checks['source_unchanged']['reason_code'] == 'source_snapshot_missing'
+    assert result['failure_stage'] == 'full_clone'
     assert not any(method != 'GET' for method, *_ in api.calls)
+
+
+@pytest.mark.parametrize('fault,reason,status', [
+    ('changed', 'source_changed', 'failed'),
+    ('query', 'source_query_failed', 'unknown'),
+    ('shape', 'source_evidence_insufficient', 'unknown'),
+])
+def test_source_recheck_diagnostics(tmp_path, fault, reason, status):
+    value = request()
+    api = API(value)
+    original = api.request
+    reads = 0
+
+    def call(method, path, **kwargs):
+        nonlocal reads
+        if path.endswith('/9000/config'):
+            reads += 1
+            if reads > 1:
+                if fault == 'query':
+                    raise TimeoutError('private transport detail')
+                if fault == 'shape':
+                    return []
+                return {**api.source, 'memory': 999}
+        return original(method, path, **kwargs)
+
+    api.request = call
+    journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
+    result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets()).execute()
+    source = next(item for item in result['checks'] if item['id'] == 'source_unchanged')
+    assert (source['status'], source['reason_code']) == (status, reason)
+    assert 'private transport detail' not in json.dumps(result)
 
 
 def test_cloudinit_residual_is_reported_even_if_system_disk_deleted(tmp_path):
@@ -309,7 +344,7 @@ def test_metadata_volumes_count_against_disk_limit(tmp_path):
     api = API(value)
     journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
     result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets()).execute()
-    assert result['overall'] == 'failed'
+    assert result['overall'] == 'unknown'
     assert not any(method != 'GET' for method, *_ in api.calls)
 
 
@@ -339,6 +374,6 @@ def test_missing_config_size_requires_exact_storage_evidence(tmp_path, fault):
     api.request = call
     journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
     result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets()).execute()
-    assert result['overall'] == ('failed' if fault else 'passed')
+    assert result['overall'] == ('unknown' if fault else 'passed')
     if fault:
         assert not any(method != 'GET' for method, *_ in api.calls)
