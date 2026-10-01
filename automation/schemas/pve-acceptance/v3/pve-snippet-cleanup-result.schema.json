@@ -1,26 +1,46 @@
 {
   "$defs": {
-    "Check": {
+    "CleanupItem": {
       "additionalProperties": false,
       "properties": {
-        "id": {
-          "enum": [
-            "full_clone",
-            "disk_boot",
-            "guest_agent",
-            "cloud_init",
-            "injected_hostname",
-            "source_unchanged"
-          ],
-          "title": "Id",
+        "node": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Node",
+          "type": "string"
+        },
+        "storage": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Storage",
+          "type": "string"
+        },
+        "file_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*:snippets/[A-Za-z0-9][A-Za-z0-9_.-]*$",
+          "title": "File Id",
+          "type": "string"
+        },
+        "file_name": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "File Name",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "record_ref": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Record Ref",
           "type": "string"
         },
         "status": {
           "enum": [
-            "passed",
+            "deleted",
+            "already_absent",
+            "referenced",
+            "mismatch",
             "failed",
-            "unknown",
-            "not_attempted"
+            "unknown"
           ],
           "title": "Status",
           "type": "string"
@@ -29,48 +49,19 @@
           "pattern": "^[a-z][a-z0-9_]{0,95}$",
           "title": "Reason Code",
           "type": "string"
-        },
-        "evidence_ref": {
-          "anyOf": [
-            {
-              "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "title": "Evidence Ref"
         }
       },
       "required": [
-        "id",
+        "node",
+        "storage",
+        "file_id",
+        "file_name",
+        "sha256",
+        "record_ref",
         "status",
-        "reason_code",
-        "evidence_ref"
+        "reason_code"
       ],
-      "title": "Check",
-      "type": "object"
-    },
-    "CleanupOutcomes": {
-      "additionalProperties": false,
-      "properties": {
-        "vm": {
-          "$ref": "#/$defs/Outcome"
-        },
-        "volumes": {
-          "$ref": "#/$defs/Outcome"
-        },
-        "snippets": {
-          "$ref": "#/$defs/Outcome"
-        }
-      },
-      "required": [
-        "vm",
-        "volumes",
-        "snippets"
-      ],
-      "title": "CleanupOutcomes",
+      "title": "CleanupItem",
       "type": "object"
     },
     "Collection": {
@@ -155,44 +146,31 @@
       "title": "Deadlines",
       "type": "object"
     },
-    "Outcome": {
+    "OriginalVM": {
       "additionalProperties": false,
       "properties": {
-        "status": {
-          "enum": [
-            "passed",
-            "failed",
-            "unknown",
-            "not_attempted",
-            "not_required"
-          ],
-          "title": "Status",
+        "node": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Node",
           "type": "string"
         },
-        "reason_code": {
-          "pattern": "^[a-z][a-z0-9_]{0,95}$",
-          "title": "Reason Code",
-          "type": "string"
+        "vmid": {
+          "maximum": 999999999,
+          "minimum": 100,
+          "title": "Vmid",
+          "type": "integer"
         },
-        "evidence_ref": {
-          "anyOf": [
-            {
-              "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "title": "Evidence Ref"
+        "smbios_uuid": {
+          "title": "Smbios Uuid",
+          "type": "string"
         }
       },
       "required": [
-        "status",
-        "reason_code",
-        "evidence_ref"
+        "node",
+        "vmid",
+        "smbios_uuid"
       ],
-      "title": "Outcome",
+      "title": "OriginalVM",
       "type": "object"
     },
     "Residual": {
@@ -280,54 +258,6 @@
       "title": "Residuals",
       "type": "object"
     },
-    "Resource": {
-      "additionalProperties": false,
-      "properties": {
-        "kind": {
-          "enum": [
-            "vm",
-            "volume",
-            "snippet"
-          ],
-          "title": "Kind",
-          "type": "string"
-        },
-        "node": {
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
-          "title": "Node",
-          "type": "string"
-        },
-        "identity": {
-          "maxLength": 512,
-          "minLength": 1,
-          "title": "Identity",
-          "type": "string"
-        },
-        "created_by": {
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
-          "title": "Created By",
-          "type": "string"
-        },
-        "ownership": {
-          "enum": [
-            "owned",
-            "not_owned",
-            "unknown"
-          ],
-          "title": "Ownership",
-          "type": "string"
-        }
-      },
-      "required": [
-        "kind",
-        "node",
-        "identity",
-        "created_by",
-        "ownership"
-      ],
-      "title": "Resource",
-      "type": "object"
-    },
     "RuntimeIdentity": {
       "additionalProperties": false,
       "properties": {
@@ -343,59 +273,62 @@
       "title": "RuntimeIdentity",
       "type": "object"
     },
-    "TemplateIdentity": {
+    "ScopeCheck": {
       "additionalProperties": false,
       "properties": {
-        "record_id": {
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
-          "title": "Record Id",
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "unknown"
+          ],
+          "title": "Status",
           "type": "string"
         },
-        "execution_id": {
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
-          "title": "Execution Id",
-          "type": "string"
+        "nodes": {
+          "items": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+            "type": "string"
+          },
+          "title": "Nodes",
+          "type": "array"
         },
-        "artifact_digest": {
-          "pattern": "^sha256:[0-9a-f]{64}$",
-          "title": "Artifact Digest",
-          "type": "string"
+        "storages": {
+          "items": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+            "type": "string"
+          },
+          "title": "Storages",
+          "type": "array"
         },
-        "node": {
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
-          "title": "Node",
-          "type": "string"
+        "permissions_complete": {
+          "title": "Permissions Complete",
+          "type": "boolean"
         },
-        "vmid": {
-          "maximum": 999999999,
-          "minimum": 100,
-          "title": "Vmid",
-          "type": "integer"
+        "inventory_complete": {
+          "title": "Inventory Complete",
+          "type": "boolean"
         },
-        "smbios_uuid": {
-          "title": "Smbios Uuid",
+        "reason_code": {
+          "pattern": "^[a-z][a-z0-9_]{0,95}$",
+          "title": "Reason Code",
           "type": "string"
         }
       },
       "required": [
-        "record_id",
-        "execution_id",
-        "artifact_digest",
-        "node",
-        "vmid",
-        "smbios_uuid"
+        "status",
+        "nodes",
+        "storages",
+        "permissions_complete",
+        "inventory_complete",
+        "reason_code"
       ],
-      "title": "TemplateIdentity",
+      "title": "ScopeCheck",
       "type": "object"
     }
   },
   "additionalProperties": false,
   "properties": {
-    "schema_version": {
-      "const": 2,
-      "title": "Schema Version",
-      "type": "integer"
-    },
     "deadlines": {
       "$ref": "#/$defs/Deadlines"
     },
@@ -439,29 +372,62 @@
     "collection": {
       "$ref": "#/$defs/Collection"
     },
+    "schema_version": {
+      "const": 2,
+      "title": "Schema Version",
+      "type": "integer"
+    },
     "kind": {
-      "const": "pve-template-acceptance-result",
+      "const": "pve-snippet-cleanup-result",
       "title": "Kind",
       "type": "string"
     },
-    "template": {
-      "$ref": "#/$defs/TemplateIdentity"
+    "origin": {
+      "enum": [
+        "deployment",
+        "acceptance"
+      ],
+      "title": "Origin",
+      "type": "string"
     },
-    "temporary_resources": {
-      "items": {
-        "$ref": "#/$defs/Resource"
-      },
-      "title": "Temporary Resources",
-      "type": "array"
+    "original_vm": {
+      "$ref": "#/$defs/OriginalVM"
     },
-    "checks": {
-      "items": {
-        "$ref": "#/$defs/Check"
-      },
-      "title": "Checks",
-      "type": "array"
+    "original_execution_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Original Execution Id",
+      "type": "string"
     },
-    "failure_stage": {
+    "delete_plan_digest": {
+      "anyOf": [
+        {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Delete Plan Digest"
+    },
+    "acceptance_request_digest": {
+      "anyOf": [
+        {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Acceptance Request Digest"
+    },
+    "deletion_execution_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Deletion Execution Id",
+      "type": "string"
+    },
+    "retry_of": {
       "anyOf": [
         {
           "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
@@ -471,14 +437,22 @@
           "type": "null"
         }
       ],
-      "title": "Failure Stage"
+      "title": "Retry Of"
     },
-    "cleanup": {
-      "$ref": "#/$defs/CleanupOutcomes"
+    "scope_check": {
+      "$ref": "#/$defs/ScopeCheck"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/CleanupItem"
+      },
+      "maxItems": 256,
+      "minItems": 1,
+      "title": "Items",
+      "type": "array"
     }
   },
   "required": [
-    "schema_version",
     "deadlines",
     "deadline_outcome",
     "facility_writes",
@@ -488,15 +462,20 @@
     "residuals",
     "overall",
     "collection",
+    "schema_version",
     "kind",
-    "template",
-    "temporary_resources",
-    "checks",
-    "failure_stage",
-    "cleanup"
+    "origin",
+    "original_vm",
+    "original_execution_id",
+    "delete_plan_digest",
+    "acceptance_request_digest",
+    "deletion_execution_id",
+    "retry_of",
+    "scope_check",
+    "items"
   ],
-  "title": "AcceptanceResult",
+  "title": "CleanupResult",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://iaas.invalid/schemas/pve-acceptance/v2/pve-template-acceptance-result.schema.json"
+  "$id": "https://iaas.invalid/schemas/pve-acceptance/v3/pve-snippet-cleanup-result.schema.json"
 }

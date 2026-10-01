@@ -34,7 +34,7 @@ def test_shared_contract_fixture(case):
 
 def test_schema_exports_are_current():
     for name, schema in contract_schemas().items():
-        path = ROOT / 'automation/schemas/pve-acceptance/v2' / f'{name}.schema.json'
+        path = ROOT / 'automation/schemas/pve-acceptance/v3' / f'{name}.schema.json'
         assert json.loads(path.read_text()) == schema
 
 

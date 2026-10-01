@@ -49,6 +49,15 @@ def test_repeat_start_refuses_without_overwriting(tmp_path):
     assert (root / 'journal.json').read_bytes() == before
 
 
+def test_legacy_start_refused_before_creating_execution_state(tmp_path):
+    request, admission = materials()
+    request['schema_version'] = 2
+    root = tmp_path / 'legacy'
+    with pytest.raises(ValueError):
+        begin(root, 'accept', request, admission, 'accept-001', 'sha256:' + 'e' * 64)
+    assert not root.exists()
+
+
 def test_start_refuses_existing_material_even_if_marker_missing(tmp_path):
     root, request, _ = started(tmp_path)
     (root / 'started').unlink(missing_ok=True)

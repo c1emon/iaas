@@ -67,6 +67,21 @@
       "title": "Deadlines",
       "type": "object"
     },
+    "RuntimeIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "image_digest": {
+          "pattern": "^(?:[^@\\s]+@)?sha256:[0-9a-f]{64}$",
+          "title": "Image Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "image_digest"
+      ],
+      "title": "RuntimeIdentity",
+      "type": "object"
+    },
     "SSHConnection": {
       "additionalProperties": false,
       "properties": {
@@ -139,6 +154,11 @@
           "title": "Vmid",
           "type": "integer"
         },
+        "pool": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Pool",
+          "type": "string"
+        },
         "storage": {
           "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
           "title": "Storage",
@@ -204,6 +224,7 @@
       "required": [
         "node",
         "vmid",
+        "pool",
         "storage",
         "bridge",
         "vlan_tag",
@@ -246,6 +267,27 @@
       ],
       "title": "Timeouts",
       "type": "object"
+    },
+    "VMIDPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "acceptance": {
+          "items": {
+            "maximum": 999999999,
+            "minimum": 100,
+            "type": "integer"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Acceptance",
+          "type": "array"
+        }
+      },
+      "required": [
+        "acceptance"
+      ],
+      "title": "VMIDPolicy",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -256,7 +298,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 2,
+      "const": 3,
       "title": "Schema Version",
       "type": "integer"
     },
@@ -265,6 +307,17 @@
     },
     "target": {
       "$ref": "#/$defs/Target"
+    },
+    "cluster_scope": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Cluster Scope",
+      "type": "string"
+    },
+    "vmid_policy": {
+      "$ref": "#/$defs/VMIDPolicy"
+    },
+    "runtime": {
+      "$ref": "#/$defs/RuntimeIdentity"
     },
     "template_record": {
       "additionalProperties": true,
@@ -307,6 +360,9 @@
     "schema_version",
     "deadlines",
     "target",
+    "cluster_scope",
+    "vmid_policy",
+    "runtime",
     "template_record",
     "temporary_vm",
     "cloud_init",
@@ -317,5 +373,5 @@
   "title": "AcceptanceRequest",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://iaas.invalid/schemas/pve-acceptance/v2/pve-template-acceptance-request.schema.json"
+  "$id": "https://iaas.invalid/schemas/pve-acceptance/v3/pve-template-acceptance-request.schema.json"
 }

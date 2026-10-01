@@ -1,4 +1,4 @@
-# PVE acceptance / snippet cleanup v2 schemas
+# PVE acceptance v3 / snippet cleanup v2 schemas
 
 The four independent request/result contracts and scoped execution-admission schema are exported from
 `iaas.pve_acceptance_contracts.contract_schemas()`. Shared accepted and rejected

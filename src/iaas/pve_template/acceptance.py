@@ -448,7 +448,9 @@ class Acceptance:
         cleanup['volumes'] = {'status': 'passed', 'reason_code': 'deleted', 'evidence_ref': 'journal.json'}
 
     def execute(self) -> dict[str, Any]:
-        self.result = {'kind': 'pve-template-acceptance-result', 'schema_version': 2,
+        self.result = {'kind': 'pve-template-acceptance-result', 'schema_version': 3,
+            'cluster_scope': self.request['cluster_scope'], 'pool': self.temporary['pool'],
+            'vmid_policy': self.request['vmid_policy'],
             'deadlines': self.request['deadlines'], 'deadline_outcome': self.budget.outcome,
             'facility_writes': self.journal['facility_writes'],
             'execution_id': self.journal['execution_id'], 'request_digest': self.journal['request_digest'],

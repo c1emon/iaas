@@ -4,13 +4,13 @@
 
 `cases.json` 是 IaaS 和 infra-ops 共用入口，列出每个 JSON 的 kind 和预期接受/拒绝；IaaS 的 `tests/python/test_pve_acceptance_contracts.py` 直接加载这份清单。文件名 `reject-*` 表示合同拒绝用例。结果成功样例也只是合同样例。
 
-- `acceptance-request.json`：固定 publication record、临时 VM、注入 hostname、专用 snippet storage/SSH 目标、六项检查、三个相对上限及两个冻结的绝对 UTC 截止。
+- `acceptance-request.json`：固定 publication record/v3、cluster_scope、临时 VM/pool、验收 VMID 闭区间、runtime digest、注入 hostname、专用 snippet storage/SSH 目标、六项检查、三个相对上限及两个冻结的绝对 UTC 截止。
 - `cleanup-deployment-request.json`：原已批准删除计划、执行 admission、删除与 state 写回引用。
 - `cleanup-acceptance-request.json`：原验收 request/journal、确认的临时 VM 删除与专属 snippet 所有权引用，无 plan/state。
 - `cleanup-retry-request.json`：新执行使用原清单及前次 request/journal 引用。首次清理的 `retry_of` 和 `retry_materials` 必须同时为 null。
 - `acceptance-result.json` / `cleanup-result.json`：允许公开的身份、检查/清理状态及完整性结论，不含 hostname、cloud-init 内容或 guest 输出。
 
-对应 schema 在 `automation/schemas/pve-acceptance/v2/`。JSON schema 检查结构和 origin/retry 互斥分支；Python 校验进一步核对身份、期限和 overall 逻辑。实际 mutation 还须加载原证据，检查摘要、授权、原任务终止、完整引用范围和互斥；通过 schema 不等于获得执行授权。
+对应 schema 在 `automation/schemas/pve-acceptance/v3/`。JSON schema 检查结构和 origin/retry 互斥分支；Python 校验进一步核对身份、期限和 overall 逻辑。实际 mutation 还须加载原证据，检查摘要、授权、原任务终止、完整引用范围和互斥；通过 schema 不等于获得执行授权。
 
 使用既有 canonical JSON（键排序、紧凑分隔符、UTF-8、拒绝浮点及重复 key）计算 `sha256:` request digest。`options.execution_mode` 位于 environment，不属于固定请求。`EvidenceRef.sha256` 是无前缀的文件 SHA-256，路径相对于只读 evidence root；禁止绝对路径、逃逸及符号链接。
 

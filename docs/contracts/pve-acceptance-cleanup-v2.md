@@ -1,18 +1,19 @@
-# PVE acceptance and snippet cleanup v2
+# PVE acceptance v3 and snippet cleanup v2
 
-Current source implementation adds `pve-template accept` and `pve snippet-cleanup`.
-The absolute-deadline implementation is pending release. Software fixtures are
+The implementation branch uses acceptance request/result v3 and publication
+record/result/preview v3 (publish request v2). This change is not yet released;
+its acceptance plan/start and recovery entrypoints are still being integrated.
+Software fixtures are
 separate from qualification of a released image or a real facility.
-Launcher interface remains v1; capabilities advertise acceptance request/result v2
-and snippet cleanup request/result v2. Existing publication record/result versions
-remain v2. Consumers must check advertised capabilities before invoking an image.
+Launcher interface remains v1; snippet cleanup request/result remains v2.
+Consumers must check the released image's advertised capabilities before invoking it.
 
 ## Contract artifacts
 
-- [JSON schemas](../../automation/schemas/pve-acceptance/v2/README.md): current request/result and scoped admission schemas.
+- [JSON schemas](../../automation/schemas/pve-acceptance/v3/README.md): current request/result and scoped admission schemas.
 - [Shared fixtures](../examples/pve-acceptance/README.md): normal and rejected inputs, used by the Python contract tests.
 - [Launcher examples](../runtime-launcher.md): file mappings and start/observe commands.
-- [Cleanup helper installation and permissions](../operations/pve-snippet-cleanup.md): protocol v1, exact evidence references and platform limits.
+- [Cleanup helper installation and permissions](../operations/pve-snippet-cleanup.md): deadline protocol v2 and helper-capabilities/v1, exact evidence references and platform limits.
 
 Request JSON rejects duplicate keys, unknown fields/versions, floats and nonfinite
 values. The normalized request SHA-256 binds execution admission `plan_digest`

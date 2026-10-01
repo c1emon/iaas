@@ -96,5 +96,5 @@
   "title": "OneShotAdmission",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://iaas.invalid/schemas/pve-acceptance/v2/pve-one-shot-execution-admission.schema.json"
+  "$id": "https://iaas.invalid/schemas/pve-acceptance/v3/pve-one-shot-execution-admission.schema.json"
 }

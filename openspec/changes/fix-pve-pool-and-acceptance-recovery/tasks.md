@@ -17,7 +17,9 @@
 ## 3. 模板 publication 与当前模板记录
 
 - [x] 3.1 更新 publication request/v2、preview/result/record/v3，绑定可选 pool，在原生创建请求直接指定池并在结果中核实际归属；用不入池/既有池/不存在或无权池/计划池更改拒绝的 fake API 测试和合同 fixture 验证。
-- [ ] 3.2 将普通 VM、验收和当前 snippet acceptance-origin 消费校验统一到最新模板/验收合同，更新 schemas/examples/docs，拒绝旧 start 输入且不改 state；运行合同生成一致性及模板消费者定向回归。
+- [x] 3.2 将普通 VM、验收和当前 snippet acceptance-origin 消费校验统一到最新模板/验收合同，更新 schemas/examples/docs，拒绝旧 start 输入且不改 state；运行合同生成一致性及模板消费者定向回归。
+
+  软件证据：合同/验收执行/snippet 消费组合 123 passed；合同与验收执行 Pyright 0 errors。v3 已进入源码，plan/start 接入与发布仍见未完成任务。
 
 ## 4. 验收 plan、执行与诊断
 

@@ -1,8 +1,8 @@
 {
   "kind": "pve-template-acceptance-result",
-  "schema_version": 2,
+  "schema_version": 3,
   "execution_id": "accept-001",
-  "request_digest": "sha256:b9f72565704165800a712928a4efee74562737c554b78a9a6c43f42747c525e7",
+  "request_digest": "sha256:e22d06e5e2254975385bdfe2ad92157dac97a605e400a7aae430528c7a5a0968",
   "runtime": {
     "image_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
   },
@@ -96,5 +96,13 @@
     "phase": null,
     "status": "not_exceeded"
   },
-  "facility_writes": "issued"
+  "facility_writes": "issued",
+  "cluster_scope": "fixture-cluster",
+  "vmid_policy": {
+    "acceptance": [
+      9100,
+      9199
+    ]
+  },
+  "pool": "acceptance"
 }
