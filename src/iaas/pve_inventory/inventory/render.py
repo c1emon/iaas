@@ -118,6 +118,11 @@ def build_markdown(model: dict[str, Any]) -> str:
                 f"| {vm['name']} | {vm['vmid']} | {vm['lifecycle_class']} | {vm['node']} | {nic_name} | {network} | {mac_address} | {ip_address} | {gateway} | {default_route} | {ansible_connection} | {dns} | {template} | {vm['storage']['disk_datastore_id']} | {vm['resources']['cores']} | {vm['resources']['memory_mib']} | {vm['resources']['root_disk_gib']} | {started} | {on_boot} | {groups} | {tags} | {passthrough} |"
             )
     lines.extend(["", "## Cluster defaults", "", f"- Default template: {model['cluster']['default_template']}", f"- VM cores: {model['cluster']['vm_defaults']['cores']}", f"- VM memory MiB: {model['cluster']['vm_defaults']['memory_mib']}", f"- VM root disk GiB: {model['cluster']['vm_defaults']['root_disk_gib']}"])
+    lines.extend(["", "## VMID policy and pool placement", ""])
+    for name, bounds in sorted(model["cluster"]["reserved_vm_id_ranges"].items()):
+        lines.append(f"- {name}: {bounds[0]}–{bounds[1]} (inclusive)")
+    for vm in model["vms"]:
+        lines.append(f"- {vm['name']} ({vm['vmid']}): pool {vm['pool'] or 'none'}")
     return "\n".join(lines) + "\n"
 
 

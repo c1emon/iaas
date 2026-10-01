@@ -4,8 +4,8 @@
 
 ## 1. 普通 VM 的 pool 与 VMID 策略
 
-- [ ] 1.1 补 inventory 非空 pool 校验、可选 acceptance 区间及互斥/普通 VM 排除，生成和文档保留同一策略；用未指定池、指定池、区间端点/重叠/落入预留区间的 fixture 验证。
-- [ ] 1.2 将 pool_id 同时传入 protected/unprotected OpenTofu VM resource，保留原资源地址；用 HCL/原生 plan fixture 核验实际参数和 pool_id=null，运行既有 resource parity guard。
+- [x] 1.1 补 inventory 非空 pool 校验、可选 acceptance 区间及互斥/普通 VM 排除，生成和文档保留同一策略；用未指定池、指定池、区间端点/重叠/落入预留区间的 fixture 验证。
+- [x] 1.2 将 pool_id 同时传入 protected/unprotected OpenTofu VM resource，保留原资源地址；用 HCL/原生 plan fixture 核验实际参数和 pool_id=null，运行既有 resource parity guard。
 - [ ] 1.3 在普通 VM saved companions/review 中冻结 pool、策略及具体 VMID，执行前检查绑定/权限/占用和适用的调用方集群/VMID reservation；以池/范围篡改、占用和模拟竞争拒绝验证，更新当前调用示例与串行化说明。
 
 ## 2. 共享只读准入和 helper 条件

@@ -15,6 +15,7 @@ resource "proxmox_virtual_environment_vm" "protected" {
   name            = var.vm.name
   node_name       = var.vm.node
   vm_id           = var.vm.vmid
+  pool_id         = var.vm.pool
   started         = var.started
   on_boot         = var.on_boot
   bios            = var.template.bios
@@ -111,6 +112,7 @@ resource "proxmox_virtual_environment_vm" "unprotected" {
   name            = var.vm.name
   node_name       = var.vm.node
   vm_id           = var.vm.vmid
+  pool_id         = var.vm.pool
   started         = var.started
   on_boot         = var.on_boot
   bios            = var.template.bios

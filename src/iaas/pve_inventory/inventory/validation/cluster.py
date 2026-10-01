@@ -13,7 +13,7 @@ from iaas.common.validation import as_list, as_mapping, require_bool, require_no
 
 PVE_VMID_MIN = 100
 PVE_VMID_MAX = 999_999_999
-VMID_RANGE_NAMES = {"templates", "long_lived", "ephemeral_lab"}
+VMID_RANGE_NAMES = {"templates", "long_lived", "ephemeral_lab", "acceptance"}
 PVE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
@@ -31,6 +31,8 @@ def _validate_vmid_ranges(value: Any) -> dict[str, list[int]]:
     require_unknown_keys(ranges, VMID_RANGE_NAMES, "cluster.reserved_vm_id_ranges")
     normalized: dict[str, list[int]] = {}
     for name in sorted(VMID_RANGE_NAMES):
+        if name == "acceptance" and name not in ranges:
+            continue
         bounds = as_list(ranges.get(name), f"cluster.reserved_vm_id_ranges.{name}")
         require(len(bounds) == 2, f"cluster.reserved_vm_id_ranges.{name}: must contain exactly two bounds")
         lower, upper = bounds
@@ -212,7 +214,8 @@ def validate_cluster(cluster_doc: dict[str, Any]) -> dict[str, Any]:
         require_positive_int(vm_defaults.get(field), f"cluster.vm_defaults.{field}")
     for field in ("cpu_type", "bios", "machine", "clone_mode", "scsi_controller", "primary_disk"):
         require_non_empty_string(vm_defaults.get(field), f"cluster.vm_defaults.{field}")
-    require(vm_defaults.get("pool") is None or isinstance(vm_defaults.get("pool"), str), "cluster.vm_defaults.pool must be null or a string")
+    default_pool = vm_defaults.get("pool")
+    require(default_pool is None or (isinstance(default_pool, str) and re.fullmatch(PVE_NAME_RE, default_pool) is not None), "cluster.vm_defaults.pool must be null or a nonempty PVE-safe string")
 
     template_vmids: set[int] = set()
     template_names: set[str] = set()

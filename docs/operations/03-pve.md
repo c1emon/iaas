@@ -98,6 +98,7 @@ permissions; software fixture results do not establish live PVE qualification.
 | `reserved_vm_id_ranges.templates` | 模板 VMID 闭区间。 | 与其他区间不重叠。 |
 | `reserved_vm_id_ranges.long_lived` | 长期 VMID 闭区间。 | long-lived VM 只能落入此范围。 |
 | `reserved_vm_id_ranges.ephemeral_lab` | 实验/可重建 VMID 闭区间。 | ephemeral VM 只能落入此范围。 |
+| `reserved_vm_id_ranges.acceptance` | 可选专用验收 VMID 闭区间。 | 两端包含，不得与其他区间重叠；普通 VM 不得使用。 |
 | `storage_roles.<role>.datastore` | PVE 实际 datastore 名称。 | role 是可移植符号；存储必须承载声明的 content。 |
 | `storage_roles.<role>.purpose` | 给操作者的用途说明。 | 不替代 PVE 真实能力检查。 |
 | `storage_roles.<role>.content` | `disk`、`iso`、`import`、`snippets` 等内容类型。 | 生成器会校验 template/cloud-init 的 role 是否具备所需内容。 |
@@ -166,7 +167,7 @@ bridge、固件与 cloud-init 默认值都属于发布请求，不再写入 PVE 
 | `resources` | 可选 `cores`、`memory_mib`、`root_disk_gib` 覆盖。 | 必须为正整数。 |
 | `storage.disk_role` | 可选根盘 storage role 覆盖。 | 必须声明且可承载 disk。 |
 | `ansible_groups` / `tags` | 生成 inventory 组和 PVE tags。 | 仅声明用途，不配置业务。 |
-| `pool` | 可选 PVE pool。 | `null` 或字符串。 |
+| `pool` | 可选既有 PVE pool。 | 省略或 `null` 表示不入池；指定值必须是非空 PVE-safe 名称，原样传入两种生命周期 resource 的 `pool_id`。不继承模板或默认池，不创建池或修改 ACL。 |
 | `boot.started` / `boot.on_boot` | apply 后启动及宿主机启动策略。 | 显式布尔；long-lived 的默认 on-boot 政策来自生命周期。 |
 | `ha.enabled` / `group` / `state` | HA 声明。 | passthrough VM 必须禁用 HA。 |
 | `passthrough` | PCI mapping 消费声明。 | `null` 或受限 device 列表；见下文。 |
