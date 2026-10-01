@@ -17,6 +17,7 @@ components:
       root_outputs: ./verification-root/outputs.tf
       root_lock: ./verification-root/.terraform.lock.hcl
     options:
+      cluster_scope: synthetic-pve-cluster
       root:
         id: synthetic-delete-root
         directory: .

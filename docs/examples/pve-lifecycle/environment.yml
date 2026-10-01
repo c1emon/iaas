@@ -22,6 +22,7 @@ components:
       root_outputs: ./root/outputs.tf
       root_lock: ./root/.terraform.lock.hcl
     options:
+      cluster_scope: synthetic-pve-cluster
       root:
         id: synthetic-root
         directory: .

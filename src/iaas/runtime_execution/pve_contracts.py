@@ -151,6 +151,25 @@ def validate_execution_admission(value: Any, *, digest: str | None = None,
     return {**deepcopy(document), "execution_id": actual_execution_id}
 
 
+def validate_vmid_reservation(admission: dict[str, Any], *, cluster_scope: str,
+                              vmids: list[int]) -> dict[str, Any]:
+    """Bind caller cluster/VMID serialization to its existing consumption IDs."""
+    reservation = admission.get("vmid_reservation")
+    require(isinstance(cluster_scope, str) and bool(cluster_scope.strip())
+            and isinstance(vmids, list) and all(type(vmid) is int and 100 <= vmid <= 999_999_999 for vmid in vmids)
+            and vmids == sorted(set(vmids)) and isinstance(reservation, dict)
+            and set(reservation) == {"cluster_scope", "vmids", "reservation_id", "context_id"}
+            and all(isinstance(reservation.get(name), str) and bool(reservation[name])
+                    for name in ("reservation_id", "context_id"))
+            and reservation.get("cluster_scope") == cluster_scope
+            and reservation.get("vmids") == vmids
+            and all(type(vmid) is int for vmid in reservation["vmids"])
+            and reservation.get("reservation_id") == admission.get("consumption", {}).get("reservation_id")
+            and reservation.get("context_id") == admission.get("serialization", {}).get("context_id"),
+            "vmid_reservation_conflict")
+    return deepcopy(cast(dict[str, Any], reservation))
+
+
 def validate_target(value: Any, name: str = "target") -> dict[str, Any]:
     """Validate a fixed, single PVE target without accepting provider aliases."""
     target = _object(value, name)
@@ -223,9 +242,9 @@ def validate_template_admission(value: Any) -> dict[str, Any]:
     require(isinstance(document["purpose"], str) and document["purpose"], "template_admission.purpose is required")
     require(document["status"] in {"available", "pending_validation", "revoked"}, "invalid template admission status")
     require("template_record" in document and "object" not in document,
-            "template admission requires pve-template-record/v2")
-    from iaas.pve_template.contracts import validate_template_record_v2
-    validate_template_record_v2(document["template_record"], complete=False)
+            "template admission requires pve-template-record/v3")
+    from iaas.pve_template.contracts import validate_template_record_v3
+    validate_template_record_v3(document["template_record"], complete=False)
     require(document["status"] != "revoked", "template admission is revoked")
     return deepcopy(document)
 

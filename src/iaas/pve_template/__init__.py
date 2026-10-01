@@ -11,7 +11,7 @@ from .contracts import (
     validate_publish_evidence,
     validate_publish_request,
     validate_retire_request,
-    validate_template_record_v2,
+    validate_template_record_v3,
 )
 
 __all__ = [
@@ -25,5 +25,5 @@ __all__ = [
     "validate_publish_evidence",
     "validate_publish_request",
     "validate_retire_request",
-    "validate_template_record_v2",
+    "validate_template_record_v3",
 ]

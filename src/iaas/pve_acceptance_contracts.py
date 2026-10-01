@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from iaas.image.contracts import canonical_digest as canonical_digest
 from iaas.image.contracts import load_strict_json as load_strict_json
-from iaas.pve_template.contracts import validate_template_record_v2
+from iaas.pve_template.contracts import validate_template_record_v3
 
 Identifier = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")]
 Digest = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
@@ -195,7 +195,7 @@ class AcceptanceRequest(Contract):
 
     @model_validator(mode='after')
     def bindings(self):
-        record = validate_template_record_v2(self.template_record)
+        record = validate_template_record_v3(self.template_record)
         if record['origin'] != 'publication' or record['target'] != self.target.model_dump():
             raise ValueError('acceptance requires matching published template')
         if record['node'] != self.target.node or record['vmid'] == self.temporary_vm.vmid:

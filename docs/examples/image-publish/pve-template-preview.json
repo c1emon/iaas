@@ -1,10 +1,10 @@
 {
   "kind": "pve-template-preview",
-  "schema_version": 2,
+  "schema_version": 3,
   "action": "publish",
   "fixed_input": {
     "kind": "pve-template-publish-request",
-    "schema_version": 1,
+    "schema_version": 2,
     "artifact": {
       "kind": "image-artifact",
       "schema_version": 1,
@@ -99,7 +99,9 @@
       "guest_acceptance_scope": "caller"
     },
     "transport": "controller-upload",
-    "test_results": []
+    "test_results": [],
+    "cluster_scope": "example-cluster",
+    "pool": null
   },
   "artifact_digest": "sha256:a3cc5759eb5c646c4d290bfc81f25d54ee008e3a67336864a2a4055f739eca85",
   "disk_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -131,5 +133,5 @@
     "receiving_temp": "unobserved",
     "proxy_limits": "unobserved"
   },
-  "preview_digest": "sha256:e3c29ed2cf025f5c17b6c287f036f945275f85b2de3f7a4adb5d235acc902210"
+  "preview_digest": "sha256:f9ee2f230b48986059e0c8f71a6020c5ca0e18c42a69100557868eecffeb18d6"
 }

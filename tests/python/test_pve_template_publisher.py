@@ -25,6 +25,8 @@ class Outputs:
 class API:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, dict | None]] = []
+        self.created = False
+        self.pool = None
         self.config = {
             "smbios1": "uuid=template-uuid",
             "scsihw": "virtio-scsi-single",
@@ -43,13 +45,15 @@ class API:
                 return {fields["path"]: {"Datastore.Audit": 1, "Datastore.Allocate": 1,
                                           "Datastore.AllocateTemplate": 1,
                                           "Datastore.AllocateSpace": 1}}
-            return {"/vms/9001": {"VM.Audit": 1}}
+            return {"/vms/9001": {name: 1 for name in ("VM.Audit", "VM.Allocate", "VM.Config.CPU", "VM.Config.Memory", "VM.Config.Disk", "VM.Config.Network", "VM.Config.Options", "VM.Config.HWType", "VM.Config.Cloudinit")}}
         if method == "GET" and path.endswith("/cluster/resources"):
-            return []
+            return [{"vmid": 9001, "pool": self.pool}] if self.created else []
         if method == "GET" and path.endswith("/storage"):
             return [{"storage": "images", "enabled": 1, "active": 1,
                      "content": "images,import", "avail": 32 * 1024 ** 3}]
         if method == "POST" and path.endswith("/qemu"):
+            self.created = True
+            self.pool = fields.get("pool")
             self.config.update({key: value for key, value in fields.items() if key != "vmid"})
             return "/nodes/cohe/tasks/UPID:cohe:00000000:00000000:00000002:create:100:root@pam:"
         if method == "POST" and path.endswith("/config"):
@@ -136,7 +140,7 @@ def test_observed_storage_with_shared_staging_and_images_requires_both_capabilit
                     return {fields["path"]: {"Datastore.Audit": 1, "Datastore.Allocate": 1,
                                               "Datastore.AllocateTemplate": 1,
                                               "Datastore.AllocateSpace": 1}}
-                return {"/vms/9001": {"VM.Audit": 1}}
+                return {"/vms/9001": {name: 1 for name in ("VM.Audit", "VM.Allocate", "VM.Config.CPU", "VM.Config.Memory", "VM.Config.Disk", "VM.Config.Network", "VM.Config.Options", "VM.Config.HWType", "VM.Config.Cloudinit")}}
             if path.endswith("/cluster/resources"):
                 return []
             return [{"storage": "images", "enabled": 1, "active": 1, "avail": 2**40,
@@ -153,7 +157,7 @@ def test_observed_accepts_zero_storage_permission_propagation_value() -> None:
         def request(self, method, path, *, fields=None):
             if path.endswith("/access/permissions"):
                 if fields and fields.get("path") == "/vms/9001":
-                    return {"/vms/9001": {"VM.Audit": 1}}
+                    return {"/vms/9001": {name: 1 for name in ("VM.Audit", "VM.Allocate", "VM.Config.CPU", "VM.Config.Memory", "VM.Config.Disk", "VM.Config.Network", "VM.Config.Options", "VM.Config.HWType", "VM.Config.Cloudinit")}}
                 return {"/storage/images": {"Datastore.Audit": 1, "Datastore.Allocate": 0,
                                              "Datastore.AllocateTemplate": 0,
                                              "Datastore.AllocateSpace": 0}}
@@ -191,8 +195,9 @@ def test_pve_http_error_preserves_status_without_response_body() -> None:
             raise HTTPError("https://pve.example.invalid/private", 400, "invalid content", {}, None)
 
     client.opener = FailingOpener()
-    with pytest.raises(runtime.OperationFailed, match=r"PVE API GET request failed \(HTTP 400\)") as error:
+    with pytest.raises(runtime.RequestOutcomeUnknown, match='request_outcome_unknown') as error:
         client.request("GET", "/api2/json/nodes/cohe/storage/images/content")
+    assert error.value.http_status == 400
     assert "invalid content" not in str(error.value)
     assert "private" not in str(error.value)
 
@@ -270,3 +275,61 @@ def test_upload_file_preserves_safe_failure_category(tmp_path, monkeypatch, fail
     with pytest.raises(runtime.OperationFailed, match=expected) as error:
         client.upload_file("/api2/json/upload", disk, disk.name, "a" * 64)
     assert "secret" not in str(error.value)
+
+
+@pytest.mark.parametrize("pool", [None, "templates"])
+def test_publication_pool_is_bound_created_and_verified(tmp_path, monkeypatch, pool):
+    class PoolAPI(API):
+        def request(self, method, path, *, fields=None, **kwargs):
+            if path == "/api2/json/pools/templates":
+                self.calls.append((method, path, fields))
+                return {"poolid": "templates", "members": []}
+            if path.endswith("/access/permissions") and fields == {"path": "/pool/templates"}:
+                return {"/pool/templates": {"VM.Allocate": 0}}
+            return super().request(method, path, fields=fields, **kwargs)
+    raw = publish_request()
+    raw["pool"] = pool
+    request = contracts.validate_publish_request(raw)
+    preview = contracts.build_publish_preview(request, runtime={"image_digest": "runtime@sha256:" + "a" * 64})
+    api = PoolAPI()
+    execution = SimpleNamespace(outputs=Outputs(tmp_path / "outputs"), environ={"PVE_ARTIFACT_URL": request["source"]["object_ref"]})
+    monkeypatch.setattr(runtime, "_client", lambda *args: api)
+    monkeypatch.setattr(runtime, "_download", lambda url, path, digest, size: path.write_bytes(b"disk"))
+    monkeypatch.setattr(runtime, "_verify_qcow2", lambda *args: None)
+    result = runtime._publish(SimpleNamespace(), execution, request, preview, "publish-pool")
+    create = next(row[2] for row in api.calls if row[0] == "POST" and row[1].endswith("/qemu"))
+    assert create.get("pool") == pool
+    assert ("pool" in create) is (pool is not None)
+    assert result["template_record"]["pool"] == pool
+    assert result["template_record"]["cluster_scope"] == "test-cluster"
+    assert preview["fixed_input"]["pool"] == pool
+
+
+@pytest.mark.parametrize("failure", ["missing", "denied"])
+def test_unusable_publication_pool_refuses_before_upload(tmp_path, monkeypatch, failure):
+    class BadPool(API):
+        def request(self, method, path, *, fields=None, **kwargs):
+            if path == "/api2/json/pools/templates":
+                return None if failure == "missing" else {"poolid": "templates", "members": []}
+            if path.endswith("/access/permissions") and fields == {"path": "/pool/templates"}:
+                return {"/pool/templates": {}}
+            if path.endswith("/access/permissions") and fields == {"path": "/vms/9001"}:
+                return {"/vms/9001": {"VM.Audit": 1}}
+            return super().request(method, path, fields=fields, **kwargs)
+    raw = publish_request()
+    raw["pool"] = "templates"
+    request = contracts.validate_publish_request(raw)
+    api = BadPool()
+    from iaas.pve_template.admission import AdmissionError
+    with pytest.raises(AdmissionError):
+        runtime._observed(SimpleNamespace(), api, request["target"], request)
+    assert not any(row[0] in {"POST", "UPLOAD"} for row in api.calls)
+
+
+def test_publication_pool_change_refuses_before_any_api_call(tmp_path, monkeypatch):
+    request = contracts.validate_publish_request(publish_request())
+    preview = contracts.build_publish_preview(request, runtime={"image_digest": "runtime@sha256:" + "a" * 64})
+    request["pool"] = "changed"
+    monkeypatch.setattr(runtime, "_client", lambda *args: pytest.fail("changed pool must refuse before client creation"))
+    with pytest.raises(runtime.ValidationError, match="approved preview"):
+        runtime._publish(SimpleNamespace(), SimpleNamespace(), request, preview, "publish-pool")

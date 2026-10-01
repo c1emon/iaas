@@ -124,6 +124,18 @@ confirmed baseline identity/configuration mismatch is `source_changed` (failed).
 Overall aggregation gives unknown priority even when the original capacity
 failure is known; the original check still reports `disk_limit_exceeded`.
 
+The authenticated HTTPS boundary distinguishes `request_rejected` from
+`request_outcome_unknown`. A native PVE 403 permission check for the exact VM,
+with the native server marker and matching request URL, ends only that request's
+active uncertainty. Guest ping fails immediately on that rejection. Guest exec
+records method/path/status/HTTP code without copying the response or identity.
+Earlier issued writes remain issued; another active unknown still prevents
+cleanup. Generic 403, timeout, connection loss, or invalid response remain
+unknown. This classification follows the native pre-dispatch permission
+exception and response marker in PVE's
+[exception implementation](https://github.com/proxmox/pve-common/blob/master/src/PVE/Exception.pm)
+and [HTTP server](https://github.com/proxmox/pve-http-server/blob/master/src/PVE/APIServer/AnyEvent.pm).
+
 The HTTPS token needs `VM.Audit` on source/temporary VM, `VM.Clone` on source,
 `VM.Allocate`, `VM.Config.CPU`, `VM.Config.Memory`, `VM.Config.Network`,
 `VM.Config.Options`, `VM.Config.Cloudinit`, `VM.PowerMgmt`, and

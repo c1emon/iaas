@@ -24,7 +24,7 @@ def request():
                   cores=2, memory=2048, agent='1', net0='virtio,bridge=vmbr0', digest='source')
     record = value['template_record']
     value['template_record'] = mod.pve._record_from_config(
-        {'version': 'template', 'target': value['target'], 'vmid': record['vmid'],
+        {'version': 'template', 'target': value['target'], 'vmid': record['vmid'], 'cluster_scope': 'fixture-cluster',
          'artifact_digest': record['artifact_digest']}, config, record['execution_id'])
     return value
 
@@ -274,6 +274,50 @@ def test_inherited_cloudinit_volume_is_never_adopted_or_deleted(tmp_path):
     assert result['overall'] == 'unknown'
     assert not any(method == 'DELETE' for method, *_ in api.calls)
     assert not result['residuals']['inventory_complete']
+
+
+@pytest.mark.parametrize('operation', ['exec', 'ping'])
+def test_authoritative_guest_rejection_allows_owned_cleanup(tmp_path, operation):
+    value = request()
+    api = API(value)
+    original = api.request
+
+    def call(method, path, **kwargs):
+        if path.endswith('/agent/' + operation):
+            raise mod.RequestRejected(method, path)
+        return original(method, path, **kwargs)
+
+    api.request = call
+    journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
+    result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets()).execute()
+    assert result['overall'] == 'failed'
+    assert result['facility_writes'] == 'issued'
+    assert result['cleanup']['vm']['status'] == 'passed'
+    assert journal['mutation_active'] is False
+    if operation == 'exec':
+        rejected = next(item for item in journal['tasks'] if item['phase'] == 'guest_exec')
+        assert (rejected['status'], rejected['http_status']) == ('rejected', 403)
+
+
+def test_guest_rejection_preserves_another_unknown_request(tmp_path):
+    value = request()
+    api = API(value)
+    original = api.request
+    journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
+
+    def call(method, path, **kwargs):
+        if path.endswith('/agent/ping'):
+            journal['tasks'].append({'phase': 'other', 'status': 'unknown'})
+            journal.update(mutation_active=True, facility_writes='unknown')
+        if path.endswith('/agent/exec'):
+            raise mod.RequestRejected(method, path)
+        return original(method, path, **kwargs)
+
+    api.request = call
+    result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets()).execute()
+    assert result['overall'] == 'unknown'
+    assert result['facility_writes'] == 'unknown'
+    assert not any(method == 'DELETE' for method, *_ in api.calls)
 
 
 def test_disk_bound_rejected_before_clone(tmp_path):

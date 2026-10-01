@@ -6,7 +6,7 @@
 
 - [x] 1.1 补 inventory 非空 pool 校验、可选 acceptance 区间及互斥/普通 VM 排除，生成和文档保留同一策略；用未指定池、指定池、区间端点/重叠/落入预留区间的 fixture 验证。
 - [x] 1.2 将 pool_id 同时传入 protected/unprotected OpenTofu VM resource，保留原资源地址；用 HCL/原生 plan fixture 核验实际参数和 pool_id=null，运行既有 resource parity guard。
-- [ ] 1.3 在普通 VM saved companions/review 中冻结 pool、策略及具体 VMID，执行前检查绑定/权限/占用和适用的调用方集群/VMID reservation；以池/范围篡改、占用和模拟竞争拒绝验证，更新当前调用示例与串行化说明。
+- [x] 1.3 在普通 VM saved companions/review 中冻结 pool、策略及具体 VMID，执行前检查绑定/权限/占用和适用的调用方集群/VMID reservation；以池/范围篡改、占用和模拟竞争拒绝验证，更新当前调用示例与串行化说明。
 
 ## 2. 共享只读准入和 helper 条件
 
@@ -16,14 +16,14 @@
 
 ## 3. 模板 publication 与当前模板记录
 
-- [ ] 3.1 更新 publication request/v2、preview/result/record/v3，绑定可选 pool，在原生创建请求直接指定池并在结果中核实际归属；用不入池/既有池/不存在或无权池/计划池更改拒绝的 fake API 测试和合同 fixture 验证。
+- [x] 3.1 更新 publication request/v2、preview/result/record/v3，绑定可选 pool，在原生创建请求直接指定池并在结果中核实际归属；用不入池/既有池/不存在或无权池/计划池更改拒绝的 fake API 测试和合同 fixture 验证。
 - [ ] 3.2 将普通 VM、验收和当前 snippet acceptance-origin 消费校验统一到最新模板/验收合同，更新 schemas/examples/docs，拒绝旧 start 输入且不改 state；运行合同生成一致性及模板消费者定向回归。
 
 ## 4. 验收 plan、执行与诊断
 
 - [ ] 4.1 增加 action=accept 的离线 check/联网 plan、acceptance request/result v3 和 preview/v1，绑定 pool、验收区间、具体 VMID、runtime 与 deadlines；用无凭据离线成功、缺字段、摘要/镜像/池/范围/截止冲突和零设施写入 plan 测试验证并更新输入文档。
 - [ ] 4.2 将完整准入用于 plan/start；clone 直接传池，claim/启动/清理前核实际池、权限、UUID和完整磁盘归属；用入池完整验收/精确清理且池保留、被移池或资源变更失败关闭的代表性测试验证。
-- [ ] 4.3 引入脱敏的明确拒绝和未知请求结果，逐请求消解活动并保留历史 issued；用 guest exec 权威403立即失败且允许安全清理、另有活动未知仍拒绝、超时/丢响应仍unknown与零清理的测试验证，更新固定reason codes和结果示例。
+- [x] 4.3 引入脱敏的明确拒绝和未知请求结果，逐请求消解活动并保留历史 issued；用 guest exec 权威403立即失败且允许安全清理、另有活动未知仍拒绝、超时/丢响应仍unknown与零清理的测试验证，更新固定reason codes和结果示例。
 - [x] 4.4 修正 source_changed/source_snapshot_missing/source_query_failed/source_evidence_insufficient，并保留原始 failure_stage/reason；用容量失败无快照、确实身份变化和查询失败测试验证结果与 unknown-first 聚合，更新源一致性说明。
 
   软件证据：`uv run pytest tests/python/test_pve_template_acceptance.py -q`（30 passed）；`uv run pyright src/iaas/pve_template/acceptance.py`（0 errors）。无现场设施操作。

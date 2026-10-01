@@ -26,8 +26,9 @@ from urllib.request import HTTPRedirectHandler, HTTPSHandler, ProxyHandler, Requ
 from iaas.common.errors import ValidationError, require
 from iaas.common.io import load_json, write_text
 from iaas.runtime_execution.execution import Execution, OperationFailed
-from iaas.runtime_execution.pve_contracts import validate_execution_admission
+from iaas.runtime_execution.pve_contracts import validate_execution_admission, validate_vmid_reservation
 from iaas.runtime_execution.pve_results import template_identity
+from .responses import RequestRejected, RequestOutcomeUnknown, permission_rejection
 
 from .contracts import (
     PUBLISH_PREVIEW_VERSION,
@@ -38,7 +39,7 @@ from .contracts import (
     validate_publish_preview,
     validate_publish_request,
     validate_retire_request,
-    validate_template_record_v2,
+    validate_template_record_v3,
 )
 
 
@@ -184,9 +185,11 @@ class PveHttpsClient:
                 value = json.loads(response.read().decode("utf-8"))
                 return value.get("data", value) if isinstance(value, Mapping) else value
         except HTTPError as exc:
-            raise OperationFailed(f"PVE API {method} request failed (HTTP {exc.code})") from None
+            if permission_rejection(exc, url=url, path=path):
+                raise RequestRejected(method, path, exc.code) from None
+            raise RequestOutcomeUnknown(exc.code) from None
         except (URLError, TimeoutError, OSError, json.JSONDecodeError):
-            raise OperationFailed(f"PVE API {method} request failed; inspect protected recovery material") from None
+            raise RequestOutcomeUnknown() from None
 
     def upload_file(self, upload_path: str, path: Path, filename: str, checksum: str) -> Any:
         parsed = urlsplit(self.endpoint)
@@ -244,11 +247,31 @@ def _client(selected: Any, execution: Execution, target: Mapping[str, Any]) -> P
                           tls_verify=bool(target["tls_verify"]))
 
 
+def _assert_publication_pool(client: PveHttpsClient, pool: str | None, vmid: int) -> None:
+    from .admission import Permissions
+    permissions = Permissions(client)
+    if pool is not None:
+        permissions.pool(pool)
+    permissions.placement(vmid, pool, (
+        "VM.Audit", "VM.Allocate", "VM.Config.CPU", "VM.Config.Memory",
+        "VM.Config.Disk", "VM.Config.Network", "VM.Config.Options",
+        "VM.Config.HWType", "VM.Config.Cloudinit"))
+
+
+def _assert_pool_membership(client: PveHttpsClient, vmid: int, pool: str | None) -> None:
+    resources = client.request("GET", "/api2/json/cluster/resources", fields={"type": "vm"})
+    require(isinstance(resources, list), "publication pool membership is unavailable")
+    matches = [row for row in resources if isinstance(row, Mapping) and row.get("vmid") == vmid]
+    require(len(matches) == 1, "publication object membership is not authoritative")
+    require((matches[0].get("pool") or None) == pool, "publication pool membership changed")
+
+
 def _observed(selected: Any, client: PveHttpsClient | None, target: Mapping[str, Any], request: Mapping[str, Any]) -> dict[str, Any]:
     if client is None:
         raise ValidationError("PVE observation requires an HTTPS client")
     node = quote(str(target["node"]), safe="")
     _assert_vmid_visibility(client, request["vmid"])
+    _assert_publication_pool(client, request.get("pool"), request["vmid"])
     storage_permissions: dict[str, set[str]] = {}
     storage_permissions.setdefault(request["staging_storage"], set()).update(
         {"Datastore.Audit", "Datastore.Allocate", "Datastore.AllocateTemplate"})
@@ -417,14 +440,15 @@ def _record_from_config(request: Mapping[str, Any], config: Mapping[str, Any], e
     identity = template_identity(dict(config)) if complete else None
     disks = identity["disks"] if identity is not None else _disk_slots(config)
     uuid = identity["smbios_uuid"] if identity is not None else _config_uuid(config)
-    record = {"kind": "pve-template-record", "schema_version": 2,
+    record = {"kind": "pve-template-record", "schema_version": 3,
               "record_id": f"{request['version']}-{request['vmid']}", "target": request["target"],
+              "cluster_scope": request["cluster_scope"], "pool": request.get("pool"),
               "node": request["target"]["node"], "vmid": request["vmid"], "smbios_uuid": uuid,
               "volumes": disks, "configuration": dict(config), "origin": "publication",
               "execution_id": execution_id, "artifact_digest": request["artifact_digest"],
               "verification": {"template_config": "passed", "guest_acceptance": "not_performed",
                                 "caller_promotion": "caller_owned"}}
-    return validate_template_record_v2(record, complete=complete)
+    return validate_template_record_v3(record, complete=complete)
 
 
 def _write_intent(path: Path, intent: Mapping[str, Any]) -> None:
@@ -443,7 +467,7 @@ def _failure_result(intent: Mapping[str, Any], execution_id: str, preview_digest
                     and event.get("status") in {"intent", "submitted", "unknown"} for event in events)
     residue = [str(item) for item in intent.get("residue", []) if isinstance(item, str)]
     action = intent.get("action", "publish")
-    result = {"kind": "pve-template-result", "schema_version": 2, "execution_id": execution_id,
+    result = {"kind": "pve-template-result", "schema_version": 3, "execution_id": execution_id,
             "component": "pve-template", "operation": "apply", "action": action,
             "runtime_digest": intent.get("runtime_digest", "unknown"), "phase": "unknown" if submitted else "failed",
             "status": "unknown" if submitted else "failed", "effects": {"pve": "unknown" if submitted else "none",
@@ -639,7 +663,7 @@ def _original_publish_evidence(selected: Any, fixed: Mapping[str, Any]) -> dict[
         journal_objects.append({"vmid": journal["vmid"], "smbios_uuid": created["smbios_uuid"],
                                 "volumes": volumes})
     if isinstance(record, Mapping):
-        validate_template_record_v2(record, complete=False)
+        validate_template_record_v3(record, complete=False)
         record_object = {"vmid": record["vmid"], "smbios_uuid": record["smbios_uuid"],
                          "volumes": _admitted_object_volumes(record)}
         journal_object = journal_objects[0] if journal_objects else None
@@ -700,6 +724,8 @@ def _observe_original_tasks(client: PveHttpsClient, journal: Mapping[str, Any], 
 
 
 def _publish(selected: Any, execution: Execution, request: Mapping[str, Any], preview: Mapping[str, Any], execution_id: str) -> dict[str, Any]:
+    require(validate_publish_request(request) == preview["fixed_input"],
+            "publication request does not match approved preview")
     client = _client(selected, execution, request["target"])
     artifact = request["artifact"]
     work = execution.outputs.path("work") / "publisher"
@@ -778,6 +804,8 @@ def _publish(selected: Any, execution: Execution, request: Mapping[str, Any], pr
             "machine": request["hardware"]["machine"], "scsihw": request["hardware"]["scsi_controller"],
             "net0": f"virtio,bridge={request['hardware']['bridge']}",
             "smbios1": f"uuid={created_uuid}"}
+        if request.get("pool") is not None:
+            create_fields["pool"] = request["pool"]
         if request["hardware"]["firmware"] == "uefi":
             create_fields.update(bios="ovmf", efidisk0=f"{request['efi_storage']}:0,efitype=4m,format=raw")
         journal("create", "intent", vmid=vmid, smbios_uuid=created_uuid)
@@ -787,6 +815,7 @@ def _publish(selected: Any, execution: Execution, request: Mapping[str, Any], pr
         created_config = client.request("GET", f"/api2/json/nodes/{node}/qemu/{vmid}/config")
         require(isinstance(created_config, Mapping), "PVE created VM configuration is invalid")
         observed_uuid = _config_uuid(created_config)
+        _assert_pool_membership(client, vmid, request.get("pool"))
         require(observed_uuid == created_uuid, "PVE created VM UUID does not match the fixed identity")
         journal("create", "succeeded", upid=create_result.get("upid"), smbios_uuid=created_uuid,
                 attachments=_volume_attachments(created_config))
@@ -833,6 +862,7 @@ def _publish(selected: Any, execution: Execution, request: Mapping[str, Any], pr
         journal("template", "succeeded", upid=template_result.get("upid"), imported_volume=imported_volume,
                 final_volume=final_volume, disk_slot=final_disk, smbios_uuid=created_uuid,
                 attachments=_volume_attachments(current))
+        _assert_pool_membership(client, request["vmid"], request.get("pool"))
         record = _record_from_config(request, current, execution_id)
 
         cleanup_status = "succeeded"
@@ -881,7 +911,7 @@ def _publish(selected: Any, execution: Execution, request: Mapping[str, Any], pr
         outcome = "unknown" if cleanup_status == "unknown" else "succeeded"
         intent["status"] = outcome
         _write_intent(intent_path, intent)
-        return {"kind": "pve-template-result", "schema_version": 2, "execution_id": execution_id,
+        return {"kind": "pve-template-result", "schema_version": 3, "execution_id": execution_id,
                 "component": "pve-template", "operation": "apply", "action": "publish",
                 "runtime_digest": preview["runtime"]["image_digest"],
                 "phase": outcome, "status": outcome,
@@ -1022,7 +1052,7 @@ def _delete_action(selected: Any, execution: Execution, request: Mapping[str, An
             journal("cleanup-volume", "succeeded", volid=volid, upid=phase["upid"])
         intent["status"] = "succeeded"
         _write_intent(intent_path, intent)
-        return {"kind": "pve-template-result", "schema_version": 2, "execution_id": execution_id,
+        return {"kind": "pve-template-result", "schema_version": 3, "execution_id": execution_id,
                 "component": "pve-template", "operation": "apply", "action": "cleanup",
                 "runtime_digest": preview["runtime"]["image_digest"],
                 "phase": "succeeded", "status": "succeeded", "effects": {"pve": "known"},
@@ -1066,7 +1096,7 @@ def _delete_action(selected: Any, execution: Execution, request: Mapping[str, An
     journal("retire-template", "succeeded", vmid=vmid, upid=phase["upid"])
     intent["status"] = "succeeded"
     _write_intent(intent_path, intent)
-    return {"kind": "pve-template-result", "schema_version": 2, "execution_id": execution_id,
+    return {"kind": "pve-template-result", "schema_version": 3, "execution_id": execution_id,
             "component": "pve-template", "operation": "apply", "action": "retire",
             "runtime_digest": preview["runtime"]["image_digest"],
             "phase": "succeeded", "status": "succeeded", "effects": {"pve": "known"},
@@ -1091,8 +1121,8 @@ def run(selected: Any, operation: str, scope: str, execution: Execution,
         return
     if operation == "verify":
         value = _file_mapping(selected, "result", "template_result")
-        if not isinstance(value, Mapping) or value.get("kind") != "pve-template-result" or value.get("schema_version") != 2:
-            raise ValidationError("pve-template verify requires pve-template-result/v2")
+        if not isinstance(value, Mapping) or value.get("kind") != "pve-template-result" or value.get("schema_version") != 3:
+            raise ValidationError("pve-template verify requires pve-template-result/v3")
         bound_preview = validate_publish_preview(_file_mapping(selected, "preview", "template_preview"))
         require(bound_preview["action"] == value.get("action")
                 and value.get("preview_digest") == bound_preview["preview_digest"]
@@ -1110,9 +1140,11 @@ def run(selected: Any, operation: str, scope: str, execution: Execution,
                               "action": bound_preview["action"], "execution_id": value.get("execution_id"),
                               "preview_digest": value["preview_digest"], "publication": "not_applicable"})
             return
-        record = validate_template_record_v2(value.get("template_record"))
+        record = validate_template_record_v3(value.get("template_record"))
         require(value.get("publication") == "succeeded"
                 and record["target"] == fixed_request["target"] and record["vmid"] == fixed_request["vmid"]
+                and record["cluster_scope"] == fixed_request["cluster_scope"]
+                and record["pool"] == fixed_request["pool"]
                 and record["execution_id"] == value.get("execution_id")
                 and record["artifact_digest"] == value.get("artifact_digest") == fixed_request["artifact_digest"],
                 "template result identity does not match the selected publication")
@@ -1137,8 +1169,8 @@ def run(selected: Any, operation: str, scope: str, execution: Execution,
                               "native_status": journal.get("status", "unknown")})
             return
         template = options.get("template")
-        if not isinstance(template, Mapping) or set(template) != {"target", "vmid"}:
-            raise ValidationError("pve-template read requires target and vmid")
+        if not isinstance(template, Mapping) or set(template) != {"target", "vmid", "cluster_scope"}:
+            raise ValidationError("pve-template read requires target, vmid and cluster_scope")
         target = template["target"]
         require(isinstance(target, Mapping) and set(target) == {"api_endpoint", "node", "tls_verify"}
                 and target.get("tls_verify") is True, "template read requires a verified HTTPS target")
@@ -1146,11 +1178,17 @@ def run(selected: Any, operation: str, scope: str, execution: Execution,
                 "template read node is invalid")
         require(type(template["vmid"]) is int and template["vmid"] > 0, "template read VMID is invalid")
         require(not scope or scope == target["node"], "pve-template scope must select the target node")
-        config = _client(selected, execution, target).request(
+        client = _client(selected, execution, target)
+        config = client.request(
             "GET", f"/api2/json/nodes/{quote(target['node'], safe='')}/qemu/{template['vmid']}/config")
         require(isinstance(config, Mapping), "PVE template observation is invalid")
         require(config.get("template") in {1, "1"}, "selected PVE object is not a template")
+        resources = client.request("GET", "/api2/json/cluster/resources", fields={"type": "vm"})
+        require(isinstance(resources, list), "template pool observation is unavailable")
+        matches = [row for row in resources if isinstance(row, Mapping) and row.get("vmid") == template["vmid"]]
+        require(len(matches) == 1, "template pool observation is not authoritative")
         observation_request = {"target": target, "vmid": template["vmid"],
+                               "cluster_scope": template["cluster_scope"], "pool": matches[0].get("pool") or None,
                                "version": "observation", "artifact_digest": "unknown"}
         record = _record_from_config(observation_request, config, "unknown", complete=False)
         record.update(origin="observation", execution_id="unknown", artifact_digest="unknown")
@@ -1196,6 +1234,9 @@ def run(selected: Any, operation: str, scope: str, execution: Execution,
     validate_execution_admission(options["admission"],
                                              digest=preview["preview_digest"].removeprefix("sha256:"),
                                              execution_id=execution_id, target=request["target"])
+    if action == "publish":
+        validate_vmid_reservation(dict(options["admission"]), cluster_scope=request["cluster_scope"],
+                                  vmids=[request["vmid"]])
     try:
         result = (_publish(selected, execution, request, preview, execution_id) if preview["action"] == "publish"
                   else _delete_action(selected, execution, request, preview, execution_id))

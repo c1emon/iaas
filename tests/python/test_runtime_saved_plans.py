@@ -55,7 +55,7 @@ def setup_plan(tmp_path, monkeypatch):
         "inputs": {"cluster": str(REPO / "tests/fixtures/runtime/pve-cluster.yml"),
                    "vms": str(REPO / "tests/fixtures/runtime/vms.yml")},
         "files": {"main": "main.tf", "lock": "lock.hcl"},
-        "options": {"root": {"id": "complete-root", "directory": ".", "files": {"main.tf": "main", ".terraform.lock.hcl": "lock"}},
+        "options": {"cluster_scope": "synthetic-cluster", "root": {"id": "complete-root", "directory": ".", "files": {"main.tf": "main", ".terraform.lock.hcl": "lock"}},
                     "pve": {"storage_id": "synthetic-snippets", "ssh_host": "synthetic.invalid", "ssh_user": "pve-ops",
                             "api_endpoint": "https://synthetic.invalid:8006", "insecure": False}},
     }}}))
@@ -104,7 +104,10 @@ elif sys.argv[1] == 'apply':
         admission_path.write_text(json.dumps({"schema_version": 1, "execution_id": "synthetic-execution",
             "plan_digest": plans.sha256(plan), "target": selected.options["pve"], "approved": True,
             "consumption": {"reserved": True, "reservation_id": "reservation"}, "pending": {"record_id": "pending"},
-            "serialization": {"held": True, "context_id": "lock"}}))
+            "serialization": {"held": True, "context_id": "lock"},
+            "vmid_reservation": {"cluster_scope": "synthetic-cluster",
+                "vmids": json.loads((bundle / "summary.json").read_text())["vm_policy"]["vmids"],
+                "reservation_id": "reservation", "context_id": "lock"}}))
         admission_path.chmod(0o600)
         selected.files["execution_admission"] = admission_path
         return original_apply(plan, bundle, selected, execution, backend, scope, image, tofu, execution_id="synthetic-execution")
@@ -128,8 +131,8 @@ def test_prepare_and_apply_from_another_directory(setup_plan, tmp_path):
     shutil.copytree(plan.parent, moved)
     saved_bytes = (moved / "snippets/manifest.json").read_bytes()
     apply = execution("apply")
-    # Applying the saved bundle must not compile changed current inputs.
-    selected.documents = {"cluster": {"invalid": True}}
+    # Saved inputs remain the apply materials; current placement policy is
+    # checked against them without rendering new snippets.
     apply_saved_plan(moved / "plan.tfplan", moved, selected, apply, backend, "complete-root", IMAGE, tofu)
     assert [phase["phase"] for phase in apply.phases] == ["backend-init", "upload-snippets", "verify-snippets", "apply"]
     assert (moved / "snippets/manifest.json").read_bytes() == saved_bytes
@@ -305,10 +308,12 @@ def first_use_plan(setup_plan, monkeypatch):
     from iaas.runtime_execution import plans, pve_state
     selected, backend, tofu, execution = setup_plan
     empty = pve_state.observe_state(backend, {})
+    selected.documents["vms"]["vms"][0]["vmid"] = 799
+    selected.documents["vms"]["vms"][0]["pool"] = None
     absent = replace(empty, status="absent", lineage=None, serial=None, empty=None, raw=None)
     values = {"node_name": "synthetic-node", "vm_id": 799, "cpu": [{"cores": 1}],
               "memory": [{"dedicated": 1024}], "started": False, "smbios": [{"uuid": "synthetic-uuid"}],
-              "disk": [{"interface": "scsi0", "datastore_id": "synthetic", "size": 8}]}
+              "disk": [{"interface": "scsi0", "datastore_id": "synthetic", "size": 8}], "pool_id": None}
     populated = replace(empty, empty=False, serial=2, raw={
         **empty.raw, "serial": 2, "resources": [{"type": "proxmox_virtual_environment_vm", "name": "test",
             "instances": [{"attributes": values}]}]})
@@ -318,7 +323,9 @@ def first_use_plan(setup_plan, monkeypatch):
     selected.files["state_admission"].write_text(json.dumps(admission))
     monkeypatch.setattr(pve_state, "observe_state", lambda *a: absent)
     monkeypatch.setattr(plans, "api_client", lambda *a: SimpleNamespace(
-        cluster_vm_resources=lambda: [], effective_permissions=lambda path: {path: {"VM.Audit": 1}},
+        cluster_vm_resources=lambda: [], effective_permissions=lambda path: {path: {
+            name: 1 for name in ('VM.Audit', 'VM.Allocate', 'VM.Config.CPU', 'VM.Config.Memory',
+                                'VM.Config.Options', 'VM.Config.Disk', 'VM.PowerMgmt')}},
         vm_config=lambda *a: {"cores": 1, "memory": 1024, "smbios1": "uuid=synthetic-uuid",
                               "scsi0": "synthetic:799/vm-799-disk-0.qcow2,size=8G"},
         vm_status=lambda *a: {"status": "stopped"}))
@@ -553,3 +560,36 @@ def test_read_does_not_report_success_after_tls_failure(setup_plan, monkeypatch)
     with pytest.raises(PveApiTlsError):
         plans.read_pve(selected, run, backend, 'complete-root', IMAGE)
     assert not (run.outputs.root / 'summary.json').exists()
+
+
+@pytest.mark.parametrize('stage', ['before_init', 'after_init'])
+def test_saved_apply_rechecks_vmid_before_any_facility_write(first_use_plan, monkeypatch, stage):
+    from iaas.runtime_execution import plans
+
+    selected, backend, tofu, execution, plan, *_ = first_use_plan
+    api = plans.api_client({}, {})
+    calls = []
+
+    def inventory():
+        calls.append('inventory')
+        if stage == 'before_init' or len(calls) > 1:
+            return [{'vmid': 799, 'node': 'synthetic-node', 'type': 'qemu'}]
+        return []
+
+    api.cluster_vm_resources = inventory
+    monkeypatch.setattr(plans, 'api_client', lambda *args: api)
+    run = execution('occupied')
+    with pytest.raises(ValidationError, match='VMID is occupied'):
+        apply_saved_plan(plan, plan.parent, selected, run, backend, 'complete-root', IMAGE, tofu)
+    assert not any(phase['phase'] in {'upload-snippets', 'apply'} for phase in run.phases)
+    assert len(calls) == (1 if stage == 'before_init' else 2)
+
+
+def test_saved_apply_rejects_changed_current_pool_before_facility_write(setup_plan):
+    selected, backend, tofu, execution = setup_plan
+    plan = prepare_plan(selected, execution('prepare'), backend, 'complete-root', IMAGE, tofu)
+    selected.documents['vms']['vms'][0]['pool'] = 'another-pool'
+    run = execution('changed-pool')
+    with pytest.raises(ValidationError, match='current pool, VMID or reservation policy'):
+        apply_saved_plan(plan, plan.parent, selected, run, backend, 'complete-root', IMAGE, tofu)
+    assert run.phases == []

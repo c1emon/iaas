@@ -1,6 +1,6 @@
 {
   "kind": "pve-template-publish-request",
-  "schema_version": 1,
+  "schema_version": 2,
   "artifact": {
     "kind": "image-artifact",
     "schema_version": 1,
@@ -94,5 +94,7 @@
     "native_template_config_verify": true,
     "guest_acceptance_scope": "caller"
   },
-  "transport": "controller-upload"
+  "transport": "controller-upload",
+  "cluster_scope": "example-cluster",
+  "pool": null
 }

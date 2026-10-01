@@ -1,6 +1,6 @@
 {
   "kind": "pve-template-result",
-  "schema_version": 2,
+  "schema_version": 3,
   "execution_id": "publish-example-1",
   "component": "pve-template",
   "operation": "apply",
@@ -12,7 +12,7 @@
     "pve": "known",
     "staging": "known"
   },
-  "preview_digest": "sha256:e3c29ed2cf025f5c17b6c287f036f945275f85b2de3f7a4adb5d235acc902210",
+  "preview_digest": "sha256:f9ee2f230b48986059e0c8f71a6020c5ca0e18c42a69100557868eecffeb18d6",
   "artifact_digest": "sha256:a3cc5759eb5c646c4d290bfc81f25d54ee008e3a67336864a2a4055f739eca85",
   "publication": "succeeded",
   "verification": [
@@ -56,7 +56,7 @@
   },
   "template_record": {
     "kind": "pve-template-record",
-    "schema_version": 2,
+    "schema_version": 3,
     "record_id": "external-2026-09-23-9001",
     "target": {
       "api_endpoint": "https://pve.example.invalid:8006",
@@ -84,7 +84,9 @@
       "template_config": "passed",
       "guest_acceptance": "not_performed",
       "caller_promotion": "not_performed"
-    }
+    },
+    "cluster_scope": "example-cluster",
+    "pool": null
   },
   "cleanup": {
     "status": "succeeded",

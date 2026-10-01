@@ -13,7 +13,7 @@ def test_read_does_not_report_an_ordinary_vm_as_verified_template(tmp_path, monk
     api = API()
     api.config["scsi0"] = "images:vm-9001-disk-0,size=8G"
     selected = SimpleNamespace(
-        options={"template": {"target": publish_request()["target"], "vmid": 9001}}, documents={}
+        options={"template": {"target": publish_request()["target"], "vmid": 9001, "cluster_scope": "test-cluster"}}, documents={}
     )
     execution = SimpleNamespace(outputs=Outputs(tmp_path / "output"))
     monkeypatch.setattr(runtime, "_client", lambda *args: api)
@@ -27,8 +27,9 @@ def test_read_observes_existing_template_without_build_history(tmp_path, monkeyp
     import json
 
     api = API()
+    api.created = True
     api.config.update(template=1, scsi0="images:base-9001-disk-0,size=8G")
-    selected = SimpleNamespace(options={"template": {"target": publish_request()["target"], "vmid": 9001}})
+    selected = SimpleNamespace(options={"template": {"target": publish_request()["target"], "vmid": 9001, "cluster_scope": "test-cluster"}})
     outputs = Outputs(tmp_path / "output")
     outputs.path("generated").mkdir()
     reports = []

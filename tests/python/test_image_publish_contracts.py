@@ -16,7 +16,7 @@ from iaas.pve_template.contracts import (
     validate_publish_preview,
     validate_publish_request,
     validate_retire_request,
-    validate_template_record_v2,
+    validate_template_record_v3,
 )
 from iaas.runtime_execution.pve_contracts import validate_execution_admission
 
@@ -33,7 +33,7 @@ def artifact() -> dict:
 
 
 def request() -> dict:
-    value = {"kind": "pve-template-publish-request", "schema_version": 1, "artifact": artifact(),
+    value = {"kind": "pve-template-publish-request", "schema_version": 2, "cluster_scope": "test-cluster", "pool": None, "artifact": artifact(),
              "source": {"object_ref": "https://objects.example.invalid/disk.qcow2", "object_version": "v1"},
              "target": {"api_endpoint": "https://pve.example.invalid:8006", "node": "cohe", "tls_verify": True},
              "vmid": 9001, "version": "v1", "name": "debian-template", "staging_storage": "images",
@@ -65,7 +65,7 @@ def image_test_result(*, disk_sha256: str = "b" * 64, status: str = "passed") ->
 def test_publish_preview_is_canonically_bound() -> None:
     preview = build_publish_preview(request(), runtime={"image_digest": "registry.invalid/runtime@sha256:" + "a" * 64},
                                     observed={"vmid_free": True})
-    assert validate_publish_preview(copy.deepcopy(preview))["schema_version"] == 2
+    assert validate_publish_preview(copy.deepcopy(preview))["schema_version"] == 3
     formatted = copy.deepcopy(preview)
     formatted["fixed_input"] = {key: formatted["fixed_input"][key] for key in reversed(formatted["fixed_input"])}
     assert validate_publish_preview(formatted)["preview_digest"] == preview["preview_digest"]
@@ -90,13 +90,13 @@ def test_publish_rejects_unsupported_hostname_default() -> None:
 
 
 def test_template_record_v2_requires_configuration_verification() -> None:
-    record = {"kind": "pve-template-record", "schema_version": 2, "record_id": "v1-9001",
+    record = {"kind": "pve-template-record", "schema_version": 3, "cluster_scope": "test-cluster", "pool": None, "record_id": "v1-9001",
               "target": request()["target"], "node": "cohe", "vmid": 9001, "smbios_uuid": "uuid-1",
               "volumes": {"scsi0": "images:vm-9001-disk-0"}, "configuration": {"template": 1},
               "origin": "publication", "execution_id": "publish-1", "artifact_digest": "sha256:" + "b" * 64,
               "verification": {"template_config": "failed"}}
     with pytest.raises(ValidationError):
-        validate_template_record_v2(record)
+        validate_template_record_v3(record)
 
 
 def test_publish_accepts_matching_test_for_unknown_artifact_check() -> None:

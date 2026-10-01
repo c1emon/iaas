@@ -16,6 +16,7 @@ from . import runtime as pve
 from .acceptance_execution import begin, observe, save
 from . import acceptance_snippets
 from .deadlines import DeadlineBudget, DeadlineExpired, LocalTimeout
+from .responses import RequestRejected
 
 CHECKS = ('full_clone', 'disk_boot', 'guest_agent', 'cloud_init', 'injected_hostname', 'source_unchanged')
 
@@ -146,8 +147,10 @@ class Acceptance:
     def mutation(self, phase: str, method: str, path: str, *, fields: dict[str, Any] | None = None,
                  task: bool = True, node: str | None = None) -> None:
         self.remaining()
-        item: dict[str, Any] = {'phase': phase, 'status': 'intent', 'node': node or self.temporary['node']}
+        item: dict[str, Any] = {'phase': phase, 'status': 'intent', 'node': node or self.temporary['node'],
+                                'method': method, 'path': path}
         self.journal['tasks'].append(item)
+        previous_active = self.journal['mutation_active']
         self.journal['mutation_active'] = True
         previous_writes = self.journal['facility_writes']
         self.journal['facility_writes'] = 'unknown'
@@ -156,6 +159,11 @@ class Acceptance:
             try:
                 self.remaining()
                 value = self.api(method, path, fields=fields)
+            except RequestRejected as exc:
+                item.update(status='rejected', http_status=exc.http_status)
+                self.journal.update(mutation_active=previous_active, facility_writes=previous_writes)
+                self.persist()
+                raise AcceptanceFailure('request_rejected') from None
             except (DeadlineExpired, LocalTimeout):
                 item['status'] = 'not_sent'
                 self.journal.update(mutation_active=False, facility_writes=previous_writes)
@@ -325,6 +333,8 @@ class Acceptance:
             try:
                 self.api('POST', self.base + '/agent/ping')
                 break
+            except RequestRejected:
+                raise AcceptanceFailure('request_rejected') from None
             except OperationFailed:
                 if time.monotonic() >= guest_deadline:
                     raise AcceptanceFailure('guest_timeout') from None
@@ -334,8 +344,10 @@ class Acceptance:
         while time.monotonic() < guest_deadline:
             # JSON body preserves the API's array command type; no shell or caller program.
             self.remaining()
-            intent: dict[str, Any] = {'phase': 'guest_exec', 'status': 'intent'}
+            intent: dict[str, Any] = {'phase': 'guest_exec', 'status': 'intent', 'method': 'POST',
+                                    'path': self.base + '/agent/exec'}
             self.journal['tasks'].append(intent)
+            previous_active = self.journal['mutation_active']
             self.journal['mutation_active'] = True
             previous_writes = self.journal['facility_writes']
             self.journal['facility_writes'] = 'unknown'
@@ -344,11 +356,20 @@ class Acceptance:
                 process = self.api('POST', self.base + '/agent/exec',
                                    body=json.dumps({'command': ['cloud-init', 'status', '--format', 'json']}).encode(),
                                    content_type='application/json')
+            except RequestRejected as exc:
+                intent.update(status='rejected', http_status=exc.http_status)
+                self.journal.update(mutation_active=previous_active, facility_writes=previous_writes)
+                self.persist()
+                raise AcceptanceFailure('request_rejected') from None
             except (DeadlineExpired, LocalTimeout):
                 intent['status'] = 'not_sent'
                 self.journal.update(mutation_active=False, facility_writes=previous_writes)
                 self.persist()
                 raise
+            except Exception:
+                intent['status'] = 'unknown'
+                self.persist()
+                raise UnknownOutcome('request_outcome_unknown') from None
             check(isinstance(process, dict) and type(process.get('pid')) is int, 'guest_response_invalid')
             intent.update(status='running', pid=process['pid'])
             self.journal['facility_writes'] = 'issued'
@@ -455,7 +476,7 @@ class Acceptance:
         except Exception as exc:
             unknown = not isinstance(exc, (AcceptanceFailure, DeadlineExpired, LocalTimeout)) or self.journal['mutation_active']
             self.mark(self.stage, 'unknown' if unknown else 'failed',
-                      str(exc) if isinstance(exc, (AcceptanceFailure, DeadlineExpired, LocalTimeout)) else 'observation_unknown')
+                      str(exc) if isinstance(exc, (AcceptanceFailure, UnknownOutcome, DeadlineExpired, LocalTimeout)) else 'observation_unknown')
             self.result['failure_stage'] = self.stage
         finally:
             if self.budget.outcome['status'] == 'rejected':

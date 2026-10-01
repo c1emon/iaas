@@ -8,7 +8,7 @@
   },
   "template_record": {
     "kind": "pve-template-record",
-    "schema_version": 2,
+    "schema_version": 3,
     "record_id": "template-9000",
     "target": {
       "api_endpoint": "https://pve.example.invalid:8006",
@@ -36,7 +36,9 @@
     "artifact_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "verification": {
       "template_config": "passed"
-    }
+    },
+    "cluster_scope": "fixture-cluster",
+    "pool": null
   },
   "temporary_vm": {
     "node": "pve1",

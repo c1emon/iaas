@@ -97,6 +97,11 @@
       "file": "reject-missing-deadlines.json",
       "kind": "pve-template-acceptance-request",
       "valid": false
+    },
+    {
+      "file": "guest-exec-rejected-result.json",
+      "valid": true,
+      "kind": "pve-template-acceptance-result"
     }
   ]
 }
