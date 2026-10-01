@@ -1,6 +1,6 @@
 # PVE acceptance v3 / snippet cleanup v2 schemas
 
-The four independent request/result contracts and scoped execution-admission schema are exported from
+The acceptance request/result/preview, snippet request/result and scoped execution-admission schemas are exported from
 `iaas.pve_acceptance_contracts.contract_schemas()`. Shared accepted and rejected
 examples live in `docs/examples/pve-acceptance/cases.json`; contract tests load
 those exact files and check that these schema exports remain current.

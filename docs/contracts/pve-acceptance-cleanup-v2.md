@@ -89,7 +89,7 @@ the complete original resource scope and proving prior inactivity.
 
 ## Template acceptance
 
-The request fixes a published `pve-template-record/v2`, temporary node/VMID,
+The request fixes a published `pve-template-record/v3`, temporary node/VMID/pool,
 storage, bridge/VLAN/IP configuration, CPU/memory/total-disk limits, boot disk and
 firmware, fresh hostname, all six checks, relative work/guest/cleanup upper limits and absolute deadlines, and
 explicit create/delete authorization. The hostname must differ from the known

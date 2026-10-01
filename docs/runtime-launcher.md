@@ -56,7 +56,9 @@ Use `iaas capabilities --runtime-config runtime.json` to inspect operation effec
 The cutover keeps these interfaces aligned: launcher capabilities/interface
 version `1`; runtime environment schema `1`; PVE plan metadata `2`; PVE result
 `1`; image artifact/build/test contracts `1`; and PVE template preview/result/
-record `2`. Image construction is a local QEMU capability and PVE template
+record `3`, publication request `2`, acceptance request/result `3` and preview `1`,
+recovery request/preview/result `1`, and scoped acceptance/recovery admission `2`.
+Image construction is a local QEMU capability and PVE template
 publication is a controller-side HTTPS capability. A capability response is
 the compatibility gate: old PVE operation names and combined template-build
 inputs are rejected instead of being silently translated.

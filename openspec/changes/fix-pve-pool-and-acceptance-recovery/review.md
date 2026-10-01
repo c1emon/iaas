@@ -38,4 +38,4 @@
 
 实施分支 `implement/fix-pve-pool-and-acceptance-recovery` 已分阶段提交 pool/VMID、publication 最新合同、拒绝分类、源诊断以及验收 preview/准入。恢复入口、launcher 和示例按当前合同交付；软件校验结果记于 tasks。
 
-本 change 没有修改 infra-ops、OpenTofu state 或现场设施。固定产物仍须经 release 核验；VM798 现场清理缺受保护原材料、可唯一关联的可信403和当前限定批准，task8.1保持未完成。软件fixture、只读预检或发布成功均不替代现场结果。
+本 change 没有修改 infra-ops、OpenTofu state 或现场设施。固定产物 rc.20 已经 release 核验（见 delivery.md）；VM798 现场清理缺受保护原材料、可唯一关联的可信403和当前限定批准，task8.1保持未完成。软件fixture、只读预检或发布成功均不替代现场结果。

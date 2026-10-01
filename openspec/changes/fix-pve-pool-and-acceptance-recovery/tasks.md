@@ -19,7 +19,7 @@
 - [x] 3.1 更新 publication request/v2、preview/result/record/v3，绑定可选 pool，在原生创建请求直接指定池并在结果中核实际归属；用不入池/既有池/不存在或无权池/计划池更改拒绝的 fake API 测试和合同 fixture 验证。
 - [x] 3.2 将普通 VM、验收和当前 snippet acceptance-origin 消费校验统一到最新模板/验收合同，更新 schemas/examples/docs，拒绝旧 start 输入且不改 state；运行合同生成一致性及模板消费者定向回归。
 
-  软件证据：合同/验收执行/snippet 消费组合 123 passed；合同与验收执行 Pyright 0 errors。v3 已进入源码，plan/start 接入与发布仍见未完成任务。
+  软件证据：合同/验收执行/snippet 消费组合 123 passed；合同与验收执行 Pyright 0 errors。v3 的 plan/start 及固定发布已交付。
 
 ## 4. 验收 plan、执行与诊断
 
@@ -46,12 +46,12 @@
 ## 7. 综合软件验证和固定版本发布
 
 - [x] 7.1 运行范围相符的Python、Pyright、Go、OpenTofu模块/合同一致性、helper和OpenSpec strict校验，提交前gitnexus impact/detect-changes；记录实际结果及已知覆盖边界，不用graph零影响代替测试。
-- [ ] 7.2 使用现有release流程发布新的固定runtime和配套launcher，核验manifest/platform digest、SHA256SUMS和能力；发布说明填写实际版本/helper要求及软件结果，不提前编造digest或声称现场验收通过。
+- [x] 7.2 使用现有release流程发布新的固定runtime和配套launcher，核验manifest/platform digest、SHA256SUMS和能力；发布说明填写实际版本/helper要求及软件结果，不提前编造digest或声称现场验收通过。
 
 ## 8. 本轮现场恢复验收
 
 - [ ] 8.1 收到原材料、权威403证据及当前限定清理批准后，固定新版digest按正式入口核清run-120-1并精确清理VM798/两盘/snippet；记录实际逐项存在性、完整性和原验收仍未通过，不重放原操作。资料/权限不足时保留unknown与本项未完成，不阻断诚实的软件版本交付。
 
-软件阶段补充证据：验收/准入/helper 组合197 passed，恢复与plan39 passed，修正旧fixture后的deadline/runtime review/recovery dispatch/saved policy组合51 passed；Go全套通过，源码Pyright 0 errors；OpenTofu模块fmt、OpenSpec strict通过。local/DinD为软件传输fixture，无现场设施操作。普通已有pool改空值受provider限制，在准入拒绝；现有pool迁移检查双方Pool.Allocate及VM修改授权。
+软件验证：本地 Python 1792 passed、2 skipped；全项目 Pyright 0 errors、Ruff及4/4 import contracts通过；Go含实际runtime集成通过；OpenTofu锁定provider0.111.1的fixture init/validate、模块fmt及OpenSpec strict通过。GitNexus已重新索引并完成提交前检测；代码阶段风险critical，以调用链/源码和回归测试核边界，不将graph零影响当作验收。
 
-综合软件验证：完整 Python 1792 passed、2 skipped；全项目 Pyright 0 errors、Ruff通过、4/4 import contracts kept；Go全套通过；OpenTofu锁定provider0.111.1的fixture init/validate通过；恢复合同/执行/证据41 passed。GitNexus重新索引并detect-changes完成，风险critical，已以调用链/源码与软件回归验证限定边界。固定发布和现场8.1尚未完成。
+固定 rc.20：release工作流36862950966全部成功；amd64/arm64各2093 passed、4 skipped；匿名digest拉取及capabilities平台调用、registry manifest/platform摘要、两个launcher SHA256SUMS和macOS版本输出已核。实际值见[delivery.md](delivery.md)。API/helper与local/DinD传输均为软件fixture，没有现场设施结论；仅8.1未完成。
