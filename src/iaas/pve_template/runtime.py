@@ -1108,6 +1108,14 @@ def _delete_action(selected: Any, execution: Execution, request: Mapping[str, An
 def run(selected: Any, operation: str, scope: str, execution: Execution,
         image_digest: str, execution_id: str = "") -> None:
     require(operation in {"check", "read", "plan", "apply", "verify"}, "unsupported pve-template operation")
+    if operation in {'check', 'plan'} and selected.options.get('action') == 'accept':
+        from .acceptance_plan import run_plan
+        run_plan(selected, execution, operation, image_digest)
+        return
+    if operation in {'check', 'plan'} and selected.options.get('action') == 'recover':
+        from .recovery import run as run_recovery
+        run_recovery(selected, operation, scope, execution, image_digest, execution_id)
+        return
     options = _options(selected)
     require(not set(options) - {"action", "preview_digest", "execution_id", "admission", "retirement_admission",
                                 "ownership_admission", "runtime_digest", "template"},

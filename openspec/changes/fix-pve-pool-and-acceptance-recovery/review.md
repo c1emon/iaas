@@ -1,6 +1,6 @@
 # 规格复核记录
 
-2026-10-01，核对本轮需求、当前main源码/主规格及上游权限与provider合同。仅完成规划，不实施代码、不改infra-ops、不操作PVE、不发布或归档。
+2026-10-01 规划复核时，核对本轮需求、main源码/主规格及上游权限与provider合同。下列规划检查保留为历史记录；当前软件实施状态见末节及 tasks。
 
 ## 需求覆盖
 
@@ -25,7 +25,7 @@
 - VM798恢复不补pool、不套新区间、不刷新旧截止、不修改原结果；当前源状态不成为独立克隆清理的额外依赖，也无需补guest exec权才能清理。
 - 不把预检/软件fixture/发布当作现场恢复完成；原资源精确ID来自受保护材料，当前文档没有猜测磁盘/snippet身份或声称旧验收通过。
 
-## 校验结果
+## 规划时校验结果
 
 - `openspec validate fix-pve-pool-and-acceptance-recovery --strict`：通过，无issues。
 - 将7个delta在临时目录合并到对应主规格后strict验证：7/7通过，无ERROR/WARNING；存在长requirement文本的INFO提示。
@@ -33,3 +33,9 @@
 - 当前只新增本change目录；主规格、源码、infra-ops及现场资源未修改。规划完成不代表实施完成；task8.1只有真实材料、有效限定批准及实际逐项结果就绪后才能完成。
 
 未发现阻断本次规格定稿的问题。实际pool、原资源UUID/volid/snippet、受信日志材料、新清理截止和发布digest是后续运行/交付输入，不能在规格阶段编造。
+
+## 实施复核
+
+实施分支 `implement/fix-pve-pool-and-acceptance-recovery` 已分阶段提交 pool/VMID、publication 最新合同、拒绝分类、源诊断以及验收 preview/准入。恢复入口、launcher 和示例按当前合同交付；软件校验结果记于 tasks。
+
+本 change 没有修改 infra-ops、OpenTofu state 或现场设施。固定产物仍须经 release 核验；VM798 现场清理缺受保护原材料、可唯一关联的可信403和当前限定批准，task8.1保持未完成。软件fixture、只读预检或发布成功均不替代现场结果。

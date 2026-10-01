@@ -462,3 +462,11 @@ iaas run --runtime-config runtime.json --engine local --environment observe.yml 
 请求字段和共享正反例见 [验收合同示例](examples/pve-acceptance/acceptance-request.json)。
 
 安装与最小 sudo 权限见 [PVE snippet cleanup helper](operations/pve-snippet-cleanup.md)。
+
+## Controlled acceptance recovery
+
+PVE template `plan` with `options.action: recover` produces a read-only recovery
+preview. `recover` requires explicit `execution_mode: start|observe`; start uses
+new scoped v2 approval and current recovery v1 contracts, while observe reads the
+already dispatched recovery directory without network or operation credentials.
+See [run-120-1 commands, file mappings and evidence boundaries](operations/pve-acceptance-recovery.md).

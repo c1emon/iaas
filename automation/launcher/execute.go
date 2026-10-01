@@ -18,6 +18,9 @@ type discovery struct {
 	Path            string   `json:"path"`
 	CredentialNames []string `json:"credential_names"`
 	ExecutionID     string   `json:"execution_id"`
+	Effects         *Effects `json:"effects"`
+	Action          string   `json:"action"`
+	ExecutionMode   string   `json:"execution_mode"`
 }
 
 func (t *task) runtimeArgs() []string {
@@ -106,10 +109,10 @@ func (t *task) savedPlan() ([]string, error) {
 }
 
 func execute(options Options, configuration RuntimeConfig, image string, effects Effects, docker Docker) (resultError error) {
-	proxy, err := normalizedProxy(effects.Network, os.Getenv)
-	if err != nil {
-		return err
-	}
+	return executeWithCapabilities(options, configuration, image, effects, docker, nil)
+}
+
+func executeWithCapabilities(options Options, configuration RuntimeConfig, image string, effects Effects, docker Docker, capabilities *Capabilities) (resultError error) {
 	if err := os.MkdirAll(filepath.Dir(options.Output), 0700); err != nil {
 		return err
 	}
@@ -153,6 +156,24 @@ func execute(options Options, configuration RuntimeConfig, image string, effects
 			return err
 		}
 	}
+	if capabilities != nil {
+		if err := capabilities.selectedAction(options.Component, options.Operation, ready.Action); err != nil {
+			return err
+		}
+	}
+	if ready.Effects != nil {
+		if ready.Effects.State != effects.State || (ready.Effects.InfrastructureWrite && !effects.InfrastructureWrite) || (ready.Effects.Network && !effects.Network) {
+			return errors.New("runtime discovery effects exceed selected operation")
+		}
+		effects = *ready.Effects
+	}
+	if ready.ExecutionMode == "observe" && (effects.Network || effects.State || effects.InfrastructureWrite || len(ready.CredentialNames) != 0) {
+		return errors.New("observe requires offline effects and no operation credentials")
+	}
+	proxy, err := normalizedProxy(effects.Network, os.Getenv)
+	if err != nil {
+		return err
+	}
 	extra, err := t.savedPlan()
 	if err != nil {
 		return err
@@ -162,6 +183,12 @@ func execute(options Options, configuration RuntimeConfig, image string, effects
 	// client path, never a credential value into the Docker command line.
 	childEnvironment := os.Environ()
 	for _, name := range ready.CredentialNames {
+		boundedPVE := options.Component == "pve-template" && (options.Operation == "accept" || options.Operation == "recover" || ready.Action == "accept" || ready.Action == "recover")
+		if (boundedPVE && name != "PVE_API_TOKEN" && name != "PVE_API_CA") ||
+			(options.Component == "pve" && options.Operation == "snippet-cleanup") ||
+			(boundedPVE && options.Operation == "check") {
+			return errors.New("runtime requested credentials outside bounded PVE operation allowlist")
+		}
 		if reservedProxyName(name) {
 			return errors.New("image requested a reserved proxy name as a facility credential")
 		}

@@ -19,11 +19,15 @@ REPO = Path(__file__).resolve().parents[2]
 def test_capabilities_advertise_lifecycle_contract_versions() -> None:
     assert capabilities()["lifecycle_versions"] == {
         "pve": {"plan": 2, "result": 1, "snippet_cleanup_request": 2, "snippet_cleanup_result": 2},
-        "pve-template": {"preview": 2, "result": 2, "record": 2, "acceptance_request": 2, "acceptance_result": 2},
+        "pve-template": {"preview": 3, "result": 3, "record": 3, "publication_request": 2,
+                         "acceptance_request": 3, "acceptance_result": 3, "acceptance_preview": 1,
+                         "recovery_request": 1, "recovery_result": 1, "recovery_preview": 1,
+                         "one_shot_execution_admission": 2},
         "image": {"artifact": 1, "build_request": 1, "test_request": 1, "test_result": 1},
     }
     assert capabilities()["operation_capabilities"] == {
-        "pve-template": {"accept": {"absolute_deadlines": True}},
+        "pve-template": {"accept": {"absolute_deadlines": True}, "recover": {"absolute_deadlines": True},
+                         "check": {"accept": True}, "plan": {"accept": True, "recover": True, "absolute_deadlines": True}},
         "pve": {"snippet-cleanup": {"absolute_deadlines": True}},
     }
 
@@ -126,6 +130,8 @@ def test_pve_template_apply_hydrates_preview_and_admission_from_selected_files(t
                  "consumption": {"reserved": True, "reservation_id": "reservation-1"},
                  "pending": {"record_id": "pending-1"},
                  "serialization": {"held": True, "context_id": "context-1"}}
+    admission["vmid_reservation"] = {"cluster_scope": request["cluster_scope"], "vmids": [request["vmid"]],
+                                    "reservation_id": "reservation-1", "context_id": "context-1"}
     request_path = tmp_path / "request.json"
     preview_path = tmp_path / "template-preview.json"
     admission_path = tmp_path / "execution-admission.json"
@@ -240,14 +246,16 @@ def test_partial_k3s_deploy_is_rejected_before_execution(tmp_path, monkeypatch, 
     assert "whole cluster" in json.loads(capsys.readouterr().out)["reason"]
 
 
-def test_selected_online_file_closure_does_not_read_current_saved_plan_inputs(tmp_path):
-    entry = config(tmp_path, "pve", {"cluster": "missing.yml", "vms": "missing-vms.yml"},
+def test_selected_saved_apply_reads_only_current_policy_inputs_and_selected_credentials(tmp_path):
+    entry = config(tmp_path, "pve", {"cluster": "cluster.yml", "vms": "vms.yml"},
                    {"backend": "backend", "ssh_key": "key", "known_hosts": "hosts",
                     "state_admission": "state", "execution_admission": "execution", "dependencies": "unused"})
     for name in ["backend", "key", "hosts", "state", "execution"]:
         (tmp_path / name).write_text("synthetic")
+    for name in ["cluster.yml", "vms.yml"]:
+        (tmp_path / name).write_text("schema_version: 1\n")
     selected = load_operation(entry, "pve", "apply", None, SourceReader())
-    assert not selected.documents and set(selected.files) == {"backend", "ssh_key", "known_hosts",
+    assert set(selected.documents) == {"cluster", "vms"} and set(selected.files) == {"backend", "ssh_key", "known_hosts",
                                                                "state_admission", "execution_admission"}
 
 
@@ -415,9 +423,10 @@ def test_vm_api_ca_discovery_maps_caller_file(tmp_path, operation):
 
 @pytest.mark.parametrize("operation", ["check", "generate", "prepare-dependencies", "apply", "verify"])
 def test_vm_other_phases_never_discover_current_api_ca(tmp_path, operation):
-    entry = config(tmp_path, "pve", {"cluster": "cluster.yml"}, {"api_ca": "missing-ca.pem", "backend": "backend",
+    entry = config(tmp_path, "pve", {"cluster": "cluster.yml", "vms": "vms.yml"}, {"api_ca": "missing-ca.pem", "backend": "backend",
                    "state_admission": "state", "execution_admission": "execution"})
     (tmp_path / "cluster.yml").write_text("synthetic: true")
+    (tmp_path / "vms.yml").write_text("synthetic: true")
     document = yaml.safe_load(entry.read_text())
     document["components"]["pve"]["options"] = {"root": {"id": "root", "files": {}}}
     entry.write_text(yaml.safe_dump(document))

@@ -1,0 +1,16 @@
+schema_version: 1
+environment: acceptance-recovery-fixture
+components:
+  pve-template:
+    options:
+      action: recover
+      execution_mode: start
+    files:
+      recovery_request: recovery-request.json
+      recovery_preview: recovery-preview.json
+      execution_admission: recovery-admission.json
+      original_execution_dir: original
+      cleanup_evidence_dir: evidence
+      api_ca: /run/pve/api-ca.pem
+      ssh_key: /run/pve/recovery-key
+      known_hosts: /run/pve/known_hosts

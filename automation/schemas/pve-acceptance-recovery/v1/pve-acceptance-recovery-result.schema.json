@@ -1,0 +1,443 @@
+{
+  "$defs": {
+    "CallerAssociation": {
+      "additionalProperties": false,
+      "properties": {
+        "execution_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Execution Id",
+          "type": "string"
+        },
+        "material": {
+          "$ref": "#/$defs/EvidenceRef"
+        },
+        "pending_record_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Pending Record Id",
+          "type": "string"
+        },
+        "plan_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Plan Id",
+          "type": "string"
+        },
+        "reservation_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Reservation Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plan_id",
+        "execution_id",
+        "pending_record_id",
+        "reservation_id",
+        "material"
+      ],
+      "title": "CallerAssociation",
+      "type": "object"
+    },
+    "Deadlines": {
+      "additionalProperties": false,
+      "properties": {
+        "cleanup_deadline_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+          "title": "Cleanup Deadline At",
+          "type": "string"
+        },
+        "work_deadline_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+          "title": "Work Deadline At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "work_deadline_at",
+        "cleanup_deadline_at"
+      ],
+      "title": "Deadlines",
+      "type": "object"
+    },
+    "EvidenceRef": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$",
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "title": "EvidenceRef",
+      "type": "object"
+    },
+    "FullOriginalResources": {
+      "additionalProperties": false,
+      "properties": {
+        "snippets": {
+          "items": {
+            "$ref": "#/$defs/RecoverySnippet"
+          },
+          "title": "Snippets",
+          "type": "array"
+        },
+        "vm": {
+          "$ref": "#/$defs/RecoveryVM"
+        },
+        "volumes": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Volumes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "vm",
+        "volumes",
+        "snippets"
+      ],
+      "title": "FullOriginalResources",
+      "type": "object"
+    },
+    "OriginalMaterials": {
+      "additionalProperties": false,
+      "properties": {
+        "journal": {
+          "$ref": "#/$defs/EvidenceRef"
+        },
+        "request": {
+          "$ref": "#/$defs/EvidenceRef"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EvidenceRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "request",
+        "journal"
+      ],
+      "title": "OriginalMaterials",
+      "type": "object"
+    },
+    "PreviousRecovery": {
+      "additionalProperties": false,
+      "properties": {
+        "execution_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Execution Id",
+          "type": "string"
+        },
+        "materials": {
+          "$ref": "#/$defs/OriginalMaterials"
+        }
+      },
+      "required": [
+        "execution_id",
+        "materials"
+      ],
+      "title": "PreviousRecovery",
+      "type": "object"
+    },
+    "RecoverySnippet": {
+      "additionalProperties": false,
+      "properties": {
+        "created_by": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Created By",
+          "type": "string"
+        },
+        "file_id": {
+          "pattern": "^[A-Za-z0-9_.-]+:snippets/[A-Za-z0-9_.-]+$",
+          "title": "File Id",
+          "type": "string"
+        },
+        "node": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Node",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node",
+        "file_id",
+        "sha256",
+        "created_by"
+      ],
+      "title": "RecoverySnippet",
+      "type": "object"
+    },
+    "RecoveryVM": {
+      "additionalProperties": false,
+      "properties": {
+        "created_by": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Created By",
+          "type": "string"
+        },
+        "node": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Node",
+          "type": "string"
+        },
+        "pool": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pool"
+        },
+        "smbios_uuid": {
+          "title": "Smbios Uuid",
+          "type": "string"
+        },
+        "vmid": {
+          "maximum": 999999999,
+          "minimum": 100,
+          "title": "Vmid",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "node",
+        "vmid",
+        "smbios_uuid",
+        "created_by"
+      ],
+      "title": "RecoveryVM",
+      "type": "object"
+    },
+    "RuntimeIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "image_digest": {
+          "pattern": "^(?:[^@\\s]+@)?sha256:[0-9a-f]{64}$",
+          "title": "Image Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "image_digest"
+      ],
+      "title": "RuntimeIdentity",
+      "type": "object"
+    }
+  },
+  "$id": "https://iaas.invalid/schemas/pve-acceptance-recovery/v1/pve-acceptance-recovery-result.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "caller_association": {
+      "$ref": "#/$defs/CallerAssociation"
+    },
+    "cleanup": {
+      "additionalProperties": true,
+      "title": "Cleanup",
+      "type": "object"
+    },
+    "collection": {
+      "additionalProperties": true,
+      "title": "Collection",
+      "type": "object"
+    },
+    "deadline_outcome": {
+      "additionalProperties": true,
+      "title": "Deadline Outcome",
+      "type": "object"
+    },
+    "deadlines": {
+      "$ref": "#/$defs/Deadlines"
+    },
+    "execution_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Execution Id",
+      "type": "string"
+    },
+    "facility_writes": {
+      "enum": [
+        "none",
+        "issued",
+        "unknown"
+      ],
+      "title": "Facility Writes",
+      "type": "string"
+    },
+    "full_original_resources": {
+      "$ref": "#/$defs/FullOriginalResources"
+    },
+    "kind": {
+      "const": "pve-acceptance-recovery-result",
+      "title": "Kind",
+      "type": "string"
+    },
+    "original_acceptance": {
+      "enum": [
+        "passed",
+        "failed",
+        "unknown"
+      ],
+      "title": "Original Acceptance",
+      "type": "string"
+    },
+    "original_activity": {
+      "enum": [
+        "inactive",
+        "unknown"
+      ],
+      "title": "Original Activity",
+      "type": "string"
+    },
+    "original_deadlines": {
+      "$ref": "#/$defs/Deadlines"
+    },
+    "original_execution_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Original Execution Id",
+      "type": "string"
+    },
+    "original_facility_writes": {
+      "enum": [
+        "none",
+        "issued",
+        "unknown"
+      ],
+      "title": "Original Facility Writes",
+      "type": "string"
+    },
+    "original_materials": {
+      "$ref": "#/$defs/OriginalMaterials"
+    },
+    "original_request_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Original Request Digest",
+      "type": "string"
+    },
+    "original_runtime": {
+      "$ref": "#/$defs/RuntimeIdentity"
+    },
+    "overall": {
+      "enum": [
+        "passed",
+        "failed",
+        "unknown"
+      ],
+      "title": "Overall",
+      "type": "string"
+    },
+    "preview_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Preview Digest",
+      "type": "string"
+    },
+    "previous_recoveries": {
+      "items": {
+        "$ref": "#/$defs/PreviousRecovery"
+      },
+      "title": "Previous Recoveries",
+      "type": "array"
+    },
+    "reason_code": {
+      "title": "Reason Code",
+      "type": "string"
+    },
+    "reconciliation": {
+      "additionalProperties": true,
+      "title": "Reconciliation",
+      "type": "object"
+    },
+    "recovery_of": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Recovery Of",
+      "type": "string"
+    },
+    "request_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Request Digest",
+      "type": "string"
+    },
+    "residuals": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Residuals",
+      "type": "array"
+    },
+    "resources": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Resources",
+      "type": "array"
+    },
+    "runtime": {
+      "$ref": "#/$defs/RuntimeIdentity"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "kind",
+    "schema_version",
+    "execution_id",
+    "original_execution_id",
+    "recovery_of",
+    "request_digest",
+    "preview_digest",
+    "runtime",
+    "deadlines",
+    "full_original_resources",
+    "caller_association",
+    "original_materials",
+    "previous_recoveries",
+    "original_request_digest",
+    "original_runtime",
+    "original_deadlines",
+    "original_acceptance",
+    "original_activity",
+    "original_facility_writes",
+    "facility_writes",
+    "reconciliation",
+    "resources",
+    "cleanup",
+    "collection",
+    "residuals",
+    "overall",
+    "deadline_outcome",
+    "reason_code"
+  ],
+  "title": "RecoveryResult",
+  "type": "object"
+}

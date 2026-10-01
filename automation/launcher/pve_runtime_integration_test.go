@@ -30,7 +30,11 @@ func TestPVELauncherDiscoveryWithRealRuntime(t *testing.T) {
 				files[name] = path
 			}
 			entry := filepath.Join(directory, "environment.json")
-			data, _ := json.Marshal(map[string]any{"schema_version": 1, "environment": "synthetic", "components": map[string]any{"pve": map[string]any{"inputs": map[string]any{}, "files": files}}})
+			inputs := map[string]string{
+				"cluster": filepath.Join(repo, "tests/fixtures/runtime/pve-cluster.yml"),
+				"vms":     filepath.Join(repo, "tests/fixtures/runtime/vms.yml"),
+			}
+			data, _ := json.Marshal(map[string]any{"schema_version": 1, "environment": "synthetic", "components": map[string]any{"pve": map[string]any{"inputs": inputs, "files": files}}})
 			if err := os.WriteFile(entry, data, 0600); err != nil {
 				t.Fatal(err)
 			}

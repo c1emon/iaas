@@ -1,6 +1,6 @@
 # infra-ops 适配清单
 
-这是 IaaS 对调用方的接入要求，不授权修改 infra-ops。当前为设计清单；最终版本/digest、schema文件和可执行示例在实施发布时补齐。
+这是 IaaS 对调用方的接入要求，不授权修改 infra-ops。当前源码入口、[schema](../../../automation/schemas/pve-acceptance-recovery/v1/README.md) 和[正式操作说明](../../../docs/operations/pve-acceptance-recovery.md) 已交付；固定版本/digest仍以发布核验结果为准。
 
 | 调用侧适配 | 接入要求与可核对结果 |
 | --- | --- |
@@ -28,9 +28,9 @@
 - 服务端 guest exec POST 权限403时间：`2026-10-01T16:54:06+08:00`，即 `2026-10-01T08:54:06Z`；仅描述调用方提供的现场事实，实际来源和唯一关联须由恢复核清验证。
 - 清单中的VM UUID、两个volid、snippet file_id/digest从原材料精确读取，不以这里的VMID、数量或文件名猜测。新版读取原证据，不补池、不迁移VM、不刷新原截止。
 
-## 计划中的正式调用形式
+## 正式调用形式
 
-下列是本change要求实施的入口形态，当前版本尚不支持，不是可立即执行的现场命令。环境文件使用files.recovery_request、files.original_execution_dir、files.cleanup_evidence_dir；start另外映射files.recovery_preview和files.execution_admission，并使用固定新runtime配置。
+以下入口已由软件fixture验证，现场运行仍需真实原材料、可信403证据和当前限定批准。环境文件使用files.recovery_request、files.original_execution_dir、files.cleanup_evidence_dir；start另外映射files.recovery_preview和files.execution_admission，并使用固定新runtime配置。
 
 ```sh
 iaas run --runtime-config runtime.json --engine local --environment recovery-plan.yml \
@@ -46,4 +46,4 @@ iaas run --runtime-config runtime.json --engine local --environment recovery-obs
   --execution-id '<new-cleanup-execution-id>' --output 'results/recovery-observe/<new-cleanup-execution-id>'
 ```
 
-plan环境的options.action=recover；start的options.execution_mode=start；observe的options.execution_mode=observe、files.original_execution_dir映射新恢复执行的diagnostics/execution且无操作凭据。两条execution-id占位符替换为同一个实际新ID；保留output basename=execution_id，observe用新的父目录。原验收材料与新恢复输出必须分离，且不能覆盖。最终交付将提供按正式schema验证过的JSON/YAML，不要求手改journal、删除执行目录、清消费记录或直接重跑。
+plan环境的options.action=recover；start的options.execution_mode=start；observe的options.execution_mode=observe、files.original_execution_dir映射新恢复执行的work/pve-recovery且无操作凭据。两条execution-id占位符替换为同一个实际新ID；保留output basename=execution_id，observe用新的父目录。原验收材料与新恢复输出必须分离，且不能覆盖。正式JSON/YAML样例见[恢复样例](../../../docs/examples/recovery/README.md)，其身份/摘要/截止均为合成值，不能直接用作现场批准。

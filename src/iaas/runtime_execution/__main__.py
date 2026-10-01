@@ -21,7 +21,7 @@ from .components import IMPLEMENTATION, run_component
 from .credentials import AWS_FILE_VARIABLES, prepare_file_credentials
 from .dependencies import prepare_dependencies
 from .execution import Execution
-from .operations import DIAGNOSE, capabilities, credential_names, operation_for, process_environment
+from .operations import OFFLINE, DIAGNOSE, capabilities, credential_names, operation_for, process_environment
 from .outputs import TaskOutputs
 from .plans import apply_saved_plan, prepare_plan
 from .root import materialize_root
@@ -58,10 +58,10 @@ def main(argv: list[str] | None = None) -> int:
         mapping = json.loads(args.input_map.read_text()) if args.input_map else None
         reader = SourceReader(mapping)
         selected = load_operation(args.environment, args.component, args.operation, args.scenario, reader)
-        bounded = ((args.component == "pve-template" and args.operation == "accept")
+        bounded = ((args.component == "pve-template" and args.operation in {"accept", "recover"})
                    or (args.component == "pve" and args.operation == "snippet-cleanup"))
         if bounded and selected.options.get("execution_mode") == "observe":
-            effects = DIAGNOSE
+            effects = OFFLINE
         mutation = (bounded or (args.component == 'opnsense' and args.operation == 'apply')
                     or (args.component in {'pve', 'pve-template'} and args.operation == 'apply')
                     or (args.component == 'image' and args.operation in {'build', 'test', 'clean', 'read'}))
@@ -81,11 +81,13 @@ def main(argv: list[str] | None = None) -> int:
                                  and "original_execution_dir" in selected.files))
         if readonly_original:
             allowed = set()
+            effects = OFFLINE
         # Explicit aliases win over host file channels, before the launcher
         # attempts to discover or transfer any stale host paths.
         allowed -= {variable for alias, variable in AWS_FILE_VARIABLES.items() if alias in selected.files}
         if args.discover:
             print(json.dumps({"status": "ready", "credential_names": sorted(allowed), "effects": asdict(effects),
+                              "action": selected.options.get("action"), "execution_mode": selected.options.get("execution_mode"),
                               "sources": sorted(map(str, reader.logical_sources)),
                               "execution_id": args.execution_id or None}))
             return 0
@@ -102,7 +104,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.plan:
             protected.append(args.plan)
         outputs = TaskOutputs.create(args.output, IMPLEMENTATION, protected)
-        environ = process_environment(args.component, args.operation, os.environ, render_names)
+        environ = process_environment(args.component, args.operation, os.environ, render_names, effects=effects)
         proxy_context.enter_context(process_proxy_environment(environ))
         if readonly_original:
             for name in credential_names(args.component, args.operation, render_names):
@@ -128,6 +130,10 @@ def main(argv: list[str] | None = None) -> int:
             from iaas.pve_snippet_cleanup.runtime import run as run_cleanup
             run_cleanup(selected, args.operation, args.scope, execution, args.image_digest,
                         execution_id=args.execution_id)
+        elif args.component == "pve-template" and args.operation == 'recover':
+            from iaas.pve_template.recovery import run as run_recovery
+            run_recovery(selected, args.operation, args.scope, execution, args.image_digest,
+                         execution_id=args.execution_id)
         elif args.component == "pve-template" and (args.operation == "accept" or (
                 args.operation == "read" and "original_execution_dir" in selected.files)):
             from iaas.pve_template.acceptance import run as run_acceptance
@@ -191,7 +197,7 @@ def main(argv: list[str] | None = None) -> int:
             retained = any(item.get("retain_storage", False) for item in phases)
             try:
                 domain_summary = {}
-                if selected is not None and ((args.component == "pve-template" and (args.operation == "accept" or (args.operation == "read"
+                if selected is not None and ((args.component == "pve-template" and (args.operation in {"accept", "recover"} or (args.operation == "read"
                             and "original_execution_dir" in selected.files)))
                         or (args.component == "pve" and args.operation == "snippet-cleanup")):
                     # Preserve only public domain outcomes from this new output;
@@ -202,12 +208,24 @@ def main(argv: list[str] | None = None) -> int:
                             prior = json.loads(stream.read(16385))
                     except (OSError, ValueError):
                         prior = {}
+                    if args.operation == 'recover':
+                        try:
+                            with (execution.outputs.path('work') / 'pve-recovery/result.json').open() as stream:
+                                recovery_result = json.load(stream)
+                        except (OSError, ValueError):
+                            recovery_result = {}
+                        if (isinstance(recovery_result, dict) and isinstance(recovery_result.get('collection'), dict)
+                                and recovery_result['collection'].get('status') == 'incomplete'):
+                            prior = {'overall': 'unknown', 'reason_code': 'recovery_collection_failed',
+                                     'execution_id': args.execution_id}
+                            retained = True
                     if isinstance(prior, dict):
                         overall = prior.get("overall", prior.get("status"))
                         if overall in ("failed", "unknown"):
                             domain_summary["overall"] = overall
                         if prior.get("reason_code") in ("original_evidence_unavailable", "original_result_missing",
-                                                        "original_material_unavailable"):
+                                                        "original_material_unavailable", "recovery_observation_unavailable",
+                                                        "recovery_result_missing", "recovery_collection_failed"):
                             domain_summary["reason_code"] = prior["reason_code"]
                         identity = prior.get("execution_id")
                         if isinstance(identity, str) and re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", identity):
