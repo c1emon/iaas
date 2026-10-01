@@ -48,18 +48,21 @@
 - [x] 7.1 运行范围相符的Python、Pyright、Go、OpenTofu模块/合同一致性、helper和OpenSpec strict校验，提交前gitnexus impact/detect-changes；记录实际结果及已知覆盖边界，不用graph零影响代替测试。
 - [x] 7.2 使用现有release流程发布新的固定runtime和配套launcher，核验manifest/platform digest、SHA256SUMS和能力；发布说明填写实际版本/helper要求及软件结果，不提前编造digest或声称现场验收通过。
 
-## 8. 本轮现场恢复验收
+## 8. infra-ops 外部现场恢复跟踪（不作 IaaS 软件交付门禁）
 
-用户已于 2026-10-01 决定暂时后置本项；本轮完成软件实施和固定版本交付，不继续现场操作。重启条件见 delivery.md。
+2026-10-02 已明确由 infra-ops 承接本项：只读生成计划、取得新限定批准、执行精确清理。IaaS 仅交付恢复能力和固定版本，不执行现场操作，不将外部未完成状态作为软件关闭门禁。
 
 - [ ] 8.1 原材料已提供；收到当前限定清理批准且现场条件就绪后，固定包含本次调整的新版digest按正式入口核清run-120-1并精确清理VM798/两盘/snippet；历史403/trace仅辅助，不要求重建。记录实际逐项存在性及原验收仍未通过，不重放原操作。资料/权限不足时保留unknown与本项未完成，不阻断软件交付。
 
-## 9. 适度工程调整（后续源码，未发布）
+## 9. 适度工程调整与审核修正
 
-- [x] 9.1 历史未知在preview中交由管理员使用现有新批准处置；取消历史写入已知、完整递归恢复链及旧结果全资源owned的硬门禁，不要求重建trace；保留已确认活动/当前冲突和本次响应丢失保护。
-- [x] 9.2 完整helper引用无需重复全局API视图；不存在的资源不要求删除权限；独立snippet清理不依赖无关旧任务终态；普通VM创建仅预检当前分配权限，后续由PVE实际请求执行。
+- [x] 9.1 仅无UPID/PID的旧guest-exec关联未知可在preview中交由管理员使用现有新批准处置；取消历史写入已知、完整递归恢复链及旧结果全资源owned的硬门禁，不要求重建trace；保留活动无法核清/当前冲突和本次响应丢失保护。
+- [x] 9.2 完整helper引用无需重复全局API视图；不存在的资源不要求删除权限；独立snippet清理不依赖无关旧任务终态；普通VM创建恢复完整必要权限预检，未来入池权限不足或无法证明则拒绝。
 - [x] 9.3 同步规格、合同说明与操作文档；Python全套1802 passed、2 skipped，最后补充与调整后的定向回归116 passed；Pyright 0 errors、Ruff和import contracts通过、OpenSpec strict通过。测试为软件fixtures，无现场操作；rc.20不包含这次后续调整。
 
 软件验证：本地 Python 1792 passed、2 skipped；全项目 Pyright 0 errors、Ruff及4/4 import contracts通过；Go含实际runtime集成通过；OpenTofu锁定provider0.111.1的fixture init/validate、模块fmt及OpenSpec strict通过。GitNexus已重新索引并完成提交前检测；代码阶段风险critical，以调用链/源码和回归测试核边界，不将graph零影响当作验收。
 
 固定 rc.20：release工作流36862950966全部成功；amd64/arm64各2093 passed、4 skipped；匿名digest拉取及capabilities平台调用、registry manifest/platform摘要、两个launcher SHA256SUMS和macOS版本输出已核。实际值见[delivery.md](delivery.md)。API/helper与local/DinD传输均为软件fixture，没有现场设施结论；仅8.1未完成。
+
+- [x] 9.4 修正 infra-ops 审核发现的两处P1：当前UPID查询失败/异常或恢复活动未知阻断全部清理写入；仅缺失旧guest-exec关联可由现有新批准处置；普通VM创建恢复完整必要权限预检。软件反例与回归通过，不执行设施操作。
+- [ ] 9.5 发布包含审核修正的固定rc.21镜像及launcher，核实际digest/资产与CI消费结果，并同步交接给infra-ops；现场8.1仍为外部未完成。

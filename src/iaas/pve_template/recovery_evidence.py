@@ -227,6 +227,8 @@ def _task_activity(client: Any, task: dict, node: str) -> tuple[str, str]:
         return 'inactive', 'retained_terminal_request'
     if task.get('status') in {'succeeded', 'failed'} and (task.get('phase') != 'guest_exec' or type(task.get('pid')) is int):
         return 'inactive', 'retained_terminal_request'
+    if task.get('phase') == 'guest_exec' and task.get('status') in {'intent', 'unknown'} and task.get('pid') is None:
+        return 'unknown', 'historical_guest_exec_unlinked'
     return 'unknown', 'request_outcome_unknown'
 
 
@@ -259,7 +261,7 @@ def reconcile_original(request: dict, original_root: Path, evidence_root: Path, 
     for index, task in enumerate(journal['tasks']):
         check(isinstance(task, dict), 'original_task_evidence_invalid')
         activity, reason = _task_activity(client, task, old['temporary_vm']['node'])
-        if activity == 'unknown' and _rejected(task, index, old, caller, exports):
+        if reason == 'historical_guest_exec_unlinked' and _rejected(task, index, old, caller, exports):
             activity, reason = 'inactive', 'request_rejected'
         requests.append({'task_index': index, 'phase': task.get('phase'), 'original_status': task.get('status'),
                          'activity': activity, 'reason_code': reason,
@@ -269,6 +271,8 @@ def reconcile_original(request: dict, original_root: Path, evidence_root: Path, 
                          for s in journal.get('snippets', []))
     previous_unknown = False
     active = any(r['activity'] == 'active' for r in requests)
+    unresolved = helper_unknown or any(r['activity'] == 'unknown' and r['reason_code'] != 'historical_guest_exec_unlinked'
+                                       for r in requests)
     for previous in originals['previous']:
         prior = previous['journal']
         rows = prior.get('tasks', [])
@@ -282,11 +286,13 @@ def reconcile_original(request: dict, original_root: Path, evidence_root: Path, 
                and row.get('status') not in {'succeeded', 'not_sent', 'rejected'} for row in rows):
             previous_unknown = True
     activity = 'unknown' if active or helper_unknown or previous_unknown or any(r['activity'] == 'unknown' for r in requests) else 'inactive'
+    unresolved = unresolved or previous_unknown
     writes = 'unknown' if any(r['historical_write'] == 'unknown' for r in requests) or helper_unknown else (
         'issued' if any(r['historical_write'] == 'issued' for r in requests) or journal.get('snippets') else 'none')
     # No global mutation_active flag can clear a missing per-request fact.
     if journal.get('mutation_active') is True and not requests and not journal.get('snippets'):
         activity, writes = 'unknown', 'unknown'
+        unresolved = True
     current = inspect_resources(request, client, snippets)
     source = old['template_record']
     try:
@@ -303,11 +309,13 @@ def reconcile_original(request: dict, original_root: Path, evidence_root: Path, 
         source_observation = {'status': 'unavailable'}
     # Historical uncertainty is disclosed in the reviewed preview. The existing
     # new cleanup approval authorizes disposition; no reconstructed trace is
-    # required. Confirmed running tasks and current conflicts still block writes.
-    safe = not active and current['ownership'] == 'confirmed'
+    # required for unlinked legacy guest exec. Failed current task observations
+    # cannot be replaced by an administrator approval.
+    safe = not active and not unresolved and current['ownership'] == 'confirmed'
     return {'status': 'eligible' if safe else 'unknown', 'cleanup_eligible': safe,
-            'disposition': 'administrator_decision' if activity == 'unknown' else 'automatic',
+            'disposition': 'blocked' if not safe else 'administrator_decision' if activity == 'unknown' else 'automatic',
             'active_tasks': active,
+            'task_activity_unresolved': unresolved,
             'original_activity': activity, 'original_facility_writes': writes,
             'requests': requests, 'helper_activity': 'unknown' if helper_unknown else 'inactive',
             'previous_activity': 'unknown' if previous_unknown else 'inactive',

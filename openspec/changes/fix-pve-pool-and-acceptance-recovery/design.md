@@ -93,9 +93,9 @@ rc.19 的 acceptance request/result v2 和 journal v1 按原形读取、校验�
 
 当前有效清理批准绑定新 recovery execution、preview/request 摘要、原生原 execution、caller 原 pending/消费关系、full_original_resources、新 image digest 和新有限截止；使用新 execution_id 及 recovery_of，保留原 created_by。清理权限仅要求本次核清/停止/删除/参考检查所需权限，已确认拒绝的 guest exec 不需要补齐 guest 执行权才能清理。凭据可轮换，但资源所有权与受保护历史主体关联仍必须验证，凭据值不进入公开身份摘要。
 
-历史 activity/writes unknown 不作为永久清理门禁；确认运行的任务仍阻断。当前 VM 核 UUID、完整盘集、锁和归属；磁盘/snippet 保留精确身份、内容和引用检查。helper 已提供完整全局引用时，不再要求 API 同时看见全部 VM；没有该引用证据时才使用完整 API 视图兜底。不存在的资源不要求无实际用途的删除权限。原生删除丢响应仍停止本次依赖写入；新执行可由管理员另行批准，不从当前 absent 反推历史成功。
+仅无 UPID/PID 的旧 guest-exec intent/unknown 缺历史关联可交由新批准处置；UPID 查询超时、异常状态、helper或旧恢复活动无法核清必须阻断，管理员批准不能替代活动核对。当前 VM 核 UUID、完整盘集、锁和归属；磁盘/snippet 保留精确身份、内容和引用检查。helper 已提供完整全局引用时，不再要求 API 同时看见全部 VM；没有该引用证据时才使用完整 API 视图兜底。不存在的资源不要求无实际用途的删除权限。原生删除丢响应仍停止本次依赖写入；后续新执行仍须核清实际活动，不从当前 absent 反推历史成功。
 
-新恢复 result 分别记录历史 activity/writes、原验收、本次写入与逐项清理结果。当前完整清单确认 absent、本次写入可判明且收集完整即可 cleanup passed，历史 unknown 不必消解。原结果不改，不授权模板推广。同 ID 仍只 observe；后续清理使用新 preview/批准和完整原清单，不重放旧操作。独立 snippet 清理在确认 VM 删除与当前无引用后，不再要求无关旧 guest/helper 状态全部终结。
+新恢复 result 分别记录历史 activity/writes、原验收、本次写入与逐项清理结果。当前完整清单确认 absent、本次写入可判明、活动已核清且收集完整才可 cleanup passed；仅缺失旧 guest-exec 关联的历史 unknown 不必消解。原结果不改，不授权模板推广。同 ID 仍只 observe；后续清理使用新 preview/批准和完整原清单，不重放旧操作。独立 snippet 清理在确认 VM 删除与当前无引用后，不再要求无关旧 guest/helper 状态全部终结。
 
 ### 6. 源与容量诊断
 

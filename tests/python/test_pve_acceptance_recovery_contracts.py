@@ -67,6 +67,7 @@ def test_passed_result_requires_complete_absent_resource_list():
     for mutate in (lambda d: d['resources'].pop(),
                    lambda d: d['resources'][0].update(existence='unknown'),
                    lambda d: d['reconciliation'].update(active_tasks=True),
+                   lambda d: d['reconciliation'].update(task_activity_unresolved=True),
                    lambda d: d.update(facility_writes='unknown')):
         changed = deepcopy(document)
         mutate(changed)

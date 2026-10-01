@@ -270,7 +270,49 @@ def test_later_new_authority_retains_complete_original_list_and_previous_recover
         recovery.plan(request, original, evidence, api, snippets)
 
 
-def test_unknown_previous_recovery_is_disclosed_for_new_administrator_decision(tmp_path):
+@pytest.mark.parametrize('failure', ['timeout', 'invalid_status'])
+def test_original_upid_cannot_be_observed_blocks_cleanup_after_approved_plan(tmp_path, failure):
+    data = setup(tmp_path)
+    api = data[-2]
+    original_request = api.request
+    def unavailable(method, path, **kwargs):
+        if '/tasks/' in path and 'qmclone' in path:
+            if failure == 'timeout':
+                raise TimeoutError('protected-task-query')
+            return {'status': 'unexpected'}
+        return original_request(method, path, **kwargs)
+    api.request = unavailable
+    facts = reconcile_original(data[0], data[3], data[4], api, data[-1],
+                               trusted_rejection_exports=recovery.trusted_sources(data[0]))
+    assert facts['cleanup_eligible'] is False
+    assert facts['task_activity_unresolved'] is True
+    result = invoke(tmp_path, data)
+    assert result['overall'] == 'unknown'
+    assert result['facility_writes'] == 'none'
+    assert api.new_calls == []
+    assert data[-1].deletes == []
+
+
+def test_retained_guest_pid_is_current_activity_not_missing_historical_correlation(tmp_path):
+    from test_pve_acceptance_recovery_evidence import write
+    data = list(setup(tmp_path))
+    request, _, admission, original, evidence, api, snippets = data
+    journal = json.loads((original / 'journal.json').read_text())
+    journal['tasks'][-1]['pid'] = 42
+    request['original_materials']['journal'] = write(original, 'journal.json', journal)
+    facts = reconcile_original(request, original, evidence, api, snippets,
+                               trusted_rejection_exports=recovery.trusted_sources(request))
+    assert facts['cleanup_eligible'] is False
+    assert facts['task_activity_unresolved'] is True
+    preview = build_recovery_preview(request, facts)
+    admission.update(request_digest=canonical_digest(request), plan_digest=preview['preview_digest'].removeprefix('sha256:'))
+    data[:3] = [request, preview, admission]
+    assert invoke(tmp_path, data)['overall'] == 'unknown'
+    assert api.new_calls == []
+    assert snippets.deletes == []
+
+
+def test_unknown_previous_recovery_blocks_cleanup_despite_current_absence(tmp_path):
     from test_pve_acceptance_recovery_evidence import write
     data = setup(tmp_path)
     data[-2].lost = True
@@ -286,9 +328,9 @@ def test_unknown_previous_recovery_is_disclosed_for_new_administrator_decision(t
     api.volumes.clear()
     snippets.present = False
     preview = recovery.plan(request, original, evidence, api, snippets)
-    assert preview['reconciliation']['cleanup_eligible'] is True
+    assert preview['reconciliation']['cleanup_eligible'] is False
     assert preview['reconciliation']['previous_activity'] == 'unknown'
-    assert preview['reconciliation']['disposition'] == 'administrator_decision'
+    assert preview['reconciliation']['disposition'] == 'blocked'
     assert len(api.new_calls) == 1
 
 

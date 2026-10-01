@@ -188,6 +188,7 @@ class RecoveryResult(Contract):
                            for r in self.resources)):
                 raise ValueError('recovery success lacks full per-resource absence')
         if self.overall == 'passed' and (self.facility_writes == 'unknown' or self.reconciliation.get('active_tasks') is True
+                or self.reconciliation.get('task_activity_unresolved') is True
                 or self.collection.get('status') != 'complete' or self.residuals
                 or self.cleanup.get('status') != 'passed'):
             raise ValueError('recovery success lacks complete cleanup evidence')

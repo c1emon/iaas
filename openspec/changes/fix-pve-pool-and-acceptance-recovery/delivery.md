@@ -4,9 +4,9 @@
 
 当前合同：publication request v2、preview/result/record v3；acceptance request/result v3、preview v1；acceptance/recovery one-shot admission v2；recovery request/preview/result v1。新 start 不接受旧合同；rc.19 原验收 v2 仅供恢复读取。
 
-节点需安装本版本 upload/delete helper 和 wrapper-only sudo 规则，并固定 SSH key/known_hosts。验收池权限继承的只读编译使用节点原生 PVE 权限模块；不写池或 ACL。普通 VM 创建仅预检当前分配权限，后续实际权限由 PVE 执行；publication 的预检保持原范围。已有 VM 的 pool 改为空值受 provider 0.111.1 限制，准入拒绝；新 VM 可不指定 pool。
+节点需安装本版本 upload/delete helper 和 wrapper-only sudo 规则，并固定 SSH key/known_hosts。验收池权限继承的只读编译使用节点原生 PVE 权限模块；不写池或 ACL。普通 VM 创建恢复完整必要权限预检，未来入池后的权限无法证明时明确拒绝；publication 的预检保持原范围。已有 VM 的 pool 改为空值受 provider 0.111.1 限制，准入拒绝；新 VM 可不指定 pool。
 
-后续适度工程调整（尚未发布）：历史未知不再永久阻断新批准的限定清理；preview 显示 administrator_decision，沿用现有批准，不重建 trace、不新增门禁。当前活动、归属、引用与本次响应丢失保护保留；完整 helper 引用无需重复全局 API 可见性，旧结果允许部分/unknown 信息，历史恢复链不要求补齐。独立 snippet 清理不依赖无关旧任务终态。rc.20 发布产物仍是下述原源码，不包含本次调整。
+后续适度工程调整（待发布 rc.21）：仅缺失关联的旧 guest-exec 历史未知可由新批准限定处置；preview 显示 administrator_decision，沿用现有批准，不重建 trace、不新增门禁。当前任务查询失败/异常、helper或旧恢复活动无法核清必须阻断；归属、引用与本次响应丢失保护保留；完整 helper 引用无需重复全局 API 可见性，旧结果允许部分/unknown 信息，历史恢复链不要求补齐。独立 snippet 清理不依赖无关旧任务终态。rc.20 发布产物仍是下述原源码，不包含本次调整。
 
 调整验证：Python 全套 1802 passed、2 skipped；最后补充与调整后的定向回归 116 passed；Pyright 0 errors、Ruff、4/4 import contracts 和 OpenSpec strict 通过。无 launcher/Go/Tofu 修改，没有扩展到现场或发布复验。
 
@@ -24,4 +24,6 @@
 
 固定镜像为 `ghcr.io/c1emon/iaas-runtime@sha256:4e2eb186b1d3123f6e3b492d117ecf81e2458e8de35f175fd9759de8e020b117`。已读取 registry descriptor 核 manifest/platform 摘要；下载两个 launcher 并核 SHA256SUMS，macOS launcher `--version` 返回 `iaas v0.1.0-rc.20`。正式恢复输入与命令见 [操作说明](../../../docs/operations/pve-acceptance-recovery.md)。
 
-task8.1 按用户 2026-10-01 的决定暂时后置，保持未完成。后续启动条件是 run-120-1 受保护原材料、可唯一关联 guest exec 的可信403及当前限定清理批准齐备。VM798、两盘和 snippet 的实际存在性仍未知；原验收没有通过或晋升结论。清理成功也不会改变原验收。
+task8.1 由 infra-ops 承接现场 plan、新限定批准与精确清理；IaaS 不执行现场操作，也不以该外部任务未完成阻断软件交付。原验收仍未通过，现场资源存在性尚未验证。缺失旧 guest-exec 关联可保留 unknown；当前任务/恢复活动无法核清则不得清理。
+
+2026-10-02 审核修正（待发布）：恢复当前任务查询失败与异常状态的零写入阻断，历史 guest-exec 缺关联仍可限定处置；恢复普通 VM 全部必要权限预检。Python 全套 1808 passed、2 skipped；Pyright、Ruff、4/4 import contracts 与 OpenSpec strict 通过。

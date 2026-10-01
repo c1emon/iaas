@@ -17,7 +17,7 @@ The PVE VM planning and execution paths SHALL consume pve-template-record/v3 and
 ## ADDED Requirements
 
 ### Requirement: Saved VM plans freeze pool and VMID policy
-Ordinary VM planning SHALL preserve effective per-VM pool placement, caller acceptance reservation policy and concrete VMIDs in existing native-plan/companion review bindings. Saved execution SHALL consume only those approved inputs and independently recheck effective pool permissions and relevant current occupancy before facility writes. Creation SHALL precheck current native allocation authority without requiring helper compilation of a future VM lifecycle ACL; PVE SHALL enforce each subsequent actual request. Existing VM update/delete permission checks SHALL remain in place.
+Ordinary VM planning SHALL preserve effective per-VM pool placement, caller acceptance reservation policy and concrete VMIDs in existing native-plan/companion review bindings. Saved execution SHALL consume only those approved inputs and independently recheck effective pool permissions and relevant current occupancy before facility writes. Creation SHALL precheck all necessary allocation, audit and configuration/lifecycle permissions before facility writes. If future pool-derived authority cannot be established, admission SHALL refuse rather than discover missing authority after clone. Existing VM update/delete permission checks SHALL remain in place.
 
 #### Scenario: Approved pool or reserved interval changes
 - **WHEN** selected inputs or companions differ from the reviewed pool, VMID or acceptance reservation policy

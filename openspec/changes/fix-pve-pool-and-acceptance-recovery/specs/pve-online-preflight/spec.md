@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Pool admission uses actual effective operation permissions
-Online planning and execution admission SHALL verify that every selected pool exists and that the actual authenticated principal can perform the requested create/clone placement and relevant current operations. Ordinary VM creation SHALL precheck allocation authority and leave future lifecycle authorization to native request enforcement rather than require prospective helper compilation. Acceptance/publication dependent lifecycle preflight SHALL retain its current scope. Privilege-separated token checks SHALL use effective privileges and native API permission conditions rather than role names, user-only grants or ACL presence.
+Online planning and execution admission SHALL verify that every selected pool exists and that the actual authenticated principal can perform the requested create/clone placement and relevant current operations. Ordinary VM creation SHALL precheck all necessary dependent lifecycle/configuration permissions before writes, and refuse insufficient prospective pool evidence. Acceptance/publication dependent lifecycle preflight SHALL retain its current scope. Privilege-separated token checks SHALL use effective privileges and native API permission conditions rather than role names, user-only grants or ACL presence.
 
 #### Scenario: Create or clone through pool authorization
 - **WHEN** the native API permits allocation through the selected pool instead of a direct target VMID grant
@@ -9,7 +9,7 @@ Online planning and execution admission SHALL verify that every selected pool ex
 - **AND** it SHALL NOT erroneously require both direct target VMID and pool allocation grants
 
 #### Scenario: Prospective permissions or pool visibility are insufficient
-- **WHEN** required acceptance/publication prospective permission evidence cannot be established, pool existence is unobservable, or the only occupancy evidence is an incomplete pool-filtered VM list
+- **WHEN** required prospective permission evidence cannot be established, pool existence is unobservable, or the only occupancy evidence is an incomplete pool-filtered VM list
 - **THEN** admission SHALL report permission_evidence_insufficient and refuse dependent facility writes
 - **AND** it SHALL NOT interpret an empty filtered list or arbitrary union of ACLs as complete authority
 

@@ -93,7 +93,8 @@ iaas run --runtime-config "$RECOVERY_INPUT_DIR/runtime.json" \
 observe 不使用 API/SSH 凭据、设施网络或新预算。结果缺失、摘要冲突或收集失败保留
 unknown，不会回退为 start。需要进一步清理时使用新 execution/preview/批准，提供
 已留存的 `previous_recoveries`，保留未缩减的完整原清单及所提供材料的实际字节摘要。
-不要求补齐历史链或消解每一次旧响应丢失；已知活动任务仍须停止后再清理。
+不要求补齐历史链。已留存任务的 UPID 查询失败、状态异常或旧清理响应丢失导致
+活动仍无法确认时，必须阻断自动清理；不能用新批准替代当前活动状态核对。
 
 ## 权威403、活动及结果边界
 
@@ -101,8 +102,10 @@ unknown，不会回退为 start。需要进一步清理时使用新 execution/pr
 request 声明 source、provenance、保护主体和来源说明。已有独立 dispatch trace 时
 可与服务端记录匹配；没有 trace、关联歧义或证据不足则保留历史 unknown，不要求
 管理员补造原始记录。文件 hash、当前缺权限、没有 PID 或当前停止状态都不能单独
-证明历史请求未执行。历史 unknown 在 preview 中显式交给管理员决定；沿用现有
-限定清理批准，不增加新的批准字段、重建证明或全历史闭环门禁。
+证明历史请求未执行。仅无 UPID/PID 的旧 guest-exec intent/unknown 关联缺失可在
+preview 中交给管理员用现有新批准决定，历史仍为 unknown。当前任务无法核清或
+helper 活动未知则显示 disposition=blocked、task_activity_unresolved=true，拒绝
+清理，不增加重建证明或全历史闭环门禁。
 
 恢复分别报告原请求核清、`original_activity`、`original_facility_writes`、本次
 `facility_writes`、逐项 present/absent/unknown 与 cleanup/collection。权威 guest exec

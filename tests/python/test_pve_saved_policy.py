@@ -83,7 +83,8 @@ def test_pool_permission_recheck_is_readonly_and_refuses_missing_grants():
         admit_permissions([change()], api)
 
 
-def test_pool_only_creation_does_not_require_future_acl_compilation():
+def test_allocate_only_creation_refuses_missing_lifecycle_permissions():
+    from iaas.pve_template.admission import AdmissionError
     from iaas.runtime_execution.pve_policy import admit_permissions
     class Api:
         def pool_detail(self, pool):
@@ -92,7 +93,29 @@ def test_pool_only_creation_does_not_require_future_acl_compilation():
             if path.startswith('/pool/'):
                 return {path: {'VM.Allocate': 0}}
             return {path: {}}
-    admit_permissions([change()], Api())
+    with pytest.raises(AdmissionError, match='permission_missing'):
+        admit_permissions([change()], Api())
+
+
+@pytest.mark.parametrize('pool_only', [False, True])
+def test_create_prechecks_configuration_permissions_and_rejects_unproven_future_acl(pool_only):
+    from iaas.pve_template.admission import AdmissionError
+    from iaas.runtime_execution.pve_policy import admit_permissions
+    item = change()
+    item['change']['after']['cpu'] = {'cores': 2}
+    class Api:
+        def pool_detail(self, pool):
+            return {'members': []}
+        def effective_permissions(self, path):
+            grants = {'VM.Audit': 0, 'VM.Allocate': 0}
+            if pool_only:
+                grants['VM.Config.CPU'] = 0
+                if path.startswith('/vms/'):
+                    grants = {}
+            return {path: grants}
+    reason = 'permission_evidence_insufficient' if pool_only else 'permission_missing'
+    with pytest.raises(AdmissionError, match=reason):
+        admit_permissions([item], Api())
 
 
 def test_state_owned_update_is_allowed_but_replaced_identity_rejected():
