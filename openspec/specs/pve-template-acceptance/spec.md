@@ -6,11 +6,11 @@ Define bounded one-shot template clone acceptance, fixed guest checks, ownership
 ## Requirements
 
 ### Requirement: Fixed one-shot template clone acceptance
-The runtime SHALL accept an explicitly fixed published template identity, publication record, temporary VM placement/storage/network/resource bounds, fresh cloud-init injection, required checks, deadlines and create/delete authorization for one full-clone acceptance execution.
+The runtime SHALL accept an explicitly fixed published template identity, publication record, temporary VM placement/pool/storage/network/resource bounds, caller acceptance VMID interval, pinned runtime, fresh cloud-init injection, required checks, deadlines and create/delete authorization for one full-clone acceptance execution.
 
 #### Scenario: Start an authorized acceptance
-- **WHEN** the caller supplies valid fixed materials and a complete execution admission
-- **THEN** the runtime SHALL persist execution and request association before mutation, confirm the template identity and free VMID, perform a full clone, configure only the temporary VM and start it
+- **WHEN** the caller supplies valid current request/preview materials and a complete matching execution admission
+- **THEN** the runtime SHALL persist execution and request association before mutation, confirm the template identity and free VMID, perform a full clone directly into the required pool, configure only the temporary VM and start it
 - **AND** it SHALL enforce declared disk/boot expectations and resource bounds without modifying the source template or adopting existing resources
 
 #### Scenario: Target identity or authorization is invalid
@@ -49,8 +49,8 @@ The runtime SHALL attempt cleanup after success, check failure or timeout within
 - **AND** it SHALL repeat the same safety checks without cloning, deleting the VM again, changing the original acceptance result or hiding other residuals
 
 #### Scenario: Source template changes or cannot be rechecked
-- **WHEN** final stable identity/configuration/volume comparison differs or cannot be completed
-- **THEN** source verification SHALL fail or remain unknown and prevent overall acceptance success
+- **WHEN** a completed comparison against an established baseline confirms stable identity/configuration/volume differences, or an attempted query cannot be completed
+- **THEN** source verification SHALL fail only for confirmed changes and otherwise remain unknown, preventing overall acceptance success
 - **AND** the runtime SHALL NOT attempt source repair or claim whole-disk byte-integrity verification
 
 ### Requirement: Repeat acceptance observes original execution
@@ -80,7 +80,7 @@ The runtime SHALL produce a versioned result containing template and execution i
 - **AND** original failure facts and unknown effects SHALL remain visible rather than being overwritten by cleanup or current observations
 
 ### Requirement: Absolute deadlines are execution-bound
-Acceptance request/result v2 SHALL carry frozen `deadlines.work_deadline_at` and `deadlines.cleanup_deadline_at` in valid UTC `YYYY-MM-DDTHH:mm:ssZ` format with work not later than cleanup. The runtime SHALL bind both values into the canonical request digest, matching operation-specific execution admission deadlines, execution identity and persisted request/admission/journal/result. Relative timeouts SHALL only impose stricter local limits.
+Acceptance request/result v3 SHALL carry frozen `deadlines.work_deadline_at` and `deadlines.cleanup_deadline_at` in valid UTC `YYYY-MM-DDTHH:mm:ssZ` format with work not later than cleanup. The runtime SHALL bind both values into the canonical request and preview digests, matching operation-specific execution admission deadlines, execution identity and persisted request/admission/journal/result. Relative timeouts SHALL only impose stricter local limits.
 
 #### Scenario: Deadline binding or format is invalid
 - **WHEN** a required cutoff is missing, malformed, calendar-invalid, incorrectly ordered or conflicts with admission or original materials
@@ -145,3 +145,77 @@ Results SHALL distinguish admission deadline rejection, work deadline exhaustion
 - **WHEN** UTC moves backward during work and the execution subsequently enters cleanup
 - **THEN** cleanup remaining budget SHALL NOT exceed its monotonic upper bound frozen at start or any subsequent tightening
 - **AND** unavailable trustworthy time SHALL refuse new writes rather than create a replacement window
+
+### Requirement: Acceptance has a read-only reviewed plan
+pve-template check with action=accept SHALL validate current acceptance request/v3 offline without credentials/network. pve-template plan with action=accept SHALL perform complete read-only online admission and emit acceptance-preview/v1. Start SHALL bind request/preview digests, target, stable cluster scope, runtime, pool, concrete VMID, reservation interval and frozen deadlines to current approval and actual execution before any facility write. Its journal SHALL retain the validated preview snapshot and digest so protected observation and original-material consumers can verify that association without rebuilding the plan.
+
+#### Scenario: Plan acceptance with fixed resources
+- **WHEN** current input fixes the source, nonempty pool, temporary VMID inside its inclusive interval, storage/network/resource bounds, runtime and deadlines
+- **THEN** plan SHALL return a machine-readable bound preview including readiness and total-capacity diagnostics without clone, upload, startup, guest exec or state writes
+- **AND** planning SHALL NOT consume a mutation approval or create a VMID reservation in IaaS
+
+#### Scenario: Pool interval runtime or cutoff binding differs
+- **WHEN** execution changes approved pool, interval, VMID, runtime or either cutoff, or lacks the matching preview/admission
+- **THEN** start SHALL refuse dependent facility writes without replanning, filling missing values or substituting another runtime
+
+### Requirement: Acceptance pool is mandatory and independently verified
+Every new temporary acceptance VM SHALL declare a nonempty existing pool, and the full clone request SHALL directly specify it. Start and cleanup SHALL confirm actual membership before their mutations while independently retaining execution identity, UUID, exact frozen resource ownership and inactivity checks. Pool membership SHALL NOT authorize ownership or deletion of other members.
+
+#### Scenario: Pool is missing or unusable
+- **WHEN** pool is omitted/empty, authoritative evidence confirms it absent, or effective operation permissions are insufficient
+- **THEN** check or online admission as applicable SHALL refuse before cloning or starting any VM
+- **AND** execution SHALL NOT fall back to no pool or create/authorize a pool
+
+#### Scenario: Actual membership changes
+- **WHEN** the cloned VM is outside its approved pool before startup or cleanup
+- **THEN** the dependent mutation SHALL be refused with pool_membership_mismatch and known resources retained
+- **AND** matching VMID or another pool member SHALL NOT be adopted as this execution's resource
+
+#### Scenario: Full acceptance and cleanup complete
+- **WHEN** pool membership and all independent acceptance/ownership checks pass and exact temporary cleanup succeeds
+- **THEN** only the execution-owned temporary VM, disks and generated snippets SHALL be removed
+- **AND** the pool, its ACLs, the source template and unrelated members SHALL remain intact
+
+### Requirement: Rejected requests and unknown outcomes remain distinct
+The runtime SHALL record bounded phase, request classification and necessary HTTP status for failures. A uniquely established pre-execution interface rejection SHALL end only that request's active uncertainty; timeouts, connection interruption and possible acceptance with missing responses SHALL remain unknown. Prior successful clone/configuration/start/upload facts SHALL NOT be erased.
+
+#### Scenario: Guest exec receives authoritative permission 403
+- **WHEN** the guest exec API rejects the request before acceptance/execution with confirmed HTTP403
+- **THEN** its request SHALL be recorded rejected, the cloud-init check SHALL fail with request_rejected and HTTP403, and that request SHALL no longer be active/unknown
+- **AND** prior facility writes SHALL remain issued and cleanup MAY proceed only if no other conflict/unknown remains and current ownership/authority/cleanup window are valid
+
+#### Scenario: Guest exec response is lost
+- **WHEN** guest exec may have been accepted but times out or loses its response
+- **THEN** its request and active outcome SHALL remain unknown, required checks SHALL NOT pass, and dependent destructive cleanup SHALL be refused
+- **AND** current VM state or missing PID SHALL NOT prove the request unexecuted
+
+#### Scenario: A different request still has unknown activity
+- **WHEN** one request is clearly rejected but another dispatched task/helper remains uncertain
+- **THEN** aggregate mutation activity and facility_writes SHALL preserve that uncertainty and prevent unsafe cleanup
+- **AND** phase classification SHALL remain specific rather than flatten all errors to observation_unknown
+
+### Requirement: Source consistency diagnostics require an established comparison
+Source verification SHALL distinguish source_changed, source_snapshot_missing, source_query_failed and source_evidence_insufficient. Confirmed identity/configuration/volume differences against a bound baseline SHALL fail; missing snapshot or insufficient/query evidence SHALL remain unknown. Original primary failure stage/reason SHALL survive final recheck and cleanup.
+
+#### Scenario: Capacity fails before initial snapshot is saved
+- **WHEN** disk_limit_exceeded occurs before an initial source snapshot is established
+- **THEN** source_unchanged SHALL be unknown with source_snapshot_missing and the original capacity failure SHALL remain visible
+- **AND** the result SHALL NOT describe the missing snapshot as confirmed source mutation
+
+#### Scenario: Source changes or cannot be observed
+- **WHEN** an established source comparison confirms a different UUID/configuration/volume, or query/evidence prevents comparison
+- **THEN** the result SHALL respectively report source_changed/failed or the applicable query/evidence reason with unknown
+- **AND** acceptance SHALL remain non-success without source repair
+
+### Requirement: Total disk bounds include owned auxiliary disks before clone
+Acceptance plan and execution preflight SHALL calculate total_required_bytes for all disks cloned/generated for the temporary VM, including system, cloud-init, EFI, TPM and other owned auxiliary disks. They SHALL compare that total against disk_limit_bytes and applicable storage capacity before clone, return a bounded limit/total/per-disk diagnostic and refuse unknown sizes. Post-clone checks SHALL continue to enforce the bound.
+
+#### Scenario: Forty GiB system disk has an additional cloud-init disk
+- **WHEN** source requires 40 GiB plus 4 MiB cloud-init and disk_limit_bytes is 40 GiB
+- **THEN** plan/start SHALL report 42,953,867,264 required bytes and disk_limit_exceeded before clone
+- **AND** they SHALL NOT exclude auxiliary disks or automatically raise the limit; a changed bound SHALL require a new plan/approval
+
+#### Scenario: Auxiliary size or capacity is insufficient
+- **WHEN** a required disk size cannot be established or the known target storage capacity is insufficient
+- **THEN** admission SHALL refuse before cloning with disk_size_unknown or storage_capacity_insufficient respectively
+- **AND** EFI/TPM and other owned disks SHALL follow the same total-bound rule without an exhaustive platform matrix

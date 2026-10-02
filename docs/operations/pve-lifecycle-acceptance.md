@@ -1,6 +1,6 @@
 # PVE 生命周期验收材料
 
-整理日期：2026-10-02。本页是 IaaS 的材料与结论入口；操作步骤仍以对应手册为准。固定软件为 rc.25，完整镜像/launcher 摘要与发布检查见[固定交付](../../openspec/changes/fix-pve-pool-and-acceptance-recovery/delivery.md)。
+整理日期：2026-10-02。本页是 IaaS 的材料与结论入口；操作步骤仍以对应手册为准。固定软件为 rc.25，完整镜像/launcher 摘要与发布检查见[固定交付](../../openspec/changes/archive/2026-10-02-fix-pve-pool-and-acceptance-recovery/delivery.md)。
 
 ## 当前结论及边界
 
@@ -17,9 +17,9 @@
 
 | 材料 | IaaS入口 | 保留方式 |
 | --- | --- | --- |
-| 当前固定版本、checksum、CI结论 | [delivery](../../openspec/changes/fix-pve-pool-and-acceptance-recovery/delivery.md)、对应GitHub Release | 当前摘要完整保留；旧版本只保留关键变化/失败及权威链接，完整旧值仍在Git历史与发布资产 |
-| 需求、设计取舍和任务完成 | [change入口](../../openspec/changes/fix-pve-pool-and-acceptance-recovery/README.md)、proposal/design/specs/tasks/review | 保留设计与责任边界，任务只记录完成条件，阶段性重复统计精简 |
-| 当前操作要求 | [PVE](03-pve.md)、[原验收恢复](pve-acceptance-recovery.md)、[snippet清理](pve-snippet-cleanup.md)、[调用方适配](../../openspec/changes/fix-pve-pool-and-acceptance-recovery/infra-ops-adaptation.md) | 完整保留文件映射、批准/归属/截止/只读观察和失败关闭规则；历史实例不作为授权 |
+| 当前固定版本、checksum、CI结论 | [delivery](../../openspec/changes/archive/2026-10-02-fix-pve-pool-and-acceptance-recovery/delivery.md)、对应GitHub Release | 当前摘要完整保留；旧版本只保留关键变化/失败及权威链接，完整旧值仍在Git历史与发布资产 |
+| 需求、设计取舍和任务完成 | [change入口](../../openspec/changes/archive/2026-10-02-fix-pve-pool-and-acceptance-recovery/README.md)、proposal/design/specs/tasks/review | 保留设计与责任边界，任务只记录完成条件，阶段性重复统计精简 |
+| 当前操作要求 | [PVE](03-pve.md)、[原验收恢复](pve-acceptance-recovery.md)、[snippet清理](pve-snippet-cleanup.md)、[调用方适配](../../openspec/changes/archive/2026-10-02-fix-pve-pool-and-acceptance-recovery/infra-ops-adaptation.md) | 完整保留文件映射、批准/归属/截止/只读观察和失败关闭规则；历史实例不作为授权 |
 | 机器合同与合成样例 | [acceptance/cleanup schema](../../automation/schemas/pve-acceptance/v3/README.md)、[recovery schema](../../automation/schemas/pve-acceptance-recovery/v1/README.md)、[验收fixtures](../examples/pve-acceptance/README.md)、[恢复fixtures](../examples/recovery/README.md)、[cleanup合同](../contracts/pve-acceptance-cleanup-v2.md) | schema、示例和生成一致性原样保留；目录版本不等于其中所有合同版本；synthetic不是现场成功证据 |
 | 软件正反例与传输验证 | tests/python的PVE合同、saved-policy、saved-plans、acceptance/recovery及helper测试；automation/launcher的local/DinD与runtime集成 | 原样保留，包括权限不足、活动未知、响应丢失、材料冲突和零写入反例；同质集合不逐文件复制清单 |
 | 实际镜像发布验证 | [.github/workflows/oci-release.yml](../../.github/workflows/oci-release.yml)、automation/oci/checks、launcher/runtime源码 | 保留可重跑的现有流水线与标准报告，不新建逐对象manifest或额外证据门禁 |

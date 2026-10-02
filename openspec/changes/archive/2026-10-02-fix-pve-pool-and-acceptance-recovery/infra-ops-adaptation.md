@@ -1,6 +1,6 @@
 # infra-ops 适配清单
 
-这是 IaaS 对调用方的接入要求，不授权修改 infra-ops。当前源码入口、[schema](../../../automation/schemas/pve-acceptance-recovery/v1/README.md) 和[正式操作说明](../../../docs/operations/pve-acceptance-recovery.md) 已交付；固定版本/digest仍以发布核验结果为准。
+这是 IaaS 对调用方的接入要求，不授权修改 infra-ops。当前源码入口、[schema](../../../../automation/schemas/pve-acceptance-recovery/v1/README.md) 和[正式操作说明](../../../../docs/operations/pve-acceptance-recovery.md) 已交付；固定版本/digest仍以发布核验结果为准。
 
 | 调用侧适配 | 接入要求与可核对结果 |
 | --- | --- |
@@ -46,4 +46,4 @@ iaas run --runtime-config runtime.json --engine local --environment recovery-obs
   --execution-id '<new-cleanup-execution-id>' --output 'results/recovery-observe/<new-cleanup-execution-id>'
 ```
 
-plan环境的options.action=recover；start的options.execution_mode=start；observe的options.execution_mode=observe、files.original_execution_dir映射新恢复执行的work/pve-recovery且无操作凭据。两条execution-id占位符替换为同一个实际新ID；保留output basename=execution_id，observe用新的父目录。原验收材料与新恢复输出必须分离，且不能覆盖。正式JSON/YAML样例见[恢复样例](../../../docs/examples/recovery/README.md)，其身份/摘要/截止均为合成值，不能直接用作现场批准。
+plan环境的options.action=recover；start的options.execution_mode=start；observe的options.execution_mode=observe、files.original_execution_dir映射新恢复执行的work/pve-recovery且无操作凭据。两条execution-id占位符替换为同一个实际新ID；保留output basename=execution_id，observe用新的父目录。原验收材料与新恢复输出必须分离，且不能覆盖。正式JSON/YAML样例见[恢复样例](../../../../docs/examples/recovery/README.md)，其身份/摘要/截止均为合成值，不能直接用作现场批准。

@@ -1,6 +1,6 @@
 # 固定交付与验证结论
 
-本文件保留当前可用产物及关键版本历史。验收范围、材料定位与保留规则统一见 [PVE 生命周期验收材料](../../../docs/operations/pve-lifecycle-acceptance.md)；任务状态见 [tasks](tasks.md)。IaaS 交付软件能力，不执行调用方的设施操作。
+本文件保留当前可用产物及关键版本历史。验收范围、材料定位与保留规则统一见 [PVE 生命周期验收材料](../../../../docs/operations/pve-lifecycle-acceptance.md)；任务状态见 [tasks](tasks.md)。IaaS 交付软件能力，不执行调用方的设施操作。
 
 ## 当前固定版本 rc.25
 

@@ -49,7 +49,7 @@
 
 本项由调用方承接，IaaS 仅交付恢复能力和固定版本。下列完成状态引用调用方记录，不表示 IaaS 执行了设施操作。
 
-- [x] 8.1 调用方记录新恢复 `recover-run-120-1-20261002-01` 已精确清理 VM798、两盘和 snippet；原验收仍未知，模板9004未晋升。历史403仅辅助，不要求重建trace。结论范围及来源见[材料入口](../../../docs/operations/pve-lifecycle-acceptance.md)。
+- [x] 8.1 调用方记录新恢复 `recover-run-120-1-20261002-01` 已精确清理 VM798、两盘和 snippet；原验收仍未知，模板9004未晋升。历史403仅辅助，不要求重建trace。结论范围及来源见[材料入口](../../../../docs/operations/pve-lifecycle-acceptance.md)。
 
 ## 9. 适度工程调整与审核修正
 

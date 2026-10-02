@@ -30,7 +30,7 @@ Download the matching
 launcher and `SHA256SUMS` only from the completed
 [release](https://github.com/c1emon/iaas/releases/tag/v0.1.0-rc.20); actual runtime/platform
 digests, checksums and software verification scope belong in the
-[delivery record](../../openspec/changes/fix-pve-pool-and-acceptance-recovery/delivery.md).
+[delivery record](../../openspec/changes/archive/2026-10-02-fix-pve-pool-and-acceptance-recovery/delivery.md).
 
 Builds support Linux amd64 and arm64; the Release workflow publishes both under
 one version manifest. Use the digest from the selected successful release;
