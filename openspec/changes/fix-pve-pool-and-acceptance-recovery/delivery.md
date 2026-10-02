@@ -6,6 +6,8 @@
 
 ### rc.22 之后的现场缺口修正（尚未发布）
 
+rc.23 的实际镜像集成验证因测试 bind mount 未设置 runner UID:GID 而失败，未形成可用的新镜像交付。测试已补齐与正式 launcher 相同的 `--user UID:GID`，protected_file 的所有权与权限校验不变。本地真实 Python 保存计划准入回归及 Go 全套/discovery 集成通过；后续 rc.24 的实际镜像验证仍待 CI，不覆盖 rc.23 的失败记录。
+
 按 infra-ops 的 `iaas-lifecycle-acceptance-findings.md` 定向修正：review.json 成为 launcher 的当前保存计划必需材料，并以原字节进入 local/DinD 传输；保留原批准中的 vm_policy 绑定和写入前拒绝。discovery 输入失败保留安全原因，ready 身份检查不放宽。存储预检复用现有权限分类，公开 summary/stdout 保留固定 reason_code、stage、storage、operation 和必要的 missing_privileges，不转发原始响应或异常文本。无源快照已有 source_snapshot_missing 分类和零写入回归，无需重复改造。
 
 本地定向 Python 152 passed，Go launcher 全套与实际 Python discovery/保存计划准入集成通过；Pyright、Ruff、4/4 import contracts、OpenSpec strict 通过。Python 全套第二轮 1827 passed、2 skipped，另有一条无关 macOS 进程组测试 PermissionError，单独重跑通过。发布流水线已加入两个平台实际 runtime 镜像的断网保存计划传输/准入验证；镜像验证尚待运行，不据软件 fixture 声称现场成功。本次没有设施操作。

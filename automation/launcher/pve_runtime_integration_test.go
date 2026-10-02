@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,6 +42,7 @@ admit_plan(bundle / 'plan.tfplan', bundle, {}, None)
 			command := exec.Command("uv", "run", "--no-sync", "python", "-c", script, staged)
 			if image := os.Getenv("IAAS_TEST_RUNTIME_IMAGE"); image != "" {
 				command = exec.Command("docker", "run", "--rm", "--pull", "never", "--network", "none",
+					"--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
 					"--mount", "type=bind,src="+staged+",dst=/saved,readonly", "--entrypoint", "python",
 					image, "-c", script, "/saved")
 			}
