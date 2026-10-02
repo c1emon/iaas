@@ -2,6 +2,12 @@
 
 实施分支：`implement/fix-pve-pool-and-acceptance-recovery`。本 change 仅修改 IaaS。
 
+## 未发布修正：普通 VM provider 空 pool
+
+针对 rc.24/run-429-1、run-431-1，普通 VM 的 provider `pool_id=""` 与 null 统一解释为未入池，仅用于权限预检与 reviewed VM policy 比较；原 native-plan、state 和 companions 不改写。plan/apply 共用权限入口，verify 的保存计划绑定复用相同比较。空值变化不触发池迁移预检；真实非空池存在性、完整必要权限、保存计划和批准绑定、已有非空池移除拒绝均保留；验收临时 VM 的 pool 仍必填。
+
+147 项定向 Python 回归通过，包括未入池创建后删除、已有未入池更新、非空池权限不足拒绝、完整软件 plan/apply/verify 删除路径及原材料字节保留、验收空 pool 拒绝。Ruff、Pyright、4/4 import contracts、Go launcher 全套通过。本次不操作 VM799 或模板9005；infra-ops 待固定新 runtime/launcher 后生成新删除计划、取得新批准并完成删除与专属 snippet 清理。rc.25 实际镜像/launcher 发布验证尚待 CI。
+
 ## 最新固定版本 rc.24
 
 ### rc.22 之后的现场缺口修正（已随 rc.24 发布）

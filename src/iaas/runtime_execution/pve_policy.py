@@ -10,6 +10,12 @@ from iaas.common.errors import require
 VM_TYPE = 'proxmox_virtual_environment_vm'
 
 
+def _provider_pool(value: Any) -> Any:
+    # The provider represents an existing unpooled VM as either null or "".
+    # Interpret that state without changing frozen native changes or inputs.
+    return None if value == '' else value
+
+
 def vm_policy(inputs: dict, cluster_scope: Any, changes: Sequence[dict] = ()) -> dict:
     require(isinstance(cluster_scope, str) and bool(cluster_scope.strip()),
             'ordinary PVE operation requires a stable caller cluster_scope')
@@ -28,7 +34,7 @@ def vm_policy(inputs: dict, cluster_scope: Any, changes: Sequence[dict] = ()) ->
         if after:
             matches = [vm for vm in placements if vm['vmid'] == after.get('vm_id')]
             require(len(matches) == 1 and matches[0]['node'] == after.get('node_name')
-                    and 'pool_id' in after and matches[0]['pool'] == after['pool_id']
+                    and 'pool_id' in after and matches[0]['pool'] == _provider_pool(after['pool_id'])
                     and not change.get('after_unknown', {}).get('pool_id'),
                     'native VM placement or pool conflicts with selected inputs')
     return {'cluster_scope': cluster_scope, 'reserved_vm_id_ranges': deepcopy(inputs['cluster']['reserved_vm_id_ranges']),
@@ -66,8 +72,9 @@ def admit_permissions(changes: list[dict], api: Any) -> None:
         change = item['change']
         before, after = change.get('before') or {}, change.get('after') or {}
         value = after or before
-        pool = value.get('pool_id')
-        require(not (change['actions'] == ['update'] and before.get('pool_id') and pool is None),
+        pool = _provider_pool(value.get('pool_id'))
+        before_pool = _provider_pool(before.get('pool_id'))
+        require(not (change['actions'] == ['update'] and before_pool and pool is None),
                 'provider cannot remove existing pool membership; use an explicit destination pool')
         required = {'VM.Audit'}
         if 'create' in change['actions'] or 'delete' in change['actions']:
@@ -79,8 +86,8 @@ def admit_permissions(changes: list[dict], api: Any) -> None:
                 required.add(fields.get(name, 'VM.Config.Options'))
         if pool is not None:
             permissions.pool(pool)
-        if change['actions'] == ['update'] and before.get('pool_id') != after.get('pool_id'):
-            for changed_pool in sorted({p for p in (before.get('pool_id'), pool) if p is not None}):
+        if change['actions'] == ['update'] and before_pool != pool:
+            for changed_pool in sorted({p for p in (before_pool, pool) if p is not None}):
                 permissions.require(f'/pool/{changed_pool}', ['Pool.Allocate'], operation='pool_membership')
             grants = permissions.grants(f"/vms/{value['vm_id']}")
             if 'Permissions.Modify' not in grants:

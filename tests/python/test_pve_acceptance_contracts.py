@@ -40,6 +40,14 @@ def test_schema_exports_are_current():
         assert json.loads(path.read_text()) == schema
 
 
+@pytest.mark.parametrize('pool', [None, ''])
+def test_acceptance_temporary_vm_still_requires_nonempty_pool(pool):
+    request = load_strict_json(FIXTURES / 'acceptance-request.json')
+    request['temporary_vm']['pool'] = pool
+    with pytest.raises(ValueError):
+        validate_acceptance_request(request)
+
+
 def test_positive_fixtures_conform_to_exported_schemas():
     jsonschema = pytest.importorskip('jsonschema')
     for case in CASES:

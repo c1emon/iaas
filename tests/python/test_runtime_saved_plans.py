@@ -273,6 +273,55 @@ def test_independent_verify_keeps_original_and_never_initializes(setup_plan, mon
         verify_pve(plan, plan.parent, selected, execution("downgrade"), "complete-root", IMAGE)
 
 
+def test_unpooled_provider_delete_plan_apply_verify_preserves_frozen_changes(setup_plan, monkeypatch):
+    from iaas.runtime_execution import plans, pve_state
+    from iaas.runtime_execution.pve_state import StateObservation
+    selected, backend, tofu, execution = setup_plan
+    selected.documents['vms']['vms'] = []
+    before = {'node_name': 'synthetic-node', 'vm_id': 500, 'pool_id': '',
+              'smbios': [{'uuid': 'fixture-vm-uuid'}]}
+    native = {'resource_changes': [{'address': 'proxmox_virtual_environment_vm.synthetic',
+              'type': 'proxmox_virtual_environment_vm', 'change': {'actions': ['delete'],
+              'before': before, 'after': None}}]}
+    class API:
+        present = True
+        def effective_permissions(self, path):
+            assert path == '/vms/500'
+            return {path: {name: 0 for name in ('VM.Audit', 'VM.Allocate', 'VM.PowerMgmt', 'VM.Config.Options')}}
+        def cluster_vm_resources(self):
+            return [{'node': 'synthetic-node', 'vmid': 500, 'type': 'qemu'}] if self.present else []
+        def node_status(self, node):
+            return {'status': 'online'}
+        def vm_config(self, node, vmid):
+            return {'smbios1': 'uuid=fixture-vm-uuid', 'scsi0': 'local:vm-500-disk-0,size=8G'}
+    api = API()
+    monkeypatch.setattr(plans, 'api_client', lambda *a: api)
+    def observe(*args):
+        resources = [{'type': 'proxmox_virtual_environment_vm', 'name': 'synthetic',
+                      'instances': [{'attributes': before}]}] if api.present else []
+        serial = 1 if api.present else 2
+        return StateObservation('present', backend.config['bucket'], backend.state_key(), backend.workspace,
+                                None, lineage='synthetic-lineage', serial=serial, empty=not api.present,
+                                raw={'version': 4, 'lineage': 'synthetic-lineage', 'serial': serial, 'resources': resources})
+    monkeypatch.setattr(pve_state, 'observe_state', observe)
+    plan = prepare_plan(selected, execution('prepare', NATIVE_PLAN_JSON=json.dumps(native)), backend,
+                        'complete-root', IMAGE, tofu)
+    frozen = {p: p.read_bytes() for p in plan.parent.rglob('*') if p.is_file()}
+    apply = execution('apply')
+    run = apply.run
+    def apply_run(phase, *args, **kwargs):
+        result = run(phase, *args, **kwargs)
+        if phase == 'apply':
+            api.present = False
+        return result
+    monkeypatch.setattr(apply, 'run', apply_run)
+    apply_saved_plan(plan, plan.parent, selected, apply, backend, 'complete-root', IMAGE, tofu)
+    selected.files['execution_result'] = apply.outputs.root / 'pve-result.json'
+    plans.verify_pve(plan, plan.parent, selected, execution('verify'), 'complete-root', IMAGE)
+    assert json.loads((plan.parent / 'native-plan.json').read_text()) == native
+    assert all(p.read_bytes() == value for p, value in frozen.items())
+
+
 def test_required_external_acceptance_remains_incomplete(setup_plan):
     selected, backend, tofu, execution = setup_plan
     selected.options["verification_requirements"] = {"requirements": [

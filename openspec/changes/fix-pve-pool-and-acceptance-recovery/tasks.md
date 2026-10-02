@@ -73,4 +73,9 @@
 - [x] 10.2 discovery 失败先保留脱敏运行时原因；ready 缺身份或身份不符仍拒绝。存储权限复用共享预检分类缺失、非法值、查询失败与证据不足，并仅输出固定分类、阶段、存储、操作和缺失权限。源快照缺失分类在当前版本已有回归保护。
 - [x] 10.3 rc.24 已发布；两个平台各 2124 passed、4 skipped，实际待发布 runtime 镜像的 launcher 转移后保存计划准入各 1 passed（断网）。匿名 digest 消费、registry 摘要、两个 launcher SHA256SUMS 和 macOS 版本输出已核验；实际值见 delivery.md，不执行设施操作。
 
+## 11. rc.24 普通 VM provider 空 pool 修正
+
+- [x] 11.1 普通 VM provider 的 pool_id="" 与 null 在权限及保存计划 policy 比较中语义一致，不改写 native/state/批准材料；保留真实池权限、已有池移除拒绝及验收必填池。147 项定向回归、软件 plan/apply/verify 删除路径、Ruff、Pyright、4/4 import contracts、Go 全套通过。
+- [ ] 11.2 发布配套 rc.25 runtime/launcher，核 CI、固定 digest、版本与 checksum；现场 VM799 删除及专属 snippet 清理由 infra-ops 用新计划/新批准执行，模板9005保留。
+
 rc.21 实际交付：源码92b85aa，工作流36890195933全部成功；amd64/arm64各2105 passed、4 skipped，两个平台匿名digest消费通过；registry manifest/platform摘要、launcher SHA256SUMS与macOS版本输出均核验。固定digest与资产值见delivery.md。现场8.1交由infra-ops，仍未执行。

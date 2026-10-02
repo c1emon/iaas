@@ -165,9 +165,59 @@ def test_existing_pool_move_checks_both_membership_permissions(denied):
             admit_permissions([item], Api())
 
 
-def test_provider_unsupported_existing_pool_removal_refused():
+@pytest.mark.parametrize('pool', [None, ''])
+def test_provider_unsupported_existing_pool_removal_refused(pool):
     from iaas.runtime_execution.pve_policy import admit_permissions
-    item = change(action='update', pool=None)
+    item = change(action='update', pool=pool)
     item['change']['before'] = {'node_name': 'node-a', 'vm_id': 700, 'pool_id': 'old-pool'}
     with pytest.raises(ValidationError, match='provider cannot remove'):
         admit_permissions([item], object())
+
+
+class UnpooledAPI:
+    def __init__(self):
+        self.calls = []
+    def effective_permissions(self, path):
+        self.calls.append(path)
+        assert path == '/vms/700', 'unpooled VMs must use direct VM grants'
+        return {path: {name: 0 for name in ('VM.Audit', 'VM.Allocate', 'VM.PowerMgmt', 'VM.Config.CPU')}}
+    def pool_detail(self, pool):
+        raise AssertionError('unpooled VM must not query a pool')
+
+
+def test_unpooled_create_then_provider_delete_keeps_native_materials():
+    from iaas.runtime_execution.pve_policy import admit_permissions
+    frozen = inputs()
+    frozen['vms'][0]['pool'] = None
+    created = change(pool=None)
+    api = UnpooledAPI()
+    admit_permissions([created], api)
+    deleted = {'type': created['type'], 'change': {'actions': ['delete'],
+               'before': {**created['change']['after'], 'pool_id': ''}, 'after': None}}
+    native_before = deepcopy(deleted)
+    empty = deepcopy(frozen)
+    empty['vms'] = []
+    policy = vm_policy(empty, 'cluster-one', [deleted])
+    assert policy['vmids'] == [700]
+    metadata = {'changes': [deleted], 'vm_policy': policy}
+    bind_policy(metadata, empty, empty, 'cluster-one')
+    admit_permissions(metadata['changes'], api)
+    assert deleted == native_before
+    assert all(path == '/vms/700' for path in api.calls)
+
+
+@pytest.mark.parametrize('before_pool,after_pool', [('', ''), ('', None), (None, '')])
+def test_existing_unpooled_update_uses_direct_permissions(before_pool, after_pool):
+    from iaas.runtime_execution.pve_policy import admit_permissions
+    frozen = inputs()
+    frozen['vms'][0]['pool'] = None
+    item = change(action='update', pool=after_pool)
+    item['change']['before'] = {**item['change']['after'], 'pool_id': before_pool, 'cpu': {'cores': 1}}
+    item['change']['after']['cpu'] = {'cores': 2}
+    original = deepcopy(item)
+    metadata = {'changes': [item], 'vm_policy': vm_policy(frozen, 'cluster-one', [item])}
+    bind_policy(metadata, frozen, frozen, 'cluster-one')
+    api = UnpooledAPI()
+    admit_permissions(metadata['changes'], api)
+    assert item == original
+    assert api.calls == ['/vms/700']
