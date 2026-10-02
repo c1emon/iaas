@@ -53,8 +53,8 @@ def fixture(tmp_path):
              {'phase': 'guest_exec', 'status': 'unknown'}]
     admission = {'schema_version': 1, 'execution_id': ORIGINAL, 'plan_digest': digest.removeprefix('sha256:'),
                  'target': old['target'], 'deadlines': old['deadlines'], 'approved': True,
-                 'consumption': {'reserved': True, 'reservation_id': 'original-consumption'},
-                 'pending': {'record_id': 'original-pending'}, 'serialization': {'held': True, 'context_id': 'original-lock'}}
+                 'consumption': {'reserved': True, 'reservation_id': f'run-120-1:{CALLER}'},
+                 'pending': {'record_id': f'astra-pve-template:{CALLER}'}, 'serialization': {'held': True, 'context_id': 'original-lock'}}
     journal = {'kind': 'pve-one-shot-journal', 'schema_version': 1, 'operation': 'accept',
                'execution_id': ORIGINAL, 'request_digest': digest, 'target': old['target'], 'deadlines': old['deadlines'],
                'runtime': old_runtime, 'admission': admission, 'mutation_active': True,
@@ -65,7 +65,7 @@ def fixture(tmp_path):
                 'path': '/api2/json/nodes/cohe/qemu/798/agent/exec', 'node': 'cohe', 'vmid': 798,
                 'dispatch_sequence': 4, 'dispatched_at': '2026-09-30T00:01:00Z'}
     caller = {'plan_id': 'run-120-1', 'execution_id': CALLER, 'native_execution_id': ORIGINAL,
-              'pending_record_id': 'original-pending', 'reservation_id': 'original-consumption',
+              'pending_record_id': f'astra-pve-template:{CALLER}', 'reservation_id': f'run-120-1:{CALLER}',
               'request_digest': digest, 'runtime': old_runtime, 'dispatches': [dispatch]}
     log = {'source_id': 'pve-access-export', 'provenance': 'administrator_export', 'original_execution_id': ORIGINAL,
            'authenticated_principal': PRINCIPAL,
@@ -79,7 +79,7 @@ def fixture(tmp_path):
                'timeouts': {'work_seconds': 600, 'cleanup_seconds': 180},
                'authorization': {'cleanup_original_resources': True}, 'original_execution_id': ORIGINAL,
                'caller_association': {'plan_id': 'run-120-1', 'execution_id': CALLER,
-                                      'pending_record_id': 'original-pending', 'reservation_id': 'original-consumption', 'material': caller_ref},
+                                      'pending_record_id': f'astra-pve-template:{CALLER}', 'reservation_id': f'run-120-1:{CALLER}', 'material': caller_ref},
                'original_materials': {'request': req_ref, 'journal': journal_ref},
                'rejection_evidence': [{'material': log_ref, 'source_id': 'pve-access-export',
                                        'provenance': 'administrator_export', 'authenticated_principal': PRINCIPAL,
@@ -145,6 +145,17 @@ def test_run120_reconciliation_preserves_original_bytes_and_does_not_apply_new_i
     preview = build_recovery_preview(request, result)
     assert validate_recovery_preview(preview) == preview
     assert 'pool' not in preview['fixed_input']['full_original_resources']['vm']
+    assert preview['fixed_input']['caller_association'] == request['caller_association']
+
+
+@pytest.mark.parametrize('field', ['pending_record_id', 'reservation_id'])
+def test_namespaced_caller_references_must_match_original_verbatim(tmp_path, field):
+    request, original, evidence, _ = fixture(tmp_path)
+    assert validate_recovery_request(request) == request
+    load_original(request, original, evidence)
+    request['caller_association'][field] = request['caller_association'][field].replace(':', '-')
+    with pytest.raises(RecoveryEvidenceError):
+        load_original(request, original, evidence)
 
 
 @pytest.mark.parametrize('fault', ['request_digest', 'caller', 'missing', 'resource_list', 'symlink'])

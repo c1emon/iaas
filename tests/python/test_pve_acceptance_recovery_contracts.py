@@ -25,6 +25,33 @@ def test_recovery_schema_exports_are_current():
         assert json.loads(path.read_text()) == schema
 
 
+@pytest.mark.parametrize('filename,validator', [
+    ('recovery-request.json', validate_recovery_request),
+    ('recovery-preview.json', validate_recovery_preview),
+    ('recovery-result.json', validate_recovery_result),
+])
+def test_caller_reference_namespaces_are_preserved(filename, validator):
+    document = json.loads((EXAMPLES / filename).read_text())
+    request = document['fixed_input'] if 'fixed_input' in document else document
+    association = request['caller_association']
+    association['pending_record_id'] = 'astra-pve-template:' + association['execution_id']
+    association['reservation_id'] = 'run-120-1:' + association['execution_id']
+    if 'fixed_input' in document:
+        document['request_digest'] = canonical_digest(request)
+        document['preview_digest'] = canonical_digest({k: v for k, v in document.items() if k != 'preview_digest'})
+    assert validator(document) == document
+    jsonschema = pytest.importorskip('jsonschema')
+    jsonschema.Draft202012Validator(contract_schemas()[document['kind']]).validate(document)
+
+
+@pytest.mark.parametrize('field', ['plan_id', 'execution_id'])
+def test_caller_execution_identifiers_do_not_allow_reference_separators(field):
+    document = json.loads((EXAMPLES / 'recovery-request.json').read_text())
+    document['caller_association'][field] = 'namespace:value'
+    with pytest.raises(ValueError):
+        validate_recovery_request(document)
+
+
 def test_examples_have_current_structural_and_digest_bindings():
     jsonschema = pytest.importorskip('jsonschema')
     request = json.loads((EXAMPLES / 'recovery-request.json').read_text())

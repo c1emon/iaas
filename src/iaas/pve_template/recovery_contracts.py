@@ -1,7 +1,7 @@
 """Current recovery contracts; retained acceptance v2 is evidence, never start input."""
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import Field, model_validator
@@ -63,11 +63,15 @@ class OriginalMaterials(Contract):
     result: EvidenceRef | None = None
 
 
+# Caller-owned references retain their original namespace separators verbatim.
+AssociationReference = Annotated[str, Field(pattern=r'^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$')]
+
+
 class CallerAssociation(Contract):
     plan_id: Identifier
     execution_id: Identifier
-    pending_record_id: Identifier
-    reservation_id: Identifier
+    pending_record_id: AssociationReference
+    reservation_id: AssociationReference
     material: EvidenceRef
 
 
