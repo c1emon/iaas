@@ -198,8 +198,11 @@ def test_cleanup_requires_delete_permission_before_side_effect(tmp_path: Path,
     monkeypatch.setattr(runtime, "_client", lambda selected, execution, target: api)
     fixed = _fixed(objects=[], volumes=[UPLOAD])
 
-    with pytest.raises(ValidationError, match="Datastore.Allocate"):
+    from iaas.pve_template.admission import AdmissionError
+    with pytest.raises(AdmissionError, match="permission_missing") as caught:
         runtime._delete_action(_selected(original), execution, fixed, _preview(fixed), "cleanup-1")
+    assert caught.value.diagnostic['missing_privileges'] == ['Datastore.Allocate']
+    assert caught.value.diagnostic['operation'] == 'cleanup'
     assert api.deletes == []
 
 

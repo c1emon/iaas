@@ -67,4 +67,10 @@
 - [x] 9.4 修正 infra-ops 审核发现的两处P1：当前UPID查询失败/异常或恢复活动未知阻断全部清理写入；仅缺失旧guest-exec关联可由现有新批准处置；普通VM创建恢复完整必要权限预检。软件反例与回归通过，不执行设施操作。
 - [x] 9.5 发布包含审核修正的固定rc.21镜像及launcher，核实际digest/资产与CI消费结果，并同步交接给infra-ops；现场8.1仍为外部未完成。
 
+## 10. rc.22 现场生命周期缺口修正
+
+- [x] 10.1 将 review.json 纳入 launcher 必需材料和 local/DinD 原字节传输；保留 reviewed vm_policy 绑定，缺失、非法、策略冲突在 state/snippet/VM 写入前拒绝。152 项定向 Python、Go launcher 全套和真实 Python 准入路径通过。
+- [x] 10.2 discovery 失败先保留脱敏运行时原因；ready 缺身份或身份不符仍拒绝。存储权限复用共享预检分类缺失、非法值、查询失败与证据不足，并仅输出固定分类、阶段、存储、操作和缺失权限。源快照缺失分类在当前版本已有回归保护。
+- [ ] 10.3 发布配套修复版本，在两个平台的实际待发布 runtime 镜像中验证 launcher 转移后的保存计划准入，核镜像 digest 和 launcher 校验值；该验证保持断网且不执行设施操作。
+
 rc.21 实际交付：源码92b85aa，工作流36890195933全部成功；amd64/arm64各2105 passed、4 skipped，两个平台匿名digest消费通过；registry manifest/platform摘要、launcher SHA256SUMS与macOS版本输出均核验。固定digest与资产值见delivery.md。现场8.1交由infra-ops，仍未执行。

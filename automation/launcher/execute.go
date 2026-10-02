@@ -55,9 +55,6 @@ func (t *task) discover() (discovery, error) {
 	if response.Status == "input-required" {
 		return response, nil
 	}
-	if t.options.ExecutionID != "" && response.ExecutionID != t.options.ExecutionID {
-		return response, errors.New("runtime execution identity is not bound to this launcher task")
-	}
 	if response.Status == "failed" && response.Reason != "" {
 		// The runtime's structured public reason excludes source values and
 		// native stderr. Docker's private diagnostics remain suppressed.
@@ -65,6 +62,9 @@ func (t *task) discover() (discovery, error) {
 	}
 	if err != nil || response.Status != "ready" {
 		return response, errors.New("selected configuration could not be validated for this operation")
+	}
+	if t.options.ExecutionID != "" && response.ExecutionID != t.options.ExecutionID {
+		return response, errors.New("runtime execution identity is not bound to this launcher task")
 	}
 	return response, nil
 }
@@ -77,8 +77,11 @@ func (t *task) savedPlan() ([]string, error) {
 	if err != nil {
 		return nil, errors.New("saved companion directory is unavailable")
 	}
-	for _, name := range []string{"summary.json", "native-plan.json", "inputs.tfvars.json", "snippets/manifest.json"} {
+	for _, name := range []string{"summary.json", "native-plan.json", "review.json", "inputs.tfvars.json", "snippets/manifest.json"} {
 		if info, err := os.Stat(filepath.Join(bundle, name)); err != nil || !info.Mode().IsRegular() {
+			if name == "review.json" {
+				return nil, errors.New("saved plan admission: required review.json is missing or invalid")
+			}
 			return nil, errors.New("saved companion artifacts are incomplete")
 		}
 	}
@@ -88,7 +91,7 @@ func (t *task) savedPlan() ([]string, error) {
 	}
 	// Only the saved-plan contract's files/directories are transferred, not the
 	// arbitrary parent directory of a selected native plan.
-	for _, name := range []string{"summary.json", "native-plan.json", "inputs.tfvars.json", "snippets", "workspace", "trust", "dependencies.tar.gz"} {
+	for _, name := range []string{"summary.json", "native-plan.json", "review.json", "inputs.tfvars.json", "snippets", "workspace", "trust", "dependencies.tar.gz"} {
 		source := filepath.Join(bundle, name)
 		if _, err := os.Stat(source); os.IsNotExist(err) && (name == "dependencies.tar.gz" || name == "trust") {
 			continue

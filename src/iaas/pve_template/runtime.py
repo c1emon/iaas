@@ -520,16 +520,15 @@ def _assert_vmid_visibility(client: PveHttpsClient, vmid: int) -> None:
             "PVE VMID observation requires effective VM.Audit on the selected VMID")
 
 
-def _assert_storage_permissions(client: PveHttpsClient, storage: str, required: set[str]) -> None:
+def _assert_storage_permissions(client: PveHttpsClient, storage: str, required: set[str],
+                                *, operation: str = 'publish') -> None:
+    from .admission import AdmissionError, Permissions
     path = f"/storage/{quote(storage, safe='')}"
-    permissions = client.request("GET", "/api2/json/access/permissions", fields={"path": path})
-    grants = permissions.get(path) if isinstance(permissions, Mapping) else None
-    if not isinstance(grants, Mapping):
-        raise ValidationError(f"PVE storage permissions are missing for {storage}")
-    for permission in sorted(required):
-        value = grants.get(permission)
-        require(type(value) in {int, bool} and value in (0, 1),
-                f"PVE storage permission {permission} has invalid value")
+    try:
+        Permissions(client).require(path, sorted(required), operation=operation)
+    except AdmissionError as exc:
+        exc.diagnostic.update(stage='storage_permissions', operation=operation)
+        raise
 
 
 def _assert_upload_absent(client: PveHttpsClient, node: str, storage: str, volid: str) -> None:
@@ -1017,7 +1016,7 @@ def _delete_action(selected: Any, execution: Execution, request: Mapping[str, An
                 absent_specs.append((storage, volid))
         checked_storages: set[str] = set()
         for storage in {storage for storage, _ in delete_specs}:
-            _assert_storage_permissions(client, storage, {"Datastore.Allocate"})
+            _assert_storage_permissions(client, storage, {"Datastore.Allocate"}, operation='cleanup')
             checked_storages.add(storage)
         for vmid, expected_uuid in observed_objects:
             journal("cleanup-vm", "intent", vmid=vmid, smbios_uuid=expected_uuid)
@@ -1034,7 +1033,7 @@ def _delete_action(selected: Any, execution: Execution, request: Mapping[str, An
                 absent_specs.append((storage, volid))
         for storage in {storage for storage, _ in delete_specs}:
             if storage not in checked_storages:
-                _assert_storage_permissions(client, storage, {"Datastore.Allocate"})
+                _assert_storage_permissions(client, storage, {"Datastore.Allocate"}, operation='cleanup')
         for _, volid in absent_specs:
             journal("cleanup-volume", "succeeded", volid=volid, already_absent=True)
         for storage, volid in delete_specs:

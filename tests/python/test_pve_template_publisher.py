@@ -150,6 +150,31 @@ def test_observed_storage_with_shared_staging_and_images_requires_both_capabilit
         runtime._observed(None, StorageAPI(), request["target"], request)
 
 
+@pytest.mark.parametrize('fault,reason', [('missing', 'permission_missing'),
+                                       ('invalid', 'permission_value_invalid'),
+                                       ('query', 'permission_query_failed'),
+                                       ('evidence', 'permission_evidence_insufficient')])
+def test_storage_permission_diagnostics_are_classified(fault, reason):
+    from iaas.pve_template.admission import AdmissionError
+    class API:
+        def request(self, *args, **kwargs):
+            if fault == 'query':
+                raise RuntimeError('token=protected-secret-sentinel')
+            if fault == 'evidence':
+                return {}
+            return {'/storage/images': {'Datastore.Audit': 1,
+                                       **({'Datastore.AllocateTemplate': 'secret'} if fault == 'invalid' else {})}}
+    with pytest.raises(AdmissionError) as caught:
+        runtime._assert_storage_permissions(API(), 'images', {'Datastore.Audit', 'Datastore.AllocateTemplate'})
+    assert caught.value.reason_code == reason
+    assert caught.value.diagnostic['stage'] == 'storage_permissions'
+    assert caught.value.diagnostic['object'] == '/storage/images'
+    assert caught.value.diagnostic['operation'] == 'publish'
+    assert 'protected-secret-sentinel' not in str(caught.value)
+    if fault == 'missing':
+        assert caught.value.diagnostic['missing_privileges'] == ['Datastore.AllocateTemplate']
+
+
 def test_observed_accepts_zero_storage_permission_propagation_value() -> None:
     request = contracts.validate_publish_request(publish_request())
 

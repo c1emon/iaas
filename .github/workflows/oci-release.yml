@@ -111,6 +111,11 @@ jobs:
           make runtime-build RUNTIME_IMAGE="$RUNTIME_IMAGE"
       - run: make runtime-tofu-check RUNTIME_IMAGE="$RUNTIME_IMAGE"
       - run: uv run python automation/oci/checks/inspect_image.py --image "$RUNTIME_IMAGE"
+      - name: Verify launcher saved-plan transfer against the tested runtime
+        env:
+          IAAS_TEST_RUNTIME_IMAGE: ${{ env.RUNTIME_IMAGE }}
+          PYTHONPATH: src
+        run: uv run pytest -q tests/python/test_runtime_saved_plans.py::test_launcher_transfer_reaches_real_saved_plan_admission
       - name: Save the tested image without rebuilding
         run: |
           docker image inspect "$RUNTIME_IMAGE" --format '{{.Id}}' > image-id.txt

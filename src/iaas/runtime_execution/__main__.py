@@ -21,7 +21,7 @@ from .components import IMPLEMENTATION, run_component
 from .credentials import AWS_FILE_VARIABLES, prepare_file_credentials
 from .dependencies import prepare_dependencies
 from .execution import Execution
-from .operations import OFFLINE, DIAGNOSE, capabilities, credential_names, operation_for, process_environment
+from .operations import OFFLINE, capabilities, credential_names, operation_for, process_environment
 from .outputs import TaskOutputs
 from .plans import apply_saved_plan, prepare_plan
 from .root import materialize_root
@@ -182,6 +182,24 @@ def main(argv: list[str] | None = None) -> int:
         code = 2
         phases = []
         retained = False
+        public_diagnostic = {}
+        from iaas.pve_template.admission import AdmissionError
+        if isinstance(exc, AdmissionError) and exc.diagnostic.get('stage') == 'storage_permissions':
+            allowed_codes = {'permission_missing', 'permission_value_invalid',
+                             'permission_query_failed', 'permission_evidence_insufficient'}
+            object_id = exc.diagnostic.get('object')
+            if (exc.reason_code in allowed_codes and isinstance(object_id, str)
+                    and re.fullmatch(r'/storage/[A-Za-z0-9_.-]+', object_id)):
+                public_diagnostic = {'reason_code': exc.reason_code, 'stage': 'storage_permissions',
+                                     'storage': object_id.removeprefix('/storage/'),
+                                     'operation': exc.diagnostic['operation']}
+                if exc.reason_code == 'permission_missing':
+                    public_diagnostic['missing_privileges'] = exc.diagnostic['missing_privileges']
+        review_reasons = {'saved review material missing': 'saved_review_missing',
+                          'saved review material invalid': 'saved_review_invalid',
+                          'saved review policy conflict': 'saved_review_policy_conflict'}
+        if str(exc) in review_reasons:
+            public_diagnostic = {'reason_code': review_reasons[str(exc)], 'stage': 'saved_plan_admission'}
         if execution is not None:
             phases = execution.phases
             if isinstance(exc, PveApiTlsError):
@@ -230,7 +248,7 @@ def main(argv: list[str] | None = None) -> int:
                         identity = prior.get("execution_id")
                         if isinstance(identity, str) and re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", identity):
                             domain_summary["execution_id"] = identity
-                execution.outputs.summary({**domain_summary, "status": "failed", "phases": phases,
+                execution.outputs.summary({**domain_summary, **public_diagnostic, "status": "failed", "phases": phases,
                                            "retain_storage": retained})
             except OSError:
                 retained = True
@@ -282,8 +300,10 @@ def main(argv: list[str] | None = None) -> int:
             "components", "scenarios", "selected scenario", "selected component",
             "component inputs", "facts", "component files", "component options",
         ) for problem in ("must be a mapping", "keys must be strings")}
-        reason = str(exc) if isinstance(exc, ProxyConfigurationError) or str(exc) in safe_reasons else "selected operation failed validation, setup or execution"
-        print(json.dumps({"status": "failed", "reason": reason,
+        reason = (public_diagnostic['reason_code'] if public_diagnostic else
+                  str(exc) if isinstance(exc, ProxyConfigurationError) or str(exc) in safe_reasons else
+                  "selected operation failed validation, setup or execution")
+        print(json.dumps({"status": "failed", "reason": reason, **public_diagnostic,
                           "output": str(outputs.root) if outputs else None,
                           "exit_code": code, "retain_storage": retained,
                           "phases": [{"phase": item["phase"], "exit_code": item.get("exit_code"),

@@ -267,6 +267,7 @@ def prepare_plan(selected: SelectedConfig, execution: Execution, backend: S3Back
 
 def admit_plan(plan: Path, bundle: Path, expected: dict[str, Any], backend: S3Backend | None) -> tuple[dict[str, Any], Path]:
     protected_file(plan)
+    require((bundle / "review.json").is_file(), "saved review material missing")
     metadata = json.loads((bundle / "summary.json").read_text())
     require(metadata.get("schema_version") == 2, "unsupported saved-plan metadata; generate a new v2 plan")
     validate_plan_metadata(metadata)
@@ -297,7 +298,11 @@ def admit_plan(plan: Path, bundle: Path, expected: dict[str, Any], backend: S3Ba
     bind_policy(metadata, _json(bundle / "inputs.tfvars.json"))
     _, native_changes, _ = machine_review(_json(bundle / "native-plan.json"))
     require(native_changes == metadata["changes"], "saved native resource changes conflict")
-    require(_json(bundle / "review.json").get("vm_policy") == metadata["vm_policy"], "saved review policy conflict")
+    try:
+        review = _json(bundle / "review.json")
+    except (OSError, ValueError):
+        raise ValidationError("saved review material invalid") from None
+    require(review.get("vm_policy") == metadata["vm_policy"], "saved review policy conflict")
     return metadata, root
 
 

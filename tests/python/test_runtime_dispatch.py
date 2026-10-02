@@ -229,6 +229,40 @@ def test_pve_health_needs_no_s3_and_does_not_forward_unrelated_credentials(tmp_p
     assert "AWS_SECRET_ACCESS_KEY" not in calls[0][2] and "OP_SERVICE_ACCOUNT_TOKEN" not in calls[0][2]
 
 
+@pytest.mark.parametrize('reason,stage', [('saved_review_missing', 'saved_plan_admission'),
+                                        ('saved_review_policy_conflict', 'saved_plan_admission'),
+                                        ('permission_missing', 'storage_permissions'),
+                                        ('permission_query_failed', 'storage_permissions')])
+def test_runtime_preserves_bounded_admission_diagnostics(tmp_path, monkeypatch, capsys, reason, stage):
+    import iaas.runtime_execution.__main__ as entrypoint
+    from iaas.common.errors import ValidationError
+    from iaas.pve_template.admission import AdmissionError
+    entry = config(tmp_path, 'pve', {'cluster': str(REPO / 'tests/fixtures/runtime/pve-cluster.yml'),
+                                    'vms': str(REPO / 'tests/fixtures/runtime/vms.yml')})
+    def fail(*args, **kwargs):
+        if stage == 'saved_plan_admission':
+            raise ValidationError('saved review material missing' if reason == 'saved_review_missing'
+                                  else 'saved review policy conflict')
+        error = AdmissionError(reason, stage=stage, object='/storage/images', operation='publish',
+                               missing_privileges=['Datastore.AllocateTemplate'])
+        error.diagnostic['raw_response'] = 'protected-secret-sentinel'
+        raise error
+    monkeypatch.setattr(entrypoint, 'run_component', fail)
+    output = tmp_path / 'result'
+    assert main(['--environment', str(entry), '--component', 'pve', '--operation', 'health',
+                 '--scope', 'synthetic-pve', '--output', str(output)]) == 2
+    public = json.loads(capsys.readouterr().out)
+    summary = json.loads((output / 'summary.json').read_text())
+    for value in (public, summary):
+        assert value['reason_code'] == reason
+        assert value['stage'] == stage
+        assert 'protected-secret-sentinel' not in json.dumps(value)
+        assert 'raw_response' not in value
+    if reason == 'permission_missing':
+        assert public['storage'] == 'images'
+        assert public['missing_privileges'] == ['Datastore.AllocateTemplate']
+
+
 def test_partial_k3s_deploy_is_rejected_before_execution(tmp_path, monkeypatch, capsys):
     entry = config(tmp_path, "k3s", {"intent": str(REPO / "tests/fixtures/k3s/intent.yml"),
                                     "inventory": str(REPO / "tests/fixtures/k3s/generated-pve.yml")},

@@ -138,6 +138,39 @@ def test_prepare_and_apply_from_another_directory(setup_plan, tmp_path):
     assert (moved / "snippets/manifest.json").read_bytes() == saved_bytes
 
 
+@pytest.mark.parametrize('fault,reason', [('missing', 'saved review material missing'),
+                                       ('invalid', 'saved review material invalid'),
+                                       ('policy', 'saved review policy conflict')])
+def test_review_refuses_before_state_or_snippet_writes(setup_plan, fault, reason):
+    selected, backend, tofu, execution = setup_plan
+    plan = prepare_plan(selected, execution('prepare'), backend, 'complete-root', IMAGE, tofu)
+    review = plan.parent / 'review.json'
+    if fault == 'missing':
+        review.unlink()
+    elif fault == 'invalid':
+        review.write_text('protected-secret-sentinel')
+    else:
+        data = json.loads(review.read_text())
+        data['vm_policy']['cluster_scope'] = 'other-cluster'
+        review.write_text(json.dumps(data))
+    apply = execution('apply')
+    with pytest.raises(ValidationError, match=reason) as caught:
+        apply_saved_plan(plan, plan.parent, selected, apply, backend, 'complete-root', IMAGE, tofu)
+    assert 'protected-secret-sentinel' not in str(caught.value)
+    assert apply.phases == []
+
+
+def test_launcher_transfer_reaches_real_saved_plan_admission(setup_plan):
+    import subprocess
+    selected, backend, tofu, execution = setup_plan
+    plan = prepare_plan(selected, execution('prepare'), backend, 'complete-root', IMAGE, tofu)
+    result = subprocess.run(['go', 'test', '-tags=runtime_integration', '-run',
+                             '^TestTransferredSavedPlanRealAdmission$', '-count=1', '.'],
+                            cwd=REPO / 'automation/launcher', capture_output=True, text=True,
+                            env={**os.environ, 'IAAS_TEST_SAVED_BUNDLE': str(plan.parent)})
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_mixed_native_plan_and_companions_fail_before_ssh(setup_plan):
     selected, backend, tofu, execution = setup_plan
     plan_a = prepare_plan(selected, execution("plan-a"), backend, "complete-root", IMAGE, tofu)

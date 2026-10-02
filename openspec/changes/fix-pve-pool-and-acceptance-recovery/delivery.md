@@ -4,6 +4,12 @@
 
 ## 最新固定版本 rc.22
 
+### rc.22 之后的现场缺口修正（尚未发布）
+
+按 infra-ops 的 `iaas-lifecycle-acceptance-findings.md` 定向修正：review.json 成为 launcher 的当前保存计划必需材料，并以原字节进入 local/DinD 传输；保留原批准中的 vm_policy 绑定和写入前拒绝。discovery 输入失败保留安全原因，ready 身份检查不放宽。存储预检复用现有权限分类，公开 summary/stdout 保留固定 reason_code、stage、storage、operation 和必要的 missing_privileges，不转发原始响应或异常文本。无源快照已有 source_snapshot_missing 分类和零写入回归，无需重复改造。
+
+本地定向 Python 152 passed，Go launcher 全套与实际 Python discovery/保存计划准入集成通过；Pyright、Ruff、4/4 import contracts、OpenSpec strict 通过。Python 全套第二轮 1827 passed、2 skipped，另有一条无关 macOS 进程组测试 PermissionError，单独重跑通过。发布流水线已加入两个平台实际 runtime 镜像的断网保存计划传输/准入验证；镜像验证尚待运行，不据软件 fixture 声称现场成功。本次没有设施操作。
+
 [v0.1.0-rc.22](https://github.com/c1emon/iaas/releases/tag/v0.1.0-rc.22) 已发布，源码 `00930938019d3776888d57a519584681fd749725`。[发布工作流](https://github.com/c1emon/iaas/actions/runs/36950707343) 7 个 jobs 全部成功；amd64/arm64 各 2112 passed、4 skipped，两个平台匿名固定 digest 拉取及 capabilities 调用通过。两个 launcher SHA256SUMS 通过，macOS `--version` 返回 `iaas v0.1.0-rc.22`。
 
 infra-ops 当前使用固定镜像 `ghcr.io/c1emon/iaas-runtime@sha256:fd9d1eeb0b0a86d61d60f369ca7fdf1370a9fa7a090d8a1a96d6baea293e6137`。
