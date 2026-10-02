@@ -13,5 +13,11 @@
   "approved": true,
   "consumption": {"reserved": true, "reservation_id": "synthetic-reservation-001"},
   "pending": {"record_id": "synthetic-pending-001"},
-  "serialization": {"held": true, "context_id": "synthetic-lock-001"}
+  "serialization": {"held": true, "context_id": "synthetic-lock-001"},
+  "vmid_reservation": {
+    "cluster_scope": "synthetic-pve-cluster",
+    "vmids": [500],
+    "reservation_id": "synthetic-reservation-001",
+    "context_id": "synthetic-lock-001"
+  }
 }

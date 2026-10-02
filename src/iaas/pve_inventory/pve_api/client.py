@@ -119,6 +119,10 @@ class ReadOnlyPveApi:
         """Read the authenticated token's effective permissions at one ACL path."""
         return self._call("access/permissions", lambda: self._prox.access.permissions.get(path=path))
 
+    def pool_detail(self, pool: str) -> Any:
+        """Read membership of an existing pool without managing it or its ACLs."""
+        return self._call("pools/detail", lambda: self._prox.pools(pool).get())
+
     def vms(self, node: str) -> Any:
         return self._call(f"nodes/{node}/qemu", lambda: self._prox.nodes(node).qemu.get())
 

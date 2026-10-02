@@ -11,7 +11,7 @@ TARGET = {'api_endpoint': 'https://pve.invalid:8006', 'insecure': False,
           'storage_id': 'snippets', 'ssh_host': 'ssh.invalid', 'ssh_user': 'ops'}
 RECORD_TARGET = {'api_endpoint': TARGET['api_endpoint'], 'node': 'n1', 'tls_verify': True}
 OBJECT = {'node': 'n1', 'vmid': 9001, 'smbios_uuid': 'original-uuid', 'disks': {'scsi0': 'local:base-9001-disk-0'}}
-RECORD = {'kind': 'pve-template-record', 'schema_version': 2, 'record_id': 'build-1',
+RECORD = {'kind': 'pve-template-record', 'schema_version': 3, 'cluster_scope': 'fixture-cluster', 'pool': None, 'record_id': 'build-1',
           'target': RECORD_TARGET, 'node': 'n1', 'vmid': 9001, 'smbios_uuid': 'original-uuid',
           'volumes': {'scsi0': 'local:base-9001-disk-0'},
           'configuration': {'cores': 2, 'memory': 2048, 'template': 1}, 'origin': 'publication',

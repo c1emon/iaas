@@ -127,13 +127,13 @@ func run(args []string) error {
 	}
 	fmt.Printf("Operation %s/%s: network=%t state=%t infrastructure_write=%t\n", options.Component, options.Operation,
 		effects.Network, effects.State, effects.InfrastructureWrite)
-	return execute(options, configuration, image, effects, docker)
+	return executeWithCapabilities(options, configuration, image, effects, docker, &capabilities)
 }
 
 func validateExecutionID(options Options) error {
 	mutation := (options.Component == "opnsense" && options.Operation == "apply") ||
 		(options.Component == "pve" && (options.Operation == "apply" || options.Operation == "snippet-cleanup")) ||
-		(options.Component == "pve-template" && (options.Operation == "apply" || options.Operation == "accept")) ||
+		(options.Component == "pve-template" && (options.Operation == "apply" || options.Operation == "accept" || options.Operation == "recover")) ||
 		(options.Component == "image" && (options.Operation == "build" || options.Operation == "test" || options.Operation == "clean" || options.Operation == "read"))
 	if options.ExecutionID == "" {
 		if mutation {

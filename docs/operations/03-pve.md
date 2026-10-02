@@ -19,6 +19,22 @@
 `make pve-preflight` 是在线 apply-readiness 检查，不是“PVE 正常”的唯一证明；
 `make pve-health` 是当前声明的集群/节点健康检查。二者都不迁移、停止或销毁 VM。
 
+验收的联网 `plan` 和 `start` 使用专用完整准入，不能用普通可选 SSH preflight
+代替。在 clone 前检查源 UUID/config/volumes、现有 pool、具体 VMID、完整集群
+占用、节点在线与 CPU/memory、boot/firmware、存储 content/空间、bridge/VLAN
+权限，以及隔离 key/known_hosts、固定 SSH 目标、`sudo -n` 和 upload/delete
+helper 的机器能力。`check` 保持离线；`plan` 只读且不预留 VMID、不消费批准；
+`start` 重新检查实际条件。总磁盘上限包含 cloud-init/EFI/TPM，不能只计系统盘。
+
+有效权限以实际 API token 查询结果为准；传播值 `0` 仍表示授权。clone 的分配
+条件是目标 VMID **或**目标 pool 的 `VM.Allocate`，不是两者同时具备。验收可用
+受限 delete helper 的原生 PVE 内存 ACL 编译证明尚未创建 VM 的池权限，保留
+NoAccess 和 token/user 交集；普通 VM/publication 未接入该 SSH 编译路径，未来
+池继承证据不足时拒绝，不自动安装 helper 或调整 ACL。权限表与边界见
+[验收合同](../contracts/pve-acceptance-cleanup-v2.md)；安装和只读探测见
+[helper 操作说明](pve-snippet-cleanup.md)。当前 acceptance 网络准入覆盖本地
+Linux/OVS bridge 与 VLAN-aware Linux bridge；不宣称已核验 SDN VNet 的实际 zone。
+
 ## 3.2 PVE 源配置总览
 
 | 文件 | 所有权 | 产物/用途 |
@@ -57,7 +73,7 @@ make pve-bootstrap-guests-syntax
 
 Image construction runs as the independent local `image` capability. Template
 publication runs in the controller through the HTTPS PVE API and consumes an
-`image-artifact/v1` plus `pve-template-publish-request/v1`; it does not install
+`image-artifact/v1` plus `pve-template-publish-request/v2`; it does not install
 or invoke a node template worker, storage probe, Packer PVE builder or template
 sudo rule. Supply the fixed API endpoint with a matching CA, an operation-scoped
 `PVE_API_TOKEN`, and a protected `PVE_ARTIFACT_URL` locator resolved for the
@@ -81,7 +97,8 @@ SSH key and known_hosts are separate operation inputs; it is not a template
 build or publication transport.
 
 Current source also provides one-shot `pve-template accept` and independent
-`pve snippet-cleanup`. Their [v2 delivery contract](../contracts/pve-acceptance-cleanup-v2.md)
+`pve snippet-cleanup` and controlled `pve-template recover`. Their
+[current delivery contract](../contracts/pve-acceptance-cleanup-v2.md)
 separates complete technical acceptance/cleanup from caller promotion. The
 [restricted cleanup helper](pve-snippet-cleanup.md) has its own installation and
 permissions; software fixture results do not establish live PVE qualification.
@@ -98,6 +115,7 @@ permissions; software fixture results do not establish live PVE qualification.
 | `reserved_vm_id_ranges.templates` | 模板 VMID 闭区间。 | 与其他区间不重叠。 |
 | `reserved_vm_id_ranges.long_lived` | 长期 VMID 闭区间。 | long-lived VM 只能落入此范围。 |
 | `reserved_vm_id_ranges.ephemeral_lab` | 实验/可重建 VMID 闭区间。 | ephemeral VM 只能落入此范围。 |
+| `reserved_vm_id_ranges.acceptance` | 可选专用验收 VMID 闭区间。 | 两端包含，不得与其他区间重叠；普通 VM 不得使用。 |
 | `storage_roles.<role>.datastore` | PVE 实际 datastore 名称。 | role 是可移植符号；存储必须承载声明的 content。 |
 | `storage_roles.<role>.purpose` | 给操作者的用途说明。 | 不替代 PVE 真实能力检查。 |
 | `storage_roles.<role>.content` | `disk`、`iso`、`import`、`snippets` 等内容类型。 | 生成器会校验 template/cloud-init 的 role 是否具备所需内容。 |
@@ -166,7 +184,7 @@ bridge、固件与 cloud-init 默认值都属于发布请求，不再写入 PVE 
 | `resources` | 可选 `cores`、`memory_mib`、`root_disk_gib` 覆盖。 | 必须为正整数。 |
 | `storage.disk_role` | 可选根盘 storage role 覆盖。 | 必须声明且可承载 disk。 |
 | `ansible_groups` / `tags` | 生成 inventory 组和 PVE tags。 | 仅声明用途，不配置业务。 |
-| `pool` | 可选 PVE pool。 | `null` 或字符串。 |
+| `pool` | 可选既有 PVE pool。 | 省略或 `null` 表示不入池；指定值必须是非空 PVE-safe 名称，原样传入两种生命周期 resource 的 `pool_id`。不继承模板或默认池，不创建池或修改 ACL。 |
 | `boot.started` / `boot.on_boot` | apply 后启动及宿主机启动策略。 | 显式布尔；long-lived 的默认 on-boot 政策来自生命周期。 |
 | `ha.enabled` / `group` / `state` | HA 声明。 | passthrough VM 必须禁用 HA。 |
 | `passthrough` | PCI mapping 消费声明。 | `null` 或受限 device 列表；见下文。 |

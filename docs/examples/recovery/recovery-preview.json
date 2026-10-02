@@ -1,0 +1,178 @@
+{
+  "kind": "pve-acceptance-recovery-preview",
+  "schema_version": 1,
+  "action": "recover",
+  "fixed_input": {
+    "kind": "pve-acceptance-recovery-request",
+    "schema_version": 1,
+    "target": {
+      "api_endpoint": "https://pve.example.invalid:8006",
+      "node": "cohe",
+      "tls_verify": true
+    },
+    "cluster_scope": "fixture-cluster",
+    "runtime": {
+      "image_digest": "runtime@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "deadlines": {
+      "work_deadline_at": "2099-01-01T00:00:00Z",
+      "cleanup_deadline_at": "2099-01-01T00:10:00Z"
+    },
+    "timeouts": {
+      "work_seconds": 600,
+      "cleanup_seconds": 180
+    },
+    "authorization": {
+      "cleanup_original_resources": true
+    },
+    "original_execution_id": "01591395-b75d-4108-a19d-7e5ccdb99acc-accept",
+    "caller_association": {
+      "plan_id": "run-120-1",
+      "execution_id": "01591395-b75d-4108-a19d-7e5ccdb99acc",
+      "pending_record_id": "original-pending",
+      "reservation_id": "original-consumption",
+      "material": {
+        "path": "caller.json",
+        "sha256": "450d4740d80667c1d19163e9df3e9275bf53302126d2e14b37f9a34ead789541"
+      }
+    },
+    "original_materials": {
+      "request": {
+        "path": "request.json",
+        "sha256": "682ddc28f47aa2c4dfa1777e68e054a0eb6f985c8e59fb1a2000977c0743f2f5"
+      },
+      "journal": {
+        "path": "journal.json",
+        "sha256": "78104dae92f7da9d3c4578f9f041c341ce73227f953ab9bd122ed44a81b937a1"
+      }
+    },
+    "rejection_evidence": [
+      {
+        "material": {
+          "path": "rejection.json",
+          "sha256": "2da597065521a3fcf049fd716133256510efeb7a21d19e6201839b2c6345f9e7"
+        },
+        "source_id": "pve-access-export",
+        "provenance": "administrator_export",
+        "authenticated_principal": "fixture@pve!automation",
+        "source_description": "Sanitized fixture of an explicitly approved administrator export",
+        "authorize_trusted_source": true
+      }
+    ],
+    "full_original_resources": {
+      "vm": {
+        "node": "cohe",
+        "vmid": 798,
+        "smbios_uuid": "22222222-2222-4222-8222-222222222222",
+        "created_by": "01591395-b75d-4108-a19d-7e5ccdb99acc-accept"
+      },
+      "volumes": [
+        "local-lvm:vm-798-disk-0",
+        "local-lvm:vm-798-cloudinit"
+      ],
+      "snippets": [
+        {
+          "node": "cohe",
+          "file_id": "local:snippets/iaas-accept-fixture-798-user-data.yml",
+          "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "created_by": "01591395-b75d-4108-a19d-7e5ccdb99acc-accept"
+        }
+      ]
+    },
+    "previous_recoveries": []
+  },
+  "request_digest": "sha256:99344f2ee49f6084644ce6a8751a521a1e274219c32c62074590b1ac86353e55",
+  "target": {
+    "api_endpoint": "https://pve.example.invalid:8006",
+    "node": "cohe",
+    "tls_verify": true
+  },
+  "runtime": {
+    "image_digest": "runtime@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "reconciliation": {
+    "status": "eligible",
+    "cleanup_eligible": true,
+    "original_activity": "inactive",
+    "original_facility_writes": "issued",
+    "requests": [
+      {
+        "task_index": 0,
+        "phase": "clone",
+        "original_status": "succeeded",
+        "activity": "inactive",
+        "reason_code": "task_stopped",
+        "historical_write": "issued"
+      },
+      {
+        "task_index": 1,
+        "phase": "configure",
+        "original_status": "succeeded",
+        "activity": "inactive",
+        "reason_code": "retained_terminal_request",
+        "historical_write": "issued"
+      },
+      {
+        "task_index": 2,
+        "phase": "start",
+        "original_status": "succeeded",
+        "activity": "inactive",
+        "reason_code": "task_stopped",
+        "historical_write": "issued"
+      },
+      {
+        "task_index": 3,
+        "phase": "guest_exec",
+        "original_status": "unknown",
+        "activity": "inactive",
+        "reason_code": "request_rejected",
+        "historical_write": "none"
+      }
+    ],
+    "helper_activity": "inactive",
+    "previous_activity": "inactive",
+    "original_runtime": {
+      "image_digest": "runtime@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "original_deadlines": {
+      "cleanup_deadline_at": "2026-09-30T00:10:00Z",
+      "work_deadline_at": "2026-09-30T00:00:00Z"
+    },
+    "original_acceptance": "unknown",
+    "resources": {
+      "vm": {
+        "identity": "798",
+        "existence": "present",
+        "ownership": "confirmed",
+        "observed_pool": "existing-old-pool"
+      },
+      "volumes": [
+        {
+          "identity": "local-lvm:vm-798-disk-0",
+          "existence": "present",
+          "ownership": "confirmed"
+        },
+        {
+          "identity": "local-lvm:vm-798-cloudinit",
+          "existence": "present",
+          "ownership": "confirmed"
+        }
+      ],
+      "snippets": [
+        {
+          "identity": "local:snippets/iaas-accept-fixture-798-user-data.yml",
+          "existence": "present",
+          "ownership": "confirmed",
+          "referenced": false
+        }
+      ],
+      "ownership": "confirmed"
+    },
+    "source_observation": {
+      "status": "changed",
+      "identity_matches": false
+    },
+    "facility_writes": "none"
+  },
+  "preview_digest": "sha256:d5a9b21d2c9e0c6972d2d5d4e673aa774f1c5d7fb9e08b4bb794f083f489c9d8"
+}

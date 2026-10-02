@@ -271,6 +271,8 @@ def validate_vms(vms_doc: dict[str, Any], cluster_state: dict[str, Any]) -> list
         require(isinstance(lifecycle, str) and lifecycle in {"ephemeral_lab", "long_lived"}, f"{ctx}: lifecycle_class must be ephemeral_lab or long_lived")
         lifecycle_str = cast(str, lifecycle)
         lifecycle_range = cluster_state["reserved_vm_id_ranges"][lifecycle_str]
+        acceptance_range = cluster_state["reserved_vm_id_ranges"].get("acceptance")
+        require(acceptance_range is None or not acceptance_range[0] <= vmid_int <= acceptance_range[1], f"{ctx}: ordinary VMID must not use the acceptance range")
         require(
             lifecycle_range[0] <= vmid_int <= lifecycle_range[1],
             f"{ctx}: {lifecycle_str} VMID must be within the declared {lifecycle_str} range",
@@ -297,7 +299,7 @@ def validate_vms(vms_doc: dict[str, Any], cluster_state: dict[str, Any]) -> list
         require(ha.get("group") is None, f"{ctx}: HA group must be null until HA automation is implemented")
         require(ha.get("state") is None, f"{ctx}: HA state must be null until HA automation is implemented")
 
-        require(pool is None or isinstance(pool, str), f"{ctx}: pool must be null or a string")
+        require(pool is None or (isinstance(pool, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", pool) is not None), f"{ctx}: pool must be null or a nonempty PVE-safe string")
         require(template_name in cluster_state["templates"], f"{ctx}: template must reference a declared cluster template")
         template = as_mapping(cluster_state["templates"][template_name], f"cluster.templates.{template_name}")
         template_storage_role = cast(str, template.get("storage_role"))

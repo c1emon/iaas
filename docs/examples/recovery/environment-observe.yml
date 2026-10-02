@@ -1,0 +1,9 @@
+schema_version: 1
+environment: acceptance-recovery-fixture
+components:
+  pve-template:
+    options:
+      action: recover
+      execution_mode: observe
+    files:
+      original_execution_dir: /protected/recovery-start/run-120-1-recovery-01/work/pve-recovery

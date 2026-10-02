@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from iaas.image.contracts import canonical_digest as canonical_digest
 from iaas.image.contracts import load_strict_json as load_strict_json
-from iaas.pve_template.contracts import validate_template_record_v2
+from iaas.pve_template.contracts import validate_template_record_v3
 
 Identifier = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")]
 Digest = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
@@ -66,9 +66,12 @@ class DeadlineOutcome(Contract):
 
 class OneShotAdmission(Contract):
     """Structural admission schema; existing runtime checks nested associations."""
-    schema_version: Literal[1]
+    schema_version: Literal[2]
     execution_id: Identifier
     plan_digest: SHA256
+    request_digest: Digest
+    runtime: RuntimeIdentity
+    vmid_reservation: dict[str, Any]
     target: dict[str, Any]
     deadlines: Deadlines
     approved: Literal[True]
@@ -76,6 +79,13 @@ class OneShotAdmission(Contract):
     pending: dict[str, Any]
     serialization: dict[str, Any]
     recovery_of: Identifier | None = None
+
+    @model_validator(mode='before')
+    @classmethod
+    def explicit_approval(cls, value):
+        if not isinstance(value, dict) or value.get('approved') is not True or type(value.get('schema_version')) is not int:
+            raise ValueError('explicit current approval is required')
+        return value
 
 
 class Target(Contract):
@@ -120,6 +130,7 @@ class OriginalVM(Contract):
 class TemporaryVM(Contract):
     node: Identifier
     vmid: VMID
+    pool: Identifier
     storage: Identifier
     bridge: Identifier
     vlan_tag: Annotated[int, Field(ge=1, le=4094)] | None
@@ -181,11 +192,24 @@ class Authorization(Contract):
         return value
 
 
+class VMIDPolicy(Contract):
+    acceptance: Annotated[list[VMID], Field(min_length=2, max_length=2)]
+
+    @model_validator(mode='after')
+    def ordered(self):
+        if self.acceptance[0] > self.acceptance[1]:
+            raise ValueError('acceptance VMID interval is reversed')
+        return self
+
+
 class AcceptanceRequest(Contract):
     kind: Literal['pve-template-acceptance-request']
-    schema_version: Literal[2]
+    schema_version: Literal[3]
     deadlines: Deadlines
     target: Target
+    cluster_scope: Identifier
+    vmid_policy: VMIDPolicy
+    runtime: RuntimeIdentity
     template_record: dict[str, Any]
     temporary_vm: TemporaryVM
     cloud_init: CloudInit
@@ -195,7 +219,11 @@ class AcceptanceRequest(Contract):
 
     @model_validator(mode='after')
     def bindings(self):
-        record = validate_template_record_v2(self.template_record)
+        record = validate_template_record_v3(self.template_record)
+        if record['cluster_scope'] != self.cluster_scope:
+            raise ValueError('template cluster scope conflicts')
+        if not self.vmid_policy.acceptance[0] <= self.temporary_vm.vmid <= self.vmid_policy.acceptance[1]:
+            raise ValueError('vmid_out_of_range')
         if record['origin'] != 'publication' or record['target'] != self.target.model_dump():
             raise ValueError('acceptance requires matching published template')
         if record['node'] != self.target.node or record['vmid'] == self.temporary_vm.vmid:
@@ -217,6 +245,18 @@ class DeletePlan(Contract):
     execution_id: Identifier
     metadata: EvidenceRef
     admission: EvidenceRef
+
+
+class AcceptancePreview(Contract):
+    kind: Literal['pve-template-acceptance-preview']
+    schema_version: Literal[1]
+    fixed_input: AcceptanceRequest
+    request_digest: Digest
+    runtime: RuntimeIdentity
+    target: Target
+    observed: dict[str, Any]
+    facility_writes: Literal['none']
+    preview_digest: Digest
 
 
 class ExecutionMaterials(Contract):
@@ -380,7 +420,6 @@ class TemplateIdentity(Contract):
 
 
 class ResultBase(Contract):
-    schema_version: Literal[2]
     deadlines: Deadlines
     deadline_outcome: DeadlineOutcome
     facility_writes: Literal['none', 'issued', 'unknown']
@@ -401,7 +440,13 @@ class ResultBase(Contract):
 
 
 class AcceptanceResult(ResultBase):
+    schema_version: Literal[3]
     kind: Literal['pve-template-acceptance-result']
+    cluster_scope: Identifier
+    pool: Identifier
+    vmid_policy: VMIDPolicy
+    preview_digest: Digest
+    capacity: dict[str, Any] | None
     template: TemplateIdentity
     temporary_resources: list[Resource]
     checks: list[Check]
@@ -441,6 +486,7 @@ class CleanupItem(Snippet):
 
 
 class CleanupResult(ResultBase):
+    schema_version: Literal[2]
     kind: Literal['pve-snippet-cleanup-result']
     origin: Literal['deployment', 'acceptance']
     original_vm: OriginalVM
@@ -511,6 +557,7 @@ def contract_schemas() -> dict[str, dict[str, Any]]:
     models = {
         'pve-template-acceptance-request': AcceptanceRequest,
         'pve-template-acceptance-result': AcceptanceResult,
+        'pve-template-acceptance-preview': AcceptancePreview,
         'pve-snippet-cleanup-request': CleanupRequest,
         'pve-snippet-cleanup-result': CleanupResult,
         'pve-one-shot-execution-admission': OneShotAdmission,
@@ -519,7 +566,7 @@ def contract_schemas() -> dict[str, dict[str, Any]]:
     for name, model in models.items():
         schema = model.model_json_schema()
         schema.update({'$schema': 'https://json-schema.org/draft/2020-12/schema',
-                       '$id': f'https://iaas.invalid/schemas/pve-acceptance/v2/{name}.schema.json'})
+                       '$id': f'https://iaas.invalid/schemas/pve-acceptance/v3/{name}.schema.json'})
         if model is AcceptanceRequest:
             schema['properties']['required_checks'].update(minItems=6, maxItems=6, uniqueItems=True)
         if model is CleanupRequest:

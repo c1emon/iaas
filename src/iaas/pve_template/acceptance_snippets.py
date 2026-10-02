@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import shlex
 import subprocess
 import time
@@ -33,6 +34,40 @@ def record(request: dict, content: str) -> dict:
 
 
 class Snippets(Helper):
+    def prospective_permissions(self, principal: str, vmid: int, pool: str) -> dict:
+        require(self.budget is not None, 'permission inspection requires frozen deadlines')
+        assert self.budget is not None
+        cutoff = self.budget.deadlines[f'{self.phase}_deadline_at']
+        return self.call(['--prospective-permissions', '--principal', principal,
+                          '--vmid', str(vmid), '--pool', pool, '--deadline-at', cutoff])
+
+    def inspect_file(self, snippet: dict) -> dict:
+        require(self.budget is not None, 'snippet inspection requires frozen deadlines')
+        assert self.budget is not None
+        cutoff = self.budget.deadlines[f'{self.phase}_deadline_at']
+        return self.call(['--inspect-file', '--storage', snippet['storage'],
+                          '--filename', snippet['file_name'], '--sha256', snippet['sha256'],
+                          '--deadline-at', cutoff])
+
+    def capabilities(self, helper: str) -> dict:
+        require(helper in {'upload', 'delete'}, 'invalid snippet helper')
+        remaining = self.deadline - time.monotonic()
+        if self.budget is not None:
+            remaining = min(remaining, self.budget.remaining(self.phase))
+        require(remaining > 0, 'snippet deadline expired')
+        command = ['sudo', '-n', '/usr/local/sbin/iaas-pve-snippet-' + helper, '--capabilities']
+        try:
+            response = subprocess.run([*self.command, shlex.join(command)], env=self.env,
+                                      capture_output=True, text=True, timeout=remaining, check=True)
+            require(len(response.stdout) <= 16384, 'helper capability response exceeds limit')
+            declaration = json.loads(response.stdout)
+        except (OSError, subprocess.SubprocessError, ValueError):
+            from .admission import AdmissionError
+            raise AdmissionError('helper_unavailable', object=helper) from None
+        from .admission import require_helper_capabilities
+        require_helper_capabilities(declaration, helper)
+        return declaration
+
     def upload(self, snippet: dict, content: str) -> None:
         require(self.budget is not None, 'acceptance upload requires frozen deadlines')
         assert self.budget is not None

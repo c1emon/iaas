@@ -8,7 +8,7 @@
   },
   "template_record": {
     "kind": "pve-template-record",
-    "schema_version": 2,
+    "schema_version": 3,
     "record_id": "template-9000",
     "target": {
       "api_endpoint": "https://pve.example.invalid:8006",
@@ -36,7 +36,9 @@
     "artifact_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "verification": {
       "template_config": "passed"
-    }
+    },
+    "cluster_scope": "fixture-cluster",
+    "pool": null
   },
   "temporary_vm": {
     "node": "pve1",
@@ -49,7 +51,8 @@
     "memory_mib": 2048,
     "disk_limit_bytes": 34359738368,
     "boot": "scsi0",
-    "firmware": "bios"
+    "firmware": "bios",
+    "pool": "acceptance"
   },
   "cloud_init": {
     "hostname": "accept-001",
@@ -80,5 +83,15 @@
   "deadlines": {
     "work_deadline_at": "2099-01-01T00:00:00Z",
     "cleanup_deadline_at": "2099-01-01T00:10:00Z"
+  },
+  "cluster_scope": "fixture-cluster",
+  "vmid_policy": {
+    "acceptance": [
+      9100,
+      9199
+    ]
+  },
+  "runtime": {
+    "image_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
   }
 }

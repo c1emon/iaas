@@ -13,6 +13,7 @@ from iaas.runtime_execution.selection import load_operation
 
 @pytest.mark.parametrize('component,operation,request_name', [
     ('pve-template', 'accept', 'acceptance_request'),
+    ('pve-template', 'recover', 'recovery_request'),
     ('pve', 'snippet-cleanup', 'snippet_cleanup_request'),
 ])
 def test_discovery_explicit_modes_and_readonly_directory_mapping(tmp_path, capsys, component, operation, request_name):
@@ -50,6 +51,7 @@ def test_discovery_explicit_modes_and_readonly_directory_mapping(tmp_path, capsy
     report = json.loads(capsys.readouterr().out)
     assert report['effects']['infrastructure_write'] is False
     assert report['effects']['state'] is False
+    assert report['effects']['network'] is False
     assert report['credential_names'] == []
     spec['options'] = {}
     entry.write_text(yaml.safe_dump({'schema_version': 1, 'environment': 'test', 'components': {component: spec}}))
@@ -58,7 +60,7 @@ def test_discovery_explicit_modes_and_readonly_directory_mapping(tmp_path, capsy
 
 
 def test_capabilities_declare_bounded_mode_effects():
-    for component, operation in [('pve-template', 'accept'), ('pve', 'snippet-cleanup')]:
+    for component, operation in [('pve-template', 'accept'), ('pve-template', 'recover'), ('pve', 'snippet-cleanup')]:
         modes = capabilities()['execution_modes'][component][operation]
         assert modes['start']['infrastructure_write'] is True
         assert modes['observe']['infrastructure_write'] is False
@@ -81,7 +83,7 @@ def test_bounded_dispatch_to_dedicated_entrypoint(tmp_path, monkeypatch, compone
     alias = 'snippet_cleanup_request' if component == 'pve' else 'acceptance_request'
     entry = tmp_path / 'environment.yml'
     entry.write_text(yaml.safe_dump({'schema_version': 1, 'environment': 'test', 'components': {
-        component: {'inputs': {}, 'files': {alias: str(request), 'original_execution_dir': str(original)},
+        component: {'inputs': {}, 'files': {alias: str(request), 'acceptance_preview': str(request), 'original_execution_dir': str(original)},
                     'options': {'execution_mode': 'observe' if operation == 'read' else 'start'}}}}))
     received = {}
     module = ModuleType(module_name)
@@ -102,7 +104,7 @@ def test_bounded_dispatch_to_dedicated_entrypoint(tmp_path, monkeypatch, compone
 
 
 def test_actual_acceptance_entrypoint_roundtrip_and_collection_failure(tmp_path, monkeypatch):
-    from test_pve_template_acceptance import API, DIGEST, Snippets, admission, request
+    from test_pve_template_acceptance import API, DIGEST, Snippets, admission, request, preview
     from iaas.pve_template import acceptance
 
     value = request()
@@ -110,13 +112,15 @@ def test_actual_acceptance_entrypoint_roundtrip_and_collection_failure(tmp_path,
     req.write_text(json.dumps(value))
     adm = tmp_path / 'admission.json'
     adm.write_text(json.dumps(admission(value)))
+    planned = tmp_path / 'preview.json'
+    planned.write_text(json.dumps(preview(value)))
     entry = tmp_path / 'entry.yml'
     entry.write_text(yaml.safe_dump({'schema_version': 1, 'environment': 'test', 'components': {
-        'pve-template': {'inputs': {}, 'files': {'acceptance_request': str(req), 'execution_admission': str(adm)},
+        'pve-template': {'inputs': {}, 'files': {'acceptance_request': str(req), 'acceptance_preview': str(planned), 'execution_admission': str(adm)},
                          'options': {'execution_mode': 'start'}}}}))
     api = API(value)
     monkeypatch.setattr(acceptance.pve, '_client', lambda *args: api)
-    monkeypatch.setattr(acceptance.acceptance_snippets, 'Snippets', lambda *args: Snippets())
+    monkeypatch.setattr(acceptance.acceptance_snippets, 'Snippets', lambda *args, **kwargs: Snippets())
     args = ['--environment', str(entry), '--component', 'pve-template', '--operation', 'accept',
             '--scope', 'pve1', '--image-digest', DIGEST, '--execution-id', 'accept-001']
     started = tmp_path / 'start'
@@ -161,3 +165,65 @@ def test_missing_original_material_remains_unknown_in_main_summary(tmp_path, mon
     assert summary['overall'] == 'unknown'
     assert summary['reason_code'] == 'original_evidence_unavailable'
     assert summary['phases'] == []
+
+
+@pytest.mark.parametrize('operation,action,request_alias', [
+    ('check', 'accept', 'acceptance_request'),
+    ('plan', 'accept', 'acceptance_request'),
+    ('plan', 'recover', 'recovery_request'),
+])
+def test_plan_discovery_preserves_fixed_request_and_excludes_approval(tmp_path, capsys, operation, action, request_alias):
+    fixed = b'{"fixed":"unchanged","deadlines":{"work_deadline_at":"2026-10-01T10:00:00Z"}}\n'
+    req = tmp_path / 'request.json'
+    req.write_bytes(fixed)
+    original = tmp_path / 'original'
+    original.mkdir()
+    cleanup = tmp_path / 'cleanup'
+    cleanup.mkdir()
+    entry = tmp_path / 'environment.yml'
+    entry.write_text(yaml.safe_dump({'schema_version': 1, 'environment': 'test', 'components': {
+        'pve-template': {'inputs': {}, 'files': {request_alias: str(req),
+            'execution_admission': '/must-not-consume', 'backend': '/must-not-read',
+            'original_execution_dir': str(original), 'cleanup_evidence_dir': str(cleanup)},
+            'options': {'action': action}}}}))
+    selected = load_operation(entry, 'pve-template', operation, None, SourceReader())
+    assert selected.files[request_alias].read_bytes() == fixed
+    assert 'execution_admission' not in selected.files and 'backend' not in selected.files
+    if action == 'recover':
+        assert selected.files['original_execution_dir'] == original
+        assert selected.files['cleanup_evidence_dir'] == cleanup
+    assert main(['--environment', str(entry), '--component', 'pve-template', '--operation', operation,
+                 '--discover']) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report['action'] == action and report['execution_mode'] is None
+    assert not report['effects']['state'] and not report['effects']['infrastructure_write']
+    assert report['credential_names'] == ([] if operation == 'check' else ['PVE_API_CA', 'PVE_API_TOKEN'])
+    assert req.read_bytes() == fixed
+
+
+def test_actual_acceptance_check_then_plan_dispatch_is_readonly_and_does_not_consume_approval(tmp_path, monkeypatch):
+    from test_pve_template_acceptance import API, DIGEST, Snippets, request
+    from iaas.pve_template import runtime, acceptance_snippets
+
+    value = request()
+    fixed = tmp_path / 'request.json'
+    fixed.write_text(json.dumps(value))
+    entry = tmp_path / 'environment.yml'
+    entry.write_text(yaml.safe_dump({'schema_version': 1, 'environment': 'fixture', 'components': {
+        'pve-template': {'inputs': {}, 'files': {'acceptance_request': str(fixed),
+            'execution_admission': '/must-not-consume', 'backend': '/must-not-read'}, 'options': {'action': 'accept'}}}}))
+    args = ['--environment', str(entry), '--component', 'pve-template', '--image-digest', DIGEST]
+    monkeypatch.setattr(runtime, '_client', lambda *args: pytest.fail('offline check constructed API'))
+    monkeypatch.setattr(acceptance_snippets, 'Snippets', lambda *args: pytest.fail('offline check constructed helper'))
+    assert main(args + ['--operation', 'check', '--output', str(tmp_path / 'checked')]) == 0
+    api = API(value)
+    monkeypatch.setattr(runtime, '_client', lambda *args: api)
+    monkeypatch.setattr(acceptance_snippets, 'Snippets', lambda *args, **kwargs: Snippets())
+    output = tmp_path / 'planned'
+    assert main(args + ['--operation', 'plan', '--scope', 'pve1', '--output', str(output)]) == 0
+    planned = json.loads((output / 'plan/acceptance-preview.json').read_text())
+    assert planned['fixed_input'] == value
+    assert planned['facility_writes'] == 'none'
+    assert planned['observed']['readiness']['status'] == 'ready'
+    assert all(method == 'GET' for method, *_ in api.calls)
+    assert fixed.read_text() == json.dumps(value)

@@ -10,11 +10,13 @@ from iaas.pve_acceptance_contracts import (
     validate_acceptance_request, validate_acceptance_result,
     validate_snippet_cleanup_request, validate_snippet_cleanup_result,
 )
+from iaas.pve_template.acceptance_plan import validate_preview
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / 'docs/examples/pve-acceptance'
 CASES = json.loads((FIXTURES / 'cases.json').read_text())['cases']
 VALIDATORS = {
+    'pve-template-acceptance-preview': validate_preview,
     'pve-template-acceptance-request': validate_acceptance_request,
     'pve-template-acceptance-result': validate_acceptance_result,
     'pve-snippet-cleanup-request': validate_snippet_cleanup_request,
@@ -34,8 +36,16 @@ def test_shared_contract_fixture(case):
 
 def test_schema_exports_are_current():
     for name, schema in contract_schemas().items():
-        path = ROOT / 'automation/schemas/pve-acceptance/v2' / f'{name}.schema.json'
+        path = ROOT / 'automation/schemas/pve-acceptance/v3' / f'{name}.schema.json'
         assert json.loads(path.read_text()) == schema
+
+
+@pytest.mark.parametrize('pool', [None, ''])
+def test_acceptance_temporary_vm_still_requires_nonempty_pool(pool):
+    request = load_strict_json(FIXTURES / 'acceptance-request.json')
+    request['temporary_vm']['pool'] = pool
+    with pytest.raises(ValueError):
+        validate_acceptance_request(request)
 
 
 def test_positive_fixtures_conform_to_exported_schemas():

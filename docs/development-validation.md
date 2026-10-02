@@ -1,5 +1,7 @@
 # 本地开发验证
 
+当前 PVE 固定产物与验收证据边界见[验收材料入口](operations/pve-lifecycle-acceptance.md)。本页保留开发方法与历史验证范围。
+
 使用项目独立的 `uv` 环境：`uv sync --locked`。运行时镜像继续用 `uv sync --locked --no-dev --group runtime`，Pydantic 是运行依赖，Hypothesis、Import Linter 和 Ruff 仅属于开发依赖。
 
 - `make test`：完整 pytest 集合，包含本地工具集成测试；不等同于真机验收。

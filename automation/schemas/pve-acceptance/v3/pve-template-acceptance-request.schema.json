@@ -1,0 +1,377 @@
+{
+  "$defs": {
+    "Authorization": {
+      "additionalProperties": false,
+      "properties": {
+        "create_temporary_vm": {
+          "const": true,
+          "title": "Create Temporary Vm",
+          "type": "boolean"
+        },
+        "delete_temporary_resources": {
+          "const": true,
+          "title": "Delete Temporary Resources",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "create_temporary_vm",
+        "delete_temporary_resources"
+      ],
+      "title": "Authorization",
+      "type": "object"
+    },
+    "CloudInit": {
+      "additionalProperties": false,
+      "properties": {
+        "snippet_storage": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Snippet Storage",
+          "type": "string"
+        },
+        "ssh": {
+          "$ref": "#/$defs/SSHConnection"
+        },
+        "hostname": {
+          "pattern": "^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$",
+          "title": "Hostname",
+          "type": "string"
+        }
+      },
+      "required": [
+        "snippet_storage",
+        "ssh",
+        "hostname"
+      ],
+      "title": "CloudInit",
+      "type": "object"
+    },
+    "Deadlines": {
+      "additionalProperties": false,
+      "properties": {
+        "work_deadline_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+          "title": "Work Deadline At",
+          "type": "string"
+        },
+        "cleanup_deadline_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+          "title": "Cleanup Deadline At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "work_deadline_at",
+        "cleanup_deadline_at"
+      ],
+      "title": "Deadlines",
+      "type": "object"
+    },
+    "RuntimeIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "image_digest": {
+          "pattern": "^(?:[^@\\s]+@)?sha256:[0-9a-f]{64}$",
+          "title": "Image Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "image_digest"
+      ],
+      "title": "RuntimeIdentity",
+      "type": "object"
+    },
+    "SSHConnection": {
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "maxLength": 253,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9:][A-Za-z0-9.:-]*$",
+          "title": "Host",
+          "type": "string"
+        },
+        "user": {
+          "maxLength": 32,
+          "minLength": 1,
+          "pattern": "^[a-z_][a-z0-9_-]*$",
+          "title": "User",
+          "type": "string"
+        },
+        "port": {
+          "maximum": 65535,
+          "minimum": 1,
+          "title": "Port",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "host",
+        "user",
+        "port"
+      ],
+      "title": "SSHConnection",
+      "type": "object"
+    },
+    "Target": {
+      "additionalProperties": false,
+      "properties": {
+        "api_endpoint": {
+          "title": "Api Endpoint",
+          "type": "string"
+        },
+        "node": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Node",
+          "type": "string"
+        },
+        "tls_verify": {
+          "const": true,
+          "title": "Tls Verify",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "api_endpoint",
+        "node",
+        "tls_verify"
+      ],
+      "title": "Target",
+      "type": "object"
+    },
+    "TemporaryVM": {
+      "additionalProperties": false,
+      "properties": {
+        "node": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Node",
+          "type": "string"
+        },
+        "vmid": {
+          "maximum": 999999999,
+          "minimum": 100,
+          "title": "Vmid",
+          "type": "integer"
+        },
+        "pool": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Pool",
+          "type": "string"
+        },
+        "storage": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Storage",
+          "type": "string"
+        },
+        "bridge": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Bridge",
+          "type": "string"
+        },
+        "vlan_tag": {
+          "anyOf": [
+            {
+              "maximum": 4094,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Vlan Tag"
+        },
+        "ip_config": {
+          "maxLength": 512,
+          "minLength": 1,
+          "pattern": "^[^\\r\\n\\x00]+$",
+          "title": "Ip Config",
+          "type": "string"
+        },
+        "cpus": {
+          "maximum": 128,
+          "minimum": 1,
+          "title": "Cpus",
+          "type": "integer"
+        },
+        "memory_mib": {
+          "maximum": 1048576,
+          "minimum": 128,
+          "title": "Memory Mib",
+          "type": "integer"
+        },
+        "disk_limit_bytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 1099511627776,
+          "title": "Disk Limit Bytes",
+          "type": "integer"
+        },
+        "boot": {
+          "pattern": "^(?:scsi|virtio|sata)[0-9]+$",
+          "title": "Boot",
+          "type": "string"
+        },
+        "firmware": {
+          "enum": [
+            "bios",
+            "uefi"
+          ],
+          "title": "Firmware",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node",
+        "vmid",
+        "pool",
+        "storage",
+        "bridge",
+        "vlan_tag",
+        "ip_config",
+        "cpus",
+        "memory_mib",
+        "disk_limit_bytes",
+        "boot",
+        "firmware"
+      ],
+      "title": "TemporaryVM",
+      "type": "object"
+    },
+    "Timeouts": {
+      "additionalProperties": false,
+      "properties": {
+        "work_seconds": {
+          "exclusiveMinimum": 0,
+          "maximum": 86400,
+          "title": "Work Seconds",
+          "type": "integer"
+        },
+        "guest_seconds": {
+          "exclusiveMinimum": 0,
+          "maximum": 86400,
+          "title": "Guest Seconds",
+          "type": "integer"
+        },
+        "cleanup_seconds": {
+          "exclusiveMinimum": 0,
+          "maximum": 86400,
+          "title": "Cleanup Seconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "work_seconds",
+        "guest_seconds",
+        "cleanup_seconds"
+      ],
+      "title": "Timeouts",
+      "type": "object"
+    },
+    "VMIDPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "acceptance": {
+          "items": {
+            "maximum": 999999999,
+            "minimum": 100,
+            "type": "integer"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Acceptance",
+          "type": "array"
+        }
+      },
+      "required": [
+        "acceptance"
+      ],
+      "title": "VMIDPolicy",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "kind": {
+      "const": "pve-template-acceptance-request",
+      "title": "Kind",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 3,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "deadlines": {
+      "$ref": "#/$defs/Deadlines"
+    },
+    "target": {
+      "$ref": "#/$defs/Target"
+    },
+    "cluster_scope": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Cluster Scope",
+      "type": "string"
+    },
+    "vmid_policy": {
+      "$ref": "#/$defs/VMIDPolicy"
+    },
+    "runtime": {
+      "$ref": "#/$defs/RuntimeIdentity"
+    },
+    "template_record": {
+      "additionalProperties": true,
+      "title": "Template Record",
+      "type": "object"
+    },
+    "temporary_vm": {
+      "$ref": "#/$defs/TemporaryVM"
+    },
+    "cloud_init": {
+      "$ref": "#/$defs/CloudInit"
+    },
+    "required_checks": {
+      "items": {
+        "enum": [
+          "full_clone",
+          "disk_boot",
+          "guest_agent",
+          "cloud_init",
+          "injected_hostname",
+          "source_unchanged"
+        ],
+        "type": "string"
+      },
+      "title": "Required Checks",
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "uniqueItems": true
+    },
+    "timeouts": {
+      "$ref": "#/$defs/Timeouts"
+    },
+    "authorization": {
+      "$ref": "#/$defs/Authorization"
+    }
+  },
+  "required": [
+    "kind",
+    "schema_version",
+    "deadlines",
+    "target",
+    "cluster_scope",
+    "vmid_policy",
+    "runtime",
+    "template_record",
+    "temporary_vm",
+    "cloud_init",
+    "required_checks",
+    "timeouts",
+    "authorization"
+  ],
+  "title": "AcceptanceRequest",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iaas.invalid/schemas/pve-acceptance/v3/pve-template-acceptance-request.schema.json"
+}

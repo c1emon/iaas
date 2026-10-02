@@ -21,6 +21,51 @@ only this helper, with no arbitrary shell/rm permission. Existing upload
 permissions remain independent. This is an installation recipe, not evidence
 of installation on any live node.
 
+After both helper bootstraps, use the same SSH account to probe the restricted
+commands with `sudo -n /usr/local/sbin/iaas-pve-snippet-upload --capabilities` and
+`sudo -n /usr/local/sbin/iaas-pve-snippet-delete --capabilities`. Each returns
+`schema_version: "helper-capabilities/v1"`, its `helper` identity,
+`protocol_version: 2`, and boolean `capabilities`. Upload declares `acceptance`,
+`create_only`, `verify`, and `deadline`; delete declares `inspect`, `exact_delete`,
+`reference`, `digest`, and `deadline`. Probe arguments must be used alone. Probes
+do not read stdin, invoke pvesm, inspect cluster configuration, create directories
+or acquire a lock. Missing pvesm makes dependent capabilities false; upload also
+checks PyYAML for verification. Missing Python or a refused sudo command makes
+the helper unavailable. Admission must refuse missing required capabilities;
+`--help` success alone is insufficient. Cluster/storage/node usability is checked
+separately by online admission, rather than inferred from this declaration.
+
+Recovery can inspect one exact snippet with the same delete helper and sudo rule:
+`--inspect-file --storage STORAGE --filename NAME --sha256 ORIGINAL_DIGEST
+--deadline-at CUTOFF`. Protocol v2 returns `existence: present|absent|unknown`,
+`sha256` (only for a stable observed regular file), `digest_matches`, and
+`reason_code`; it never returns file contents or performs deletion. It uses
+no-follow directory/file handles, a 4 MiB snippet bound, and a stable identity
+check. Missing parents, symlinks, oversized files or query/deadline failures stay
+unknown. Its `inspect_file` capability is declared separately. Cluster inspection
+also returns exact `volume_references` (`node`, `vmid`, `volid`) and
+`snippet_references` (plus `file_name`) from all current, pending and snapshot
+configuration text. Existing basename `references` remains the conservative
+cross-storage delete gate; these owner rows support recovery's independent
+external-reference checks without granting general shell access.
+
+For a VM that does not yet exist, pool-only API grants require native prospective
+permission evidence. The delete helper exposes `--prospective-permissions
+--principal USER@REALM!TOKEN_ID --vmid VMID --pool POOL --deadline-at CUTOFF`.
+Its `prospective_permissions` capability requires the installed PVE Perl ACL
+parser/compiler. The helper reads `user.cfg`, deep-copies parsed configuration,
+adds the exact VMID to the selected pool only in memory, and calls native
+`PVE::RPCEnvironment::permissions`. This preserves NoAccess precedence and
+privilege-separated user/token intersection, including valid zero propagation
+flags. It does not write pmxcfs, change ACLs or reserve a VMID. Responses contain
+only effective current/expected grants and the exact identity/scope association.
+The caller derives principal identity from its actual API credential, never
+sends the token value, and requires current direct/pool sets to match its API
+queries before trusting the prospective result. Missing modules, compilation
+failure, changed authority or wrong identity/scope refuses admission; parser
+stderr and raw ACL contents are never exposed. Local fixture tests cover the
+transport/evidence boundary; installation on a PVE node remains a separate check.
+
 Installation checks that `/usr`, `/usr/local` and `/usr/local/sbin` are existing
 root-owned directories without group/other write permission or symlinks. If
 this check fails, an administrator must resolve the directory ownership or

@@ -1,0 +1,131 @@
+{
+  "$defs": {
+    "Deadlines": {
+      "additionalProperties": false,
+      "properties": {
+        "work_deadline_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+          "title": "Work Deadline At",
+          "type": "string"
+        },
+        "cleanup_deadline_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+          "title": "Cleanup Deadline At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "work_deadline_at",
+        "cleanup_deadline_at"
+      ],
+      "title": "Deadlines",
+      "type": "object"
+    },
+    "RuntimeIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "image_digest": {
+          "pattern": "^(?:[^@\\s]+@)?sha256:[0-9a-f]{64}$",
+          "title": "Image Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "image_digest"
+      ],
+      "title": "RuntimeIdentity",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Structural admission schema; existing runtime checks nested associations.",
+  "properties": {
+    "schema_version": {
+      "const": 2,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "execution_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Execution Id",
+      "type": "string"
+    },
+    "plan_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Plan Digest",
+      "type": "string"
+    },
+    "request_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Request Digest",
+      "type": "string"
+    },
+    "runtime": {
+      "$ref": "#/$defs/RuntimeIdentity"
+    },
+    "vmid_reservation": {
+      "additionalProperties": true,
+      "title": "Vmid Reservation",
+      "type": "object"
+    },
+    "target": {
+      "additionalProperties": true,
+      "title": "Target",
+      "type": "object"
+    },
+    "deadlines": {
+      "$ref": "#/$defs/Deadlines"
+    },
+    "approved": {
+      "const": true,
+      "title": "Approved",
+      "type": "boolean"
+    },
+    "consumption": {
+      "additionalProperties": true,
+      "title": "Consumption",
+      "type": "object"
+    },
+    "pending": {
+      "additionalProperties": true,
+      "title": "Pending",
+      "type": "object"
+    },
+    "serialization": {
+      "additionalProperties": true,
+      "title": "Serialization",
+      "type": "object"
+    },
+    "recovery_of": {
+      "anyOf": [
+        {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Recovery Of"
+    }
+  },
+  "required": [
+    "schema_version",
+    "execution_id",
+    "plan_digest",
+    "request_digest",
+    "runtime",
+    "vmid_reservation",
+    "target",
+    "deadlines",
+    "approved",
+    "consumption",
+    "pending",
+    "serialization"
+  ],
+  "title": "OneShotAdmission",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iaas.invalid/schemas/pve-acceptance/v3/pve-one-shot-execution-admission.schema.json"
+}

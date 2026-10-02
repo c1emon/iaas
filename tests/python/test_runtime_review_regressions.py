@@ -53,8 +53,10 @@ def test_discovery_excludes_overridden_host_aws_file(tmp_path, capsys, monkeypat
     companions = tmp_path / "companions"
     plan.write_text("synthetic")
     companions.mkdir()
+    inputs = {"cluster": str(REPO / "tests/fixtures/runtime/pve-cluster.yml"),
+              "vms": str(REPO / "tests/fixtures/runtime/vms.yml")}
     entry = write(tmp_path / "environment.yml", {"schema_version": 1, "environment": "lab",
-                  "components": {"pve": {"files": files}}})
+                  "components": {"pve": {"inputs": inputs, "files": files}}})
     monkeypatch.setenv(variable, str(tmp_path / "missing-host-file"))
     args = ["--environment", str(entry), "--component", "pve", "--operation", "apply", "--discover",
             "--execution-id", "run-42", "--plan", str(plan), "--companions", str(companions)]
@@ -63,7 +65,7 @@ def test_discovery_excludes_overridden_host_aws_file(tmp_path, capsys, monkeypat
     assert variable not in ready["credential_names"]
     assert str(tmp_path / alias) in ready["sources"]
     del files[alias]
-    write(entry, {"schema_version": 1, "environment": "lab", "components": {"pve": {"files": files}}})
+    write(entry, {"schema_version": 1, "environment": "lab", "components": {"pve": {"inputs": inputs, "files": files}}})
     assert main(args) == 0
     assert variable in json.loads(capsys.readouterr().out)["credential_names"]
 

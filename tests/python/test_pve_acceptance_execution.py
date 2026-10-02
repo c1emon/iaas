@@ -6,15 +6,20 @@ import pytest
 
 from iaas.pve_acceptance_contracts import canonical_digest, load_strict_json
 from iaas.pve_template.acceptance_execution import begin, confined, observe, save
+from iaas.pve_template.acceptance_plan import build_preview
 
 FIXTURES = Path(__file__).resolve().parents[2] / 'docs/examples/pve-acceptance'
 
 
 def materials():
     request = load_strict_json(FIXTURES / 'acceptance-request.json')
+    preview = build_preview(request, {'readiness': {'status': 'ready'}}, image_digest=request['runtime']['image_digest'])
     admission = {
-        'schema_version': 1, 'execution_id': 'accept-001',
-        'plan_digest': canonical_digest(request).removeprefix('sha256:'),
+        'schema_version': 2, 'execution_id': 'accept-001',
+        'plan_digest': preview['preview_digest'].removeprefix('sha256:'),
+        'request_digest': canonical_digest(request), 'runtime': request['runtime'],
+        'vmid_reservation': {'cluster_scope': request['cluster_scope'], 'vmids': [request['temporary_vm']['vmid']],
+                             'reservation_id': 'reservation-001', 'context_id': 'complete-workflow-lock'},
         'target': request['target'], 'deadlines': request['deadlines'], 'approved': True,
         'consumption': {'reserved': True, 'reservation_id': 'reservation-001'},
         'pending': {'record_id': 'pending-001'},
@@ -23,10 +28,14 @@ def materials():
     return request, admission
 
 
+def preview(request):
+    return build_preview(request, {'readiness': {'status': 'ready'}}, image_digest=request['runtime']['image_digest'])
+
+
 def started(tmp_path):
     request, admission = materials()
     root = tmp_path / 'original'
-    journal = begin(root, 'accept', request, admission, 'accept-001', 'sha256:' + 'e' * 64)
+    journal = begin(root, 'accept', request, admission, 'accept-001', 'sha256:' + 'e' * 64, preview=preview(request))
     return root, request, journal
 
 
@@ -45,8 +54,17 @@ def test_repeat_start_refuses_without_overwriting(tmp_path):
     _, admission = materials()
     before = (root / 'journal.json').read_bytes()
     with pytest.raises((ValueError, FileExistsError)):
-        begin(root, 'accept', request, admission, 'accept-001', 'sha256:' + 'e' * 64)
+        begin(root, 'accept', request, admission, 'accept-001', 'sha256:' + 'e' * 64, preview=preview(request))
     assert (root / 'journal.json').read_bytes() == before
+
+
+def test_legacy_start_refused_before_creating_execution_state(tmp_path):
+    request, admission = materials()
+    request['schema_version'] = 2
+    root = tmp_path / 'legacy'
+    with pytest.raises(ValueError):
+        begin(root, 'accept', request, admission, 'accept-001', 'sha256:' + 'e' * 64, preview=preview(request))
+    assert not root.exists()
 
 
 def test_start_refuses_existing_material_even_if_marker_missing(tmp_path):
@@ -54,7 +72,7 @@ def test_start_refuses_existing_material_even_if_marker_missing(tmp_path):
     (root / 'started').unlink(missing_ok=True)
     _, admission = materials()
     with pytest.raises((ValueError, FileExistsError)):
-        begin(root, 'accept', request, admission, 'accept-001', 'sha256:' + 'e' * 64)
+        begin(root, 'accept', request, admission, 'accept-001', 'sha256:' + 'e' * 64, preview=preview(request))
 
 
 @pytest.mark.parametrize('which', ['directory', 'request.json', 'journal.json'])
@@ -96,6 +114,8 @@ def test_observation_conflicts_fail_closed(tmp_path, change):
 def finalized(tmp_path):
     root, request, journal = started(tmp_path)
     result = load_strict_json(FIXTURES / 'acceptance-result.json')
+    result['preview_digest'] = journal['preview_digest']
+    result['capacity'] = None
     journal.update(status='finished', mutation_active=False, facility_writes='issued', result_digest=canonical_digest(result))
     save(root / 'journal.json', journal)
     save(root / 'result.json', result)
@@ -148,4 +168,48 @@ def test_observe_exposes_bound_unknown_result_while_task_active(tmp_path, status
     observed_journal, observed_result = observe(root, 'accept', request, 'accept-001')
     assert observed_journal['mutation_active'] is True
     assert observed_result['checks'][0]['status'] == 'unknown'
+    assert before == {path.name: path.read_bytes() for path in root.iterdir()}
+
+
+@pytest.mark.parametrize('fault', ['missing_preview', 'legacy_admission', 'preview_digest', 'request_digest', 'runtime', 'reservation'])
+def test_current_start_requires_reviewed_preview_and_v2_association_before_state(tmp_path, fault):
+    request, admission = materials()
+    planned = preview(request)
+    digest = request['runtime']['image_digest']
+    if fault == 'missing_preview':
+        planned = None
+    elif fault == 'legacy_admission':
+        admission['schema_version'] = 1
+    elif fault == 'preview_digest':
+        admission['plan_digest'] = 'f' * 64
+    elif fault == 'request_digest':
+        admission['request_digest'] = 'sha256:' + 'f' * 64
+    elif fault == 'runtime':
+        digest = 'sha256:' + 'f' * 64
+    else:
+        admission['vmid_reservation']['vmids'] = [9101]
+    root = tmp_path / 'refused'
+    with pytest.raises(ValueError):
+        begin(root, 'accept', request, admission, 'accept-001', digest, preview=planned)
+    assert not root.exists()
+
+
+@pytest.mark.parametrize('fault', ['preview_file', 'journal_preview', 'journal_preview_digest', 'missing_preview'])
+def test_observe_checks_current_preview_snapshot_without_rewriting(tmp_path, fault):
+    root, request, journal = started(tmp_path)
+    if fault == 'missing_preview':
+        (root / 'preview.json').unlink()
+    elif fault == 'preview_file':
+        planned = load_strict_json(root / 'preview.json')
+        planned['observed']['readiness']['pool'] = 'another-pool'
+        save(root / 'preview.json', planned)
+    elif fault == 'journal_preview':
+        journal['preview']['runtime']['image_digest'] = 'sha256:' + 'f' * 64
+        save(root / 'journal.json', journal)
+    else:
+        journal['preview_digest'] = 'sha256:' + 'f' * 64
+        save(root / 'journal.json', journal)
+    before = {path.name: path.read_bytes() for path in root.iterdir()}
+    with pytest.raises(ValueError):
+        observe(root, 'accept', request, 'accept-001')
     assert before == {path.name: path.read_bytes() for path in root.iterdir()}

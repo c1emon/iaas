@@ -95,18 +95,43 @@ func (c Capabilities) operation(component, operation, selectedPlatform string) (
 	if !ok {
 		return Effects{}, fmt.Errorf("unsupported component/operation: %s/%s", component, operation)
 	}
-	if (component == "pve-template" && operation == "accept") || (component == "pve" && operation == "snippet-cleanup") {
+	if (component == "pve-template" && (operation == "accept" || operation == "recover")) || (component == "pve" && operation == "snippet-cleanup") {
 		prefix := "acceptance"
+		version := 3
+		if operation == "recover" {
+			prefix = "recovery"
+			version = 1
+		}
 		if operation == "snippet-cleanup" {
 			prefix = "snippet_cleanup"
+			version = 2
 		}
 		versions := c.LifecycleVersions[component]
 		modes := c.ExecutionModes[component][operation]
 		start, hasStart := modes["start"]
 		observe, hasObserve := modes["observe"]
-		if versions[prefix+"_request"] != 2 || versions[prefix+"_result"] != 2 || !c.OperationCapabilities[component][operation]["absolute_deadlines"] || !hasStart || !hasObserve || !start.InfrastructureWrite || start.State || observe.InfrastructureWrite || observe.State {
+		if versions[prefix+"_request"] != version || versions[prefix+"_result"] != version ||
+			(component == "pve-template" && (versions[prefix+"_preview"] != 1 || versions["one_shot_execution_admission"] != 2)) ||
+			!c.OperationCapabilities[component][operation]["absolute_deadlines"] || !hasStart || !hasObserve || !start.InfrastructureWrite || start.State || observe.InfrastructureWrite || observe.State || observe.Network {
 			return Effects{}, errors.New("image does not support current bounded execution contracts, absolute deadlines and modes")
 		}
 	}
 	return operationEffects, nil
+}
+
+func (c Capabilities) selectedAction(component, operation, action string) error {
+	if component != "pve-template" || (operation != "check" && operation != "plan") || (action != "accept" && action != "recover") {
+		return nil
+	}
+	versions := c.LifecycleVersions[component]
+	prefix, version := "acceptance", 3
+	if action == "recover" {
+		prefix, version = "recovery", 1
+	}
+	if !c.OperationCapabilities[component][operation][action] || versions[prefix+"_request"] != version ||
+		versions[prefix+"_result"] != version || versions[prefix+"_preview"] != 1 ||
+		(operation == "plan" && !c.OperationCapabilities[component][operation]["absolute_deadlines"]) {
+		return errors.New("image does not support selected acceptance/recovery planning contracts")
+	}
+	return nil
 }

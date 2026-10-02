@@ -213,23 +213,34 @@ def load_operation(entry: Path, component: str, operation: str, scenario: str | 
                 files.add("recovery")
         else:
             files.add("candidate")
-    elif ((component == "pve-template" and operation == "accept")
+    elif ((component == "pve-template" and operation in {"accept", "recover"})
+          or (component == "pve-template" and operation in {"check", "plan"}
+              and metadata.options.get("action") in {"accept", "recover"})
           or (component == "pve" and operation == "snippet-cleanup")
           or (component == "pve-template" and operation == "read"
               and "original_execution_dir" in metadata.file_paths)):
         inputs = set()
         mode = metadata.options.get("execution_mode")
-        if operation == "read":
+        planning = operation in {"check", "plan"}
+        if planning:
+            require(operation == "plan" or metadata.options.get("action") == "accept", "recover only supports online plan")
+            require(mode is None, "check/plan must not select an execution mode")
+        elif operation == "read":
             require(mode in {None, "observe"}, "read only supports observe mode")
         else:
             require(mode in {"start", "observe"}, "explicit execution_mode start or observe is required")
-        request = "snippet_cleanup_request" if component == "pve" else "acceptance_request"
-        if mode == "start":
+        recovering = operation == "recover" or metadata.options.get("action") == "recover"
+        request = "snippet_cleanup_request" if component == "pve" else ("recovery_request" if recovering else "acceptance_request")
+        preview = "recovery_preview" if recovering else "acceptance_preview"
+        if mode == "start" or planning:
             files.add(request)
+        if mode == "start":
+            if component == "pve-template":
+                files.add(preview)
             if "execution_admission" in metadata.file_paths:
                 files.add("execution_admission")
         selected_aliases = {request}
-        if mode == "start":
+        if mode == "start" or operation == "plan":
             selected_aliases |= ({"api_ca", "ssh_key", "known_hosts"} if component == "pve-template" else {"ssh_key", "known_hosts"})
         files |= selected_aliases & metadata.file_paths.keys()
     elif component == "pve" and operation in PVE_WORKFLOW_OPERATIONS:
@@ -254,7 +265,7 @@ def load_operation(entry: Path, component: str, operation: str, scenario: str | 
                 inputs = set()
                 files |= {"execution_result"} if "execution_result" in metadata.file_paths else set()
         elif operation == "apply":
-            inputs = set()
+            inputs = {"cluster", "vms"}
             files.add("backend")
             files.add("execution_admission")
             files.add("state_admission")
@@ -308,10 +319,11 @@ def load_operation(entry: Path, component: str, operation: str, scenario: str | 
         files |= {name for name in ("aws_credentials", "aws_config", "aws_ca", "aws_web_identity")
                   if name in metadata.file_paths}
     selected = load_environment(entry, component, scenario, reader, input_names=inputs, file_names=files)
-    if ((component == "pve-template" and operation in {"accept", "read"})
+    if ((component == "pve-template" and operation in {"accept", "recover", "read"})
+            or (component == "pve-template" and operation == "plan" and selected.options.get("action") == "recover")
             or (component == "pve" and operation == "snippet-cleanup")):
         directory_names = {"original_execution_dir"}
-        if selected.options.get("execution_mode") == "start":
+        if selected.options.get("execution_mode") == "start" or operation == "plan":
             directory_names.add("cleanup_evidence_dir")
         for name in sorted(directory_names):
             if name in metadata.file_paths:

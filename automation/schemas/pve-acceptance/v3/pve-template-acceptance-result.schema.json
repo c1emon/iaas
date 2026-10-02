@@ -1,0 +1,558 @@
+{
+  "$defs": {
+    "Check": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "enum": [
+            "full_clone",
+            "disk_boot",
+            "guest_agent",
+            "cloud_init",
+            "injected_hostname",
+            "source_unchanged"
+          ],
+          "title": "Id",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "unknown",
+            "not_attempted"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "reason_code": {
+          "pattern": "^[a-z][a-z0-9_]{0,95}$",
+          "title": "Reason Code",
+          "type": "string"
+        },
+        "evidence_ref": {
+          "anyOf": [
+            {
+              "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Evidence Ref"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "reason_code",
+        "evidence_ref"
+      ],
+      "title": "Check",
+      "type": "object"
+    },
+    "CleanupOutcomes": {
+      "additionalProperties": false,
+      "properties": {
+        "vm": {
+          "$ref": "#/$defs/Outcome"
+        },
+        "volumes": {
+          "$ref": "#/$defs/Outcome"
+        },
+        "snippets": {
+          "$ref": "#/$defs/Outcome"
+        }
+      },
+      "required": [
+        "vm",
+        "volumes",
+        "snippets"
+      ],
+      "title": "CleanupOutcomes",
+      "type": "object"
+    },
+    "Collection": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "complete",
+            "failed",
+            "unknown"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "reason_code": {
+          "pattern": "^[a-z][a-z0-9_]{0,95}$",
+          "title": "Reason Code",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "reason_code"
+      ],
+      "title": "Collection",
+      "type": "object"
+    },
+    "DeadlineOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "phase": {
+          "anyOf": [
+            {
+              "enum": [
+                "admission",
+                "work",
+                "cleanup"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Phase"
+        },
+        "status": {
+          "enum": [
+            "not_exceeded",
+            "rejected",
+            "exceeded"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "phase",
+        "status"
+      ],
+      "title": "DeadlineOutcome",
+      "type": "object"
+    },
+    "Deadlines": {
+      "additionalProperties": false,
+      "properties": {
+        "work_deadline_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+          "title": "Work Deadline At",
+          "type": "string"
+        },
+        "cleanup_deadline_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+          "title": "Cleanup Deadline At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "work_deadline_at",
+        "cleanup_deadline_at"
+      ],
+      "title": "Deadlines",
+      "type": "object"
+    },
+    "Outcome": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "unknown",
+            "not_attempted",
+            "not_required"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "reason_code": {
+          "pattern": "^[a-z][a-z0-9_]{0,95}$",
+          "title": "Reason Code",
+          "type": "string"
+        },
+        "evidence_ref": {
+          "anyOf": [
+            {
+              "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Evidence Ref"
+        }
+      },
+      "required": [
+        "status",
+        "reason_code",
+        "evidence_ref"
+      ],
+      "title": "Outcome",
+      "type": "object"
+    },
+    "Residual": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "vm",
+            "volume",
+            "snippet"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "node": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Node",
+          "type": "string"
+        },
+        "identity": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Identity",
+          "type": "string"
+        },
+        "created_by": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Created By",
+          "type": "string"
+        },
+        "ownership": {
+          "enum": [
+            "owned",
+            "not_owned",
+            "unknown"
+          ],
+          "title": "Ownership",
+          "type": "string"
+        },
+        "existence": {
+          "enum": [
+            "present",
+            "unknown"
+          ],
+          "title": "Existence",
+          "type": "string"
+        },
+        "reason_code": {
+          "pattern": "^[a-z][a-z0-9_]{0,95}$",
+          "title": "Reason Code",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "node",
+        "identity",
+        "created_by",
+        "ownership",
+        "existence",
+        "reason_code"
+      ],
+      "title": "Residual",
+      "type": "object"
+    },
+    "Residuals": {
+      "additionalProperties": false,
+      "properties": {
+        "inventory_complete": {
+          "title": "Inventory Complete",
+          "type": "boolean"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/Residual"
+          },
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "inventory_complete",
+        "items"
+      ],
+      "title": "Residuals",
+      "type": "object"
+    },
+    "Resource": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "vm",
+            "volume",
+            "snippet"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "node": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Node",
+          "type": "string"
+        },
+        "identity": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Identity",
+          "type": "string"
+        },
+        "created_by": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Created By",
+          "type": "string"
+        },
+        "ownership": {
+          "enum": [
+            "owned",
+            "not_owned",
+            "unknown"
+          ],
+          "title": "Ownership",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "node",
+        "identity",
+        "created_by",
+        "ownership"
+      ],
+      "title": "Resource",
+      "type": "object"
+    },
+    "RuntimeIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "image_digest": {
+          "pattern": "^(?:[^@\\s]+@)?sha256:[0-9a-f]{64}$",
+          "title": "Image Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "image_digest"
+      ],
+      "title": "RuntimeIdentity",
+      "type": "object"
+    },
+    "TemplateIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "record_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Record Id",
+          "type": "string"
+        },
+        "execution_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Execution Id",
+          "type": "string"
+        },
+        "artifact_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Artifact Digest",
+          "type": "string"
+        },
+        "node": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Node",
+          "type": "string"
+        },
+        "vmid": {
+          "maximum": 999999999,
+          "minimum": 100,
+          "title": "Vmid",
+          "type": "integer"
+        },
+        "smbios_uuid": {
+          "title": "Smbios Uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "record_id",
+        "execution_id",
+        "artifact_digest",
+        "node",
+        "vmid",
+        "smbios_uuid"
+      ],
+      "title": "TemplateIdentity",
+      "type": "object"
+    },
+    "VMIDPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "acceptance": {
+          "items": {
+            "maximum": 999999999,
+            "minimum": 100,
+            "type": "integer"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Acceptance",
+          "type": "array"
+        }
+      },
+      "required": [
+        "acceptance"
+      ],
+      "title": "VMIDPolicy",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "deadlines": {
+      "$ref": "#/$defs/Deadlines"
+    },
+    "deadline_outcome": {
+      "$ref": "#/$defs/DeadlineOutcome"
+    },
+    "facility_writes": {
+      "enum": [
+        "none",
+        "issued",
+        "unknown"
+      ],
+      "title": "Facility Writes",
+      "type": "string"
+    },
+    "execution_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Execution Id",
+      "type": "string"
+    },
+    "request_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Request Digest",
+      "type": "string"
+    },
+    "runtime": {
+      "$ref": "#/$defs/RuntimeIdentity"
+    },
+    "residuals": {
+      "$ref": "#/$defs/Residuals"
+    },
+    "overall": {
+      "enum": [
+        "passed",
+        "failed",
+        "unknown"
+      ],
+      "title": "Overall",
+      "type": "string"
+    },
+    "collection": {
+      "$ref": "#/$defs/Collection"
+    },
+    "schema_version": {
+      "const": 3,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "kind": {
+      "const": "pve-template-acceptance-result",
+      "title": "Kind",
+      "type": "string"
+    },
+    "cluster_scope": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Cluster Scope",
+      "type": "string"
+    },
+    "pool": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Pool",
+      "type": "string"
+    },
+    "vmid_policy": {
+      "$ref": "#/$defs/VMIDPolicy"
+    },
+    "preview_digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Preview Digest",
+      "type": "string"
+    },
+    "capacity": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Capacity"
+    },
+    "template": {
+      "$ref": "#/$defs/TemplateIdentity"
+    },
+    "temporary_resources": {
+      "items": {
+        "$ref": "#/$defs/Resource"
+      },
+      "title": "Temporary Resources",
+      "type": "array"
+    },
+    "checks": {
+      "items": {
+        "$ref": "#/$defs/Check"
+      },
+      "title": "Checks",
+      "type": "array"
+    },
+    "failure_stage": {
+      "anyOf": [
+        {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Failure Stage"
+    },
+    "cleanup": {
+      "$ref": "#/$defs/CleanupOutcomes"
+    }
+  },
+  "required": [
+    "deadlines",
+    "deadline_outcome",
+    "facility_writes",
+    "execution_id",
+    "request_digest",
+    "runtime",
+    "residuals",
+    "overall",
+    "collection",
+    "schema_version",
+    "kind",
+    "cluster_scope",
+    "pool",
+    "vmid_policy",
+    "preview_digest",
+    "capacity",
+    "template",
+    "temporary_resources",
+    "checks",
+    "failure_stage",
+    "cleanup"
+  ],
+  "title": "AcceptanceResult",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iaas.invalid/schemas/pve-acceptance/v3/pve-template-acceptance-result.schema.json"
+}

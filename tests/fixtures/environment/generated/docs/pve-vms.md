@@ -12,3 +12,12 @@
 - VM cores: 2
 - VM memory MiB: 2048
 - VM root disk GiB: 20
+
+## VMID policy and pool placement
+
+- ephemeral_lab: 500–800 (inclusive)
+- long_lived: 1000–2000 (inclusive)
+- templates: 9000–9500 (inclusive)
+- dev-web-01 (500): pool none
+- prod-app-01 (1000): pool none
+- media-lab-01 (501): pool none

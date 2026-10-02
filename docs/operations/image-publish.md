@@ -16,8 +16,11 @@ category. `image clean` accepts the original task identity and execution
 directory and removes only task-owned temporary resources; it does not remove
 a delivered artifact or a shared cache.
 
-PVE publication consumes `pve-template-publish-request/v1` and a selected
-`pve-template-preview/v2`. The publisher resolves the fixed credential-free
+PVE publication consumes `pve-template-publish-request/v2` and a selected
+`pve-template-preview/v3`. The request fixes `cluster_scope` and optional `pool`;
+the native create request places the template directly into that existing pool,
+and the result verifies actual membership. Pool and ACL creation remains an
+administrator operation. The publisher resolves the fixed credential-free
 HTTPS or S3 object reference through a protected `PVE_ARTIFACT_URL` locator,
 downloads it into its private task directory, verifies size and SHA-256,
 then uploads through the PVE HTTPS API using a task-unique filename. It does
@@ -26,7 +29,7 @@ template helper. `PVE_API_TOKEN` is operation-scoped; `PVE_API_CA` may point to
 the caller's protected CA file.
 
 Successful technical publication writes `diagnostics/result.json` and
-`generated/template-record.json` (`pve-template-record/v2`). The record proves
+`generated/template-record.json` (`pve-template-record/v3`). The record proves
 the current PVE identity and configuration only. Guest acceptance and caller
 promotion remain separate. A lost response leaves effects unknown and must be
 read/reconciled under the caller's pending and serialization context; it is
@@ -35,7 +38,7 @@ never replayed from a fresh execution ID.
 ## Promotion, revocation, rollback and unknown results
 
 IaaS reports technical publication only. The caller owns the availability
-registry and promotion decision: a `pve-template-record/v2` may be marked
+registry and promotion decision: a `pve-template-record/v3` may be marked
 available only after the caller's declared configuration, clone and business
 checks have passed. Promotion records the exact template identity, artifact
 digest, runtime/schema pins and evidence scope; it does not update existing

@@ -25,7 +25,8 @@ from .state import S3Backend
 from .pve_contracts import (validate_execution_admission, validate_plan_metadata,
                             validate_verification_requirements, validate_result)
 from .pve_results import machine_review, expectations, verify_configuration, api_client, template_identity
-from iaas.pve_template.contracts import validate_template_record_v2
+from .pve_policy import vm_policy, bind_policy, admit_reservation, admit_permissions
+from iaas.pve_template.contracts import validate_template_record_v3
 
 
 def sha256(path: Path) -> str:
@@ -104,7 +105,7 @@ def _templates(selected: SelectedConfig, dependencies: list[dict], target: dict,
                    and r.get("vmid") == dependency["vmid"]]
         require(len(matches) == 1, "clone dependency requires one template record")
         record = matches[0]
-        record = validate_template_record_v2(record)
+        record = validate_template_record_v3(record)
         record_target = record.get("target", {})
         endpoint = record_target.get("api_endpoint")
         require(isinstance(endpoint, str) and endpoint.rstrip("/") == target["api_endpoint"].rstrip("/")
@@ -169,6 +170,8 @@ def prepare_plan(selected: SelectedConfig, execution: Execution, backend: S3Back
                               verify_ssh_trust, verify_helper_trust)
     metadata = target_selection(selected, scope, image_digest)
     generated = compile_documents(selected)
+    policy_inputs = json.loads(generated["pve.tfvars.json"])
+    vm_policy(policy_inputs, selected.options.get("cluster_scope"))
     bundle = execution.outputs.path("plan")
     _freeze_api_ca(selected, metadata, bundle, execution.environ)
     root = materialize_root(selected.options["root"], selected.files, bundle / "workspace")
@@ -222,6 +225,9 @@ def prepare_plan(selected: SelectedConfig, execution: Execution, backend: S3Back
     validate_plan_provider(native, provider, metadata["target"])
     verify_ssh_trust(provider, selected.files, execution.environ, state=before.raw, plan=native)
     safe_review, changes, dependencies = machine_review(native)
+    policy = vm_policy(policy_inputs, selected.options.get("cluster_scope"), changes)
+    admit_permissions(changes, api)
+    safe_review["vm_policy"] = policy
     _write(bundle / "native-plan.json", native)
     _write(bundle / "review.json", safe_review)
     records = _templates(selected, dependencies, metadata["target"], api)
@@ -239,6 +245,7 @@ def prepare_plan(selected: SelectedConfig, execution: Execution, backend: S3Back
                     state_initialized=planned_state.to_dict(), provider=provider,
                     template_use={"purpose": purpose, "vmids": sorted(vm["vmid"] for vm in vms)},
                     verification_requirements=_verification(selected), changes=changes, template_records=records,
+                    vm_policy=policy,
                     root_directory=str(root.relative_to(bundle)),
                     companion_files=sorted(
                         ["workspace/" + relative_path(name).as_posix() for name in selected.options["root"]["files"]]
@@ -260,6 +267,7 @@ def prepare_plan(selected: SelectedConfig, execution: Execution, backend: S3Back
 
 def admit_plan(plan: Path, bundle: Path, expected: dict[str, Any], backend: S3Backend | None) -> tuple[dict[str, Any], Path]:
     protected_file(plan)
+    require((bundle / "review.json").is_file(), "saved review material missing")
     metadata = json.loads((bundle / "summary.json").read_text())
     require(metadata.get("schema_version") == 2, "unsupported saved-plan metadata; generate a new v2 plan")
     validate_plan_metadata(metadata)
@@ -287,6 +295,14 @@ def admit_plan(plan: Path, bundle: Path, expected: dict[str, Any], backend: S3Ba
             "native plan does not match companion manifest")
     require(metadata["plan_digest"] == sha256(plan), "native plan does not match metadata")
     load_rendered_artifacts(bundle / "snippets", metadata["target"]["storage_id"], bundle / "inputs.tfvars.json", allow_empty=True)
+    bind_policy(metadata, _json(bundle / "inputs.tfvars.json"))
+    _, native_changes, _ = machine_review(_json(bundle / "native-plan.json"))
+    require(native_changes == metadata["changes"], "saved native resource changes conflict")
+    try:
+        review = _json(bundle / "review.json")
+    except (OSError, ValueError):
+        raise ValidationError("saved review material invalid") from None
+    require(review.get("vm_policy") == metadata["vm_policy"], "saved review policy conflict")
     return metadata, root
 
 
@@ -304,10 +320,21 @@ def _check_resource_conflicts(changes: list[dict], state: dict | None, api: Any)
     from .pve_results import state_instances, observed_vmids, VM_TYPE
     managed = {(i.get("attributes", {}).get("node_name"), i.get("attributes", {}).get("vm_id"))
                for rows in state_instances(state or {}).values() for i in rows}
+    instances = state_instances(state or {})
     for item in changes:
         if item["type"] != VM_TYPE:
             continue
         after = item["change"].get("after") or {}
+        before = item["change"].get("before") or {}
+        if before:
+            rows = instances.get(item["address"], [])
+            require(len(rows) == 1, "native update lacks selected state ownership")
+            owned = rows[0].get("attributes", {})
+            identity = template_identity(api.vm_config(before["node_name"], before["vm_id"]))
+            smbios = owned.get("smbios") or []
+            require(owned.get("node_name") == before.get("node_name") and owned.get("vm_id") == before.get("vm_id")
+                    and len(smbios) == 1 and smbios[0].get("uuid")
+                    and smbios[0]["uuid"] == identity.get("smbios_uuid"), "managed VM identity changed")
         if "create" not in item["change"]["actions"]:
             continue
         node, vmid = after.get("node_name"), after.get("vm_id")
@@ -334,8 +361,11 @@ def apply_saved_plan(plan: Path, bundle: Path, selected: SelectedConfig, executi
     expected = target_selection(selected, scope, image_digest)
     # Admission before copying, init, upload or any other infrastructure write.
     metadata, _ = admit_plan(plan, bundle, expected, backend)
+    bind_policy(metadata, _json(bundle / "inputs.tfvars.json"),
+                json.loads(compile_documents(selected)["pve.tfvars.json"]), selected.options.get("cluster_scope"))
     admission = _json(selected.files["execution_admission"])
     validate_execution_admission(admission, digest=metadata["plan_digest"], target=metadata["target"], execution_id=execution_id)
+    admit_reservation(admission, metadata["vm_policy"])
     require("verification_requirements" not in selected.options
             or _verification(selected) == metadata["verification_requirements"], "verification requirements cannot change after plan")
     state_admission = _json(selected.files["state_admission"])
@@ -358,6 +388,8 @@ def apply_saved_plan(plan: Path, bundle: Path, selected: SelectedConfig, executi
     target = metadata["target"]
     api = api_client(target, execution.environ)
     _admit_templates(metadata, selected, execution_id, api)
+    _check_resource_conflicts(metadata["changes"], before.raw, api)
+    admit_permissions(metadata["changes"], api)
     mirror = None
     if (retained / "dependencies.tar.gz").exists():
         mirror = restore_dependencies(retained / "dependencies.tar.gz", root, execution.outputs.path("work") / "dependencies")
@@ -396,6 +428,8 @@ def apply_saved_plan(plan: Path, bundle: Path, selected: SelectedConfig, executi
         result["effects"]["state"] = "known"
         # Caller serialization spans these checks, snippet upload and native apply.
         _admit_templates(metadata, selected, execution_id, api)
+        _check_resource_conflicts(metadata["changes"], initialized.raw, api)
+        admit_permissions(metadata["changes"], api)
         if snippets:
             result["effects"]["facility"] = "unknown"
             _write(result_path, result)

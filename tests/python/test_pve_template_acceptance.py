@@ -7,7 +7,8 @@ from types import SimpleNamespace
 import pytest
 
 from iaas.pve_template import acceptance as mod
-from iaas.pve_template.acceptance_execution import begin
+from iaas.pve_template.acceptance_execution import begin as _begin
+from iaas.pve_template.acceptance_plan import build_preview
 from iaas.pve_acceptance_contracts import canonical_digest, load_strict_json
 from iaas.runtime_execution.execution import Execution, OperationFailed
 from iaas.runtime_execution.outputs import TaskOutputs
@@ -18,27 +19,50 @@ DIGEST = 'runtime@sha256:' + 'b' * 64
 
 def request():
     value = load_strict_json(FIXTURES / 'acceptance-request.json')
+    value['runtime'] = {'image_digest': DIGEST}
     config = value['template_record']['configuration']
     config.update(template=1, smbios1='uuid=' + value['template_record']['smbios_uuid'],
                   scsi0='local-lvm:vm-9000-disk-0,size=8G', ide2='local-lvm:vm-9000-cloudinit,media=cdrom,size=4M',
                   cores=2, memory=2048, agent='1', net0='virtio,bridge=vmbr0', digest='source')
     record = value['template_record']
     value['template_record'] = mod.pve._record_from_config(
-        {'version': 'template', 'target': value['target'], 'vmid': record['vmid'],
+        {'version': 'template', 'target': value['target'], 'vmid': record['vmid'], 'cluster_scope': 'fixture-cluster',
          'artifact_digest': record['artifact_digest']}, config, record['execution_id'])
     return value
 
 
+def preview(value):
+    return build_preview(value, {'readiness': {'status': 'ready'}}, image_digest=value['runtime']['image_digest'])
+
+
+def begin(root, operation, value, admitted, execution_id, image_digest):
+    return _begin(root, operation, value, admitted, execution_id, image_digest, preview=preview(value))
+
+
 def admission(value):
-    return {'schema_version': 1, 'execution_id': 'accept-001',
-            'plan_digest': canonical_digest(value).removeprefix('sha256:'), 'target': value['target'], 'deadlines': value['deadlines'],
+    return {'schema_version': 2, 'execution_id': 'accept-001',
+            'plan_digest': preview(value)['preview_digest'].removeprefix('sha256:'),
+            'request_digest': canonical_digest(value), 'runtime': value['runtime'],
+            'vmid_reservation': {'cluster_scope': value['cluster_scope'], 'vmids': [value['temporary_vm']['vmid']],
+                                 'reservation_id': 'r-1', 'context_id': 'c-1'},
+            'target': value['target'], 'deadlines': value['deadlines'],
             'approved': True, 'consumption': {'reserved': True, 'reservation_id': 'r-1'},
             'pending': {'record_id': 'p-1'}, 'serialization': {'held': True, 'context_id': 'c-1'}}
 
 
 class Snippets:
+    def __init__(self, api=None):
+        self.api = api
+
+    def capabilities(self, helper):
+        return {'schema_version': 'helper-capabilities/v1', 'helper': helper, 'protocol_version': 2,
+                'capabilities': {name: True for name in ('acceptance', 'create_only', 'verify', 'inspect', 'exact_delete', 'reference', 'digest', 'deadline')}}
+
     def inspect(self):
-        return {'complete': True, 'local_node': 'pve1', 'nodes': ['pve1'], 'vmids': [],
+        vmids = [9000]
+        if self.api is not None and (self.api.clone is not None or self.api.fault == 'occupied'):
+            vmids.append(9100)
+        return {'complete': True, 'local_node': 'pve1', 'nodes': ['pve1'], 'vmids': vmids,
                 'references': [], 'reference_strategy': 'all_storage_aliases_by_filename'}
 
     def upload(self, snippet, content):
@@ -78,7 +102,7 @@ def test_snippet_failure_never_reports_success(tmp_path, fault):
         def inspect(self):
             self.inspections += 1
             snapshot = super().inspect()
-            if fault == 'referenced' and self.inspections > 1:
+            if fault == 'referenced' and journal.get('snippets'):
                 snapshot['references'] = [journal['snippets'][0]['file_name']]
             return snapshot
 
@@ -110,9 +134,22 @@ class API:
     def request(self, method, path, fields=None, **kwargs):
         self.calls.append((method, path, fields, kwargs))
         if path.endswith('/access/permissions'):
-            return {fields['path']: {'VM.Audit': 1, 'Datastore.Audit': 1, 'Datastore.AllocateSpace': 1}}
+            from iaas.pve_template.admission import ACCEPTANCE_PRIVILEGES
+            return {fields['path']: {name: 1 for name in (*ACCEPTANCE_PRIVILEGES, 'VM.Clone',
+                                    'Sys.Audit', 'SDN.Use', 'Datastore.Audit', 'Datastore.AllocateSpace')}}
+        if '/pools/' in path:
+            return {'members': ([{'vmid': 9100, 'type': 'qemu', 'node': 'pve1'}] if self.clone is not None else [])}
+        if path.endswith('/cluster/status'):
+            return [{'type': 'node', 'name': 'pve1', 'online': 1}]
+        if path.endswith('/nodes/pve1/status'):
+            return {'cpuinfo': {'cpus': 16}, 'memory': {'total': 64 * 1024 ** 3}}
+        if '/storage/' in path and path.endswith('/status'):
+            return {'enabled': 1, 'active': 1, 'type': 'dir', 'content': 'images,snippets', 'avail': 1024 ** 4}
+        if path.endswith('/network'):
+            return [{'iface': self.value['temporary_vm']['bridge'], 'type': 'bridge', 'active': 1, 'bridge_vlan_aware': 1}]
         if path.endswith('/cluster/resources'):
-            return ([{'vmid': 9100, 'node': 'pve1'}] if self.clone is not None or self.fault == 'occupied' else []) + [{'vmid': 9000, 'node': 'pve1'}]
+            return ([{'vmid': 9100, 'node': 'pve1', 'type': 'qemu', 'pool': self.value['temporary_vm']['pool']}]
+                    if self.clone is not None or self.fault == 'occupied' else []) + [{'vmid': 9000, 'node': 'pve1', 'type': 'qemu'}]
         if '/tasks/' in path:
             if self.fault == 'start-task-error' and self.last_task == 'start':
                 return {'status': 'stopped', 'exitstatus': 'ERROR'}
@@ -182,7 +219,7 @@ def execute(tmp_path, fault=''):
     value = request()
     journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
     api = API(value, fault)
-    result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets()).execute()
+    result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets(api)).execute()
     return result, journal, api
 
 
@@ -196,11 +233,42 @@ def test_full_lifecycle_checks_and_cleanup(tmp_path):
     assert 'local-lvm:vm-9100-cloudinit' in journal['temporary_vm']['volumes']
     assert all('/9000/' not in path or path.endswith('/clone') for method, path, _, _ in api.calls if method != 'GET')
     assert 'accept-001' not in json.dumps(result['template'])
+    clone = next(fields for method, path, fields, _ in api.calls if method == 'POST' and path.endswith('/clone'))
+    assert clone['pool'] == 'acceptance'
+    assert not any('/pools/' in path for method, path, _, _ in api.calls if method != 'GET')
+
+
+@pytest.mark.parametrize('when', ['before_start', 'cleanup'])
+def test_pool_movement_prevents_dependent_writes(tmp_path, when):
+    value = request()
+    api = API(value)
+    original = api.request
+    configured = False
+
+    def call(method, path, **kwargs):
+        nonlocal configured
+        rows = original(method, path, **kwargs)
+        if method == 'PUT' and path.endswith('/9100/config'):
+            configured = True
+        moved = (configured if when == 'before_start' else api.state == 'running')
+        if path.endswith('/cluster/resources') and moved:
+            for row in rows:
+                if row['vmid'] == 9100:
+                    row['pool'] = 'other'
+        return rows
+
+    api.request = call
+    journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
+    result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets(api)).execute()
+    assert result['overall'] != 'passed'
+    assert not any(method == 'DELETE' for method, *_ in api.calls)
+    if when == 'before_start':
+        assert not any(path.endswith('/status/start') for _, path, _, _ in api.calls)
 
 
 @pytest.mark.parametrize('fault,overall,delete', [
     ('guest-failed', 'failed', True), ('hostname', 'failed', True),
-    ('source-change', 'failed', True), ('occupied', 'failed', False),
+    ('source-change', 'failed', True), ('occupied', 'unknown', False),
     ('clone-lost', 'unknown', False), ('start-lost', 'unknown', False),
     ('delete-lost', 'unknown', True), ('identity-replaced', 'unknown', False),
     ('start-task-error', 'failed', True), ('volume-remains', 'failed', True),
@@ -218,11 +286,13 @@ def test_runtime_observe_different_output_never_constructs_client(tmp_path, monk
     value = request()
     api = API(value)
     monkeypatch.setattr(mod.pve, '_client', lambda *args: api)
-    monkeypatch.setattr(mod.acceptance_snippets, 'Snippets', lambda *args: Snippets())
-    reqfile, admfile = tmp_path / 'request.json', tmp_path / 'admission.json'
+    monkeypatch.setattr(mod.acceptance_snippets, 'Snippets', lambda *args, **kwargs: Snippets())
+    reqfile, admfile, prevfile = tmp_path / 'request.json', tmp_path / 'admission.json', tmp_path / 'preview.json'
     reqfile.write_text(json.dumps(value))
     admfile.write_text(json.dumps(admission(value)))
-    selected = SimpleNamespace(options={'execution_mode': 'start'}, files={'acceptance_request': reqfile, 'execution_admission': admfile})
+    prevfile.write_text(json.dumps(preview(value)))
+    selected = SimpleNamespace(options={'execution_mode': 'start'}, files={'acceptance_request': reqfile, 'execution_admission': admfile,
+                                                                         'acceptance_preview': prevfile})
     outputs = TaskOutputs.create(tmp_path / 'start', Path(__file__).parents[2], [reqfile, admfile])
     mod.run(selected, 'accept', '', Execution(outputs, {}), DIGEST, 'accept-001')
     count = len(api.calls)
@@ -276,14 +346,93 @@ def test_inherited_cloudinit_volume_is_never_adopted_or_deleted(tmp_path):
     assert not result['residuals']['inventory_complete']
 
 
+@pytest.mark.parametrize('operation', ['exec', 'ping'])
+def test_authoritative_guest_rejection_allows_owned_cleanup(tmp_path, operation):
+    value = request()
+    api = API(value)
+    original = api.request
+
+    def call(method, path, **kwargs):
+        if path.endswith('/agent/' + operation):
+            raise mod.RequestRejected(method, path)
+        return original(method, path, **kwargs)
+
+    api.request = call
+    journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
+    result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets()).execute()
+    assert result['overall'] == 'failed'
+    assert result['facility_writes'] == 'issued'
+    assert result['cleanup']['vm']['status'] == 'passed'
+    assert journal['mutation_active'] is False
+    if operation == 'exec':
+        rejected = next(item for item in journal['tasks'] if item['phase'] == 'guest_exec')
+        assert (rejected['status'], rejected['http_status']) == ('rejected', 403)
+
+
+def test_guest_rejection_preserves_another_unknown_request(tmp_path):
+    value = request()
+    api = API(value)
+    original = api.request
+    journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
+
+    def call(method, path, **kwargs):
+        if path.endswith('/agent/ping'):
+            journal['tasks'].append({'phase': 'other', 'status': 'unknown'})
+            journal.update(mutation_active=True, facility_writes='unknown')
+        if path.endswith('/agent/exec'):
+            raise mod.RequestRejected(method, path)
+        return original(method, path, **kwargs)
+
+    api.request = call
+    result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets()).execute()
+    assert result['overall'] == 'unknown'
+    assert result['facility_writes'] == 'unknown'
+    assert not any(method == 'DELETE' for method, *_ in api.calls)
+
+
 def test_disk_bound_rejected_before_clone(tmp_path):
     value = request()
     value['temporary_vm']['disk_limit_bytes'] = 1024
     api = API(value)
     journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
     result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets()).execute()
-    assert result['overall'] == 'failed'
+    assert result['overall'] == 'unknown'
+    checks = {item['id']: item for item in result['checks']}
+    assert checks['full_clone']['reason_code'] == 'disk_limit_exceeded'
+    assert checks['source_unchanged']['reason_code'] == 'source_snapshot_missing'
+    assert result['failure_stage'] == 'full_clone'
     assert not any(method != 'GET' for method, *_ in api.calls)
+
+
+@pytest.mark.parametrize('fault,reason,status', [
+    ('changed', 'source_changed', 'failed'),
+    ('query', 'source_query_failed', 'unknown'),
+    ('shape', 'source_evidence_insufficient', 'unknown'),
+])
+def test_source_recheck_diagnostics(tmp_path, fault, reason, status):
+    value = request()
+    api = API(value)
+    original = api.request
+    reads = 0
+
+    def call(method, path, **kwargs):
+        nonlocal reads
+        if path.endswith('/9000/config'):
+            reads += 1
+            if reads > 1:
+                if fault == 'query':
+                    raise TimeoutError('private transport detail')
+                if fault == 'shape':
+                    return []
+                return {**api.source, 'memory': 999}
+        return original(method, path, **kwargs)
+
+    api.request = call
+    journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
+    result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets()).execute()
+    source = next(item for item in result['checks'] if item['id'] == 'source_unchanged')
+    assert (source['status'], source['reason_code']) == (status, reason)
+    assert 'private transport detail' not in json.dumps(result)
 
 
 def test_cloudinit_residual_is_reported_even_if_system_disk_deleted(tmp_path):
@@ -309,7 +458,7 @@ def test_metadata_volumes_count_against_disk_limit(tmp_path):
     api = API(value)
     journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
     result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets()).execute()
-    assert result['overall'] == 'failed'
+    assert result['overall'] == 'unknown'
     assert not any(method != 'GET' for method, *_ in api.calls)
 
 
@@ -339,6 +488,6 @@ def test_missing_config_size_requires_exact_storage_evidence(tmp_path, fault):
     api.request = call
     journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
     result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets()).execute()
-    assert result['overall'] == ('failed' if fault else 'passed')
+    assert result['overall'] == ('unknown' if fault else 'passed')
     if fault:
         assert not any(method != 'GET' for method, *_ in api.calls)

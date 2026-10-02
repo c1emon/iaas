@@ -169,3 +169,19 @@ the legacy protocol is rejected. They are not runnable instructions for the
 current image/PVE lifecycle. The removed `prepare-plan`, `apply-saved-plan`,
 `pve-plan`, `pve-apply`, `pve-destroy` and node-helper entrypoints must not be
 used as compatibility paths.
+
+Ordinary VM plans now require a caller-stable `options.cluster_scope`, shared by
+all API endpoints for the same cluster. `review.json` and `summary.json` freeze
+that scope, exact VMIDs, each VM's pool (including null), and all declared VMID
+bands, including optional acceptance reservations. Changed placement or policy
+requires a new reviewed plan. Saved apply checks the current policy but still
+uses the saved native plan and snippet bytes.
+
+Before apply, the caller atomically reserves the exact `vm_policy.vmids` set and
+holds its existing cluster serialization through admission, snippet upload and
+native execution. Add `vmid_reservation` to the execution admission; its
+`reservation_id` and `context_id` must match `consumption` and `serialization`.
+The example VMID is illustrative: use the complete reviewed set, including old
+VMIDs for delete/replacement. IaaS rechecks occupancy and effective permissions
+before upload and apply; native state locking covers that state only and the
+admission file does not itself prove exclusion across callers or runners.

@@ -40,7 +40,7 @@ OPERATIONS = {
             "health": DIAGNOSE, "prepare-dependencies": DIAGNOSE, "snippet-cleanup": MUTATE,
             "read": PLAN, "plan": PLAN, "apply": APPLY, "verify": DIAGNOSE},
     "pve-template": {"check": OFFLINE, "read": DIAGNOSE, "plan": DIAGNOSE,
-                     "apply": MUTATE, "accept": MUTATE, "verify": OFFLINE},
+                     "apply": MUTATE, "accept": MUTATE, "recover": MUTATE, "verify": OFFLINE},
     "image": {"check": OFFLINE, "build": Operation(network=True), "test": Operation(network=True),
               "read": OFFLINE, "verify": OFFLINE, "clean": OFFLINE},
     "services": {"check": OFFLINE, "generate": OFFLINE},
@@ -63,14 +63,20 @@ def capabilities() -> dict[str, Any]:
             "lifecycle_versions": {
                 "pve": {"plan": PLAN_METADATA_VERSION, "result": RESULT_VERSION,
                         "snippet_cleanup_request": 2, "snippet_cleanup_result": 2},
-                "pve-template": {"preview": 2, "result": 2, "record": 2,
-                                 "acceptance_request": 2, "acceptance_result": 2},
+                "pve-template": {"preview": 3, "result": 3, "record": 3, "publication_request": 2,
+                                 "acceptance_request": 3, "acceptance_result": 3, "acceptance_preview": 1,
+                                 "recovery_request": 1, "recovery_result": 1, "recovery_preview": 1,
+                                 "one_shot_execution_admission": 2},
                 "image": {"artifact": 1, "build_request": 1, "test_request": 1, "test_result": 1},
             },
-            "operation_capabilities": {component: {operation: {"absolute_deadlines": True}}
-                                       for component, operation in (("pve-template", "accept"), ("pve", "snippet-cleanup"))},
-            "execution_modes": {component: {operation: {"start": asdict(MUTATE), "observe": asdict(DIAGNOSE)}}
-                                for component, operation in (("pve-template", "accept"), ("pve", "snippet-cleanup"))},
+            "operation_capabilities": {
+                "pve-template": {"accept": {"absolute_deadlines": True}, "recover": {"absolute_deadlines": True},
+                                 "check": {"accept": True}, "plan": {"accept": True, "recover": True, "absolute_deadlines": True}},
+                "pve": {"snippet-cleanup": {"absolute_deadlines": True}}},
+            "execution_modes": {
+                "pve-template": {operation: {"start": asdict(MUTATE), "observe": asdict(OFFLINE)}
+                                 for operation in ("accept", "recover")},
+                "pve": {"snippet-cleanup": {"start": asdict(MUTATE), "observe": asdict(OFFLINE)}}},
             "operations": {component: {name: asdict(value) for name, value in entries.items()}
                            for component, entries in OPERATIONS.items()}}
 
@@ -101,7 +107,7 @@ def credential_names(component: str, operation: str, render_names: tuple[str, ..
 
 
 def process_environment(component: str, operation: str, supplied: Mapping[str, str],
-                        render_names: tuple[str, ...] = ()) -> dict[str, str]:
+                        render_names: tuple[str, ...] = (), *, effects: Operation | None = None) -> dict[str, str]:
     # These are set by the image/controller, not forwarded wholesale from hosts.
     runtime_names = {"PATH", "HOME", "PYTHONPATH", "ANSIBLE_CONFIG", "ANSIBLE_ROLES_PATH",
                      "ANSIBLE_COLLECTIONS_PATH", "ANSIBLE_FILTER_PLUGINS", "ANSIBLE_LOOKUP_PLUGINS",
@@ -112,7 +118,8 @@ def process_environment(component: str, operation: str, supplied: Mapping[str, s
         # execution HOME.  Keep that image-owned path when HOME is relocated
         # to the task workspace; do not expose it to unrelated components.
         runtime_names.add("PACKER_PLUGIN_PATH")
-    allowed = runtime_names | credential_names(component, operation, render_names)
+    selected_effects = effects or operation_for(component, operation)
+    allowed = runtime_names | (credential_names(component, operation, render_names) if selected_effects.network else set())
     environ = {name: value for name, value in supplied.items() if name in allowed}
-    environ.update(normalize_proxy_environment(supplied, network=operation_for(component, operation).network))
+    environ.update(normalize_proxy_environment(supplied, network=selected_effects.network))
     return environ

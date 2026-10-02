@@ -18,6 +18,9 @@ type discovery struct {
 	Path            string   `json:"path"`
 	CredentialNames []string `json:"credential_names"`
 	ExecutionID     string   `json:"execution_id"`
+	Effects         *Effects `json:"effects"`
+	Action          string   `json:"action"`
+	ExecutionMode   string   `json:"execution_mode"`
 }
 
 func (t *task) runtimeArgs() []string {
@@ -52,9 +55,6 @@ func (t *task) discover() (discovery, error) {
 	if response.Status == "input-required" {
 		return response, nil
 	}
-	if t.options.ExecutionID != "" && response.ExecutionID != t.options.ExecutionID {
-		return response, errors.New("runtime execution identity is not bound to this launcher task")
-	}
 	if response.Status == "failed" && response.Reason != "" {
 		// The runtime's structured public reason excludes source values and
 		// native stderr. Docker's private diagnostics remain suppressed.
@@ -62,6 +62,9 @@ func (t *task) discover() (discovery, error) {
 	}
 	if err != nil || response.Status != "ready" {
 		return response, errors.New("selected configuration could not be validated for this operation")
+	}
+	if t.options.ExecutionID != "" && response.ExecutionID != t.options.ExecutionID {
+		return response, errors.New("runtime execution identity is not bound to this launcher task")
 	}
 	return response, nil
 }
@@ -74,8 +77,11 @@ func (t *task) savedPlan() ([]string, error) {
 	if err != nil {
 		return nil, errors.New("saved companion directory is unavailable")
 	}
-	for _, name := range []string{"summary.json", "native-plan.json", "inputs.tfvars.json", "snippets/manifest.json"} {
+	for _, name := range []string{"summary.json", "native-plan.json", "review.json", "inputs.tfvars.json", "snippets/manifest.json"} {
 		if info, err := os.Stat(filepath.Join(bundle, name)); err != nil || !info.Mode().IsRegular() {
+			if name == "review.json" {
+				return nil, errors.New("saved plan admission: required review.json is missing or invalid")
+			}
 			return nil, errors.New("saved companion artifacts are incomplete")
 		}
 	}
@@ -85,7 +91,7 @@ func (t *task) savedPlan() ([]string, error) {
 	}
 	// Only the saved-plan contract's files/directories are transferred, not the
 	// arbitrary parent directory of a selected native plan.
-	for _, name := range []string{"summary.json", "native-plan.json", "inputs.tfvars.json", "snippets", "workspace", "trust", "dependencies.tar.gz"} {
+	for _, name := range []string{"summary.json", "native-plan.json", "review.json", "inputs.tfvars.json", "snippets", "workspace", "trust", "dependencies.tar.gz"} {
 		source := filepath.Join(bundle, name)
 		if _, err := os.Stat(source); os.IsNotExist(err) && (name == "dependencies.tar.gz" || name == "trust") {
 			continue
@@ -106,10 +112,10 @@ func (t *task) savedPlan() ([]string, error) {
 }
 
 func execute(options Options, configuration RuntimeConfig, image string, effects Effects, docker Docker) (resultError error) {
-	proxy, err := normalizedProxy(effects.Network, os.Getenv)
-	if err != nil {
-		return err
-	}
+	return executeWithCapabilities(options, configuration, image, effects, docker, nil)
+}
+
+func executeWithCapabilities(options Options, configuration RuntimeConfig, image string, effects Effects, docker Docker, capabilities *Capabilities) (resultError error) {
 	if err := os.MkdirAll(filepath.Dir(options.Output), 0700); err != nil {
 		return err
 	}
@@ -153,6 +159,24 @@ func execute(options Options, configuration RuntimeConfig, image string, effects
 			return err
 		}
 	}
+	if capabilities != nil {
+		if err := capabilities.selectedAction(options.Component, options.Operation, ready.Action); err != nil {
+			return err
+		}
+	}
+	if ready.Effects != nil {
+		if ready.Effects.State != effects.State || (ready.Effects.InfrastructureWrite && !effects.InfrastructureWrite) || (ready.Effects.Network && !effects.Network) {
+			return errors.New("runtime discovery effects exceed selected operation")
+		}
+		effects = *ready.Effects
+	}
+	if ready.ExecutionMode == "observe" && (effects.Network || effects.State || effects.InfrastructureWrite || len(ready.CredentialNames) != 0) {
+		return errors.New("observe requires offline effects and no operation credentials")
+	}
+	proxy, err := normalizedProxy(effects.Network, os.Getenv)
+	if err != nil {
+		return err
+	}
 	extra, err := t.savedPlan()
 	if err != nil {
 		return err
@@ -162,6 +186,12 @@ func execute(options Options, configuration RuntimeConfig, image string, effects
 	// client path, never a credential value into the Docker command line.
 	childEnvironment := os.Environ()
 	for _, name := range ready.CredentialNames {
+		boundedPVE := options.Component == "pve-template" && (options.Operation == "accept" || options.Operation == "recover" || ready.Action == "accept" || ready.Action == "recover")
+		if (boundedPVE && name != "PVE_API_TOKEN" && name != "PVE_API_CA") ||
+			(options.Component == "pve" && options.Operation == "snippet-cleanup") ||
+			(boundedPVE && options.Operation == "check") {
+			return errors.New("runtime requested credentials outside bounded PVE operation allowlist")
+		}
 		if reservedProxyName(name) {
 			return errors.New("image requested a reserved proxy name as a facility credential")
 		}

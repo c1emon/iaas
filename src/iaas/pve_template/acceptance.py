@@ -16,6 +16,9 @@ from . import runtime as pve
 from .acceptance_execution import begin, observe, save
 from . import acceptance_snippets
 from .deadlines import DeadlineBudget, DeadlineExpired, LocalTimeout
+from .responses import RequestRejected
+from .admission import AdmissionError, Permissions, ACCEPTANCE_PRIVILEGES, admit_acceptance, disk_capacity
+from .acceptance_plan import ReadBudgetClient
 
 CHECKS = ('full_clone', 'disk_boot', 'guest_agent', 'cloud_init', 'injected_hostname', 'source_unchanged')
 
@@ -62,6 +65,8 @@ class Acceptance:
         self.remaining_volumes: list[str] | None = None
         self.result: dict[str, Any] = {}
         self.snippets = snippets
+        if snippets is not None:
+            snippets.budget, snippets.phase, snippets.deadline = self.budget, self.phase, self.deadline
 
     def upload_user_data(self) -> dict:
         self.remaining()
@@ -146,8 +151,10 @@ class Acceptance:
     def mutation(self, phase: str, method: str, path: str, *, fields: dict[str, Any] | None = None,
                  task: bool = True, node: str | None = None) -> None:
         self.remaining()
-        item: dict[str, Any] = {'phase': phase, 'status': 'intent', 'node': node or self.temporary['node']}
+        item: dict[str, Any] = {'phase': phase, 'status': 'intent', 'node': node or self.temporary['node'],
+                                'method': method, 'path': path}
         self.journal['tasks'].append(item)
+        previous_active = self.journal['mutation_active']
         self.journal['mutation_active'] = True
         previous_writes = self.journal['facility_writes']
         self.journal['facility_writes'] = 'unknown'
@@ -156,6 +163,11 @@ class Acceptance:
             try:
                 self.remaining()
                 value = self.api(method, path, fields=fields)
+            except RequestRejected as exc:
+                item.update(status='rejected', http_status=exc.http_status)
+                self.journal.update(mutation_active=previous_active, facility_writes=previous_writes)
+                self.persist()
+                raise AcceptanceFailure('request_rejected') from None
             except (DeadlineExpired, LocalTimeout):
                 item['status'] = 'not_sent'
                 self.journal.update(mutation_active=False, facility_writes=previous_writes)
@@ -205,8 +217,16 @@ class Acceptance:
         return not any(str(row['vmid']) == str(self.temporary['vmid']) for row in rows)
 
     def source_check(self, *, initial: bool) -> None:
-        config = self.api('GET', self.source + '/config')
-        check(isinstance(config, dict), 'source_config_invalid')
+        if not initial and self.source_before is None:
+            raise UnknownOutcome('source_snapshot_missing')
+        try:
+            config = self.api('GET', self.source + '/config')
+        except (DeadlineExpired, LocalTimeout):
+            raise
+        except Exception:
+            raise UnknownOutcome('source_query_failed') from None
+        if not isinstance(config, dict):
+            raise UnknownOutcome('source_evidence_insufficient')
         expected = self.record['configuration'] if initial else self.source_before
         check(expected is not None and stable(config) == stable(expected)
               and pve._config_uuid(config) == self.record['smbios_uuid']
@@ -232,25 +252,21 @@ class Acceptance:
               'storage_permissions_incomplete')
 
     def disk_bound(self, config: dict[str, Any]) -> None:
-        total = 0
-        for slot, volume in attachments(config).items():
-            value = str(config[slot])
-            match = re.search(r'(?:^|,)size=(\d+(?:\.\d+)?)([KMGT]?)B?(?:,|$)', value)
-            if match is not None:
-                total += int(float(match[1]) * 1024 ** (' KMGT'.index(match[2]) if match[2] else 0))
-                continue
-            # PVE can omit size from generated cloud-init disk configuration.
-            owner = self.record if config.get('template') in (1, '1') else self.temporary
-            storage = volume.split(':', 1)[0]
-            rows = self.api('GET', f"/api2/json/nodes/{quote(owner['node'], safe='')}/storage/{quote(storage, safe='')}/content")
-            check(isinstance(rows, list) and all(isinstance(row, dict) for row in rows), 'disk_size_unknown')
-            matches = [row for row in rows if row.get('volid') == volume]
-            check(len(matches) == 1 and str(matches[0].get('vmid')) == str(owner['vmid'])
-                  and type(matches[0].get('size')) is int and matches[0]['size'] > 0, 'disk_size_unknown')
-            total += matches[0]['size']
-        check(0 < total <= self.temporary['disk_limit_bytes'], 'disk_limit_exceeded')
+        owner = self.record if config.get('template') in (1, '1') else self.temporary
+        disk_capacity(self.client, config, owner, self.temporary['disk_limit_bytes'])
+
+    def pool_check(self) -> None:
+        rows = self.api('GET', '/api2/json/cluster/resources', fields={'type': 'vm'})
+        check(isinstance(rows, list), 'pool_membership_mismatch')
+        matches = [row for row in rows if isinstance(row, dict)
+                   and str(row.get('vmid')) == str(self.temporary['vmid'])]
+        check(len(matches) == 1 and matches[0].get('node') == self.temporary['node']
+              and matches[0].get('pool') == self.temporary['pool'], 'pool_membership_mismatch')
+        Permissions(self.client).placement(self.temporary['vmid'], self.temporary['pool'],
+                                           ACCEPTANCE_PRIVILEGES, future=False)
 
     def claim(self) -> dict[str, Any]:
+        self.pool_check()
         config = self.api('GET', self.base + '/config')
         check(isinstance(config, dict) and config.get('template', 0) in (0, '0'), 'clone_identity_invalid')
         identity = pve._config_uuid(config)
@@ -303,6 +319,7 @@ class Acceptance:
               and any('cloudinit' in str(value) for value in actual.values()), 'disk_boot_mismatch')
 
     def identity(self, config: Any) -> None:
+        self.pool_check()
         check(isinstance(config, dict) and self.owned is not None
               and pve._config_uuid(config) == self.owned['smbios_uuid']
               and sorted(attachments(config).values()) == self.owned['volumes']
@@ -317,6 +334,8 @@ class Acceptance:
             try:
                 self.api('POST', self.base + '/agent/ping')
                 break
+            except RequestRejected:
+                raise AcceptanceFailure('request_rejected') from None
             except OperationFailed:
                 if time.monotonic() >= guest_deadline:
                     raise AcceptanceFailure('guest_timeout') from None
@@ -326,8 +345,10 @@ class Acceptance:
         while time.monotonic() < guest_deadline:
             # JSON body preserves the API's array command type; no shell or caller program.
             self.remaining()
-            intent: dict[str, Any] = {'phase': 'guest_exec', 'status': 'intent'}
+            intent: dict[str, Any] = {'phase': 'guest_exec', 'status': 'intent', 'method': 'POST',
+                                    'path': self.base + '/agent/exec'}
             self.journal['tasks'].append(intent)
+            previous_active = self.journal['mutation_active']
             self.journal['mutation_active'] = True
             previous_writes = self.journal['facility_writes']
             self.journal['facility_writes'] = 'unknown'
@@ -336,11 +357,20 @@ class Acceptance:
                 process = self.api('POST', self.base + '/agent/exec',
                                    body=json.dumps({'command': ['cloud-init', 'status', '--format', 'json']}).encode(),
                                    content_type='application/json')
+            except RequestRejected as exc:
+                intent.update(status='rejected', http_status=exc.http_status)
+                self.journal.update(mutation_active=previous_active, facility_writes=previous_writes)
+                self.persist()
+                raise AcceptanceFailure('request_rejected') from None
             except (DeadlineExpired, LocalTimeout):
                 intent['status'] = 'not_sent'
                 self.journal.update(mutation_active=False, facility_writes=previous_writes)
                 self.persist()
                 raise
+            except Exception:
+                intent['status'] = 'unknown'
+                self.persist()
+                raise UnknownOutcome('request_outcome_unknown') from None
             check(isinstance(process, dict) and type(process.get('pid')) is int, 'guest_response_invalid')
             intent.update(status='running', pid=process['pid'])
             self.journal['facility_writes'] = 'issued'
@@ -393,7 +423,7 @@ class Acceptance:
         self.deadline = min(self.budget.bounds['cleanup'], self.budget.local['cleanup'])
         self.remaining()
         cleanup = self.result['cleanup']
-        sent_tasks = [item for item in self.journal['tasks'] if item['status'] != 'not_sent']
+        sent_tasks = [item for item in self.journal['tasks'] if item['status'] not in {'not_sent', 'rejected'}]
         if self.journal['mutation_active'] or (self.owned is None and sent_tasks):
             raise UnknownOutcome('ownership_or_task_unknown')
         if self.owned is None:
@@ -419,7 +449,10 @@ class Acceptance:
         cleanup['volumes'] = {'status': 'passed', 'reason_code': 'deleted', 'evidence_ref': 'journal.json'}
 
     def execute(self) -> dict[str, Any]:
-        self.result = {'kind': 'pve-template-acceptance-result', 'schema_version': 2,
+        self.result = {'kind': 'pve-template-acceptance-result', 'schema_version': 3,
+            'cluster_scope': self.request['cluster_scope'], 'pool': self.temporary['pool'],
+            'vmid_policy': self.request['vmid_policy'],
+            'preview_digest': self.journal['preview_digest'], 'capacity': None,
             'deadlines': self.request['deadlines'], 'deadline_outcome': self.budget.outcome,
             'facility_writes': self.journal['facility_writes'],
             'execution_id': self.journal['execution_id'], 'request_digest': self.journal['request_digest'],
@@ -431,23 +464,33 @@ class Acceptance:
             'residuals': {'inventory_complete': True, 'items': []}, 'overall': 'unknown', 'collection': {'status': 'complete', 'reason_code': 'collected'}}
         try:
             self.budget.admit()
-            self.source_check(initial=True)
-            check(self.vm_absent(), 'vmid_occupied')
-            self.storage_permissions()
+            observed = admit_acceptance(ReadBudgetClient(self.client, self.budget), self.request, helpers=self.snippets)
+            self.result['capacity'] = observed['capacity']
+            self.source_before = observed['source_snapshot']
+            self.journal.update(source_before=self.source_before, admission_observed=observed)
+            self.persist()
             self.mutation('clone', 'POST', self.source + '/clone',
                           fields={'newid': self.temporary['vmid'], 'full': 1, 'target': self.temporary['node'],
-                                  'storage': self.temporary['storage'], 'name': self.request['cloud_init']['hostname']}, node=self.record['node'])
+                                  'storage': self.temporary['storage'], 'pool': self.temporary['pool'],
+                                  'name': self.request['cloud_init']['hostname']}, node=self.record['node'])
             config = self.claim()
             self.mark('full_clone', 'passed', 'verified')
             self.stage = 'disk_boot'
             self.configure(config)
             self.mark('disk_boot', 'passed', 'verified')
+            self.identity(self.api('GET', self.base + '/config'))
             self.mutation('start', 'POST', self.base + '/status/start')
             self.guest()
         except Exception as exc:
-            unknown = not isinstance(exc, (AcceptanceFailure, DeadlineExpired, LocalTimeout)) or self.journal['mutation_active']
+            if isinstance(exc, AdmissionError):
+                self.journal['admission_diagnostic'] = exc.diagnostic
+                self.result['capacity'] = exc.diagnostic.get('capacity', self.result['capacity'])
+                self.persist()
+            admission_unknown = isinstance(exc, AdmissionError) and (
+                exc.reason_code.endswith('query_failed') or exc.reason_code.endswith('evidence_insufficient'))
+            unknown = admission_unknown or not isinstance(exc, (AcceptanceFailure, AdmissionError, DeadlineExpired, LocalTimeout)) or self.journal['mutation_active']
             self.mark(self.stage, 'unknown' if unknown else 'failed',
-                      str(exc) if isinstance(exc, (AcceptanceFailure, DeadlineExpired, LocalTimeout)) else 'observation_unknown')
+                      str(exc) if isinstance(exc, (AcceptanceFailure, AdmissionError, UnknownOutcome, DeadlineExpired, LocalTimeout)) else 'observation_unknown')
             self.result['failure_stage'] = self.stage
         finally:
             if self.budget.outcome['status'] == 'rejected':
@@ -480,7 +523,8 @@ class Acceptance:
                 self.source_check(initial=False)
                 self.mark('source_unchanged', 'passed', 'verified')
             except Exception as exc:
-                self.mark('source_unchanged', 'failed' if isinstance(exc, AcceptanceFailure) and str(exc) != 'deadline_exceeded' else 'unknown', 'source_recheck_failed')
+                reason = str(exc) if isinstance(exc, (AcceptanceFailure, UnknownOutcome, DeadlineExpired, LocalTimeout)) else 'source_query_failed'
+                self.mark('source_unchanged', 'failed' if isinstance(exc, AcceptanceFailure) else 'unknown', reason)
         self.result['temporary_resources'] = self.resources()
         self.result['deadline_outcome'] = self.budget.outcome
         self.journal['deadline_outcome'] = dict(self.budget.outcome)
@@ -534,7 +578,10 @@ def run(selected: Any, operation: str, scope: str, execution: Any, image_digest:
         admission_path = selected.files.get('execution_admission')
         admission = load_strict_json(Path(admission_path)) if admission_path else selected.options.get('admission')
         budget = DeadlineBudget(request['deadlines'])
-        journal = begin(root, 'accept', request, admission, execution_id, image_digest)
+        preview_path = selected.files.get('acceptance_preview')
+        require(preview_path is not None, 'acceptance_preview required')
+        preview = load_strict_json(Path(preview_path))
+        journal = begin(root, 'accept', request, admission, execution_id, image_digest, preview=preview)
         ca_file = execution.environ.get('PVE_API_CA')
         if ca_file:
             trust = root / 'trust'
@@ -548,7 +595,8 @@ def run(selected: Any, operation: str, scope: str, execution: Any, image_digest:
         if ca_file:
             # Publisher client loads the caller CA; retain the system roots too.
             client.context.load_default_certs()
-        snippets = acceptance_snippets.Snippets(selected, execution, request['timeouts']['work_seconds'], request['cloud_init']['ssh'])
+        snippets = acceptance_snippets.Snippets(selected, execution, request['timeouts']['work_seconds'],
+                                               request['cloud_init']['ssh'], budget=budget, phase='work')
         result = Acceptance(client, request, journal, root, snippets, budget).execute()
         journal.update(status='finished', result_digest=canonical_digest(result))
         save(root / 'journal.json', journal)

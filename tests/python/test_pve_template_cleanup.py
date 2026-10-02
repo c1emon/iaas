@@ -52,7 +52,7 @@ class CleanupAPI:
             if fields and isinstance(fields.get("path"), str) and fields["path"].startswith("/storage/"):
                 return {fields["path"]: {"Datastore.Audit": 1, "Datastore.Allocate": 1,
                                           "Datastore.AllocateTemplate": 1, "Datastore.AllocateSpace": 1}}
-            return {"/vms/9001": {"VM.Audit": 1}}
+            return {"/vms/9001": {name: 1 for name in ("VM.Audit", "VM.Allocate", "VM.Config.CPU", "VM.Config.Memory", "VM.Config.Disk", "VM.Config.Network", "VM.Config.Options", "VM.Config.HWType", "VM.Config.Cloudinit")}}
         if method == "GET" and path.endswith("/config"):
             return dict(self.config)
         if method == "GET" and path.endswith("/content"):
@@ -103,14 +103,14 @@ def _journal(original: Path, *, template_status: str = "succeeded", result: bool
     (diagnostics / "publish-intent.json").write_text(json.dumps(intent) + "\n")
     if result:
         template_record = {
-            "kind": "pve-template-record", "schema_version": 2, "record_id": "v1-9001",
+            "kind": "pve-template-record", "schema_version": 3, "cluster_scope": "test-cluster", "pool": None, "record_id": "v1-9001",
             "target": TARGET, "node": "cohe", "vmid": 9001, "smbios_uuid": "template-uuid",
             "volumes": {"scsi0": DISK}, "configuration": {"scsi0": DISK},
             "origin": "publication", "execution_id": execution_id,
             "artifact_digest": "sha256:" + "c" * 64,
             "verification": {"template_config": "passed"},
         }
-        receipt = {"kind": "pve-template-result", "schema_version": 2,
+        receipt = {"kind": "pve-template-result", "schema_version": 3,
                    "execution_id": execution_id, "preview_digest": preview_digest,
                    "action": "publish", "status": "succeeded", "template_record": template_record}
         (diagnostics / "result.json").write_text(json.dumps(receipt) + "\n")
@@ -198,8 +198,11 @@ def test_cleanup_requires_delete_permission_before_side_effect(tmp_path: Path,
     monkeypatch.setattr(runtime, "_client", lambda selected, execution, target: api)
     fixed = _fixed(objects=[], volumes=[UPLOAD])
 
-    with pytest.raises(ValidationError, match="Datastore.Allocate"):
+    from iaas.pve_template.admission import AdmissionError
+    with pytest.raises(AdmissionError, match="permission_missing") as caught:
         runtime._delete_action(_selected(original), execution, fixed, _preview(fixed), "cleanup-1")
+    assert caught.value.diagnostic['missing_privileges'] == ['Datastore.Allocate']
+    assert caught.value.diagnostic['operation'] == 'cleanup'
     assert api.deletes == []
 
 
@@ -348,9 +351,9 @@ def test_cleanup_consumes_real_publish_failure_journal(tmp_path: Path, monkeypat
                     return {fields["path"]: {"Datastore.Audit": 1, "Datastore.Allocate": 1,
                                               "Datastore.AllocateTemplate": 1,
                                               "Datastore.AllocateSpace": 1}}
-                return {"/vms/9001": {"VM.Audit": 1}}
+                return {"/vms/9001": {name: 1 for name in ("VM.Audit", "VM.Allocate", "VM.Config.CPU", "VM.Config.Memory", "VM.Config.Disk", "VM.Config.Network", "VM.Config.Options", "VM.Config.HWType", "VM.Config.Cloudinit")}}
             if method == "GET" and path.endswith("/cluster/resources"):
-                return []
+                return [{"vmid": 9001}] if self.created_uuid else []
             if method == "GET" and path.endswith("/storage"):
                 return [{"storage": "images", "enabled": 1, "active": 1,
                          "avail": 2**40, "content": "import,images"}]
@@ -462,7 +465,7 @@ def test_cleanup_recovers_real_publish_remote_observation_unknown(
 
 
 def test_retire_rejects_extra_current_volume(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    record = {"kind": "pve-template-record", "schema_version": 2, "record_id": "v1-9001",
+    record = {"kind": "pve-template-record", "schema_version": 3, "cluster_scope": "test-cluster", "pool": None, "record_id": "v1-9001",
               "target": TARGET, "node": "cohe", "vmid": 9001, "smbios_uuid": "template-uuid",
               "volumes": {"scsi0": DISK}, "configuration": {"scsi0": DISK}, "origin": "publication",
               "execution_id": EXECUTION_ID, "artifact_digest": "sha256:" + "c" * 64,
@@ -482,7 +485,7 @@ def test_retire_rejects_extra_current_volume(tmp_path: Path, monkeypatch: pytest
 
 
 def test_retire_rejects_current_config_lock(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    record = {"kind": "pve-template-record", "schema_version": 2, "record_id": "v1-9001",
+    record = {"kind": "pve-template-record", "schema_version": 3, "cluster_scope": "test-cluster", "pool": None, "record_id": "v1-9001",
               "target": TARGET, "node": "cohe", "vmid": 9001, "smbios_uuid": "template-uuid",
               "volumes": {"scsi0": DISK}, "configuration": {"scsi0": DISK}, "origin": "publication",
               "execution_id": EXECUTION_ID, "artifact_digest": "sha256:" + "c" * 64,
@@ -503,7 +506,7 @@ def test_retire_rejects_current_config_lock(tmp_path: Path, monkeypatch: pytest.
 
 def test_retire_does_not_require_storage_delete_permission(tmp_path: Path,
                                                            monkeypatch: pytest.MonkeyPatch) -> None:
-    record = {"kind": "pve-template-record", "schema_version": 2, "record_id": "v1-9001",
+    record = {"kind": "pve-template-record", "schema_version": 3, "cluster_scope": "test-cluster", "pool": None, "record_id": "v1-9001",
               "target": TARGET, "node": "cohe", "vmid": 9001, "smbios_uuid": "template-uuid",
               "volumes": {"scsi0": DISK}, "configuration": {"scsi0": DISK}, "origin": "publication",
               "execution_id": EXECUTION_ID, "artifact_digest": "sha256:" + "c" * 64,

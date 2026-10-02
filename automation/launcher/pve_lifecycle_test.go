@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -13,9 +14,9 @@ func TestPVESavedPlanTransfersNativeReview(t *testing.T) {
 				t.Run(engine+"/"+operation+map[bool]string{false: "/complete", true: "/missing-review"}[missing], func(t *testing.T) {
 					directory := t.TempDir()
 					bundle := filepath.Join(directory, "bundle")
-					contents := map[string]string{"summary.json": "{}", "native-plan.json": "{\"resource_changes\":[]}", "inputs.tfvars.json": "{}", "snippets/manifest.json": "{}", "workspace/main.tf": "# retained root", "plan.tfplan": "native binary", "trust/api-ca.pem": "caller-owned CA"}
+					contents := map[string]string{"summary.json": "{}", "native-plan.json": "{\"resource_changes\":[]}", "review.json": "{\"vm_policy\":{}}\n", "inputs.tfvars.json": "{}", "snippets/manifest.json": "{}", "workspace/main.tf": "# retained root", "plan.tfplan": "native binary", "trust/api-ca.pem": "caller-owned CA"}
 					for name, content := range contents {
-						if missing && name == "native-plan.json" {
+						if missing && name == "review.json" {
 							continue
 						}
 						path := filepath.Join(bundle, name)
@@ -45,8 +46,11 @@ cp -R "$3" "$TEST_REMOTE_INPUTS"
 					}
 					args, err := work.savedPlan()
 					if missing {
-						if err == nil {
-							t.Fatal("missing native review accepted")
+						if err == nil || !strings.Contains(err.Error(), "required review.json") {
+							t.Fatalf("missing review lost its admission diagnostic: %v", err)
+						}
+						if _, err := os.Stat(filepath.Join(taskDir, "inputs/saved")); !os.IsNotExist(err) {
+							t.Fatal("missing review staged inputs before rejection")
 						}
 						return
 					}

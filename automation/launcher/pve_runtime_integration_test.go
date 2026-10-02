@@ -4,12 +4,56 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// The Python regression creates a genuine frozen bundle. Only the Docker mount
+// boundary is replaced; savedPlan and Python admission execute without mocks.
+func TestTransferredSavedPlanRealAdmission(t *testing.T) {
+	bundle := os.Getenv("IAAS_TEST_SAVED_BUNDLE")
+	if bundle == "" {
+		t.Skip("requires the generated bundle from the Python saved-plan regression")
+	}
+	for _, operation := range []string{"apply", "verify"} {
+		t.Run(operation, func(t *testing.T) {
+			directory := t.TempDir()
+			if err := os.Mkdir(filepath.Join(directory, "inputs"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			work := task{options: Options{Component: "pve", Operation: operation, Engine: "local",
+				Companions: bundle, Plan: filepath.Join(bundle, "plan.tfplan")}, directory: directory}
+			if _, err := work.savedPlan(); err != nil {
+				t.Fatal(err)
+			}
+			repo, _ := filepath.Abs("../..")
+			script := `
+import sys
+from pathlib import Path
+from iaas.runtime_execution.plans import admit_plan
+bundle = Path(sys.argv[1])
+admit_plan(bundle / 'plan.tfplan', bundle, {}, None)
+`
+			staged := filepath.Join(directory, "inputs/saved")
+			command := exec.Command("uv", "run", "--no-sync", "python", "-c", script, staged)
+			if image := os.Getenv("IAAS_TEST_RUNTIME_IMAGE"); image != "" {
+				command = exec.Command("docker", "run", "--rm", "--pull", "never", "--network", "none",
+					"--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
+					"--mount", "type=bind,src="+staged+",dst=/saved,readonly", "--entrypoint", "python",
+					image, "-c", script, "/saved")
+			}
+			command.Dir = repo
+			command.Env = append(os.Environ(), "PYTHONPATH="+filepath.Join(repo, "src"))
+			if output, err := command.CombinedOutput(); err != nil {
+				t.Fatalf("transferred bundle admission failed: %v %s", err, output)
+			}
+		})
+	}
+}
 
 // Exercise the real Python entrypoint with the argument vector produced by
 // Go, including discovery before savedPlan stages any native artifacts.
@@ -30,7 +74,11 @@ func TestPVELauncherDiscoveryWithRealRuntime(t *testing.T) {
 				files[name] = path
 			}
 			entry := filepath.Join(directory, "environment.json")
-			data, _ := json.Marshal(map[string]any{"schema_version": 1, "environment": "synthetic", "components": map[string]any{"pve": map[string]any{"inputs": map[string]any{}, "files": files}}})
+			inputs := map[string]string{
+				"cluster": filepath.Join(repo, "tests/fixtures/runtime/pve-cluster.yml"),
+				"vms":     filepath.Join(repo, "tests/fixtures/runtime/vms.yml"),
+			}
+			data, _ := json.Marshal(map[string]any{"schema_version": 1, "environment": "synthetic", "components": map[string]any{"pve": map[string]any{"inputs": inputs, "files": files}}})
 			if err := os.WriteFile(entry, data, 0600); err != nil {
 				t.Fatal(err)
 			}

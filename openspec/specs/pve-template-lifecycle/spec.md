@@ -9,8 +9,8 @@ Define a caller-authorized PVE template lifecycle with fixed build inputs, recon
 The system SHALL expose check/read/plan/apply/verify for publication of an existing image, independently of image building, VM declarations and OpenTofu state, using the new image publication contract.
 
 #### Scenario: Plan and publish an existing image
-- **WHEN** a caller selects an image-artifact/v1, exact source object, runtime, target, stores, hardware and free VMID
-- **THEN** plan SHALL bind those inputs into pve-template-preview/v2 without downloading/uploading the disk or changing PVE
+- **WHEN** a caller selects an image-artifact/v1, exact source object, runtime, target, optional pool, stores, hardware and free VMID
+- **THEN** plan SHALL bind those inputs into pve-template-preview/v3 without downloading/uploading the disk or changing PVE
 - **AND** apply SHALL require the exact association, current caller execution admission and serialization, and SHALL never build or customize the image
 - **AND** the runtime SHALL recheck full-authority VM inventory, API permissions, storage capability/enabled/active state, node visibility, bridge, firmware and known capacity/size constraints before dependent writes
 - **AND** known insufficient publisher-local or API-visible storage capacity SHALL block dependent writes
@@ -53,7 +53,7 @@ The system SHALL report technical PVE publication facts separately from image co
 #### Scenario: Deliver a technically published template
 - **WHEN** native conversion finishes successfully
 - **THEN** the publisher SHALL additionally verify exact object identity, associated volumes, template flag and required hardware/Cloud-init configuration
-- **AND** it SHALL return pve-template-record/v2 linked to the artifact and execution without declaring caller promotion or unperformed guest acceptance
+- **AND** it SHALL return pve-template-record/v3 linked to the artifact and execution without declaring caller promotion or unperformed guest acceptance
 - **AND** required template verification or result collection failure SHALL prevent overall success while preserving independently confirmed template facts
 
 #### Scenario: Only known staging cleanup remains
@@ -108,3 +108,26 @@ Cleanup and retirement SHALL consume explicit action-specific requests/previews 
 - **THEN** action=retire SHALL require its new record, current retirement/dependency admission and independently checked observable facts
 - **AND** unresolved dependent clones SHALL block deletion while independent full clones SHALL NOT
 - **AND** failed-publication cleanup, revoked status or creation provenance alone SHALL NOT authorize retirement or S3 artifact deletion
+
+### Requirement: Template pool placement is a publication binding
+Current publication request/v2 and preview/result/record/v3 SHALL preserve optional pool placement separately from stable VM configuration and bind the stable cluster scope for VMID reservation. Omission/null SHALL request no pool; a specified name SHALL be nonempty and refer to an existing authorized pool. Native VM creation SHALL receive the pool directly and verification SHALL confirm actual membership without pool or ACL management.
+
+#### Scenario: Publish a template into an existing pool
+- **WHEN** plan and approval fix an existing pool and current effective permissions satisfy creation and publication
+- **THEN** apply SHALL create the VM directly in that pool, confirm membership and retain the requested/observed placement in protected preview/result/record
+- **AND** UUID/config/volume identity and caller promotion rules SHALL remain independently required
+
+#### Scenario: Publish without pool
+- **WHEN** publication omits pool or explicitly selects null
+- **THEN** native creation SHALL request no pool placement and current records SHALL retain that fact
+- **AND** it SHALL NOT choose a default pool
+
+#### Scenario: Pool changes or cannot be used
+- **WHEN** the execution pool differs from the approved preview or existence/effective permission cannot be established
+- **THEN** apply SHALL refuse before upload/create and retain a classified diagnostic
+- **AND** it SHALL NOT change pool, drop the pool argument or manage ACLs
+
+#### Scenario: New execution consumes a noncurrent publication contract
+- **WHEN** a new publication or VM dependency lacks the latest required request/record/preview bindings
+- **THEN** it SHALL reject without translating the input or modifying state
+- **AND** read-only parsing of retained rc.19 acceptance evidence SHALL remain confined to the formal acceptance-recovery operation

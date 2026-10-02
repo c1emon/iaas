@@ -31,15 +31,15 @@ TARGET_FIELDS = {"node", "host", "endpoint", "api_endpoint", "insecure", "tls_ve
 RECORD_TARGET_FIELDS = TARGET_FIELDS | {"storage_id", "ssh_host"}
 RUNTIME_DIGEST = re.compile(r"^(?:[^@/\s]+(?:/[^@\s]+)*)?@?sha256:[0-9a-fA-F]{64}$")
 
-# v2 publication contracts.  The old node-build constants remain private
+# Current publication contracts.  The old node-build constants remain private
 # implementation history while the runtime accepts only these new functions.
-PUBLISH_PREVIEW_VERSION = 2
-TEMPLATE_RECORD_VERSION = 2
-PUBLISH_REQUEST_VERSION = 1
+PUBLISH_PREVIEW_VERSION = 3
+TEMPLATE_RECORD_VERSION = 3
+PUBLISH_REQUEST_VERSION = 2
 PUBLISH_FIELDS = {
     "kind", "schema_version", "artifact", "artifact_digest", "test_results", "source", "target",
     "vmid", "version", "name", "staging_storage", "disk_storage", "cloud_init_storage", "efi_storage",
-    "hardware", "cloud_init_defaults", "requirements", "transport",
+    "hardware", "cloud_init_defaults", "requirements", "transport", "cluster_scope", "pool",
 }
 PUBLISH_TARGET_FIELDS = {"api_endpoint", "node", "tls_verify"}
 PUBLISH_HARDWARE_FIELDS = {"cpus", "memory_mib", "machine", "scsi_controller", "boot_disk", "bridge", "firmware"}
@@ -113,8 +113,12 @@ def validate_publish_request(value: Any) -> dict[str, Any]:
             "unsupported pve template publish request")
     required = {"artifact", "artifact_digest", "source", "target", "vmid", "version", "name",
                 "staging_storage", "disk_storage", "cloud_init_storage", "hardware", "cloud_init_defaults",
-                "requirements", "transport"}
+                "requirements", "transport", "cluster_scope"}
     require(required <= request.keys(), "pve template publish request is incomplete")
+    cluster_scope = _text(request["cluster_scope"], "cluster_scope", pattern=IDENTIFIER)
+    pool = request.get("pool")
+    if pool is not None:
+        _text(pool, "pool", pattern=IDENTIFIER)
     artifact = validate_artifact(_mapping(request["artifact"], "publish artifact"))
     digest = _text(request["artifact_digest"], "artifact_digest")
     require(SHA256.fullmatch(digest.removeprefix("sha256:")) is not None and
@@ -187,7 +191,8 @@ def validate_publish_request(value: Any) -> dict[str, Any]:
                                "native_template_config_verify": True,
                                "guest_acceptance_scope": "caller"}
     require(request["transport"] == "controller-upload", "only controller-upload transport is supported")
-    result = {"kind": "pve-template-publish-request", "schema_version": 1, "artifact": artifact,
+    result = {"kind": "pve-template-publish-request", "schema_version": PUBLISH_REQUEST_VERSION, "artifact": artifact,
+              "cluster_scope": cluster_scope, "pool": pool,
               "artifact_digest": digest, "source": normalized_source, "target": normalized_target,
               "vmid": vmid, "version": version, "name": name, **storages, "hardware": dict(hardware),
               "cloud_init_defaults": dict(defaults), "requirements": normalized_requirements,
@@ -291,14 +296,18 @@ def validate_publish_preview(value: Any) -> dict[str, Any]:
     return dict(preview)
 
 
-def validate_template_record_v2(value: Any, *, complete: bool = True) -> dict[str, Any]:
+def validate_template_record_v3(value: Any, *, complete: bool = True) -> dict[str, Any]:
     record = _mapping(value, "pve template record")
     required = {"kind", "schema_version", "record_id", "target", "node", "vmid", "smbios_uuid",
-                "volumes", "configuration", "origin", "execution_id", "artifact_digest", "verification"}
-    require(set(record) >= required, "pve-template-record/v2 is incomplete")
+                "volumes", "configuration", "origin", "execution_id", "artifact_digest", "verification",
+                "cluster_scope", "pool"}
+    require(set(record) >= required, "pve-template-record/v3 is incomplete")
     require(record["kind"] == "pve-template-record" and type(record["schema_version"]) is int and
             record["schema_version"] == TEMPLATE_RECORD_VERSION,
             "unsupported pve template record")
+    _text(record["cluster_scope"], "record.cluster_scope", pattern=IDENTIFIER)
+    if record["pool"] is not None:
+        _text(record["pool"], "record.pool", pattern=IDENTIFIER)
     _text(record["record_id"], "record_id", pattern=IDENTIFIER)
     target = _mapping(record["target"], "record.target")
     require(set(target) == PUBLISH_TARGET_FIELDS and target.get("tls_verify") is True,
@@ -356,7 +365,7 @@ def validate_retire_request(value: Any) -> dict[str, Any]:
             "retire target must be a fixed verified HTTPS target")
     _publish_url(target["api_endpoint"], "retire.target.api_endpoint")
     _text(target["node"], "retire.target.node", pattern=IDENTIFIER)
-    validate_template_record_v2(request["template_record"], complete=False)
+    validate_template_record_v3(request["template_record"], complete=False)
     ownership = _validate_ownership_admission(request["ownership_admission"], "retire")
     retirement = _mapping(request["retirement_admission"], "retire.retirement_admission")
     require(ownership.get("owner") == "publisher" and ownership.get("reference"),
