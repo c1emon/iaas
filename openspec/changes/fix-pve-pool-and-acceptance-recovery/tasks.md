@@ -71,6 +71,6 @@
 
 - [x] 10.1 将 review.json 纳入 launcher 必需材料和 local/DinD 原字节传输；保留 reviewed vm_policy 绑定，缺失、非法、策略冲突在 state/snippet/VM 写入前拒绝。152 项定向 Python、Go launcher 全套和真实 Python 准入路径通过。
 - [x] 10.2 discovery 失败先保留脱敏运行时原因；ready 缺身份或身份不符仍拒绝。存储权限复用共享预检分类缺失、非法值、查询失败与证据不足，并仅输出固定分类、阶段、存储、操作和缺失权限。源快照缺失分类在当前版本已有回归保护。
-- [ ] 10.3 发布配套修复版本，在两个平台的实际待发布 runtime 镜像中验证 launcher 转移后的保存计划准入，核镜像 digest 和 launcher 校验值；该验证保持断网且不执行设施操作。
+- [x] 10.3 rc.24 已发布；两个平台各 2124 passed、4 skipped，实际待发布 runtime 镜像的 launcher 转移后保存计划准入各 1 passed（断网）。匿名 digest 消费、registry 摘要、两个 launcher SHA256SUMS 和 macOS 版本输出已核验；实际值见 delivery.md，不执行设施操作。
 
 rc.21 实际交付：源码92b85aa，工作流36890195933全部成功；amd64/arm64各2105 passed、4 skipped，两个平台匿名digest消费通过；registry manifest/platform摘要、launcher SHA256SUMS与macOS版本输出均核验。固定digest与资产值见delivery.md。现场8.1交由infra-ops，仍未执行。

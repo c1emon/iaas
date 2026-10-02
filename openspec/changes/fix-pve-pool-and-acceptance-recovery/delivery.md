@@ -2,19 +2,33 @@
 
 实施分支：`implement/fix-pve-pool-and-acceptance-recovery`。本 change 仅修改 IaaS。
 
-## 最新固定版本 rc.22
+## 最新固定版本 rc.24
 
-### rc.22 之后的现场缺口修正（尚未发布）
+### rc.22 之后的现场缺口修正（已随 rc.24 发布）
 
-rc.23 的实际镜像集成验证因测试 bind mount 未设置 runner UID:GID 而失败，未形成可用的新镜像交付。测试已补齐与正式 launcher 相同的 `--user UID:GID`，protected_file 的所有权与权限校验不变。本地真实 Python 保存计划准入回归及 Go 全套/discovery 集成通过；后续 rc.24 的实际镜像验证仍待 CI，不覆盖 rc.23 的失败记录。
+rc.23 的实际镜像集成验证因测试 bind mount 未设置 runner UID:GID 而失败，未形成可用的新镜像交付。rc.24 测试补齐与正式 launcher 相同的 `--user UID:GID`，protected_file 的所有权与权限校验不变；两个平台的实际镜像验证已通过，不覆盖 rc.23 的失败记录。
 
 按 infra-ops 的 `iaas-lifecycle-acceptance-findings.md` 定向修正：review.json 成为 launcher 的当前保存计划必需材料，并以原字节进入 local/DinD 传输；保留原批准中的 vm_policy 绑定和写入前拒绝。discovery 输入失败保留安全原因，ready 身份检查不放宽。存储预检复用现有权限分类，公开 summary/stdout 保留固定 reason_code、stage、storage、operation 和必要的 missing_privileges，不转发原始响应或异常文本。无源快照已有 source_snapshot_missing 分类和零写入回归，无需重复改造。
 
-本地定向 Python 152 passed，Go launcher 全套与实际 Python discovery/保存计划准入集成通过；Pyright、Ruff、4/4 import contracts、OpenSpec strict 通过。Python 全套第二轮 1827 passed、2 skipped，另有一条无关 macOS 进程组测试 PermissionError，单独重跑通过。发布流水线已加入两个平台实际 runtime 镜像的断网保存计划传输/准入验证；镜像验证尚待运行，不据软件 fixture 声称现场成功。本次没有设施操作。
+本地定向 Python 152 passed，Go launcher 全套与实际 Python discovery/保存计划准入集成通过；Pyright、Ruff、4/4 import contracts、OpenSpec strict 通过。Python 全套第二轮 1827 passed、2 skipped，另有一条无关 macOS 进程组测试 PermissionError，单独重跑通过。rc.24 发布 CI 两个平台各 2124 passed、4 skipped，实际待发布 runtime 镜像的断网保存计划传输/准入验证各 1 passed。该验证不代表现场 VM 生命周期验收；本次没有设施操作。
+
+[v0.1.0-rc.24](https://github.com/c1emon/iaas/releases/tag/v0.1.0-rc.24) 已发布，源码 `5d7fefc0b192ca5cc13edbe042dcbceb86bee4b9`。[发布工作流](https://github.com/c1emon/iaas/actions/runs/36980219960) 7 个 jobs 全部成功，两个平台匿名固定 digest 拉取及 capabilities 调用通过。两个 launcher SHA256SUMS 通过，macOS `--version` 返回 `iaas v0.1.0-rc.24`。
+
+infra-ops 当前固定镜像：`ghcr.io/c1emon/iaas-runtime@sha256:47987627043e804e0550dd788fcd7e24fe17fca64176d77fe6c35c3fa1bfdc1f`。
+
+| 产物 | 实际摘要 |
+| --- | --- |
+| runtime manifest | `sha256:47987627043e804e0550dd788fcd7e24fe17fca64176d77fe6c35c3fa1bfdc1f` |
+| linux/amd64 | `sha256:8e7588abeca7b2f47e93b9a1d92ef6b83979f86fa5cf200c0a34a76c9a1036e0` |
+| linux/arm64 | `sha256:562069f99808a49c3b759ae6cd4b6009c76d23e2e150fa6df22dc68cd0ee96c9` |
+| iaas-darwin-arm64 SHA256 | `6e6527671f0033143863173dbd164c9ac5405f176878392c8714f4ddb6465a36` |
+| iaas-linux-amd64 SHA256 | `5c8578eb3c8f009f49837465f80c573a06b0c5509d8569f2254e65d1c8e94251` |
+
+## 前次固定版本 rc.22
 
 [v0.1.0-rc.22](https://github.com/c1emon/iaas/releases/tag/v0.1.0-rc.22) 已发布，源码 `00930938019d3776888d57a519584681fd749725`。[发布工作流](https://github.com/c1emon/iaas/actions/runs/36950707343) 7 个 jobs 全部成功；amd64/arm64 各 2112 passed、4 skipped，两个平台匿名固定 digest 拉取及 capabilities 调用通过。两个 launcher SHA256SUMS 通过，macOS `--version` 返回 `iaas v0.1.0-rc.22`。
 
-infra-ops 当前使用固定镜像 `ghcr.io/c1emon/iaas-runtime@sha256:fd9d1eeb0b0a86d61d60f369ca7fdf1370a9fa7a090d8a1a96d6baea293e6137`。
+rc.22 固定镜像 `ghcr.io/c1emon/iaas-runtime@sha256:fd9d1eeb0b0a86d61d60f369ca7fdf1370a9fa7a090d8a1a96d6baea293e6137`。
 
 rc.22 定向允许恢复合同的 pending_record_id、reservation_id 保留原始冒号命名空间；plan/execution ID 限制及原 journal/caller 精确绑定不变。三个 recovery v1 schema 已同步。交接目录中的真实 request 校验和 load_original 离线通过，原始文件字节未改动；本地 56 项恢复回归、Ruff、Pyright 通过。保留 rc.21 的当前任务未知阻断和完整 VM 权限预检。现场恢复仍由 infra-ops 承接。
 
