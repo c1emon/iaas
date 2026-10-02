@@ -2,7 +2,23 @@
 
 实施分支：`implement/fix-pve-pool-and-acceptance-recovery`。本 change 仅修改 IaaS。
 
-## 最新固定版本 rc.21
+## 最新固定版本 rc.22
+
+[v0.1.0-rc.22](https://github.com/c1emon/iaas/releases/tag/v0.1.0-rc.22) 已发布，源码 `00930938019d3776888d57a519584681fd749725`。[发布工作流](https://github.com/c1emon/iaas/actions/runs/36950707343) 7 个 jobs 全部成功；amd64/arm64 各 2112 passed、4 skipped，两个平台匿名固定 digest 拉取及 capabilities 调用通过。两个 launcher SHA256SUMS 通过，macOS `--version` 返回 `iaas v0.1.0-rc.22`。
+
+infra-ops 当前使用固定镜像 `ghcr.io/c1emon/iaas-runtime@sha256:fd9d1eeb0b0a86d61d60f369ca7fdf1370a9fa7a090d8a1a96d6baea293e6137`。
+
+rc.22 定向允许恢复合同的 pending_record_id、reservation_id 保留原始冒号命名空间；plan/execution ID 限制及原 journal/caller 精确绑定不变。三个 recovery v1 schema 已同步。交接目录中的真实 request 校验和 load_original 离线通过，原始文件字节未改动；本地 56 项恢复回归、Ruff、Pyright 通过。保留 rc.21 的当前任务未知阻断和完整 VM 权限预检。现场恢复仍由 infra-ops 承接。
+
+| 产物 | 实际摘要 |
+| --- | --- |
+| runtime manifest | `sha256:fd9d1eeb0b0a86d61d60f369ca7fdf1370a9fa7a090d8a1a96d6baea293e6137` |
+| linux/amd64 | `sha256:9159583beb36d3c3645bb17a1f5c846871490221c66f476b4b37ae8684783b93` |
+| linux/arm64 | `sha256:3a726699d7949bf777eb21ded75dec3927fd73561c5180743631bf7764e29747` |
+| iaas-darwin-arm64 SHA256 | `c04465c872309727ea4223875937a361f8965fbd098ddf4b58a25a400309c3ff` |
+| iaas-linux-amd64 SHA256 | `85c83a5497a5b60ca40251f73ff403a6c87422e5eacc5cf4c12f751d59e091f3` |
+
+## 前次固定版本 rc.21
 
 [v0.1.0-rc.21](https://github.com/c1emon/iaas/releases/tag/v0.1.0-rc.21) 已发布，源码 `92b85aaa9059a4f4be9ce8b337ca5096ec29668b`。[发布工作流](https://github.com/c1emon/iaas/actions/runs/36890195933) 7 个 jobs 全部成功；amd64/arm64 各 2105 passed、4 skipped，两个平台匿名固定 digest 拉取及 capabilities 调用通过。两个 launcher 已下载核 SHA256SUMS，macOS `--version` 返回 `iaas v0.1.0-rc.21`。
 
