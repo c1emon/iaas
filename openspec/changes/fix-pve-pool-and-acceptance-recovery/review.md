@@ -30,7 +30,7 @@
 - `openspec validate fix-pve-pool-and-acceptance-recovery --strict`：通过，无issues。
 - 将7个delta在临时目录合并到对应主规格后strict验证：7/7通过，无ERROR/WARNING；存在长requirement文本的INFO提示。
 - 自动核对MODIFIED标题存在且唯一、原有场景保留、ADDED不与主规格重复、相对链接有效、任务编号唯一且22项均未勾选：通过。
-- 当前只新增本change目录；主规格、源码、infra-ops及现场资源未修改。规划完成不代表实施完成；task8.1只有真实材料、有效限定批准及实际逐项结果就绪后才能完成。
+- 规划时只新增本change目录；主规格、源码、infra-ops及现场资源未修改。规划完成不代表实施完成；task8.1只有真实材料、有效限定批准及实际逐项结果就绪后才能完成。
 
 未发现阻断本次规格定稿的问题。实际pool、原资源UUID/volid/snippet、受信日志材料、新清理截止和发布digest是后续运行/交付输入，不能在规格阶段编造。
 
@@ -38,4 +38,4 @@
 
 实施分支 `implement/fix-pve-pool-and-acceptance-recovery` 已分阶段提交 pool/VMID、publication 最新合同、拒绝分类、源诊断以及验收 preview/准入。恢复入口、launcher 和示例按当前合同交付；软件校验结果记于 tasks。
 
-本 change 没有修改 infra-ops、OpenTofu state 或现场设施。固定产物 rc.20 已经 release 核验（见 delivery.md）；VM798 现场清理缺受保护原材料、可唯一关联的可信403和当前限定批准，task8.1保持未完成。软件fixture、只读预检或发布成功均不替代现场结果。
+本 change 没有修改 infra-ops、OpenTofu state 或现场设施。当前固定产物为 rc.25，活动未知阻断清理、完整必要权限、历史冒号引用、review传输及provider空pool等修正和发布验证见[delivery](delivery.md)。task8.1的完成状态引用调用方的新恢复记录；原验收仍未知。软件fixture、只读预检或发布成功均不替代现场结果，材料定位与证据边界见[验收材料入口](../../../docs/operations/pve-lifecycle-acceptance.md)。

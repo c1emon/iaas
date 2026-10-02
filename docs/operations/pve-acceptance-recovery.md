@@ -2,9 +2,7 @@
 
 恢复先联网只读核清，再使用新的限定清理批准。它不重放原 clone、configure、start
 或 guest exec，不修改原 request/journal/result，也不把清理成功改写为验收通过。
-软件样例与测试覆盖的是 fake API/helper。`run-120-1` 已提供受保护原材料，当前
-限定清理批准、凭据与现场条件仍未就绪；本轮不执行 VM798 清理。历史403日志是
-辅助材料，不要求为旧执行重建 trace 或改造 PVE。
+软件样例与测试覆盖的是 fake API/helper；现场结论及历史材料定位见[验收材料入口](pve-lifecycle-acceptance.md)。`run-120-1` 是历史实例，每次新处置仍需独立的新批准与当前条件核对。历史403日志仅为辅助材料，不要求为旧执行重建 trace 或改造 PVE。
 
 ## 输入及文件映射
 
@@ -131,4 +129,4 @@ launcher/runtime/helper 能力版本并冻结实际 digest/截止；不要改写
 继续使用现有 release 流程发布固定 runtime manifest 与 amd64/arm64 digest，以及
 `iaas-linux-amd64`、`iaas-darwin-arm64` 和 SHA256SUMS。发布说明应列明恢复合同 v1、
 共享 admission v2、原 v2 仅恢复读取、只读文件/reference helper 要求、实际软件测试
-结果和现场未完成范围。软件产物发布不等于 run-120-1 已现场恢复。
+结果与现场结论范围。软件产物发布不等于某次现场恢复完成；已记录的限定结论见验收材料入口。

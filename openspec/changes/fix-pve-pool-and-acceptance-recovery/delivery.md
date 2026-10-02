@@ -1,89 +1,47 @@
-# 软件交付与现场边界
+# 固定交付与验证结论
 
-实施分支：`implement/fix-pve-pool-and-acceptance-recovery`。本 change 仅修改 IaaS。
+本文件保留当前可用产物及关键版本历史。验收范围、材料定位与保留规则统一见 [PVE 生命周期验收材料](../../../docs/operations/pve-lifecycle-acceptance.md)；任务状态见 [tasks](tasks.md)。IaaS 交付软件能力，不执行调用方的设施操作。
 
-## 未发布修正：普通 VM provider 空 pool
+## 当前固定版本 rc.25
 
-针对 rc.24/run-429-1、run-431-1，普通 VM 的 provider `pool_id=""` 与 null 统一解释为未入池，仅用于权限预检与 reviewed VM policy 比较；原 native-plan、state 和 companions 不改写。plan/apply 共用权限入口，verify 的保存计划绑定复用相同比较。空值变化不触发池迁移预检；真实非空池存在性、完整必要权限、保存计划和批准绑定、已有非空池移除拒绝均保留；验收临时 VM 的 pool 仍必填。
+[v0.1.0-rc.25](https://github.com/c1emon/iaas/releases/tag/v0.1.0-rc.25)，源码 `6cec8adf1b96c880561f96bb9d89a7caa7ba626a`；[发布工作流 36985693769](https://github.com/c1emon/iaas/actions/runs/36985693769) 7 个 jobs 全部成功。
 
-147 项定向 Python 回归通过，包括未入池创建后删除、已有未入池更新、非空池权限不足拒绝、完整软件 plan/apply/verify 删除路径及原材料字节保留、验收空 pool 拒绝。Ruff、Pyright、4/4 import contracts、Go launcher 全套通过。本次不操作 VM799 或模板9005；infra-ops 待固定新 runtime/launcher 后生成新删除计划、取得新批准并完成删除与专属 snippet 清理。rc.25 实际镜像/launcher 发布验证尚待 CI。
-
-## 最新固定版本 rc.24
-
-### rc.22 之后的现场缺口修正（已随 rc.24 发布）
-
-rc.23 的实际镜像集成验证因测试 bind mount 未设置 runner UID:GID 而失败，未形成可用的新镜像交付。rc.24 测试补齐与正式 launcher 相同的 `--user UID:GID`，protected_file 的所有权与权限校验不变；两个平台的实际镜像验证已通过，不覆盖 rc.23 的失败记录。
-
-按 infra-ops 的 `iaas-lifecycle-acceptance-findings.md` 定向修正：review.json 成为 launcher 的当前保存计划必需材料，并以原字节进入 local/DinD 传输；保留原批准中的 vm_policy 绑定和写入前拒绝。discovery 输入失败保留安全原因，ready 身份检查不放宽。存储预检复用现有权限分类，公开 summary/stdout 保留固定 reason_code、stage、storage、operation 和必要的 missing_privileges，不转发原始响应或异常文本。无源快照已有 source_snapshot_missing 分类和零写入回归，无需重复改造。
-
-本地定向 Python 152 passed，Go launcher 全套与实际 Python discovery/保存计划准入集成通过；Pyright、Ruff、4/4 import contracts、OpenSpec strict 通过。Python 全套第二轮 1827 passed、2 skipped，另有一条无关 macOS 进程组测试 PermissionError，单独重跑通过。rc.24 发布 CI 两个平台各 2124 passed、4 skipped，实际待发布 runtime 镜像的断网保存计划传输/准入验证各 1 passed。该验证不代表现场 VM 生命周期验收；本次没有设施操作。
-
-[v0.1.0-rc.24](https://github.com/c1emon/iaas/releases/tag/v0.1.0-rc.24) 已发布，源码 `5d7fefc0b192ca5cc13edbe042dcbceb86bee4b9`。[发布工作流](https://github.com/c1emon/iaas/actions/runs/36980219960) 7 个 jobs 全部成功，两个平台匿名固定 digest 拉取及 capabilities 调用通过。两个 launcher SHA256SUMS 通过，macOS `--version` 返回 `iaas v0.1.0-rc.24`。
-
-infra-ops 当前固定镜像：`ghcr.io/c1emon/iaas-runtime@sha256:47987627043e804e0550dd788fcd7e24fe17fca64176d77fe6c35c3fa1bfdc1f`。
+```text
+ghcr.io/c1emon/iaas-runtime@sha256:5857d1f2ede24e2dab4c2c5c3679c63e8d45bbff20f74398e5a6ad4f35fc2bfe
+```
 
 | 产物 | 实际摘要 |
 | --- | --- |
-| runtime manifest | `sha256:47987627043e804e0550dd788fcd7e24fe17fca64176d77fe6c35c3fa1bfdc1f` |
-| linux/amd64 | `sha256:8e7588abeca7b2f47e93b9a1d92ef6b83979f86fa5cf200c0a34a76c9a1036e0` |
-| linux/arm64 | `sha256:562069f99808a49c3b759ae6cd4b6009c76d23e2e150fa6df22dc68cd0ee96c9` |
-| iaas-darwin-arm64 SHA256 | `6e6527671f0033143863173dbd164c9ac5405f176878392c8714f4ddb6465a36` |
-| iaas-linux-amd64 SHA256 | `5c8578eb3c8f009f49837465f80c573a06b0c5509d8569f2254e65d1c8e94251` |
+| runtime manifest | `sha256:5857d1f2ede24e2dab4c2c5c3679c63e8d45bbff20f74398e5a6ad4f35fc2bfe` |
+| linux/amd64 | `sha256:8ac86ae2ecd18e81ad652bb6529915dc09f42c30ec10fd16536983c97bf1bb79` |
+| linux/arm64 | `sha256:bed6ec468b96f9e5e3db4dbd0e4e089b6ec948db07ef945a53c2ccd1ef4e10c4` |
+| iaas-linux-amd64 SHA256 | `a2f0c8972d67757f0ccf25688f235ae6977b8e80787d792ee3824386af6d56b6` |
+| iaas-darwin-arm64 SHA256 | `6939b71afa6e3ed2e1e5b049405a98b692eb2e3386e698ab3443134559f061ff` |
 
-## 前次固定版本 rc.22
+两个平台各 2132 passed、4 skipped；launcher 转移后的保存计划准入在实际待发布镜像中各 1 passed（断网），匿名固定 digest 拉取和 capabilities 调用通过。两个 launcher 已下载核 SHA256SUMS，macOS `--version` 返回 `iaas v0.1.0-rc.25`。
 
-[v0.1.0-rc.22](https://github.com/c1emon/iaas/releases/tag/v0.1.0-rc.22) 已发布，源码 `00930938019d3776888d57a519584681fd749725`。[发布工作流](https://github.com/c1emon/iaas/actions/runs/36950707343) 7 个 jobs 全部成功；amd64/arm64 各 2112 passed、4 skipped，两个平台匿名固定 digest 拉取及 capabilities 调用通过。两个 launcher SHA256SUMS 通过，macOS `--version` 返回 `iaas v0.1.0-rc.22`。
+最近修正的本地验证为 147 项定向 Python、Ruff、Pyright 0 errors、4/4 import contracts、Go launcher 全套及 OpenSpec strict；覆盖未入池创建后删除、已有 VM 更新、真实池权限不足拒绝、软件 plan/apply/verify 删除路径和原材料字节保留。不同阶段测试集合不相加为覆盖数量。
 
-rc.22 固定镜像 `ghcr.io/c1emon/iaas-runtime@sha256:fd9d1eeb0b0a86d61d60f369ca7fdf1370a9fa7a090d8a1a96d6baea293e6137`。
+当前合同：publication request v2、preview/result/record v3；acceptance request/result v3、preview v1；shared one-shot admission v2；recovery request/preview/result v1；snippet cleanup request/result v2。rc.19 acceptance v2 仅作为恢复原证据读取，不接受新 start 回退。
 
-rc.22 定向允许恢复合同的 pending_record_id、reservation_id 保留原始冒号命名空间；plan/execution ID 限制及原 journal/caller 精确绑定不变。三个 recovery v1 schema 已同步。交接目录中的真实 request 校验和 load_original 离线通过，原始文件字节未改动；本地 56 项恢复回归、Ruff、Pyright 通过。保留 rc.21 的当前任务未知阻断和完整 VM 权限预检。现场恢复仍由 infra-ops 承接。
+节点需按当前操作说明安装匹配的受限 upload/delete helper 和 wrapper-only sudo，冻结 SSH key/known_hosts。普通 VM pool 可选，provider 的空字符串/null均表示未入池；验收临时 VM pool 必填。当前活动无法核清阻断清理，历史 guest-exec 缺关联可由新限定批准处置；原结果不改写。
 
-| 产物 | 实际摘要 |
-| --- | --- |
-| runtime manifest | `sha256:fd9d1eeb0b0a86d61d60f369ca7fdf1370a9fa7a090d8a1a96d6baea293e6137` |
-| linux/amd64 | `sha256:9159583beb36d3c3645bb17a1f5c846871490221c66f476b4b37ae8684783b93` |
-| linux/arm64 | `sha256:3a726699d7949bf777eb21ded75dec3927fd73561c5180743631bf7764e29747` |
-| iaas-darwin-arm64 SHA256 | `c04465c872309727ea4223875937a361f8965fbd098ddf4b58a25a400309c3ff` |
-| iaas-linux-amd64 SHA256 | `85c83a5497a5b60ca40251f73ff403a6c87422e5eacc5cf4c12f751d59e091f3` |
+## 关键版本历史
 
-## 前次固定版本 rc.21
+| 版本 / 源码 | 关键变化或失败 | 发布与验证 |
+| --- | --- | --- |
+| rc.19 | 原 run-120-1 guest exec 权限403与遗留未知；保留原验收证据，不因后续清理改为成功 | 前置代理/截止交付见归档 change；不作为当前执行配置 |
+| [rc.20](https://github.com/c1emon/iaas/releases/tag/v0.1.0-rc.20) / `904e92e` | pool/VMID、当前模板与恢复合同首次集中交付；不含之后的审核修正 | [36862950966](https://github.com/c1emon/iaas/actions/runs/36862950966) 成功；每平台2093 passed、4 skipped |
+| [rc.21](https://github.com/c1emon/iaas/releases/tag/v0.1.0-rc.21) / `92b85aa` | 当前UPID/PID/helper活动未知必须阻断；普通VM完整必要权限预检恢复 | [36890195933](https://github.com/c1emon/iaas/actions/runs/36890195933) 成功；每平台2105 passed、4 skipped |
+| [rc.22](https://github.com/c1emon/iaas/releases/tag/v0.1.0-rc.22) / `0093093` | pending/reservation冒号引用原值保留；原journal精确绑定不变 | [36950707343](https://github.com/c1emon/iaas/actions/runs/36950707343) 成功；每平台2112 passed、4 skipped |
+| [rc.23](https://github.com/c1emon/iaas/releases/tag/v0.1.0-rc.23) / `829c092` | review.json传输、discovery与存储诊断修正；新增镜像测试漏传UID:GID | [36968614808](https://github.com/c1emon/iaas/actions/runs/36968614808) 失败，未形成可用的新镜像交付 |
+| [rc.24](https://github.com/c1emon/iaas/releases/tag/v0.1.0-rc.24) / `5d7fefc` | 镜像测试与正式launcher使用相同UID:GID；不降低protected_file校验 | [36980219960](https://github.com/c1emon/iaas/actions/runs/36980219960) 成功；每平台2124 passed、4 skipped，实际镜像准入通过 |
+| rc.25 / `6cec8ad` | 普通VM provider空pool语义统一，真实池权限、保存计划/批准和验收必填pool不放宽 | 当前固定交付，详见上节 |
 
-[v0.1.0-rc.21](https://github.com/c1emon/iaas/releases/tag/v0.1.0-rc.21) 已发布，源码 `92b85aaa9059a4f4be9ce8b337ca5096ec29668b`。[发布工作流](https://github.com/c1emon/iaas/actions/runs/36890195933) 7 个 jobs 全部成功；amd64/arm64 各 2105 passed、4 skipped，两个平台匿名固定 digest 拉取及 capabilities 调用通过。两个 launcher 已下载核 SHA256SUMS，macOS `--version` 返回 `iaas v0.1.0-rc.21`。
+历史完整 manifest/platform/launcher 摘要保留在对应 Release 的 SHA256SUMS、CI及本文件 Git 历史中，不重复展开多份校验表。rc.20–22、24的匿名消费核验均已完成；旧版本的成功不授权当前重放旧计划。
 
-infra-ops 使用固定镜像 `ghcr.io/c1emon/iaas-runtime@sha256:a6427773e6afcfb35416e281720179dd618849c4130ff48e473c0defdf1d57a7`。
+## 结论限制
 
-| 产物 | 实际摘要 |
-| --- | --- |
-| runtime manifest | `sha256:a6427773e6afcfb35416e281720179dd618849c4130ff48e473c0defdf1d57a7` |
-| linux/amd64 | `sha256:cf090ecab484e3a54f031e77a2618383846dd67ab58bb0d50808fe302ae95135` |
-| linux/arm64 | `sha256:b55e74b7914a74b2f79fe038d12be8d8cd150ec65c53ab7358622a8b8f736618` |
-| iaas-darwin-arm64 SHA256 | `e9f7126050b7ce4201438700e023cc0eaf05b7577310c77b6303b266e1ebfa4c` |
-| iaas-linux-amd64 SHA256 | `ff92c474ac6b20c55a13aaabfcf4c03d8271aa6d40c5da0edc602cffe513935f` |
+上述 CI、Go/Python fixtures、helper本地测试与镜像准入均为软件/产物验证，不是当前现场资源观察。rc.24之前的本地全套曾有一条macOS进程组 PermissionError，单独重跑通过；不能将其表述为该轮全套无失败。
 
-当前合同：publication request v2、preview/result/record v3；acceptance request/result v3、preview v1；acceptance/recovery one-shot admission v2；recovery request/preview/result v1。新 start 不接受旧合同；rc.19 原验收 v2 仅供恢复读取。
-
-节点需安装本版本 upload/delete helper 和 wrapper-only sudo 规则，并固定 SSH key/known_hosts。验收池权限继承的只读编译使用节点原生 PVE 权限模块；不写池或 ACL。普通 VM 创建恢复完整必要权限预检，未来入池后的权限无法证明时明确拒绝；publication 的预检保持原范围。已有 VM 的 pool 改为空值受 provider 0.111.1 限制，准入拒绝；新 VM 可不指定 pool。
-
-rc.21 已发布的适度工程与审核修正：仅缺失关联的旧 guest-exec 历史未知可由新批准限定处置；preview 显示 administrator_decision，沿用现有批准，不重建 trace、不新增门禁。当前任务查询失败/异常、helper或旧恢复活动无法核清必须阻断；归属、引用与本次响应丢失保护保留；完整 helper 引用无需重复全局 API 可见性，旧结果允许部分/unknown 信息，历史恢复链不要求补齐。独立 snippet 清理不依赖无关旧任务终态。rc.20 发布产物仍是下述原源码，不包含本次调整。
-
-本次本地验证：Python 全套 1808 passed、2 skipped；最后补充后的定向回归 90 passed；Pyright 0 errors、Ruff、4/4 import contracts 和 OpenSpec strict 通过。完整 release CI 结果以上述两平台数据为准。软件 fixtures 不代表现场验收。
-
-## 前次 rc.20 交付记录（不含上述修正）
-
-软件验证：完整 Python 1792 passed、2 skipped；全项目 Pyright 0 errors、Ruff 通过、4 个 import contracts 保持；Go 全套通过；OpenTofu 模块 fmt 与锁定 provider fixture init/validate 通过；OpenSpec strict 通过。API/helper、local/DinD 传输均为软件 fixture，不能作为真实 PVE 或共享环境验收。
-
-固定版本 [v0.1.0-rc.20](https://github.com/c1emon/iaas/releases/tag/v0.1.0-rc.20) 已发布；源码 `904e92ef81256263b48ee4f2c5c539a0b0180ee1`。[release 工作流](https://github.com/c1emon/iaas/actions/runs/36862950966) 全部成功，两个平台各自 `make check` 为 2093 passed、4 skipped，并完成匿名 digest 拉取及 capabilities 平台调用。当前合同字段另由源码导出和 launcher 合同/分发测试验证。
-
-| 产物 | 实际摘要 |
-| --- | --- |
-| runtime manifest | `sha256:4e2eb186b1d3123f6e3b492d117ecf81e2458e8de35f175fd9759de8e020b117` |
-| linux/amd64 | `sha256:4aefdd7bc916fef6463ef36b7d52825b7b6e46d3a3dedcafc5884ef581beda81` |
-| linux/arm64 | `sha256:09d3227e0b749327c1fcef4067265594159eda84dc8854eda3f105a49acc5dea` |
-| iaas-darwin-arm64 SHA256 | `4337b83d709ec5ef18a526ec1ca32d53b22b3aff4558106b3d60f5e908923cd3` |
-| iaas-linux-amd64 SHA256 | `52000c4b4f2314b78d97fe88c4d897fac8480e44ce55550855d6c31830d566d5` |
-
-固定镜像为 `ghcr.io/c1emon/iaas-runtime@sha256:4e2eb186b1d3123f6e3b492d117ecf81e2458e8de35f175fd9759de8e020b117`。已读取 registry descriptor 核 manifest/platform 摘要；下载两个 launcher 并核 SHA256SUMS，macOS launcher `--version` 返回 `iaas v0.1.0-rc.20`。正式恢复输入与命令见 [操作说明](../../../docs/operations/pve-acceptance-recovery.md)。
-
-task8.1 由 infra-ops 承接现场 plan、新限定批准与精确清理；IaaS 不执行现场操作，也不以该外部任务未完成阻断软件交付。原验收仍未通过，现场资源存在性尚未验证。缺失旧 guest-exec 关联可保留 unknown；当前任务/恢复活动无法核清则不得清理。
-
-2026-10-02 审核修正已随 rc.21 发布：恢复当前任务查询失败与异常状态的零写入阻断，历史 guest-exec 缺关联仍可限定处置；恢复普通 VM 全部必要权限预检。Python 全套 1808 passed、2 skipped；Pyright、Ruff、4/4 import contracts 与 OpenSpec strict 通过。
+调用方已记录限定恢复、9005验收及普通VM/专属snippet收尾。IaaS仅引用该范围结论，不把关机普通VM生命周期扩大为guest/业务验收，也不据此认定日常root接管、生产资格或完全无人工恢复的正常路径通过。原始执行材料仍由受保护存储保留。

@@ -1,5 +1,7 @@
 # Runtime 验证范围与特殊失败边界
 
+当前 PVE 固定产物与验收证据边界见[验收材料入口](operations/pve-lifecycle-acceptance.md)。
+
 本文汇总 2026-09-11 Runtime 适配及后续修正的历史验证范围，不代表当前发布或目标环境状态。
 使用方法见[启动器指南](runtime-launcher.md)与[环境配置](runtime-configuration.md)。
 常规测试结果以对应提交的测试报告和 CI 为准。

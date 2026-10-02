@@ -19,8 +19,6 @@
 - [x] 3.1 更新 publication request/v2、preview/result/record/v3，绑定可选 pool，在原生创建请求直接指定池并在结果中核实际归属；用不入池/既有池/不存在或无权池/计划池更改拒绝的 fake API 测试和合同 fixture 验证。
 - [x] 3.2 将普通 VM、验收和当前 snippet acceptance-origin 消费校验统一到最新模板/验收合同，更新 schemas/examples/docs，拒绝旧 start 输入且不改 state；运行合同生成一致性及模板消费者定向回归。
 
-  软件证据：合同/验收执行/snippet 消费组合 123 passed；合同与验收执行 Pyright 0 errors。v3 的 plan/start 及固定发布已交付。
-
 ## 4. 验收 plan、执行与诊断
 
 - [x] 4.1 增加 action=accept 的离线 check/联网 plan、acceptance request/result v3 和 preview/v1，绑定 pool、验收区间、具体 VMID、runtime 与 deadlines；用无凭据离线成功、缺字段、摘要/镜像/池/范围/截止冲突和零设施写入 plan 测试验证并更新输入文档。
@@ -28,7 +26,6 @@
 - [x] 4.3 引入脱敏的明确拒绝和未知请求结果，逐请求消解活动并保留历史 issued；用 guest exec 权威403立即失败且允许安全清理、另有活动未知仍拒绝、超时/丢响应仍unknown与零清理的测试验证，更新固定reason codes和结果示例。
 - [x] 4.4 修正 source_changed/source_snapshot_missing/source_query_failed/source_evidence_insufficient，并保留原始 failure_stage/reason；用容量失败无快照、确实身份变化和查询失败测试验证结果与 unknown-first 聚合，更新源一致性说明。
 
-  软件证据：`uv run pytest tests/python/test_pve_template_acceptance.py -q`（30 passed）；`uv run pyright src/iaas/pve_template/acceptance.py`（0 errors）。无现场设施操作。
 - [x] 4.5 在 plan/start 克隆前输出总磁盘上限、所需总量与必要明细，检查目标存储容量且继续克隆后核验；用40GiB+4MiB、EFI/TPM代表盘、缺大小证据/存储容量不足测试验证不自动抬高上限，更新容量口径和新计划示例。
 
 ## 5. 原验收受控恢复
@@ -50,22 +47,18 @@
 
 ## 8. infra-ops 外部现场恢复跟踪（不作 IaaS 软件交付门禁）
 
-2026-10-02 已明确由 infra-ops 承接本项：只读生成计划、取得新限定批准、执行精确清理。IaaS 仅交付恢复能力和固定版本，不执行现场操作，不将外部未完成状态作为软件关闭门禁。
+本项由调用方承接，IaaS 仅交付恢复能力和固定版本。下列完成状态引用调用方记录，不表示 IaaS 执行了设施操作。
 
-- [ ] 8.1 原材料已提供；收到当前限定清理批准且现场条件就绪后，固定包含本次调整的新版digest按正式入口核清run-120-1并精确清理VM798/两盘/snippet；历史403/trace仅辅助，不要求重建。记录实际逐项存在性及原验收仍未通过，不重放原操作。资料/权限不足时保留unknown与本项未完成，不阻断软件交付。
+- [x] 8.1 调用方记录新恢复 `recover-run-120-1-20261002-01` 已精确清理 VM798、两盘和 snippet；原验收仍未知，模板9004未晋升。历史403仅辅助，不要求重建trace。结论范围及来源见[材料入口](../../../docs/operations/pve-lifecycle-acceptance.md)。
 
 ## 9. 适度工程调整与审核修正
 
 - [x] 9.1 仅无UPID/PID的旧guest-exec关联未知可在preview中交由管理员使用现有新批准处置；取消历史写入已知、完整递归恢复链及旧结果全资源owned的硬门禁，不要求重建trace；保留活动无法核清/当前冲突和本次响应丢失保护。
 - [x] 9.2 完整helper引用无需重复全局API视图；不存在的资源不要求删除权限；独立snippet清理不依赖无关旧任务终态；普通VM创建恢复完整必要权限预检，未来入池权限不足或无法证明则拒绝。
-- [x] 9.3 同步规格、合同说明与操作文档；Python全套1802 passed、2 skipped，最后补充与调整后的定向回归116 passed；Pyright 0 errors、Ruff和import contracts通过、OpenSpec strict通过。测试为软件fixtures，无现场操作；rc.20不包含这次后续调整。
-
-软件验证：本地 Python 1792 passed、2 skipped；全项目 Pyright 0 errors、Ruff及4/4 import contracts通过；Go含实际runtime集成通过；OpenTofu锁定provider0.111.1的fixture init/validate、模块fmt及OpenSpec strict通过。GitNexus已重新索引并完成提交前检测；代码阶段风险critical，以调用链/源码和回归测试核边界，不将graph零影响当作验收。
-
-固定 rc.20：release工作流36862950966全部成功；amd64/arm64各2093 passed、4 skipped；匿名digest拉取及capabilities平台调用、registry manifest/platform摘要、两个launcher SHA256SUMS和macOS版本输出已核。实际值见[delivery.md](delivery.md)。API/helper与local/DinD传输均为软件fixture，没有现场设施结论；仅8.1未完成。
+- [x] 9.3 同步规格、合同说明与操作文档；范围相符的 Python、Pyright、Ruff、import contracts 与 OpenSpec strict 通过。软件 fixtures 不替代现场结果，当前固定版本与关键历史验证见 delivery.md。
 
 - [x] 9.4 修正 infra-ops 审核发现的两处P1：当前UPID查询失败/异常或恢复活动未知阻断全部清理写入；仅缺失旧guest-exec关联可由现有新批准处置；普通VM创建恢复完整必要权限预检。软件反例与回归通过，不执行设施操作。
-- [x] 9.5 发布包含审核修正的固定rc.21镜像及launcher，核实际digest/资产与CI消费结果，并同步交接给infra-ops；现场8.1仍为外部未完成。
+- [x] 9.5 发布包含审核修正的固定rc.21镜像及launcher，核实际digest/资产与CI消费结果，并同步交接给infra-ops；历史产物与验证见 delivery.md。
 
 ## 10. rc.22 现场生命周期缺口修正
 
@@ -76,6 +69,4 @@
 ## 11. rc.24 普通 VM provider 空 pool 修正
 
 - [x] 11.1 普通 VM provider 的 pool_id="" 与 null 在权限及保存计划 policy 比较中语义一致，不改写 native/state/批准材料；保留真实池权限、已有池移除拒绝及验收必填池。147 项定向回归、软件 plan/apply/verify 删除路径、Ruff、Pyright、4/4 import contracts、Go 全套通过。
-- [ ] 11.2 发布配套 rc.25 runtime/launcher，核 CI、固定 digest、版本与 checksum；现场 VM799 删除及专属 snippet 清理由 infra-ops 用新计划/新批准执行，模板9005保留。
-
-rc.21 实际交付：源码92b85aa，工作流36890195933全部成功；amd64/arm64各2105 passed、4 skipped，两个平台匿名digest消费通过；registry manifest/platform摘要、launcher SHA256SUMS与macOS版本输出均核验。固定digest与资产值见delivery.md。现场8.1交由infra-ops，仍未执行。
+- [x] 11.2 配套 rc.25 runtime/launcher 已发布并核验 CI、固定 digest、版本与 checksum；完整产物与验证见[delivery](delivery.md)，调用方现场结论见材料入口。
