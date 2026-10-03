@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Any
+from uuid import uuid4
 from pathlib import Path
 
 from iaas.common.errors import require
@@ -26,7 +27,8 @@ def build_preview(request: dict, observed: dict, *, image_digest: str) -> dict:
     request = validate_acceptance_request(request)
     require(request['runtime'] == {'image_digest': image_digest}, 'acceptance plan runtime conflicts')
     require(observed.get('readiness', {}).get('status') == 'ready', 'acceptance admission incomplete')
-    preview = {'kind': 'pve-template-acceptance-preview', 'schema_version': 1,
+    preview = {'kind': 'pve-template-acceptance-preview', 'schema_version': 2,
+               'clone_marker': 'iaas-acceptance-clone:' + str(uuid4()),
                'fixed_input': request, 'request_digest': canonical_digest(request),
                'runtime': request['runtime'], 'target': request['target'],
                'observed': observed, 'facility_writes': 'none'}
@@ -40,10 +42,10 @@ def validate_preview(value: Any, *, request: dict | None = None) -> dict:
     except Exception:
         raise ValueError('invalid acceptance preview contract') from None
     require(isinstance(value, dict) and set(value) == {'kind', 'schema_version', 'fixed_input',
-            'request_digest', 'runtime', 'target', 'observed', 'facility_writes', 'preview_digest'},
+            'request_digest', 'runtime', 'target', 'observed', 'facility_writes', 'preview_digest', 'clone_marker'},
             'invalid acceptance preview')
     require(value['kind'] == 'pve-template-acceptance-preview' and type(value['schema_version']) is int
-            and value['schema_version'] == 1 and value['facility_writes'] == 'none', 'invalid acceptance preview version/effects')
+            and value['schema_version'] == 2 and value['facility_writes'] == 'none', 'invalid acceptance preview version/effects')
     fixed = validate_acceptance_request(value['fixed_input'])
     require(value['request_digest'] == canonical_digest(fixed) and value['target'] == fixed['target']
             and value['runtime'] == fixed['runtime'], 'acceptance preview input binding conflicts')

@@ -142,3 +142,17 @@ def test_environment_examples_select_exact_readonly_maps(tmp_path, mode, operati
         effects = capabilities()['execution_modes']['pve-template']['recover']['observe']
         assert effects['network'] is False
         assert effects['infrastructure_write'] is False
+
+
+def test_declared_pre_registration_mode_validates_core_materials_offline():
+    request = json.loads((EXAMPLES / 'pre-registration-request.json').read_text())
+    request['evidence_mode'] = 'pre_registration'
+    assert validate_recovery_request(request)['evidence_mode'] == 'pre_registration'
+    for mutate in (lambda value: value.update(evidence_mode='unknown'),
+                   lambda value: value['original_materials'].pop('journal'),
+                   lambda value: value['full_original_resources']['vm'].update(smbios_uuid='invalid'),
+                   lambda value: value['full_original_resources'].update(volumes=[])):
+        changed = deepcopy(request)
+        mutate(changed)
+        with pytest.raises(ValueError):
+            validate_recovery_request(changed)

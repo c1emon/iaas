@@ -86,3 +86,15 @@ def test_40gib_total_limit_is_not_increased_for_cloudinit():
     assert capacity['total_required_bytes'] == 42_953_867_264
     assert capacity['disk_limit_bytes'] == 40 * 1024 ** 3
     assert all(method == 'GET' for method, _ in api.calls)
+
+
+def test_each_plan_generates_fresh_preview_bound_clone_marker():
+    value = request()
+    first = mod.build_preview(value, {'readiness': {'status': 'ready'}}, image_digest=value['runtime']['image_digest'])
+    second = mod.build_preview(value, {'readiness': {'status': 'ready'}}, image_digest=value['runtime']['image_digest'])
+    assert first['clone_marker'] != second['clone_marker']
+    assert first['preview_digest'] != second['preview_digest']
+    changed = deepcopy(first)
+    changed['clone_marker'] = second['clone_marker']
+    with pytest.raises(ValueError):
+        mod.validate_preview(changed)

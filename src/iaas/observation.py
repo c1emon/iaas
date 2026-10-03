@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import math
 import re
 import time
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 
 @dataclass(frozen=True)
@@ -27,11 +27,14 @@ def utc_text(value: float) -> str:
 class ObservationBudget:
     """One read-only/task window, never renewed by a probe or substage."""
     def __init__(self, seconds: float = 120, *, cutoff: float | None = None,
-                 source: str = 'internal-default', utc=time.time, monotonic=time.monotonic):
+                 source: str = 'internal-default', utc=None, monotonic=None):
         if not math.isfinite(seconds) or seconds <= 0:
             raise ValueError('observation timeout must be finite and positive')
+        utc, monotonic = utc or time.time, monotonic or time.monotonic
         self.utc, self.monotonic = utc, monotonic
         self.started_at, now = utc(), monotonic()
+        if not math.isfinite(self.started_at) or not math.isfinite(now):
+            raise ObservationExpired('clock_unavailable')
         self.cutoff = min(self.started_at + seconds, cutoff) if cutoff is not None else self.started_at + seconds
         self.bound = now + self.cutoff - self.started_at
         self.source = source
@@ -56,7 +59,7 @@ class ObservationBudget:
 
 # Domain adapters pass only decision facts. Arbitrary payload/exception text is
 # never copied, even when nested under expected/actual.
-_FIELDS = frozenset({'vmid', 'volid', 'size', 'size_bytes', 'capacity', 'uuid', 'smbios_uuid',
+_FIELDS = frozenset({'kind', 'resource_id', 'vmid', 'volid', 'size', 'size_bytes', 'capacity', 'uuid', 'smbios_uuid',
                      'upid', 'pid', 'node', 'storage', 'pool', 'slot', 'slots', 'volumes',
                      'status', 'exitstatus', 'exists', 'complete', 'registered', 'activity',
                      'expected', 'actual', 'reason', 'category', 'http_status', 'template',
@@ -65,7 +68,7 @@ _FIELDS = frozenset({'vmid', 'volid', 'size', 'size_bytes', 'capacity', 'uuid', 
                      'root_disk_bytes', 'root_partition_bytes', 'root_filesystem_bytes',
                      'machine_id_initialized', 'instance_id', 'addresses', 'default_gateways',
                      'nameservers', 'clone_marker', 'ownership', 'existence', 'inventory_complete',
-                     'cores', 'memory', 'power', 'checks'})
+                     'cores', 'memory', 'power', 'checks', 'observed_at', 'submitted_at'})
 
 
 def safe_facts(value: dict) -> dict:
@@ -73,16 +76,18 @@ def safe_facts(value: dict) -> dict:
         if depth > 6:
             return None
         if isinstance(item, dict):
-            return {key: clean(val, depth + 1) for key, val in item.items()
+            return {key: ('non_ok' if key == 'exitstatus' and val not in ('OK', 'ERROR', 'unexpected status', None) else clean(val, depth + 1)) for key, val in item.items()
                     if key in _FIELDS or re.fullmatch(r'(?:scsi|virtio|sata|ide|efidisk|tpmstate)\d+', key)}
         if isinstance(item, (list, tuple)):
             return [clean(val, depth + 1) for val in item[:64]]
-        if item is None or isinstance(item, (bool, int, float)):
+        if isinstance(item, float):
+            return int(item) if math.isfinite(item) and item.is_integer() else None
+        if item is None or isinstance(item, (bool, int)):
             return item
         if isinstance(item, str):
             return item[:512] if '://' not in item and '\n' not in item else '[excluded]'
         return None
-    return clean(value)
+    return cast(dict, clean(value))
 
 
 class EvidenceSink:
@@ -110,9 +115,10 @@ class EvidenceSink:
 
 def observe(probe: Callable[[float], Any], classify: Callable[[Any], Decision], budget: Any,
             phase: str, check: str, association: dict, sink=None, *, interval: float = 1,
-            retry_error: Callable[[Exception], Decision] | None = None, sleep=time.sleep,
-            utc=time.time) -> Decision:
+            retry_error: Callable[[Exception], Decision] | None = None, sleep=None,
+            utc=None) -> Decision:
     """Only a domain-admitted read probe is accepted; no dispatch callback."""
+    sleep, utc = sleep or time.sleep, utc or time.time
     attempt = 0
     last: dict = {}
     while True:
@@ -140,6 +146,11 @@ def observe(probe: Callable[[float], Any], classify: Callable[[Any], Decision], 
         facts = safe_facts(decision.evidence)
         if facts and 'category' not in facts:
             last = facts
+        try:
+            budget.remaining(phase)
+        except Exception:
+            if decision.status != 'failed':
+                decision = Decision('unknown', 'observation_deadline_expired', facts)
         if sink:
             row = {'phase': phase, 'check': check, 'association': safe_facts(association),
                    'attempt': attempt, 'observed_at': observed_at, 'status': decision.status,
@@ -155,8 +166,12 @@ def observe(probe: Callable[[float], Any], classify: Callable[[Any], Decision], 
         try:
             sleep(min(interval, budget.remaining(phase)))
         except Exception:
-            # Re-enter once to freeze terminal evidence without issuing a probe.
-            continue
+            decision = Decision('unknown', 'observation_wait_interrupted', last)
+            if sink:
+                sink({'phase': phase, 'check': check, 'association': safe_facts(association),
+                      'attempt': attempt, 'observed_at': utc_text(utc()), 'status': decision.status,
+                      'reason': decision.reason, 'evidence': last})
+            return decision
 
 
 def task_decision(row: Any) -> Decision:

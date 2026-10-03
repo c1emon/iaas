@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import Field, model_validator
 
 from iaas.pve_acceptance_contracts import (
+    StopDiagnostics,
     Contract, Deadlines, Digest, EvidenceRef, Identifier, RuntimeIdentity, SHA256,
     Target, VMID, canonical_digest,
 )
@@ -94,6 +95,7 @@ class PreviousRecovery(Contract):
 class RecoveryRequest(Contract):
     kind: Literal['pve-acceptance-recovery-request']
     schema_version: Literal[1]
+    evidence_mode: Literal['registered', 'pre_registration'] | None = Field(default=None, exclude_if=lambda value: value is None)
     target: Target
     cluster_scope: Identifier
     runtime: RuntimeIdentity
@@ -121,9 +123,28 @@ class RecoveryRequest(Contract):
         return self
 
 
+class RecoveryProof(Contract):
+    mode: Literal['registered', 'pre_registration']
+    request_digest: Digest
+    scope_digest: Digest
+    clone_marker: str | None = None
+    smbios_uuid: str | None = None
+    slots: dict[str, str] | None = None
+    clone_upid: str | None = None
+
+    @model_validator(mode='after')
+    def candidate_proof(self):
+        if self.mode == 'pre_registration':
+            if not (self.clone_marker and self.smbios_uuid and self.slots and self.clone_upid):
+                raise ValueError('pre-registration proof is incomplete')
+            UUID(self.smbios_uuid)
+        return self
+
+
 class RecoveryPreview(Contract):
     kind: Literal['pve-acceptance-recovery-preview']
-    schema_version: Literal[1]
+    schema_version: Literal[2]
+    proof_bindings: RecoveryProof
     action: Literal['recover']
     fixed_input: RecoveryRequest
     request_digest: Digest
@@ -134,6 +155,8 @@ class RecoveryPreview(Contract):
 
     @model_validator(mode='after')
     def digest(self):
+        if self.proof_bindings.scope_digest != canonical_digest(self.fixed_input.full_original_resources.model_dump(exclude_none=True)):
+            raise ValueError('recovery proof scope conflicts')
         if self.target != self.fixed_input.target or self.runtime != self.fixed_input.runtime:
             raise ValueError('recovery preview placement/runtime conflicts')
         if canonical_digest(self.fixed_input.model_dump(exclude_none=True)) != self.request_digest:
@@ -147,7 +170,8 @@ class RecoveryPreview(Contract):
 
 class RecoveryResult(Contract):
     kind: Literal['pve-acceptance-recovery-result']
-    schema_version: Literal[1]
+    schema_version: Literal[2]
+    stop_diagnostics: StopDiagnostics
     execution_id: Identifier
     original_execution_id: Identifier
     recovery_of: Identifier
@@ -201,7 +225,11 @@ class RecoveryResult(Contract):
 
 def _validate(model, value: Any) -> dict[str, Any]:
     try:
-        return model.model_validate(value).model_dump(exclude_none=True)
+        validated = model.model_validate(value)
+        result = validated.model_dump(exclude_none=True)
+        if model is RecoveryResult:
+            result['stop_diagnostics'] = validated.stop_diagnostics.model_dump()
+        return result
     except Exception:
         raise ValueError(f'invalid {model.__name__} contract') from None
 
@@ -212,7 +240,8 @@ def validate_recovery_request(value: Any) -> dict[str, Any]:
 
 def build_recovery_preview(value: Any, reconciliation: dict[str, Any]) -> dict[str, Any]:
     request = validate_recovery_request(value)
-    body = {'kind': 'pve-acceptance-recovery-preview', 'schema_version': 1, 'action': 'recover',
+    body = {'kind': 'pve-acceptance-recovery-preview', 'schema_version': 2, 'action': 'recover',
+            'proof_bindings': reconciliation['proof_bindings'],
             'fixed_input': request, 'request_digest': canonical_digest(request), 'target': request['target'],
             'runtime': request['runtime'], 'reconciliation': reconciliation}
     body['preview_digest'] = canonical_digest(body)

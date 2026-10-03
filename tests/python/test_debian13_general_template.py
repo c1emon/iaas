@@ -66,8 +66,11 @@ def test_build_capacity_upgrade_and_failure_before_artifact(tmp_path, monkeypatc
     execution = _execution(tmp_path)
     request = _request(firmware='bios', checks={'required': ['format', 'disk-size', 'self-contained'], 'optional': []})
     request['customization']['package_upgrade'] = True
-    monkeypatch.setattr(image, '_require_executor', lambda resources: {'accelerator': 'kvm'})
-    monkeypatch.setattr(image, '_download_base', lambda request, path, resources: path.write_bytes(b'base'))
+    monkeypatch.setattr(image, '_executor_check', lambda resources: {
+        'accelerator': 'kvm', 'supported_platform': True, 'supported_kvm': True, 'enough_disk': True})
+    monkeypatch.setattr(image, '_memory_observation', lambda resources: {
+        'status': 'unknown', 'requested_memory_mib': resources['memory_mib'], 'observations': []})
+    monkeypatch.setattr(image, '_download_base', lambda request, path, resources, **kwargs: path.write_bytes(b'base'))
     monkeypatch.setattr(image, '_require_self_contained', lambda path, *args: {
         'format': 'qcow2', 'virtual-size': base_size if path.name == 'base.img' else final_size})
     monkeypatch.setattr(image, '_make_seed', lambda execution, directory, **kwargs: (directory / 'seed', directory / 'key'))
@@ -101,6 +104,7 @@ def test_build_capacity_upgrade_and_failure_before_artifact(tmp_path, monkeypatc
         assert calls[0]['PKR_VAR_package_upgrade'] == 'true'
     if success:
         artifact = json.loads((task / 'artifact.json').read_text())
+        assert json.loads((task / 'task.json').read_text())['resources']['memory_observation']['status'] == 'unknown'
         assert artifact['disk']['virtual_size_bytes'] == 8 * GIB
         assert all(check['status'] == 'passed' for check in artifact['checks'])
 
@@ -114,8 +118,8 @@ def test_publish_no_nic_is_created_verified_and_recorded(tmp_path, monkeypatch):
     outputs = Outputs(tmp_path / 'outputs')
     execution = SimpleNamespace(outputs=outputs, environ={'PVE_ARTIFACT_URL': request['source']['object_ref']})
     monkeypatch.setattr(pve, '_client', lambda *args: api)
-    monkeypatch.setattr(pve, '_download', lambda locator, path, digest, size: path.write_bytes(b'disk'))
-    monkeypatch.setattr(pve, '_verify_qcow2', lambda *args: None)
+    monkeypatch.setattr(pve, '_download', lambda locator, path, digest, size, **kwargs: path.write_bytes(b'disk'))
+    monkeypatch.setattr(pve, '_verify_qcow2', lambda *args, **kwargs: None)
     result = pve._publish(SimpleNamespace(), execution, validate_publish_request(request), preview, 'no-nic')
     create = next(fields for method, path, fields in api.calls if method == 'POST' and path.endswith('/qemu'))
     assert 'net0' not in create
@@ -260,8 +264,12 @@ def test_bounded_general_clone_growth_network_and_cleanup(tmp_path, fault):
     baseline = copy.deepcopy(api.source)
     original = tmp_path / 'original'
     journal = begin(original, 'accept', value, admission(value), 'accept-001', DIGEST)
-    result = Acceptance(api, value, journal, original, Snippets()).execute()
-    assert result['overall'] == ('passed' if not fault else 'failed')
+    from iaas.pve_template.deadlines import DeadlineBudget
+    budget = DeadlineBudget(value['deadlines'])
+    if fault:
+        budget.limit('work', .3)
+    result = Acceptance(api, value, journal, original, Snippets(), budget).execute()
+    assert result['overall'] == ('passed' if not fault else 'failed' if fault == 'bad-dns' else 'unknown')
     assert api.source == baseline
     assert api.clone is None and api.volumes == []
     assert all(row['status'] in {'passed', 'not_required'} for row in result['cleanup'].values())

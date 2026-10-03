@@ -79,7 +79,7 @@ def begin(root: Path, operation: str, request: dict[str, Any], admission: dict[s
     if operation == 'accept':
         require(preview is not None, 'acceptance preview required')
         preview = cast(dict[str, Any], preview)
-        journal.update(preview=preview, preview_digest=preview['preview_digest'])
+        journal.update(preview=preview, preview_digest=preview['preview_digest'], clone_marker=preview['clone_marker'])
         save(root / 'preview.json', preview)
     save(root / "request.json", request)
     save(root / "journal.json", journal)

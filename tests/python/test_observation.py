@@ -87,3 +87,17 @@ def test_safe_group_evidence_preserves_two_volume_failure_without_payload():
                      ObservationBudget(), 'work', 'claim', {'vmid': 1}, sink)
     assert result.evidence == {'actual': [{'volid': 's:vm-1-a', 'vmid': 1}, {'volid': 's:vm-1-b', 'vmid': 2}]}
     assert sink.rows()[0]['terminal']['reason'] == 'owner_conflict'
+
+
+def test_late_explicit_failure_survives_cutoff_and_native_text_is_bounded():
+    clock = Clock()
+    budget = ObservationBudget(1, utc=lambda: clock.utc, monotonic=lambda: clock.mono)
+    sink = EvidenceSink()
+    def probe(timeout):
+        clock.sleep(2)
+        return {'status': 'stopped', 'exitstatus': 'native private-token failure'}
+    result = observe(probe, task_decision, budget, 'work', 'task', {'upid': 'same'}, sink,
+                     utc=lambda: clock.utc)
+    assert result.status == 'failed'
+    assert result.evidence == {'status': 'stopped', 'exitstatus': 'non_ok'}
+    assert sink.rows()[0]['terminal']['status'] == 'failed'

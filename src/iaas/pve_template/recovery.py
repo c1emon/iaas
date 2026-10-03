@@ -3,11 +3,12 @@ from __future__ import annotations
 
 from copy import deepcopy
 from pathlib import Path
-import time
 from typing import Any
 from urllib.parse import quote
 
 from iaas.common.errors import require
+from iaas.observation import Decision, EvidenceSink, observe as observe_state, task_decision, safe_facts
+from .responses import read_retry_decision
 from iaas.pve_acceptance_contracts import canonical_digest, load_strict_json
 from iaas.runtime_execution.execution import OperationFailed
 from .acceptance_execution import confined, save
@@ -47,13 +48,14 @@ class Recovery:
         self.vm = request['full_original_resources']['vm']
         self.base = f"/api2/json/nodes/{quote(self.vm['node'], safe='')}/qemu/{self.vm['vmid']}"
         self.phase = 'work'
+        self.observations = EvidenceSink()
         # Both relative bounds use this start reference; entering cleanup does
         # not grant fresh time or extend the absolute/monotonic bounds.
         budget.limit('work', request['timeouts']['work_seconds'])
         budget.limit('cleanup', request['timeouts']['cleanup_seconds'])
         self.configure_helper()
         old = originals['journal']
-        self.result = {'kind': 'pve-acceptance-recovery-result', 'schema_version': 1,
+        self.result = {'kind': 'pve-acceptance-recovery-result', 'schema_version': 2,
                        'execution_id': journal['execution_id'], 'original_execution_id': request['original_execution_id'],
                        'recovery_of': request['original_execution_id'], 'request_digest': canonical_digest(request),
                        'preview_digest': preview['preview_digest'], 'runtime': request['runtime'], 'deadlines': request['deadlines'],
@@ -90,7 +92,15 @@ class Recovery:
         self.configure_helper()
         # Every relevant ownership/reference query is GET-only. Deadline is
         # checked again before a dependent mutation is durably recorded.
-        return inspect_resources(self.inputs, self, self.snippets)
+        current = inspect_resources(self.inputs, self, self.snippets)
+        proof = self.preview['proof_bindings']
+        if proof['mode'] == 'pre_registration' and current['vm']['existence'] == 'present':
+            from .acceptance import attachments
+            config = self.api('GET', self.base + '/config')
+            require(isinstance(config, dict) and config.get('description') == proof['clone_marker']
+                    and pve._config_uuid(config) == proof['smbios_uuid']
+                    and attachments(config) == proof['slots'], 'recovery_candidate_identity_changed')
+        return current
 
     def request(self, method, path, *, fields=None):
         require(method == 'GET', 'recovery inspection forbids mutation')
@@ -116,16 +126,16 @@ class Recovery:
             item['status'] = 'running'
             self.journal['facility_writes'] = 'unknown' if previous == 'unknown' else 'issued'
             self.persist()
-            while True:
-                row = self.api('GET', f"/api2/json/nodes/{quote(self.vm['node'], safe='')}/tasks/{quote(item['upid'], safe='')}/status")
-                if isinstance(row, dict) and row.get('status') == 'stopped':
-                    item['status'] = 'succeeded' if row.get('exitstatus') == 'OK' else 'failed'
-                    self.journal['mutation_active'] = False
-                    self.persist()
-                    if item['status'] != 'succeeded':
-                        raise RecoveryFailure('recovery_task_failed')
-                    return
-                time.sleep(min(.2, self.remaining()))
+            decision = observe_state(lambda timeout: self.api('GET', f"/api2/json/nodes/{quote(self.vm['node'], safe='')}/tasks/{quote(item['upid'], safe='')}/status"),
+                                     task_decision, self.budget, self.phase, 'native_task', {'upid': item['upid']},
+                                     self.observations, interval=.2, retry_error=read_retry_decision)
+            if decision.status in {'ready', 'failed'}:
+                item['status'] = 'succeeded' if decision.status == 'ready' else 'failed'
+                self.journal['mutation_active'] = False
+                self.persist()
+            if decision.status != 'ready':
+                raise RecoveryFailure('recovery_task_failed' if decision.status == 'failed' else 'recovery_task_unknown')
+            return
         except pve.RequestRejected as exc:
             item.update(status='rejected', http_status=exc.http_status)
             self.journal.update(mutation_active=False, facility_writes=previous)
@@ -153,8 +163,17 @@ class Recovery:
     def reconcile(self):
         self.remaining()
         self.configure_helper()
+        reviewed = self.preview['reconciliation']
+        frozen = self.preview['proof_bindings'] if (reviewed.get('cleanup_eligible') is True
+            and reviewed.get('resources', {}).get('ownership') == 'confirmed'
+            and reviewed.get('resources', {}).get('vm', {}).get('existence') == 'present'
+            and all(v.get('existence') == 'present' for v in reviewed.get('resources', {}).get('volumes', []))
+            and reviewed.get('source_observation', {}).get('status') == 'unchanged') else None
         facts = reconcile_original(self.inputs, self.original_root, self.evidence_root, self, self.snippets,
-                                   trusted_rejection_exports=trusted_sources(self.inputs))
+                                   trusted_rejection_exports=trusted_sources(self.inputs), approved_frozen_proof=frozen)
+        require(facts.get('proof_bindings') == self.preview['proof_bindings'],
+                'recovery_preview_proof_drift')
+        self.journal['proof_bindings'] = facts['proof_bindings']
         self.result.update(reconciliation=facts, original_activity=facts['original_activity'],
                            original_facility_writes=facts['original_facility_writes'])
         self.journal['reconciliation'] = facts
@@ -162,6 +181,25 @@ class Recovery:
         if facts['cleanup_eligible'] is not True:
             raise RecoveryFailure('recovery_reconciliation_unknown')
         return facts
+
+    def wait_absence(self, kind, identity):
+        sampled = {}
+        def classify(current):
+            sampled.update(current)
+            if current['ownership'] != 'confirmed':
+                return Decision('failed', 'recovery_ownership_conflict')
+            row = current['vm'] if kind == 'vm' else next(r for r in current[kind + 's'] if r['identity'] == identity)
+            absent = row['existence'] == 'absent'
+            return Decision('ready' if absent else 'pending', 'resource_absent' if absent else 'resource_still_present',
+                            {'absent': absent, 'complete': True})
+        decision = observe_state(lambda timeout: self.inspect(), classify, self.budget, self.phase,
+                                 kind + '_absence', {'vmid': self.vm['vmid'], 'volid': identity} if kind == 'volume' else {'vmid': self.vm['vmid']},
+                                 self.observations, interval=.2, retry_error=read_retry_decision)
+        self.journal['observations'] = self.observations.rows()
+        self.persist()
+        if decision.status != 'ready':
+            raise RecoveryFailure('recovery_absence_unknown' if decision.status == 'unknown' else decision.reason)
+        return sampled
 
     def cleanup(self):
         self.phase = 'cleanup'
@@ -184,8 +222,7 @@ class Recovery:
             require(current['ownership'] == 'confirmed' and current['vm']['existence'] == 'present',
                     'recovery_ownership_conflict')
             self.mutation('delete', 'DELETE', self.base, fields={'purge': 0, 'destroy-unreferenced-disks': 0})
-            current = self.inspect()
-            require(current['vm']['existence'] == 'absent', 'recovery_vm_still_present')
+            current = self.wait_absence('vm', str(self.vm['vmid']))
             vm_delete_confirmed = True
             self.mark('vm', str(self.vm['vmid']), 'deleted', 'absent', 'new_execution_delete_confirmed')
         else:
@@ -204,9 +241,7 @@ class Recovery:
             storage = volume.split(':', 1)[0]
             path = f"/api2/json/nodes/{quote(self.vm['node'], safe='')}/storage/{quote(storage, safe='')}/content/{quote(volume, safe='')}"
             self.mutation('volume_delete', 'DELETE', path)
-            current = self.inspect()
-            observed = next(r for r in current['volumes'] if r['identity'] == volume)
-            require(observed['existence'] == 'absent', 'recovery_volume_still_present')
+            current = self.wait_absence('volume', volume)
             self.mark('volume', volume, 'deleted', 'absent', 'new_execution_delete_confirmed')
         for snippet in self.inputs['full_original_resources']['snippets']:
             current = self.inspect()
@@ -244,9 +279,7 @@ class Recovery:
                 task['status'] = 'unknown'
                 self.persist()
                 raise RecoveryFailure('recovery_snippet_outcome_unknown') from None
-            current = self.inspect()
-            observed = next(r for r in current['snippets'] if r['identity'] == snippet['file_id'])
-            require(observed['existence'] == 'absent', 'recovery_snippet_still_present')
+            current = self.wait_absence('snippet', snippet['file_id'])
             self.mark('snippet', snippet['file_id'], 'already_absent' if response['status'] == 'already_absent' else 'deleted',
                       'absent', 'current_absence_observed' if response['status'] == 'already_absent' else 'new_execution_delete_confirmed')
 
@@ -267,6 +300,17 @@ class Recovery:
         self.result['facility_writes'] = self.journal['facility_writes']
         self.result['deadline_outcome'] = dict(self.budget.outcome)
         self.result['residuals'] = [deepcopy(r) for r in self.result['resources'] if r['existence'] != 'absent']
+        self.result['stop_diagnostics'] = {
+            'completed': [r['kind'] + ':' + r['identity'] for r in self.result['resources'] if r['existence'] == 'absent'],
+            'stopping': None if self.result['overall'] == 'passed' else {'phase': self.phase, 'check': 'recovery_cleanup',
+                        'status': self.result['overall'], 'reason_code': self.result['reason_code']},
+            'facility_writes': self.journal['facility_writes'], 'activity': 'unknown' if self.journal['mutation_active'] else 'stopped',
+            'ownership': 'registered-owned' if self.result['reconciliation'].get('cleanup_eligible') else 'candidate-unknown',
+            'existence': next((r['existence'] for r in self.result['resources'] if r['kind'] == 'vm'), 'unknown'),
+            'inventory_complete': all(r['existence'] != 'unknown' for r in self.result['resources']),
+            'tasks': [safe_facts(t) for t in self.journal['tasks']], 'observations': self.observations.rows(),
+            'recovery': {'supported': True, 'disposition': 'not_applicable' if self.result['overall'] == 'passed' else 'needs_evidence',
+                         'reason_code': 'independent_recovery_inspection_required', 'required_evidence': [] if self.result['overall'] == 'passed' else ['previous_recovery_materials', 'current_activity', 'frozen_scope']}}
         self.result = validate_recovery_result(self.result)
         try:
             save(self.root / 'result.json', self.result)
@@ -374,7 +418,9 @@ def run(selected: Any, operation: str, scope: str, execution: Any,
         require(request is not None, 'recovery_request is required')
         assert request is not None
         execution.finish({'component': 'pve-template', 'operation': 'check', 'action': 'recover',
-                          'request_digest': canonical_digest(request), 'network': False, 'facility_writes': 'none'})
+                          'request_digest': canonical_digest(request), 'network': False, 'facility_writes': 'none',
+                          'evidence_mode': request.get('evidence_mode', 'derived_online'),
+                          'resource_ownership': 'not_observed', 'cleanup_eligible': 'not_observed'})
         return
     root = execution.outputs.path('work') / 'pve-recovery'
     mode = options.get('execution_mode')
@@ -410,7 +456,15 @@ def run(selected: Any, operation: str, scope: str, execution: Any,
         evidence_root = Path(files['cleanup_evidence_dir'])
         require(not output_root.is_relative_to(evidence_root.resolve()) and not evidence_root.resolve().is_relative_to(output_root),
                 'recovery output must not overlap cleanup evidence')
-        originals = load_original(request, original_root, evidence_root)
+        try:
+            originals = load_original(request, original_root, evidence_root)
+        except RecoveryEvidenceError as exc:
+            needs = str(exc) in {'pre_registration_needs_evidence', 'pre_registration_absent_needs_frozen_scope'}
+            execution.outputs.summary({'component': 'pve-template', 'operation': operation, 'overall': 'unknown',
+                'facility_writes': 'none', 'recovery': {'supported': True,
+                'disposition': 'needs_evidence' if needs else 'blocked', 'reason_code': str(exc),
+                'required_evidence': ['original_marker_and_clone_task', 'complete_candidate_scope'] if needs else ['consistent_original_materials']}})
+            raise OperationFailed(str(exc)) from None
         client = pve._client(selected, execution, request['target'])
         from .acceptance_snippets import Snippets
         helper = Snippets(selected, execution, request['timeouts']['work_seconds'], originals['request']['cloud_init']['ssh'])
@@ -437,8 +491,12 @@ def run(selected: Any, operation: str, scope: str, execution: Any,
         journal.update(status='collection_failed', result_digest=canonical_digest(result))
         save(root / 'journal.json', journal)
         raise OperationFailed('recovery result collection failed; inspect protected evidence') from None
+    execution.outputs.summary({'component': 'pve-template', 'operation': 'recover',
+                               'execution_id': result['execution_id'], 'overall': result['overall'],
+                               'stop_diagnostics': result['stop_diagnostics']})
     if result['overall'] != 'passed':
         raise OperationFailed('recovery cleanup remains failed or unknown; inspect protected result')
     execution.finish({'component': 'pve-template', 'operation': 'recover', 'execution_id': result['execution_id'],
                       'original_execution_id': result['original_execution_id'], 'overall': result['overall'],
-                      'original_acceptance': result['original_acceptance'], 'facility_writes': result['facility_writes']})
+                      'original_acceptance': result['original_acceptance'], 'facility_writes': result['facility_writes'],
+                      'stop_diagnostics': result['stop_diagnostics']})

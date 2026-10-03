@@ -273,3 +273,166 @@ def test_without_helper_reference_rows_filtered_api_is_not_a_complete_fallback(t
             return response
     with pytest.raises(RecoveryEvidenceError, match='recovery_vm_inventory_incomplete'):
         reconcile_original(request, original, evidence, Filtered(), Snippets(), trusted_rejection_exports=trusted)
+
+
+def candidate_fixture(tmp_path):
+    from test_pve_template_acceptance import request as current_request
+    from iaas.pve_template.acceptance_plan import build_preview
+    recovery_request, old, evidence, journal = fixture(tmp_path)
+    request = current_request()
+    preview = build_preview(request, {'readiness': {'status': 'ready'}}, image_digest=request['runtime']['image_digest'])
+    marker = preview['clone_marker']
+    admission = {'schema_version': 2, 'execution_id': ORIGINAL,
+        'plan_digest': preview['preview_digest'].removeprefix('sha256:'), 'request_digest': canonical_digest(request),
+        'runtime': request['runtime'], 'target': request['target'], 'deadlines': request['deadlines'],
+        'approved': True, 'consumption': {'reserved': True, 'reservation_id': recovery_request['caller_association']['reservation_id']},
+        'pending': {'record_id': recovery_request['caller_association']['pending_record_id']}, 'serialization': {'held': True, 'context_id': 'ctx'},
+        'vmid_reservation': {'cluster_scope': request['cluster_scope'], 'vmids': [9100], 'reservation_id': recovery_request['caller_association']['reservation_id'], 'context_id': 'ctx'}}
+    slots = {'scsi0': 'local-lvm:vm-9100-disk-0', 'ide2': 'local-lvm:vm-9100-cloudinit'}
+    journal = {'kind': 'pve-one-shot-journal', 'schema_version': 1, 'operation': 'accept', 'execution_id': ORIGINAL,
+        'request_digest': canonical_digest(request), 'target': request['target'], 'runtime': request['runtime'],
+        'deadlines': request['deadlines'], 'admission': admission, 'preview': preview, 'preview_digest': preview['preview_digest'],
+        'clone_marker': marker, 'status': 'finished', 'mutation_active': False, 'facility_writes': 'issued',
+        'tasks': [{'phase': 'clone', 'node': 'pve1', 'method': 'POST', 'path': '/api2/json/nodes/pve1/qemu/9000/clone',
+                   'request_fields': {'description': marker, 'newid': 9100, 'target': 'pve1', 'full': 1, 'pool': request['temporary_vm']['pool'], 'storage': request['temporary_vm']['storage']},
+                   'status': 'succeeded', 'upid': 'UPID:pve1:00000001:00000001:00000001:qmclone:9100:root@pam:', 'clone_marker': marker}],
+        'admission_observed': {'readiness': {'status': 'ready', 'vmid_free': True}},
+        'clone_candidate': {'node': 'pve1', 'vmid': 9100, 'smbios_uuid': VM_UUID, 'clone_marker': marker, 'slots': slots, 'complete': True},
+        'snippets': []}
+    recovery_request.update(target=request['target'], cluster_scope=request['cluster_scope'])
+    recovery_request['full_original_resources'] = {'vm': {'node': 'pve1', 'vmid': 9100, 'smbios_uuid': VM_UUID, 'pool': request['temporary_vm']['pool'], 'created_by': ORIGINAL}, 'volumes': sorted(slots.values()), 'snippets': []}
+    recovery_request['original_materials'] = {'request': write(old, 'request.json', request), 'journal': write(old, 'journal.json', journal)}
+    caller = json.loads((evidence / 'caller.json').read_text())
+    caller.update(request_digest=journal['request_digest'], runtime=journal['runtime'])
+    recovery_request['caller_association']['material'] = write(evidence, 'caller.json', caller)
+    return old, evidence, recovery_request, journal, request
+
+
+def test_pre_registration_requires_complete_original_task_marker_and_candidate(tmp_path):
+    old, evidence, request, journal, _ = candidate_fixture(tmp_path)
+    assert load_original(request, old, evidence)['journal'].get('temporary_vm') is None
+    for key in ('clone_marker', 'clone_candidate'):
+        changed = deepcopy(journal)
+        changed.pop(key)
+        request['original_materials']['journal'] = write(old, 'journal.json', changed)
+        with pytest.raises(RecoveryEvidenceError, match='pre_registration_needs_evidence'):
+            load_original(request, old, evidence)
+
+
+def test_pre_registration_reconciliation_matches_full_config_and_freezes_proof(tmp_path, monkeypatch):
+    from iaas.pve_template import recovery_evidence as mod
+    old, evidence, request, journal, original = candidate_fixture(tmp_path)
+    candidate = journal['clone_candidate']
+    resources = {'vm': {'existence': 'present'}, 'volumes': [{'existence': 'present'} for _ in candidate['slots']], 'ownership': 'confirmed'}
+    monkeypatch.setattr(mod, 'inspect_resources', lambda *args: resources)
+    class Client:
+        def request(self, method, path, **kwargs):
+            assert method == 'GET'
+            if '/tasks/' in path: return {'status': 'stopped', 'exitstatus': 'OK'}
+            if '/9000/' in path: return original['template_record']['configuration']
+            return {'description': journal['clone_marker'], 'smbios1': 'uuid=' + VM_UUID,
+                    **{slot: value + ',size=8G' for slot, value in candidate['slots'].items()}}
+    facts = reconcile_original(request, old, evidence, Client(), object())
+    assert facts['cleanup_eligible'] is True
+    assert facts['proof_bindings']['mode'] == 'pre_registration'
+    assert facts['proof_bindings']['slots'] == candidate['slots']
+    candidate['slots']['scsi1'] = 'local-lvm:vm-9100-extra'
+    with pytest.raises(RecoveryEvidenceError, match='pre_registration_identity_conflict'):
+        reconcile_original(request, old, evidence, Client(), object())
+
+
+def test_pre_registration_absent_vm_requires_prior_proved_scope(tmp_path, monkeypatch):
+    from iaas.pve_template import recovery_evidence as mod
+    old, evidence, request, journal, original = candidate_fixture(tmp_path)
+    monkeypatch.setattr(mod, 'inspect_resources', lambda *args: {'vm': {'existence': 'absent'}, 'volumes': [], 'ownership': 'confirmed'})
+    class Client:
+        def request(self, method, path, **kwargs):
+            return {'status': 'stopped', 'exitstatus': 'OK'} if '/tasks/' in path else original['template_record']['configuration']
+    with pytest.raises(RecoveryEvidenceError, match='pre_registration_absent_needs_frozen_scope'):
+        reconcile_original(request, old, evidence, Client(), object())
+
+
+def test_pre_registration_partial_recovery_uses_frozen_scope_and_current_activity(tmp_path, monkeypatch):
+    from iaas.pve_template import recovery_evidence as mod
+    old, evidence, request, journal, original = candidate_fixture(tmp_path)
+    candidate = journal['clone_candidate']
+    proof = {'mode': 'pre_registration', 'request_digest': journal['request_digest'],
+             'scope_digest': canonical_digest(request['full_original_resources']),
+             'clone_marker': journal['clone_marker'], 'smbios_uuid': candidate['smbios_uuid'],
+             'slots': candidate['slots'], 'clone_upid': journal['tasks'][0]['upid']}
+    prior_request = deepcopy(request)
+    prior_journal = {'execution_id': 'recovery-partial', 'request_digest': canonical_digest(prior_request),
+                     'mutation_active': False, 'proof_bindings': proof,
+                     'tasks': [{'phase': 'delete', 'node': 'pve1', 'status': 'succeeded',
+                                'upid': 'UPID:pve1:00000001:00000001:00000002:qmdestroy:9100:root@pam:'}]}
+    request['previous_recoveries'] = [{'execution_id': 'recovery-partial', 'materials': {
+        'request': write(evidence, 'prior-request.json', prior_request),
+        'journal': write(evidence, 'prior-journal.json', prior_journal), 'result': None}}]
+    resources = {'vm': {'existence': 'absent'}, 'volumes': [{'existence': 'present'}, {'existence': 'absent'}], 'ownership': 'confirmed'}
+    monkeypatch.setattr(mod, 'inspect_resources', lambda *args: resources)
+    class Client:
+        prior_unknown = False
+        def request(self, method, path, **kwargs):
+            assert method == 'GET'
+            if '/tasks/' in path:
+                if self.prior_unknown and '00000002' in path: raise TimeoutError()
+                return {'status': 'stopped', 'exitstatus': 'OK'}
+            return original['template_record']['configuration']
+    client = Client()
+    facts = reconcile_original(request, old, evidence, client, object())
+    assert facts['cleanup_eligible'] is True
+    assert facts['proof_bindings'] == proof
+    client.prior_unknown = True
+    assert reconcile_original(request, old, evidence, client, object())['cleanup_eligible'] is False
+    prior_journal.pop('proof_bindings')
+    request['previous_recoveries'][0]['materials']['journal'] = write(evidence, 'prior-journal.json', prior_journal)
+    with pytest.raises(RecoveryEvidenceError, match='pre_registration_absent_needs_frozen_scope'):
+        reconcile_original(request, old, evidence, Client(), object())
+
+
+def test_registered_retained_v3_has_read_only_recovery_without_new_marker(tmp_path):
+    old, evidence, request, journal, original = candidate_fixture(tmp_path)
+    candidate = journal.pop('clone_candidate')
+    journal.pop('clone_marker')
+    journal['preview'].pop('clone_marker')
+    journal['preview']['schema_version'] = 1
+    journal['preview']['preview_digest'] = canonical_digest({k: v for k, v in journal['preview'].items() if k != 'preview_digest'})
+    journal['preview_digest'] = journal['preview']['preview_digest']
+    journal['admission']['plan_digest'] = journal['preview_digest'].removeprefix('sha256:')
+    journal['temporary_vm'] = {'node': candidate['node'], 'vmid': candidate['vmid'],
+                               'smbios_uuid': candidate['smbios_uuid'], 'volumes': sorted(candidate['slots'].values())}
+    request['original_materials']['journal'] = write(old, 'journal.json', journal)
+    before = (old / 'journal.json').read_bytes()
+    assert load_original(request, old, evidence)['journal']['temporary_vm'] == journal['temporary_vm']
+    assert (old / 'journal.json').read_bytes() == before
+
+
+def test_approved_present_candidate_scope_can_start_after_vm_disappears(tmp_path, monkeypatch):
+    from iaas.pve_template import recovery_evidence as mod
+    old, evidence, request, journal, original = candidate_fixture(tmp_path)
+    candidate = journal['clone_candidate']
+    proof = {'mode': 'pre_registration', 'request_digest': journal['request_digest'],
+             'scope_digest': canonical_digest(request['full_original_resources']),
+             'clone_marker': journal['clone_marker'], 'smbios_uuid': candidate['smbios_uuid'],
+             'slots': candidate['slots'], 'clone_upid': journal['tasks'][0]['upid']}
+    monkeypatch.setattr(mod, 'inspect_resources', lambda *args: {'vm': {'existence': 'absent'},
+        'volumes': [{'existence': 'present'}, {'existence': 'absent'}], 'ownership': 'confirmed'})
+    class Client:
+        def request(self, method, path, **kwargs):
+            assert method == 'GET'
+            return {'status': 'stopped', 'exitstatus': 'OK'} if '/tasks/' in path else original['template_record']['configuration']
+    facts = reconcile_original(request, old, evidence, Client(), object(), approved_frozen_proof=proof)
+    assert facts['cleanup_eligible'] is True
+    assert facts['proof_bindings'] == proof
+    changed = {**proof, 'scope_digest': 'sha256:' + '0' * 64}
+    with pytest.raises(RecoveryEvidenceError, match='pre_registration_absent_needs_frozen_scope'):
+        reconcile_original(request, old, evidence, Client(), object(), approved_frozen_proof=changed)
+
+
+def test_declared_evidence_mode_must_match_retained_original_journal(tmp_path):
+    old, evidence, request, journal, original = candidate_fixture(tmp_path)
+    request['evidence_mode'] = 'pre_registration'
+    assert load_original(request, old, evidence)['journal'].get('temporary_vm') is None
+    request['evidence_mode'] = 'registered'
+    with pytest.raises(RecoveryEvidenceError, match='recovery_evidence_mode_conflict'):
+        load_original(request, old, evidence)
