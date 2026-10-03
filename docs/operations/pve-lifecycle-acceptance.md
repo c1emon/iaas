@@ -38,5 +38,6 @@
 | 保存计划漏review.json/discovery原因覆盖 | rc.24完整传输原review，缺失/冲突在设施写入前拒绝；failed discovery保留安全原因，ready仍严格绑定身份 |
 | rc.23镜像集成失败 | 测试漏传执行UID:GID，rc.24与正式launcher对齐；保留失败工作流，不降低文件所有权检查 |
 | provider空pool误报 | rc.25统一普通VM的空字符串/null语义；真实池权限和验收必填池不放宽，历史state/批准不改写 |
+| rc.25模板退役check误用发布校验 | `check action=retire/cleanup` 固定按publish校验，合法请求被拒绝；[修复变更](../../openspec/changes/fix-pve-template-check-action-dispatch/proposal.md)按action选择输入和校验器，保持离线、无设施写入。此修复尚未发布，不代表模板退役或最终现场收尾完成 |
 
 caller参数、通知、数据库和工作流的验收材料由调用方维护；本页不扩大为那些系统的验收记录。后续变更按实际风险选代表性回归，不因本次整理新增全套重验要求。

@@ -1122,8 +1122,13 @@ def run(selected: Any, operation: str, scope: str, execution: Execution,
     selected_action = options.get("action")
     action = selected_action or "publish"
     if operation == "check":
-        request = validate_publish_request(_document(selected))
+        require(action in {"publish", "cleanup", "retire"},
+                "pve-template check action must be publish, cleanup or retire")
+        request = (validate_cleanup_request(_document(selected, "cleanup")) if action == "cleanup" else
+                   validate_retire_request(_document(selected, "retire")) if action == "retire" else
+                   validate_publish_request(_document(selected)))
         execution.finish({"component": "pve-template", "operation": operation, "schema_version": 1,
+                          "action": action,
                           "request_digest": canonical_digest(request), "network": False, "state": False})
         return
     if operation == "verify":
