@@ -112,3 +112,15 @@ The caller SHALL route an already dispatched recovery execution exclusively to o
 - **WHEN** relevant current task/helper activity is established inactive and a fresh plan/approval binds the unchanged full original list and supplied prior recovery evidence, disclosing remaining historical unknown
 - **THEN** a new recovery execution MAY safely check and clean remaining exact resources within its new window
 - **AND** it SHALL preserve completed and unknown historical facts, original consumption history and original acceptance conclusion
+
+### Requirement: Current acceptance snapshot recovery
+Exact recovery SHALL accept retained current v3 acceptance request/result snapshots with their original preview, admission, runtime, policy, identity and digest bindings, without rewriting original evidence or adding legacy compatibility.
+
+#### Scenario: Clean resources after a current native deletion failure
+- **WHEN** a current acceptance execution has retained ownership evidence and its native tasks are confirmed inactive
+- **THEN** a newly admitted recovery MAY clean only that execution's complete original resources
+- **AND** the original acceptance result SHALL remain unchanged even if recovery cleanup succeeds
+
+#### Scenario: Refuse conflicting current snapshots
+- **WHEN** the current request, journal, preview, admission, runtime, result or source bindings conflict
+- **THEN** recovery SHALL reject the materials before any facility query or mutation

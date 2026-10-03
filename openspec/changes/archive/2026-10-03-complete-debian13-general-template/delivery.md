@@ -53,9 +53,15 @@ QGA 正常、实例身份重新初始化，模板 9000 不变。DNS 来自实际
 本地 resolver `127.0.0.53` 单独记录。
 
 两轮常规清理的 PVE DELETE 原生任务停止并返回 `unexpected status`，分别只提供
-`TrueNAS [INFO] : Ping` / `no content` 日志；后端原因未确定。不是删除后存储清单
-5xx，不能用只读查询重试或改写结果消除。原始验收整体均保持 `unknown`，因此没有
-取得一次常规清理也通过的原生模板验收结论。
+`TrueNAS [INFO] : Ping` / `no content` 日志。随后按任务绝对时间核对宿主 pvedaemon：
+rc.30 在 UTC 12:03:42、rc.31 在 UTC 12:56:30 均记录 TrueNAS `Remote closed connection`、
+`No response received` 及找不到 `vm-500-cloudinit` extent；对应删除 worker 在
+12:03:56（PID 1713246）/12:56:44（PID 1725861）启动后同秒异常结束。
+两次对应内核日志窗口没有 OOM/segfault 记录。此前宿主日志查询未正确处理时间窗口，
+这次已用 epoch 绝对时间补查。日志支持存储插件断线处理的排查方向，具体机制尚未确认；
+本次按外部存储插件问题记录和移交，不增加 IaaS 删除重试、自动补偿或吞掉异常。
+不是删除后存储清单 5xx，不能用只读查询重试或改写结果消除。原始验收整体均保持
+`unknown`，因此没有取得一次常规清理也通过的原生模板验收结论。
 
 rc.31 补齐当前 acceptance/v3 的恢复材料校验。新独立执行 `debian13-recover-rc31`
 清除 rc.30 资源，`debian13-recover-rc31-02` 清除 rc.31 资源；均经新的只读 plan、
@@ -77,9 +83,9 @@ rc.30 原验收在 `accept-rc30/diagnostics/`，其删除任务的独立观察�
 
 ## 调用方适配与结论边界
 
-[代表性配置与正反例](../../../docs/examples/debian13-general-template/README.md)、[当前合同](../../../docs/contracts/image-publish-v1.md)及[操作说明](../../../docs/operations/image-publish.md)是适配入口。
+[代表性配置与正反例](../../../../docs/examples/debian13-general-template/README.md)、[当前合同](../../../../docs/contracts/image-publish-v1.md)及[操作说明](../../../../docs/operations/image-publish.md)是适配入口。
 离线 check 核验字段、关系和当前软件能力，不联网、不读取凭据、不写设施；基础盘实际容量在下载后、启动 Packer 前核验。
 软件检查通过、限定真实模板验收、infra-ops 日常部署是三个独立结论。
 infra-ops 自行负责正式清单、权限/凭据接线、计划审批、日常 apply 开放及部署后的来宾/业务验收。
 
-离线完整克隆配置的 `check` 已在无网络容器中通过（`dev` 池、8 CPU/8 GiB/128 GiB）。真实现场使用专用验收池；尚无正式 `dev` 池日常部署或业务验收结论。后端 DELETE 失败需定位并用新的限定执行复验常规清理；在此之前保留独立恢复能力及失败关闭，IaaS 不接管宿主存储插件维修、权限或日常 apply 开放。
+离线完整克隆配置的 `check` 已在无网络容器中通过（`dev` 池、8 CPU/8 GiB/128 GiB）。真实现场使用专用验收池；尚无正式 `dev` 池日常部署或业务验收结论。后端 DELETE 失败作为外部问题如实反馈，由存储插件维护方处理；修复后可用新的限定执行复验常规清理。IaaS 保留原失败/未知及已有的独立批准恢复能力，不为插件断线扩展兜底，也不接管宿主存储插件维修、权限或日常 apply 开放。

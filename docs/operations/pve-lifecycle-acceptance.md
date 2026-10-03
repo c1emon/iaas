@@ -1,6 +1,6 @@
 # PVE 生命周期验收材料
 
-更新日期：2026-10-03。本页是 IaaS 的材料与结论入口；操作步骤仍以对应手册为准。最新软件为 [rc.31](../../openspec/changes/complete-debian13-general-template/delivery.md)，补齐 Debian 13 通用模板合同与限定恢复。模板 9000 真实构建/发布和克隆来宾检查通过；常规 DELETE 失败，原验收整体未知，独立恢复已清理临时资源。下列 rc.25/rc.26 材料继续作为历史证据保留。
+更新日期：2026-10-03。本页是 IaaS 的材料与结论入口；操作步骤仍以对应手册为准。最新软件为 [rc.31](../../openspec/changes/archive/2026-10-03-complete-debian13-general-template/delivery.md)，补齐 Debian 13 通用模板合同与限定恢复。模板 9000 真实构建/发布和克隆来宾检查通过；常规 DELETE 失败，原验收整体未知，独立恢复已清理临时资源。宿主日志支持外部 TrueNAS 插件断线问题，IaaS 如实反馈、不增加删除重试或自动补偿。下列 rc.25/rc.26 材料继续作为历史证据保留。
 
 ## 当前结论及边界
 
@@ -20,7 +20,7 @@ rc.25 历史现场结论来自调用方的[验收总结](../../../infra-ops/docs
 
 | 材料 | IaaS入口 | 保留方式 |
 | --- | --- | --- |
-| 当前固定版本、checksum、CI结论 | [rc.31 delivery](../../openspec/changes/complete-debian13-general-template/delivery.md)、[rc.25历史delivery](../../openspec/changes/archive/2026-10-02-fix-pve-pool-and-acceptance-recovery/delivery.md)、对应GitHub Release | 当前摘要完整保留；旧版本只保留关键变化/失败及权威链接，完整旧值仍在Git历史与发布资产 |
+| 当前固定版本、checksum、CI结论 | [rc.31 delivery](../../openspec/changes/archive/2026-10-03-complete-debian13-general-template/delivery.md)、[rc.25历史delivery](../../openspec/changes/archive/2026-10-02-fix-pve-pool-and-acceptance-recovery/delivery.md)、对应GitHub Release | 当前摘要完整保留；旧版本只保留关键变化/失败及权威链接，完整旧值仍在Git历史与发布资产 |
 | 需求、设计取舍和任务完成 | [change入口](../../openspec/changes/archive/2026-10-02-fix-pve-pool-and-acceptance-recovery/README.md)、proposal/design/specs/tasks/review | 保留设计与责任边界，任务只记录完成条件，阶段性重复统计精简 |
 | 当前操作要求 | [PVE](03-pve.md)、[原验收恢复](pve-acceptance-recovery.md)、[snippet清理](pve-snippet-cleanup.md)、[调用方适配](../../openspec/changes/archive/2026-10-02-fix-pve-pool-and-acceptance-recovery/infra-ops-adaptation.md) | 完整保留文件映射、批准/归属/截止/只读观察和失败关闭规则；历史实例不作为授权 |
 | 机器合同与合成样例 | [acceptance/cleanup schema](../../automation/schemas/pve-acceptance/v3/README.md)、[recovery schema](../../automation/schemas/pve-acceptance-recovery/v1/README.md)、[验收fixtures](../examples/pve-acceptance/README.md)、[恢复fixtures](../examples/recovery/README.md)、[cleanup合同](../contracts/pve-acceptance-cleanup-v2.md) | schema、示例和生成一致性原样保留；目录版本不等于其中所有合同版本；synthetic不是现场成功证据 |
