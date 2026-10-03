@@ -26,7 +26,7 @@ from iaas.runtime_execution.outputs import TaskOutputs
 
 def _request(*, firmware: str = "uefi", checks: dict | None = None) -> dict:
     return {
-        "kind": "image-build-request", "schema_version": 1,
+        "kind": "image-build-request", "schema_version": 2, "disk_size_gib": 8,
         "profile": {"id": "debian-13-amd64", "version": "1"}, "version": "v1",
         "base": {"object_ref": "https://objects.example.invalid/debian.qcow2",
                  "checksum": {"algorithm": "sha256", "value": "a" * 64}},

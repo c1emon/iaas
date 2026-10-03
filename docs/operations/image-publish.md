@@ -1,7 +1,7 @@
 # Image build and PVE template publication
 
 The image and template paths are separate operations. The image tool receives
-`image-build-request/v1` or `image-test-request/v1` and stores task material
+`image-build-request/v2` or `image-test-request/v1` and stores task material
 under the caller's private output directory. `image check` is passive and
 writes `diagnostics/normalized.json`; build and test require a Linux amd64
 executor with usable `/dev/kvm`. A macOS or ordinary arm64 container is an
@@ -34,6 +34,34 @@ the current PVE identity and configuration only. Guest acceptance and caller
 promotion remain separate. A lost response leaves effects unknown and must be
 read/reconciled under the caller's pending and serialization context; it is
 never replayed from a fresh execution ID.
+
+## Debian 13 general template
+
+See [representative inputs and acceptance boundaries](../examples/debian13-general-template/README.md).
+Build selects 8 GiB, TUNA Debian/security mirrors and `package_upgrade: true`.
+Cloud-init, cloud-guest-utils and enabled QGA accompany the requested utilities.
+Cleanup removes builder accounts, credentials, temporary networking, cloud-init
+cache and machine/SSH identities using native cloud-init clean plus sysprep.
+Cloud-init network configuration, growpart and resizefs remain enabled.
+
+Publish selects VMID 9000, 2 CPUs, 1024 MiB and `hardware.bridge: null`.
+An ordinary full clone independently selects its NIC, IP/DNS, identity and
+disk before first boot. Source `templates.<name>.primary_nics: 0` does not
+constrain the clone's declared NICs.
+
+Dedicated acceptance supports `temporary_vm.disk_size_gib: 128` and
+`nameservers: ["10.5.0.15"]`. Disk limit also covers clone-owned auxiliary
+volumes. Admission rejects shrink/insufficient capacity before clone; resize
+and network configuration precede start. Protected guest evidence records
+root disk/partition/filesystem capacities, addresses, routes, resolvers and
+initialized identity. The six check IDs and exact ownership cleanup remain.
+For systemd-resolved stub configurations, DNS verification reads the actual
+upstream resolver file as well as `/etc/resolv.conf`; missing or mismatched
+upstream evidence fails verification. After VM deletion, transient HTTP
+500/502/503/504 from the read-only storage inventory may be retried for up to
+30 seconds within the frozen cleanup budget. Deletes are not replayed;
+persistent inventory failure remains unknown.
+This evidence does not promote unrelated daily deployments.
 
 ## Promotion, revocation, rollback and unknown results
 

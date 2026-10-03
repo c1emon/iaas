@@ -116,23 +116,44 @@
       "properties": {
         "cpus": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "maximum": 128
         },
         "memory_mib": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 1,
+          "maximum": 1048576
         },
         "machine": {
-          "$ref": "#/$defs/id"
+          "enum": [
+            "q35",
+            "pc",
+            "i440fx"
+          ]
         },
         "scsi_controller": {
-          "$ref": "#/$defs/id"
+          "enum": [
+            "virtio-scsi-pci",
+            "virtio-scsi-single",
+            "lsi",
+            "lsi53c810",
+            "megasas",
+            "pvscsi"
+          ]
         },
         "boot_disk": {
-          "$ref": "#/$defs/id"
+          "$ref": "#/$defs/id",
+          "pattern": "^(?:scsi(?:[0-9]|[12][0-9]|3[01])|virtio(?:[0-9]|1[0-5])|sata[0-5])$"
         },
         "bridge": {
-          "$ref": "#/$defs/id"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "firmware": {
           "enum": [
@@ -236,5 +257,31 @@
         }
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "hardware": {
+            "properties": {
+              "bridge": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "cloud_init_defaults": {
+            "not": {
+              "required": [
+                "ip_config"
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
 }

@@ -72,7 +72,7 @@
   "cloud_init_defaults": {
     "user": "debian",
     "ssh_keys": [],
-    "ip_config": "dhcp"
+    "ip_config": "ip=dhcp"
   },
   "requirements": {
     "required": [

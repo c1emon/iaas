@@ -5,6 +5,7 @@ from typing import Any
 from pathlib import Path
 
 from iaas.common.errors import require
+from iaas.common.config_checks import checked_input
 from iaas.pve_acceptance_contracts import AcceptancePreview, canonical_digest, load_strict_json, validate_acceptance_request
 
 
@@ -64,7 +65,8 @@ def run_plan(selected: Any, execution: Any, operation: str, image_digest: str) -
     require(operation in {'check', 'plan'}, 'invalid acceptance planning operation')
     path = selected.files.get('acceptance_request')
     require(path is not None, 'acceptance_request required')
-    request = validate_acceptance_request(load_strict_json(Path(path)))
+    document = load_strict_json(Path(path))
+    request = checked_input(selected, 'acceptance_request', document, validate_acceptance_request)
     require(request['runtime'] == {'image_digest': image_digest}, 'acceptance runtime conflicts')
     if operation == 'check':
         execution.finish({'component': 'pve-template', 'operation': 'check', 'action': 'accept',

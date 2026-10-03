@@ -300,8 +300,9 @@ def main(argv: list[str] | None = None) -> int:
             "components", "scenarios", "selected scenario", "selected component",
             "component inputs", "facts", "component files", "component options",
         ) for problem in ("must be a mapping", "keys must be strings")}
+        from iaas.common.config_checks import InputValidationError
         reason = (public_diagnostic['reason_code'] if public_diagnostic else
-                  str(exc) if isinstance(exc, ProxyConfigurationError) or str(exc) in safe_reasons else
+                  str(exc) if isinstance(exc, (ProxyConfigurationError, InputValidationError)) or str(exc) in safe_reasons else
                   "selected operation failed validation, setup or execution")
         print(json.dumps({"status": "failed", "reason": reason, **public_diagnostic,
                           "output": str(outputs.root) if outputs else None,

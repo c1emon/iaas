@@ -1,6 +1,6 @@
 # PVE 生命周期验收材料
 
-更新日期：2026-10-03。本页是 IaaS 的材料与结论入口；操作步骤仍以对应手册为准。最新软件为 [rc.26](../../openspec/changes/archive/2026-10-03-fix-pve-template-check-action-dispatch/delivery.md)，修复模板 check 的 action 分派。下列历史现场证据使用 rc.25，完整镜像/launcher 摘要与发布检查见[rc.25交付](../../openspec/changes/archive/2026-10-02-fix-pve-pool-and-acceptance-recovery/delivery.md)。
+更新日期：2026-10-03。本页是 IaaS 的材料与结论入口；操作步骤仍以对应手册为准。最新软件为 [rc.31](../../openspec/changes/archive/2026-10-03-complete-debian13-general-template/delivery.md)，补齐 Debian 13 通用模板合同与限定恢复。模板 9000 真实构建/发布和克隆来宾检查通过；常规 DELETE 失败，原验收整体未知，独立恢复已清理临时资源。宿主日志支持外部 TrueNAS 插件断线问题，IaaS 如实反馈、不增加删除重试或自动补偿。下列 rc.25/rc.26 材料继续作为历史证据保留。
 
 ## 当前结论及边界
 
@@ -8,17 +8,19 @@
 | --- | --- | --- |
 | IaaS软件与产物 | rc.25两个平台各2132 passed、4 skipped；实际镜像保存计划准入、匿名消费、launcher校验通过 | 配套软件与产物验证通过，不代替现场验收 |
 | rc.26软件修复与产物 | 两个平台各2145 passed、4 skipped；实际镜像保存计划准入、匿名消费、launcher校验通过 | action分派修复已交付，不代表模板9006退役或现场最终收尾完成 |
+| rc.31 Debian 13 软件与固定产物 | 两个平台各2199 passed、4 skipped；pyright、保存计划、匿名消费、launcher校验通过 | 当前软件/固定产物通过，不能代替设施验收 |
+| 模板9000及克隆VM500 | rc.28真实构建/发布9000无网卡；rc.31六项来宾/源检查通过，128 GiB自动扩容 | 真实来宾能力通过；常规DELETE失败，原整体未知；新恢复已清除VM/两盘/snippet，不开放日常部署 |
 | 原run-120-1受控恢复 | 调用方记录新恢复 `recover-run-120-1-20261002-01` 清除VM798、两盘和snippet | 原验收仍未知，9004保留但不可用；不是重放原操作 |
 | 模板9005 | 调用方记录六项原生检查、临时资源清理通过及record/v3 available | 限定模板验收通过，不包含应用或压力测试 |
 | 普通VM与独立清理 | 调用方记录rc.24创建关机VM799，rc.25删除、state写回和新批准专属snippet清理；最终无残留/pending | 限定普通VM生命周期闭环，未执行普通VM guest/业务验收 |
 
-现场结论来自调用方的[验收总结](../../../infra-ops/docs/operations/deployment-lifecycle-validation.md)和[证据索引](../../../infra-ops/docs/operations/rc22-template-lifecycle.md)。IaaS不复制维护其原始执行记录。收尾属于2026-10-02观察，不能推断未来状态；本轮有恢复和补清理，不代表最终版本完成一次完全无人工恢复的正常路径，也不授权日常root接管或新设施操作。
+rc.25 历史现场结论来自调用方的[验收总结](../../../infra-ops/docs/operations/deployment-lifecycle-validation.md)和[证据索引](../../../infra-ops/docs/operations/rc22-template-lifecycle.md)。IaaS不复制维护其原始执行记录。收尾属于2026-10-02观察，不能推断未来状态；本轮有恢复和补清理，不代表最终版本完成一次完全无人工恢复的正常路径，也不授权日常root接管或新设施操作。
 
 ## 材料定位与保留
 
 | 材料 | IaaS入口 | 保留方式 |
 | --- | --- | --- |
-| 当前固定版本、checksum、CI结论 | [delivery](../../openspec/changes/archive/2026-10-02-fix-pve-pool-and-acceptance-recovery/delivery.md)、对应GitHub Release | 当前摘要完整保留；旧版本只保留关键变化/失败及权威链接，完整旧值仍在Git历史与发布资产 |
+| 当前固定版本、checksum、CI结论 | [rc.31 delivery](../../openspec/changes/archive/2026-10-03-complete-debian13-general-template/delivery.md)、[rc.25历史delivery](../../openspec/changes/archive/2026-10-02-fix-pve-pool-and-acceptance-recovery/delivery.md)、对应GitHub Release | 当前摘要完整保留；旧版本只保留关键变化/失败及权威链接，完整旧值仍在Git历史与发布资产 |
 | 需求、设计取舍和任务完成 | [change入口](../../openspec/changes/archive/2026-10-02-fix-pve-pool-and-acceptance-recovery/README.md)、proposal/design/specs/tasks/review | 保留设计与责任边界，任务只记录完成条件，阶段性重复统计精简 |
 | 当前操作要求 | [PVE](03-pve.md)、[原验收恢复](pve-acceptance-recovery.md)、[snippet清理](pve-snippet-cleanup.md)、[调用方适配](../../openspec/changes/archive/2026-10-02-fix-pve-pool-and-acceptance-recovery/infra-ops-adaptation.md) | 完整保留文件映射、批准/归属/截止/只读观察和失败关闭规则；历史实例不作为授权 |
 | 机器合同与合成样例 | [acceptance/cleanup schema](../../automation/schemas/pve-acceptance/v3/README.md)、[recovery schema](../../automation/schemas/pve-acceptance-recovery/v1/README.md)、[验收fixtures](../examples/pve-acceptance/README.md)、[恢复fixtures](../examples/recovery/README.md)、[cleanup合同](../contracts/pve-acceptance-cleanup-v2.md) | schema、示例和生成一致性原样保留；目录版本不等于其中所有合同版本；synthetic不是现场成功证据 |
@@ -27,7 +29,7 @@
 | 历史开发/只读验证 | [本地开发验证](../development-validation.md)、[历史Runtime验证](../runtime-adaptation-validation.md) | 保留环境、代表性结果、限制和来源；不把旧CA/模拟DinD/临时服务结果提升为当前固定版本现场资格 |
 | 真实原始材料 | 原request/plan/review/批准/consumption、caller/native journal/result、拒绝证据、恢复关联及原索引 | 在原受保护存储完整保留字节和已有摘要；不复制到仓库、不格式转换，不由当前资源状态补造旧结果 |
 
-本轮仅整理IaaS Markdown。源码、schemas、fixtures、测试、工作流和受保护输入不变；没有清除/tmp工作副本、执行目录、凭据、日志原件或设施资源。工作副本不是权威归档，本文不把本机临时路径当唯一恢复定位。
+rc.25/rc.26 的材料整理未改写历史证据。rc.31 的受保护原始材料、产物和本次清理范围见其 delivery；工作副本不是权威归档。
 
 ## 保留的关键问题
 

@@ -52,11 +52,14 @@ variable "uefi_vars" {
 }
 variable "cpus" { type = number }
 variable "memory_mib" { type = number }
+variable "disk_size_gib" { type = number }
+variable "package_upgrade" { type = bool }
 
 source "qemu" "debian-13-amd64" {
   iso_url              = var.base_image
   iso_checksum         = var.base_checksum
   disk_image           = true
+  disk_size            = "${var.disk_size_gib}G"
   output_directory     = var.output_directory
   vm_name              = "disk.qcow2"
   format               = "qcow2"
@@ -95,14 +98,17 @@ build {
   provisioner "ansible" {
     playbook_file = "${path.root}/ansible/customize.yml"
     user          = var.ssh_username
-    extra_arguments = [
-      "--extra-vars", "apt_mirror=${var.apt_mirror}",
-      "--extra-vars", "apt_security_mirror=${var.apt_security_mirror}",
-      "--extra-vars", "packages_json=${var.packages}",
-      "--extra-vars", "image_timezone=${var.timezone}",
-      "--extra-vars", "image_locale=${var.locale}",
-      "--extra-vars", "image_cloud_init=${var.cloud_init}",
-      "--extra-vars", "image_guest_agent=${var.guest_agent}",
-    ]
+    # Ansible key=value parsing removes JSON quotes from nonempty package lists.
+    # Supply one typed JSON object so lists and boolean options survive intact.
+    extra_arguments = ["--extra-vars", jsonencode({
+      apt_mirror            = var.apt_mirror
+      apt_security_mirror   = var.apt_security_mirror
+      packages_json         = var.packages
+      image_timezone        = var.timezone
+      image_locale          = var.locale
+      image_cloud_init      = var.cloud_init
+      image_guest_agent     = var.guest_agent
+      image_package_upgrade = var.package_upgrade
+    })]
   }
 }

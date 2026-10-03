@@ -28,6 +28,7 @@ from typing import Any
 from urllib.request import Request, urlopen
 
 from iaas.common.errors import ValidationError, require
+from iaas.common.config_checks import checked_input
 from iaas.common.io import load_json, write_text
 from iaas.runtime_execution.execution import Execution, OperationFailed
 
@@ -438,6 +439,7 @@ def _offline_cleanup(execution: Execution, disk: Path, cwd: Path) -> None:
     _run_tool(execution, "offline-sysprep", [sysprep, "-a", str(disk), "--operations",
                                               ",".join(OFFLINE_SYSPREP_OPERATIONS)], cwd)
     _run_tool(execution, "offline-builder-clean", [customize, "-a", str(disk),
+                                                    "--run-command", "if command -v cloud-init >/dev/null; then cloud-init clean --logs --seed --machine-id --configs network; fi",
                                                     "--run-command", "rm -f /home/packer/.ssh/authorized_keys",
                                                     "--run-command", "if getent passwd packer >/dev/null; then userdel -r packer; fi",
                                                     "--run-command", "rm -f /etc/sudoers.d/packer /etc/sudoers.d/90-packer",
@@ -522,7 +524,9 @@ def _static_status(check_id: str, *, request: Mapping[str, Any], artifact: Mappi
     if check_id == "self-contained":
         return "passed" if info and not info.get("backing-filename") and not info.get("backing-filename-format") else "failed"
     if check_id == "disk-size":
-        return "passed" if info and int(info.get("virtual-size", 0)) > 0 else "failed"
+        expected = (request["disk_size_gib"] * 1024 ** 3 if "disk_size_gib" in request else
+                    artifact["disk"]["virtual_size_bytes"] if artifact else None)
+        return "passed" if info and expected is not None and info.get("virtual-size") == expected else "failed"
     if check_id == "firmware":
         firmware = request.get("guest", {}).get("firmware") if artifact is None else artifact.get("guest", {}).get("firmware")
         return "unknown" if firmware in {"bios", "uefi"} else "failed"
@@ -648,7 +652,11 @@ def _build(selected: Any, execution: Execution, execution_id: str, resolved_runt
         statuses: list[dict[str, Any]] = []
         try:
             _download_base(request, base, request["resources"])
-            _require_self_contained(base, execution)
+            base_info = _require_self_contained(base, execution)
+            require(type(base_info.get("virtual-size")) is int and base_info["virtual-size"] > 0,
+                    "base virtual capacity could not be established")
+            require(base_info["virtual-size"] <= request["disk_size_gib"] * 1024 ** 3,
+                    "disk_size_gib is smaller than base virtual capacity; partition/filesystem shrinking is unsupported")
             task_record["base_sha256"] = _sha256_file(base)
             _write_task(task_path, task_record)
             _seed, key = _make_seed(execution, task, username="packer", phase="build", task=task_record)
@@ -672,6 +680,8 @@ def _build(selected: Any, execution: Execution, execution_id: str, resolved_runt
                         "PKR_VAR_packages": json.dumps(custom.get("packages", [])), "PKR_VAR_timezone": custom.get("timezone", "UTC"),
                         "PKR_VAR_locale": custom.get("locale", "C.UTF-8"), "PKR_VAR_cloud_init": custom.get("cloud_init", "installed"),
                         "PKR_VAR_guest_agent": custom.get("guest_agent", "installed"),
+                        "PKR_VAR_disk_size_gib": str(request["disk_size_gib"]),
+                        "PKR_VAR_package_upgrade": str(custom["package_upgrade"]).lower(),
                         "PKR_VAR_cpus": str(request["resources"]["cpus"]),
                         "PKR_VAR_memory_mib": str(request["resources"]["memory_mib"]),
                         "PKR_VAR_uefi_code": str(_find_ovmf("code")) if request["guest"]["firmware"] == "uefi" else "",
@@ -689,6 +699,8 @@ def _build(selected: Any, execution: Execution, execution_id: str, resolved_runt
             _flatten_image(execution, _find_packer_disk(packer_output), disk, task)
             _offline_cleanup(execution, disk, task)
             info = _require_self_contained(disk, execution)
+            require(info.get("virtual-size") == request["disk_size_gib"] * 1024 ** 3,
+                    "final virtual capacity does not match disk_size_gib")
             statuses = [{"id": item["id"], "scope": item["scope"],
                          "status": _static_status(item["id"], request=request, disk=disk, info=info),
                          "evidence_ref": "task.json"}
@@ -996,17 +1008,18 @@ def run(selected: Any, operation: str, execution: Execution, *, execution_id: st
     require(not set(options) - {"execution_id", "execution_dir", "runtime_digest", "artifact_root"}, "unknown image operation option")
     if operation == "check":
         document = _document(selected)
+        name = next((key for key, value in selected.documents.items() if value == document), "request")
         if document.get("kind") == "image-build-request":
-            normalized = validate_build_request(document)
+            normalized = checked_input(selected, name, document, validate_build_request)
             executor = _executor_check(normalized["resources"])
         elif document.get("kind") == "image-test-request":
-            normalized = validate_test_request(document)
+            normalized = checked_input(selected, name, document, validate_test_request)
             executor = _executor_check(normalized["resources"])
         elif document.get("kind") == "image-artifact":
-            normalized = validate_artifact(document)
+            normalized = checked_input(selected, name, document, validate_artifact)
             executor = {"note": "passive artifact check"}
         elif document.get("kind") == "image-test-result":
-            normalized = validate_test_result(document)
+            normalized = checked_input(selected, name, document, validate_test_result)
             executor = {"note": "passive result check"}
         else:
             raise ValidationError("unsupported image check input")

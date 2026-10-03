@@ -1,0 +1,99 @@
+## ADDED Requirements
+
+### Requirement: Publication observation uses execution-bound deadlines
+Current publication, cleanup and retirement contracts SHALL bind finite work and cleanup deadlines into request, preview, admission, journal and result. They SHALL enforce one frozen budget across relevant transfers, native tasks, target-state verification and cleanup using the shared observation semantics. A fresh per-task timeout SHALL NOT extend the approved execution window.
+
+#### Scenario: Publication crosses multiple native tasks
+- **WHEN** upload, image import and template conversion each return a UPID
+- **THEN** the publisher SHALL observe each original task under the remaining bound budget before advancing dependent phases
+- **AND** permitted transient status-query failure SHALL NOT replay upload, import or conversion
+
+#### Scenario: Deadline is absent or conflicts
+- **WHEN** a current action request lacks valid ordered absolute deadlines or disagrees with its preview/admission
+- **THEN** check or execution admission SHALL reject with field/reason before facility mutation
+
+### Requirement: Publication waits for exact target state after task success
+After known task success or acknowledged synchronous modification, the publisher SHALL perform bounded read-only convergence checks for exact VM identity, pool placement, imported volume set and capacity, requested configuration and template flag. Cleanup and retirement SHALL similarly verify exact VM and staging/volume disappearance. Temporary absence or stale inventory SHALL be distinguished from explicit identity or ownership conflicts; object presence SHALL NOT prove task success.
+
+#### Scenario: Import succeeded before configuration inventory synchronizes
+- **WHEN** the original import task is confirmed OK but the first config or content view lacks its expected disk
+- **THEN** publication SHALL wait within its original budget for the associated configuration and volume view
+- **AND** publication SHALL NOT issue import again
+
+#### Scenario: Conversion or deletion view is temporarily stale
+- **WHEN** a task is confirmed OK and a successful query still shows the pre-conversion flag or the original deleted object/file
+- **THEN** the publisher SHALL perform permitted bounded read-only observations rather than fail solely on the first stale view
+- **AND** a replacement identity or known foreign owner SHALL stop affected processing immediately
+
+## MODIFIED Requirements
+
+### Requirement: Independent fixed image publication preview
+The system SHALL expose check/read/plan/apply/verify for publication of an existing image, independently of image building, VM declarations and OpenTofu state, using the new image publication contract.
+
+#### Scenario: Plan and publish an existing image
+- **WHEN** a caller selects an image-artifact/v1, exact source object, runtime, target, optional pool, stores, hardware and free VMID
+- **THEN** plan SHALL bind those inputs into the current versioned publication preview without downloading/uploading the disk or changing PVE
+- **AND** apply SHALL require the exact association, current caller execution admission and serialization, and SHALL never build or customize the image
+- **AND** the runtime SHALL recheck full-authority VM inventory, API permissions, storage capability/enabled/active state, node visibility, bridge, firmware and known capacity/size constraints before dependent writes
+- **AND** known insufficient publisher-local or API-visible storage capacity SHALL block dependent writes
+
+#### Scenario: Transfer a private image
+- **WHEN** publication consumes a private artifact source
+- **THEN** the runtime SHALL download and verify it locally before official HTTPS multipart upload to import storage
+- **AND** it SHALL NOT pass secret URLs to PVE download-url or use CLI writes as a fallback
+- **AND** unique staging names, preexisting-file refusal and scoped upload/delete permissions SHALL prevent overwriting or adopting unrelated import files
+- **AND** capacity checks SHALL use publisher-local and API-visible storage information and account for known shared filesystem usage
+
+#### Scenario: Receiving-node details are not observable
+- **WHEN** exact receiving-node /var/tmp capacity or proxy upload limits cannot be observed through the available interface
+- **THEN** the publisher SHALL report that limitation and apply explicit site constraints where provided, without treating another storage's capacity as equivalent evidence
+- **AND** absence of that exact observation alone SHALL NOT require SSH, a new space helper or block publication
+- **AND** actual ENOSPC, upload-limit rejection and uncertain request outcomes SHALL retain their normal failure and recovery semantics
+
+### Requirement: Publication facts and caller promotion are separate
+The system SHALL report technical PVE publication facts separately from image construction, guest checks and caller-owned availability/promotion.
+
+#### Scenario: Deliver a technically published template
+- **WHEN** native conversion finishes successfully
+- **THEN** the publisher SHALL additionally verify exact object identity, associated volumes, template flag and required hardware/Cloud-init configuration
+- **AND** it SHALL return the current versioned template record linked to the artifact and execution without declaring caller promotion or unperformed guest acceptance
+- **AND** required template verification or result collection failure SHALL prevent overall success while preserving independently confirmed template facts
+
+#### Scenario: Only known staging cleanup remains
+- **WHEN** template verification succeeds, all original native tasks are confirmed stopped, results are durably retained and the only remaining effect is an exact publisher-owned staging file whose deletion failed
+- **THEN** publication MAY succeed with an explicit cleanup warning and separately retained cleanup-failed status
+- **AND** the caller MAY settle the original publication pending and evaluate template availability under its normal policy while tracking cleanup independently
+- **AND** subsequent staging deletion SHALL still require a new PVE cleanup plan/apply with current ownership and task-inactivity checks
+- **AND** unknown activity, ownership, object effects or required result persistence SHALL NOT be reclassified as this known-residual case
+
+#### Scenario: Observe a pre-existing template
+- **WHEN** a caller selects a current template directly
+- **THEN** read SHALL create a fresh new-schema observation of its exact identity/configuration
+- **AND** it SHALL NOT parse/upgrade an old record or invent historical image cleaning, build or execution success
+
+#### Scenario: Validate before promotion
+- **WHEN** a caller admits a new template only for a bounded verification VM
+- **THEN** it SHALL be usable only for that verification purpose until the caller supplies current normal-use admission
+
+### Requirement: Template pool placement is a publication binding
+Current versioned publication request and preview/result/record SHALL preserve optional pool placement separately from stable VM configuration and bind the stable cluster scope for VMID reservation. Omission/null SHALL request no pool; a specified name SHALL be nonempty and refer to an existing authorized pool. Native VM creation SHALL receive the pool directly and verification SHALL confirm actual membership without pool or ACL management.
+
+#### Scenario: Publish a template into an existing pool
+- **WHEN** plan and approval fix an existing pool and current effective permissions satisfy creation and publication
+- **THEN** apply SHALL create the VM directly in that pool, confirm membership and retain the requested/observed placement in protected preview/result/record
+- **AND** UUID/config/volume identity and caller promotion rules SHALL remain independently required
+
+#### Scenario: Publish without pool
+- **WHEN** publication omits pool or explicitly selects null
+- **THEN** native creation SHALL request no pool placement and current records SHALL retain that fact
+- **AND** it SHALL NOT choose a default pool
+
+#### Scenario: Pool changes or cannot be used
+- **WHEN** the execution pool differs from the approved preview or existence/effective permission cannot be established
+- **THEN** apply SHALL refuse before upload/create and retain a classified diagnostic
+- **AND** it SHALL NOT change pool, drop the pool argument or manage ACLs
+
+#### Scenario: New execution consumes a noncurrent publication contract
+- **WHEN** a new publication or VM dependency lacks the latest required request/record/preview bindings
+- **THEN** it SHALL reject without translating the input or modifying state
+- **AND** read-only parsing of retained rc.19 acceptance evidence SHALL remain confined to the formal acceptance-recovery operation

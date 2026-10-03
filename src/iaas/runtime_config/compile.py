@@ -11,6 +11,7 @@ import tempfile
 import yaml
 
 from iaas.common.errors import ValidationError, require
+from iaas.common.config_checks import checked_input
 from .loader import SelectedConfig
 
 
@@ -23,18 +24,19 @@ def compile_documents(selected: SelectedConfig) -> dict[str, str]:
         "foundation": {"inventory"}, "k3s": {"intent", "inventory"},
     }
     require(required.get(component, set()) <= docs.keys(), "required component input is missing")
+    if component == "pve":
+        from iaas.pve_inventory.inventory.validation.cluster import validate_cluster
+        from iaas.pve_inventory.inventory.validation.vm import validate_vms
+        from iaas.pve_inventory.inventory.model import build_model
+        from iaas.pve_inventory.inventory.render import render_outputs
+        cluster = checked_input(selected, "cluster", docs["cluster"], validate_cluster)
+        vms = checked_input(selected, "vms", docs["vms"], lambda value: validate_vms(value, cluster))
+        result = render_outputs(build_model(cluster, vms))
+        return {"pve.tfvars.json": result["tfvars"], "pve-inventory.yml": result["ansible"],
+                "pve.md": result["docs"]}
     # Existing domain exceptions sometimes quote invalid values. Keep those
     # details out of the public runtime error channel.
     try:
-        if component == "pve":
-            from iaas.pve_inventory.inventory.validation.cluster import validate_cluster
-            from iaas.pve_inventory.inventory.validation.vm import validate_vms
-            from iaas.pve_inventory.inventory.model import build_model
-            from iaas.pve_inventory.inventory.render import render_outputs
-            cluster = validate_cluster(docs["cluster"])
-            result = render_outputs(build_model(cluster, validate_vms(docs["vms"], cluster)))
-            return {"pve.tfvars.json": result["tfvars"], "pve-inventory.yml": result["ansible"],
-                    "pve.md": result["docs"]}
         if component == "services":
             from iaas.services_inventory.validation import load_vm_names, validate_services
             from iaas.services_inventory.model import build_model

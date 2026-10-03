@@ -182,15 +182,15 @@ def normalize_vm_resources(vm_doc: dict[str, Any], cluster_vm_defaults: dict[str
         "memory_mib": require_positive_int(cluster_vm_defaults["memory_mib"], "cluster.vm_defaults.memory_mib"),
         "root_disk_gib": require_positive_int(cluster_vm_defaults["root_disk_gib"], "cluster.vm_defaults.root_disk_gib"),
     }
-    if resources is None:
-        return effective
-
-    resources_map = as_mapping(resources, f"{ctx}.resources")
+    resources_map = {} if resources is None else as_mapping(resources, f"{ctx}.resources")
     require_unknown_keys(resources_map, {"cores", "memory_mib", "root_disk_gib"}, f"{ctx}: resources")
     for key in effective:
         value = resources_map.get(key)
         if value is not None:
             effective[key] = require_positive_int(value, f"{ctx}.resources.{key}")
+        require(type(effective[key]) is int, f"{ctx}.resources.{key}: must be a positive integer")
+    for key, maximum in {"cores": 128, "memory_mib": 1_048_576, "root_disk_gib": 1024}.items():
+        require(effective[key] <= maximum, f"{ctx}.resources.{key}: exceeds supported capacity")
     return effective
 
 
@@ -236,7 +236,9 @@ def validate_vms(vms_doc: dict[str, Any], cluster_state: dict[str, Any]) -> list
     """Validate VM declarations and return normalized VM records."""
     from .passthrough import normalize_vm_passthrough
 
-    require(vms_doc.get("schema_version") == 1, "vms: schema_version must be 1")
+    require_unknown_keys(vms_doc, {"schema_version", "vms"}, "vms")
+    require(type(vms_doc.get("schema_version")) is int and vms_doc["schema_version"] == 1,
+            "vms.schema_version: must be 1")
     vms = as_list(vms_doc.get("vms"), "vms.vms")
     seen_ids: set[int] = set()
     seen_names: set[str] = set()
@@ -248,6 +250,9 @@ def validate_vms(vms_doc: dict[str, Any], cluster_state: dict[str, Any]) -> list
     for index, vm in enumerate(vms):
         ctx = f"vms.vms[{index}]"
         vm_doc = as_mapping(vm, ctx)
+        require_unknown_keys(vm_doc, {"name", "vmid", "lifecycle_class", "node", "nics", "ansible_groups",
+                                     "tags", "ha", "pool", "template", "resources", "storage", "boot", "passthrough",
+                                     "network", "static_ip", "gateway", "dns"}, ctx)
         name = vm_doc.get("name")
         vmid = vm_doc.get("vmid")
         lifecycle = vm_doc.get("lifecycle_class")
@@ -256,6 +261,7 @@ def validate_vms(vms_doc: dict[str, Any], cluster_state: dict[str, Any]) -> list
         ansible_groups = _normalize_string_list(vm_doc.get("ansible_groups"), f"{ctx}.ansible_groups", "a lower-case Ansible-safe identifier", ANSIBLE_GROUP_RE, "ansible_groups value")
         tags = _normalize_string_list(vm_doc.get("tags"), f"{ctx}.tags", "a lower-case PVE tag token", PVE_TAG_RE, "tag")
         ha = as_mapping(vm_doc.get("ha"), f"{ctx}.ha")
+        require_unknown_keys(ha, {"enabled", "group", "state"}, f"{ctx}.ha")
         pool = vm_doc.get("pool")
         template_name = vm_doc.get("template", cluster_state["default_template"])
 
@@ -263,7 +269,7 @@ def validate_vms(vms_doc: dict[str, Any], cluster_state: dict[str, Any]) -> list
         require(name_str not in seen_names, f"{ctx}: duplicate VM name {name_str}")
         seen_names.add(name_str)
 
-        require(isinstance(vmid, int), f"{ctx}: vmid must be an integer")
+        require(type(vmid) is int, f"{ctx}.vmid: must be an integer")
         vmid_int = cast(int, vmid)
         require(vmid_int not in seen_ids, f"{ctx}: duplicate VMID {vmid_int}")
         seen_ids.add(vmid_int)

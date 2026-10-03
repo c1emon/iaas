@@ -10,6 +10,8 @@ retry branches. Python validators additionally enforce cross-field identities,
 required-check completeness and result conclusions. Runtime evidence validation
 is required before any mutation; JSON schema acceptance is not authorization.
 
-All fields are required unless explicitly nullable. Evidence references are
+Required fields are listed in each schema. General-template acceptance may also
+select `temporary_vm.disk_size_gib` and `temporary_vm.nameservers`; these optional
+fields enable root growth and actual guest network/DNS verification. Evidence references are
 relative to the protected mapped evidence root. Schema validation cannot replace
 filesystem confinement, digest verification or original-material comparisons.

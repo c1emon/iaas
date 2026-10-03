@@ -24,6 +24,7 @@ from urllib.parse import quote, unquote, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, HTTPSHandler, ProxyHandler, Request, build_opener
 
 from iaas.common.errors import ValidationError, require
+from iaas.common.config_checks import checked_input
 from iaas.common.io import load_json, write_text
 from iaas.runtime_execution.execution import Execution, OperationFailed
 from iaas.runtime_execution.pve_contracts import validate_execution_admission, validate_vmid_reservation
@@ -554,9 +555,13 @@ def _verify_requested_config(config: Mapping[str, Any], request: Mapping[str, An
                 "boot": f"order={hardware['boot_disk']}"}
     require(all(str(config.get(key)) == str(value) for key, value in expected.items()),
             "PVE template configuration does not match the fixed publication request")
-    network = str(config.get("net0", "")).split(",")
-    require(network[0].split("=", 1)[0] == "virtio" and f"bridge={hardware['bridge']}" in network,
-            "PVE template network does not match the fixed publication request")
+    nics = {key for key in config if re.fullmatch(r"net\d+", key)}
+    if hardware["bridge"] is None:
+        require(not nics, "PVE template network must have no NIC for hardware.bridge=null")
+    else:
+        network = str(config.get("net0", "")).split(",")
+        require(nics == {"net0"} and network[0].split("=", 1)[0] == "virtio" and f"bridge={hardware['bridge']}" in network,
+                "PVE template network does not match the fixed publication request")
     agent = str(config.get("agent", "")).split(",")
     require("1" in agent or "enabled=1" in agent, "PVE template guest agent configuration is missing")
     require(config.get("bios", "seabios") == ("ovmf" if hardware["firmware"] == "uefi" else "seabios"),
@@ -801,8 +806,9 @@ def _publish(selected: Any, execution: Execution, request: Mapping[str, Any], pr
         create_fields: dict[str, Any] = {"vmid": vmid, "name": request["name"],
             "cores": request["hardware"]["cpus"], "memory": request["hardware"]["memory_mib"],
             "machine": request["hardware"]["machine"], "scsihw": request["hardware"]["scsi_controller"],
-            "net0": f"virtio,bridge={request['hardware']['bridge']}",
             "smbios1": f"uuid={created_uuid}"}
+        if request["hardware"]["bridge"] is not None:
+            create_fields["net0"] = f"virtio,bridge={request['hardware']['bridge']}"
         if request.get("pool") is not None:
             create_fields["pool"] = request["pool"]
         if request["hardware"]["firmware"] == "uefi":
@@ -1124,9 +1130,11 @@ def run(selected: Any, operation: str, scope: str, execution: Execution,
     if operation == "check":
         require(action in {"publish", "cleanup", "retire"},
                 "pve-template check action must be publish, cleanup or retire")
-        request = (validate_cleanup_request(_document(selected, "cleanup")) if action == "cleanup" else
-                   validate_retire_request(_document(selected, "retire")) if action == "retire" else
-                   validate_publish_request(_document(selected)))
+        document = _document(selected, action)
+        name = next((key for key, value in selected.documents.items() if value == document), "request")
+        validator = {"cleanup": validate_cleanup_request, "retire": validate_retire_request,
+                     "publish": validate_publish_request}[action]
+        request = checked_input(selected, name, document, validator)
         execution.finish({"component": "pve-template", "operation": operation, "schema_version": 1,
                           "action": action,
                           "request_digest": canonical_digest(request), "network": False, "state": False})

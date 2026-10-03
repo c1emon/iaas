@@ -106,6 +106,14 @@ The fixed guest checks use agent ping, `cloud-init status --format json`, and
 agent hostname. Cloud-init must report enabled, completed, nondegraded execution
 without errors; missing tools/output, unchanged hostname, failures and deadlines
 do not pass. Raw output and hostname remain in protected execution materials.
+For general-template acceptance, optional `temporary_vm.disk_size_gib` selects
+an integer output capacity of 8–1024 GiB and `temporary_vm.nameservers` selects
+one to three IP addresses. Shrinking is refused before clone; the disk limit
+must include auxiliary volumes. Resize, NIC/IP/DNS and instance configuration
+are checked before first boot. Fixed read-only guest observation then verifies
+actual root disk/partition/filesystem growth, address, default route, upstream
+DNS and initialized identity. A systemd-resolved stub is resolved through its
+actual upstream resolver file; missing or wrong upstream evidence fails closed.
 The runtime generates an execution-owned user-data snippet with the injected
 hostname and a `users` list preserving the template `ciuser` (or the image default).
 Passwords are locked and package updates are disabled for this bounded technical
@@ -121,6 +129,10 @@ ownership and native task inactivity, stops/deletes only the clone, checks exact
 VM and owned-volume absence, and rechecks source identity/configuration. Unknown
 native outcomes or changed ownership retain resources. A lost delete response
 cannot be converted to historical success just because the VM is now absent.
+After confirmed deletion, only read-only storage inventory HTTP 500/502/503/504
+may be retried within a 30-second window and the frozen cleanup budget. DELETE
+is not retried. Persistent errors, incomplete inventory or retained owned
+volumes do not produce successful cleanup.
 The source comparison excludes transient lock/digest fields; it is not a disk-byte
 integrity attestation. No guest SSH, external connectivity or business test runs.
 

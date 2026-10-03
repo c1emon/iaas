@@ -1,0 +1,7 @@
+schema_version: 1
+environment: debian13-example
+components:
+  pve:
+    inputs:
+      cluster: cluster.yml
+      vms: vms.yml
