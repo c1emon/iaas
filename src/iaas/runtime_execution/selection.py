@@ -275,6 +275,13 @@ def load_operation(entry: Path, component: str, operation: str, scenario: str | 
         else:
             inputs = set()
             files |= {"execution_result"} if "execution_result" in metadata.file_paths else set()
+    elif component == "pve-template" and operation == "check":
+        action = metadata.options.get("action") or "publish"
+        require(action in {"publish", "cleanup", "retire"},
+                "pve-template check action must be publish, cleanup or retire")
+        declared = _declared_input_names(entry, component, scenario, reader)
+        require(declared <= _PVE_TEMPLATE_INPUTS, "unsupported pve-template input")
+        inputs = declared & ({"request", "publish"} if action == "publish" else {action})
     elif component == "pve-template" and operation in OPNSENSE_WORKFLOW_OPERATIONS:
         declared = _declared_input_names(entry, component, scenario, reader)
         require(declared <= _PVE_TEMPLATE_INPUTS, "unsupported pve-template input")

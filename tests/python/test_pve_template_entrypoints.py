@@ -9,6 +9,73 @@ from test_image_publish_contracts import request as publish_request
 from test_pve_template_publisher import API, Outputs
 
 
+@pytest.mark.parametrize("action", [None, "publish", "cleanup", "retire"])
+@pytest.mark.parametrize("invalid", [False, True])
+def test_check_selects_action_input_and_validator_offline(tmp_path, monkeypatch, action, invalid):
+    import json
+    from pathlib import Path
+
+    from iaas.runtime_config import SourceReader
+    from iaas.runtime_execution.operations import operation_for
+    from iaas.runtime_execution.selection import load_operation
+
+    chosen = action or "publish"
+    if chosen == "publish":
+        request = publish_request()
+    else:
+        root = Path(__file__).parents[2] / "docs/examples/image-publish"
+        request = json.loads((root / f"pve-template-{chosen}-request.json").read_text())
+    if invalid:
+        request["target"]["tls_verify"] = False
+    request_path = tmp_path / "request.json"
+    request_path.write_text(json.dumps(request))
+    inputs = {name: str(tmp_path / f"missing-{name}.json") for name in ("publish", "cleanup", "retire")}
+    inputs[chosen] = str(request_path)
+    entry = tmp_path / "environment.json"
+    entry.write_text(json.dumps({"schema_version": 1, "environment": "check-action", "components": {
+        "pve-template": {"inputs": inputs, "options": {} if action is None else {"action": action},
+                         "files": {"api_ca": str(tmp_path / "missing-ca.pem")}}}}))
+    selected = load_operation(entry, "pve-template", "check", None, SourceReader())
+    assert set(selected.documents) == {chosen}
+    assert not selected.files
+    reports = []
+    execution = SimpleNamespace(finish=reports.append)
+    monkeypatch.setattr(runtime, "_client", lambda *args: pytest.fail("check must remain offline"))
+    monkeypatch.setattr(runtime, "_delete_action", lambda *args: pytest.fail("check must not delete resources"))
+    if invalid:
+        with pytest.raises(ValidationError):
+            runtime.run(selected, "check", "cohe", execution, image_digest="")
+        assert reports == []
+    else:
+        runtime.run(selected, "check", "cohe", execution, image_digest="")
+        validator = {"publish": runtime.validate_publish_request,
+                     "cleanup": runtime.validate_cleanup_request,
+                     "retire": runtime.validate_retire_request}[chosen]
+        assert reports[0]["action"] == chosen
+        assert reports[0]["request_digest"] == runtime.canonical_digest(validator(request))
+        assert reports[0]["network"] is False
+        assert reports[0]["state"] is False
+    effects = operation_for("pve-template", "check")
+    assert not effects.network and not effects.infrastructure_write and not effects.state
+
+
+def test_check_rejects_unknown_action_without_publish_fallback():
+    selected = SimpleNamespace(options={"action": "unknown"}, documents={"publish": publish_request()})
+    with pytest.raises(ValidationError, match="check action must be publish, cleanup or retire"):
+        runtime.run(selected, "check", "cohe", SimpleNamespace(), image_digest="")
+
+
+@pytest.mark.parametrize("action", ["cleanup", "retire"])
+@pytest.mark.parametrize("wrong_kind", [False, True])
+def test_check_never_substitutes_publish_for_action_input(action, wrong_kind):
+    documents = {"publish": publish_request()}
+    if wrong_kind:
+        documents[action] = publish_request()
+    selected = SimpleNamespace(options={"action": action}, documents=documents)
+    with pytest.raises(ValidationError):
+        runtime.run(selected, "check", "cohe", SimpleNamespace(), image_digest="")
+
+
 def test_read_does_not_report_an_ordinary_vm_as_verified_template(tmp_path, monkeypatch):
     api = API()
     api.config["scsi0"] = "images:vm-9001-disk-0,size=8G"
