@@ -146,8 +146,12 @@ def validate_automation(cluster_doc: dict[str, Any], storage_roles: dict[str, An
 
 def validate_cluster(cluster_doc: dict[str, Any]) -> dict[str, Any]:
     """Validate cluster policy and return normalized state for rendering."""
-    require(cluster_doc.get("schema_version") == 1, "cluster: schema_version must be 1")
+    require_unknown_keys(cluster_doc, {"schema_version", "cluster", "reserved_vm_id_ranges", "storage_roles",
+                                      "networks", "nodes", "vm_defaults", "templates", "pci_mappings"}, "cluster")
+    require(type(cluster_doc.get("schema_version")) is int and cluster_doc["schema_version"] == 1,
+            "cluster.schema_version: must be 1")
     cluster = as_mapping(cluster_doc.get("cluster"), "cluster.cluster")
+    require_unknown_keys(cluster, {"name", "default_template", "automation"}, "cluster.cluster")
     name = require_non_empty_string(cluster.get("name"), "cluster.cluster.name")
     require(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name) is not None, "cluster.cluster.name must be PVE-safe")
     default_template = require_non_empty_string(cluster.get("default_template"), "cluster.cluster.default_template")
@@ -160,6 +164,7 @@ def validate_cluster(cluster_doc: dict[str, Any]) -> dict[str, Any]:
     for role_name, role_value in storage_roles.items():
         role_context = f"cluster.storage_roles.{role_name}"
         role = as_mapping(role_value, role_context)
+        require_unknown_keys(role, {"datastore", "purpose", "content"}, role_context)
         datastore = require_non_empty_string(role.get("datastore"), f"{role_context}.datastore")
         require(datastore not in datastores, f"{role_context}.datastore: datastore is already used by another role")
         datastores.add(datastore)
@@ -171,6 +176,7 @@ def validate_cluster(cluster_doc: dict[str, Any]) -> dict[str, Any]:
     for network_name, network_value in networks.items():
         network_context = f"cluster.networks.{network_name}"
         network = as_mapping(network_value, network_context)
+        require_unknown_keys(network, {"bridge", "cidr", "gateway", "dns", "attach_vms"}, network_context)
         require_non_empty_string(network.get("bridge"), f"{network_context}.bridge")
         cidr = require_non_empty_string(network.get("cidr"), f"{network_context}.cidr")
         try:
@@ -201,6 +207,7 @@ def validate_cluster(cluster_doc: dict[str, Any]) -> dict[str, Any]:
     for node_name, node_value in nodes.items():
         node_context = f"cluster.nodes.{node_name}"
         node = as_mapping(node_value, node_context)
+        require_unknown_keys(node, {"mgmt_ip", "storage_ip", "ssh_host"}, node_context)
         for address_field in ("mgmt_ip", "storage_ip"):
             address = _require_ip(node.get(address_field), f"{node_context}.{address_field}")
             require(address not in node_ips, f"{node_context}.{address_field}: duplicate node address")
@@ -210,10 +217,13 @@ def validate_cluster(cluster_doc: dict[str, Any]) -> dict[str, Any]:
         node_ssh_hosts.add(ssh_host)
 
     vm_defaults = as_mapping(cluster_doc.get("vm_defaults"), "cluster.vm_defaults")
+    require_unknown_keys(vm_defaults, {"cores", "memory_mib", "root_disk_gib", "primary_nics", "cpu_type", "bios",
+                                      "machine", "clone_mode", "scsi_controller", "primary_disk", "pool"}, "cluster.vm_defaults")
     for field in ("cores", "memory_mib", "root_disk_gib", "primary_nics"):
         require_positive_int(vm_defaults.get(field), f"cluster.vm_defaults.{field}")
     for field in ("cpu_type", "bios", "machine", "clone_mode", "scsi_controller", "primary_disk"):
         require_non_empty_string(vm_defaults.get(field), f"cluster.vm_defaults.{field}")
+    require(vm_defaults["clone_mode"] == "full", "cluster.vm_defaults.clone_mode: only full clones are supported")
     default_pool = vm_defaults.get("pool")
     require(default_pool is None or (isinstance(default_pool, str) and re.fullmatch(PVE_NAME_RE, default_pool) is not None), "cluster.vm_defaults.pool must be null or a nonempty PVE-safe string")
 
@@ -222,6 +232,9 @@ def validate_cluster(cluster_doc: dict[str, Any]) -> dict[str, Any]:
     for template_name, template_value in templates.items():
         tctx = f"cluster.templates.{template_name}"
         template = as_mapping(template_value, tctx)
+        require_unknown_keys(template, {"vmid", "name", "architecture", "node", "storage_role", "source_storage_role",
+                                        "disk_size_gib", "cpu_type", "bios", "machine", "clone_mode", "scsi_controller",
+                                        "primary_disk", "primary_nics"}, tctx)
         vmid = template.get("vmid")
         require(isinstance(vmid, int), f"{tctx}: vmid must be an integer")
         vmid_int = cast(int, vmid)
@@ -242,7 +255,9 @@ def validate_cluster(cluster_doc: dict[str, Any]) -> dict[str, Any]:
         template_names.add(template_name_value)
 
         require_positive_int(template.get("disk_size_gib"), f"{tctx}.disk_size_gib")
-        require_positive_int(template.get("primary_nics"), f"{tctx}.primary_nics")
+        require(type(template.get("primary_nics")) is int and 0 <= template["primary_nics"] <= 32,
+                f"{tctx}.primary_nics: must be an integer between 0 and 32")
+        require(template["clone_mode"] == "full", f"{tctx}.clone_mode: only full clones are supported")
 
         template_storage_role = cast(str, template["storage_role"])
         require(template_storage_role in storage_roles, f"{tctx}: storage_role must reference a declared storage role")

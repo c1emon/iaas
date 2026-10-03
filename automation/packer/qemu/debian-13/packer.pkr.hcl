@@ -52,11 +52,14 @@ variable "uefi_vars" {
 }
 variable "cpus" { type = number }
 variable "memory_mib" { type = number }
+variable "disk_size_gib" { type = number }
+variable "package_upgrade" { type = bool }
 
 source "qemu" "debian-13-amd64" {
   iso_url              = var.base_image
   iso_checksum         = var.base_checksum
   disk_image           = true
+  disk_size            = "${var.disk_size_gib}G"
   output_directory     = var.output_directory
   vm_name              = "disk.qcow2"
   format               = "qcow2"
@@ -103,6 +106,7 @@ build {
       "--extra-vars", "image_locale=${var.locale}",
       "--extra-vars", "image_cloud_init=${var.cloud_init}",
       "--extra-vars", "image_guest_agent=${var.guest_agent}",
+      "--extra-vars", "image_package_upgrade=${var.package_upgrade}",
     ]
   }
 }

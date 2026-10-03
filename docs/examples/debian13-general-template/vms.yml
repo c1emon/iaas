@@ -1,0 +1,34 @@
+schema_version: 1
+vms:
+- name: debian13-clone-example
+  vmid: 1000
+  lifecycle_class: long_lived
+  node: synthetic-node
+  nics:
+  - name: mgmt0
+    role: management
+    network: lab
+    macaddr: '52:54:00:01:02:03'
+    static_ip: 10.10.0.100/24
+    gateway: 10.10.0.254
+    default_route: true
+    ansible_connection: true
+    dns:
+    - 10.5.0.15
+  ansible_groups:
+  - lab
+  tags:
+  - synthetic
+  pool: dev
+  boot:
+    started: false
+    on_boot: false
+  ha:
+    enabled: false
+    group: null
+    state: null
+  passthrough: null
+  resources:
+    cores: 8
+    memory_mib: 8192
+    root_disk_gib: 128

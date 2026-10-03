@@ -15,10 +15,9 @@ The stable schemas live under `automation/schemas/image-publish/v1/`:
 
 The `v1` directory is the stable image-publish contract bundle version. It is
 not a promise that every document inside the bundle has
-`schema_version: 1`: each `kind` owns its own evolution. The current PVE
-preview, template record, and template result documents are explicitly
-`schema_version: 2`; their request and cleanup/retire companions remain
-`schema_version: 1`. Use the `title` and `schema_version` in each schema for
+`schema_version: 1`: each `kind` owns its own evolution. The build request is
+version 2, the PVE publish request is version 2, and the PVE preview,
+template record and template result are version 3. Use the `title` and `schema_version` in each schema for
 the concrete document version, while keeping this directory and its `$id`
 paths stable for the v1 bundle.
 
@@ -27,6 +26,29 @@ contract code at `src/iaas/image/contracts.py` and
 writes `diagnostics/normalized.json` for `image check`. The file contains the
 normalized document and `input_digest`; callers should bind that digest rather
 than JSON formatting or object-key order.
+
+Build requests require `disk_size_gib` (integer 8–1024), the output virtual
+capacity, separate from physical `resources.max_output_bytes`. Bases larger
+than the target are rejected before Packer; shrinking is unsupported. Final
+QEMU capacity must match exactly and is recorded in `artifact.disk.virtual_size_bytes`.
+
+`customization.package_upgrade` is an optional boolean, normalized to false.
+When true, the builder refreshes the selected repositories and performs an
+APT distribution upgrade. Failure fails the build before a successful artifact
+is produced. Package versions come from repositories at build time; clones
+need no first-boot upgrade.
+
+Mandatory `hardware.bridge: null` explicitly selects no NIC. Omission or an
+empty string is invalid. With null, `cloud_init_defaults.ip_config` must be
+absent: creation sends no `net0`, verification rejects every `netN`, and the
+record preserves absence. Cloud-init networking remains available to clones.
+
+`check` validates local build, publication and PVE clone inputs, rejects
+unsupported fields, wrong types, linked clones, disk shrink requests and
+incompatible firmware, and identifies input file, field and reason without
+echoing rejected values. It reads no credentials and performs no network or
+facility operations. Actual base image capacity is verified on download in
+build; checking a locator does not download its image.
 
 Concrete cross-repository fixtures live under `docs/examples/image-publish/`:
 the inline artifact, build request, image test result, publish request, preview,

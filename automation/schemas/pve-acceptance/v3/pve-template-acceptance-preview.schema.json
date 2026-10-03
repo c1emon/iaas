@@ -288,6 +288,37 @@
           "title": "Disk Limit Bytes",
           "type": "integer"
         },
+        "disk_size_gib": {
+          "anyOf": [
+            {
+              "maximum": 1024,
+              "minimum": 8,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Disk Size Gib"
+        },
+        "nameservers": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 3,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Nameservers"
+        },
         "boot": {
           "pattern": "^(?:scsi|virtio|sata)[0-9]+$",
           "title": "Boot",

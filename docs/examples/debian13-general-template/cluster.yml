@@ -1,0 +1,83 @@
+schema_version: 1
+cluster:
+  name: synthetic-pve
+  default_template: synthetic
+  automation:
+    ansible_user: ops
+    cloud_init:
+      drive_storage_role: disks
+      snippet_storage_role: images
+      snippet_file_prefix: synthetic
+      users:
+      - name: ops
+        gecos: Synthetic operator
+        groups: sudo
+        shell: /bin/bash
+        sudo:
+        - ALL=(ALL) NOPASSWD:ALL
+        password_env: SYNTHETIC_PASSWORD
+        public_key_env: SYNTHETIC_PUBLIC_KEY
+reserved_vm_id_ranges:
+  templates:
+  - 9000
+  - 9500
+  long_lived:
+  - 1000
+  - 2000
+  ephemeral_lab:
+  - 500
+  - 800
+storage_roles:
+  disks:
+    datastore: memory
+    purpose: vm_template_disks
+    content:
+    - disk
+  images:
+    datastore: images
+    purpose: iso_import_snippets
+    content:
+    - iso
+    - import
+    - snippets
+networks:
+  lab:
+    bridge: br_dev
+    cidr: 10.10.0.0/24
+    gateway: 10.10.0.254
+    dns: 10.5.0.15
+    attach_vms: true
+nodes:
+  synthetic-node:
+    mgmt_ip: 198.51.100.10
+    storage_ip: 203.0.113.10
+    ssh_host: synthetic-node.example.invalid
+vm_defaults:
+  cores: 2
+  memory_mib: 2048
+  root_disk_gib: 128
+  cpu_type: host
+  bios: seabios
+  machine: q35
+  clone_mode: full
+  scsi_controller: virtio-scsi-single
+  primary_disk: scsi0
+  primary_nics: 1
+  pool: null
+templates:
+  synthetic:
+    vmid: 9000
+    name: debian13-general-template
+    architecture: amd64
+    node: synthetic-node
+    storage_role: disks
+    source_storage_role: images
+    disk_size_gib: 8
+    cpu_type: host
+    bios: seabios
+    machine: q35
+    clone_mode: full
+    scsi_controller: virtio-scsi-single
+    primary_disk: scsi0
+    primary_nics: 0
+pci_mappings: {}

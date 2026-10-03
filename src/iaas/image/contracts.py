@@ -16,6 +16,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from iaas.common.errors import require
+from iaas.common.config_checks import require_fields
 
 IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -27,7 +28,7 @@ SUPPORTED_CHECKS = {
     "cloud-init", "guest-agent", "first-boot",
 }
 RESOURCE_FIELDS = {"cpus", "memory_mib", "work_min_free_bytes", "max_output_bytes", "timeout_seconds"}
-BUILD_REQUEST_VERSION = 1
+BUILD_REQUEST_VERSION = 2
 TEST_REQUEST_VERSION = 1
 ARTIFACT_VERSION = 1
 
@@ -161,9 +162,9 @@ def _checksum(value: Any, label: str = "base.checksum") -> dict[str, str]:
 
 def validate_build_request(value: Any) -> dict[str, Any]:
     request = _mapping(value, "image build request")
-    require(set(request) == {"kind", "schema_version", "profile", "version", "base", "guest",
-                             "customization", "resources", "checks"},
-            "image build request contains unsupported or missing fields")
+    fields = {"kind", "schema_version", "profile", "version", "base", "guest", "disk_size_gib",
+              "customization", "resources", "checks"}
+    require_fields(request, fields, "image build request", required=fields)
     require(request.get("kind") == "image-build-request", "unsupported image build request")
     _version(request.get("schema_version"), BUILD_REQUEST_VERSION, "image build request schema_version")
     profile = _mapping(request["profile"], "profile")
@@ -180,9 +181,14 @@ def validate_build_request(value: Any) -> dict[str, Any]:
     require(architecture == "amd64", "only amd64 image builds are supported")
     firmware = _text(guest["firmware"], "guest.firmware", IDENTIFIER)
     require(firmware in {"bios", "uefi"}, "guest.firmware must be bios or uefi")
+    disk_size = request["disk_size_gib"]
+    require(type(disk_size) is int and 8 <= disk_size <= 1024,
+            "disk_size_gib must be a whole integer between 8 and 1024 GiB; smaller Debian disks are unsupported")
     customization = _mapping(request["customization"], "customization")
-    allowed = {"apt_mirror", "apt_security_mirror", "packages", "timezone", "locale", "cloud_init", "guest_agent"}
-    require(set(customization) <= allowed, "customization contains unsupported fields")
+    allowed = {"apt_mirror", "apt_security_mirror", "packages", "timezone", "locale", "cloud_init", "guest_agent", "package_upgrade"}
+    require_fields(customization, allowed, "customization")
+    require(type(customization.get("package_upgrade", False)) is bool,
+            "customization.package_upgrade must be a boolean")
     mirrors = {key: _url(customization[key], f"customization.{key}") for key in ("apt_mirror", "apt_security_mirror")
                if key in customization}
     packages = customization.get("packages", [])
@@ -195,6 +201,7 @@ def validate_build_request(value: Any) -> dict[str, Any]:
         "version": _text(request["version"], "version", IDENTIFIER),
         "base": {"object_ref": object_ref, "checksum": _checksum(base["checksum"])},
         "guest": {"architecture": architecture, "firmware": firmware},
+        "disk_size_gib": disk_size,
         "customization": {**mirrors, "packages": list(packages),
                            **({key: _text(customization[key], f"customization.{key}")
                                for key in ("timezone", "locale") if key in customization}),
@@ -203,6 +210,7 @@ def validate_build_request(value: Any) -> dict[str, Any]:
         "resources": _resources(request["resources"]),
         "checks": _checks(request["checks"], "checks"),
     }
+    result["customization"]["package_upgrade"] = customization.get("package_upgrade", False)
     require(result["customization"]["cloud_init"] in {"installed", "absent"}, "invalid cloud_init setting")
     require(result["customization"]["guest_agent"] in {"installed", "absent"}, "invalid guest_agent setting")
     return result

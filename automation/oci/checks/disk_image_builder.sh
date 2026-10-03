@@ -23,5 +23,6 @@ docker run --rm --network none --platform linux/amd64 --read-only --tmpfs /tmp:r
     -e packages_json='[]' \
     -e image_timezone=UTC \
     -e image_locale=C.UTF-8 \
+    -e image_package_upgrade=false \
     -e image_cloud_init=installed \
     -e image_guest_agent=installed

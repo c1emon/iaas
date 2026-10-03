@@ -13,10 +13,11 @@ from urllib.parse import urlsplit
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from iaas.common.errors import ValidationError as ContractValidationError
 
 from iaas.image.contracts import canonical_digest as canonical_digest
 from iaas.image.contracts import load_strict_json as load_strict_json
-from iaas.pve_template.contracts import validate_template_record_v3
+from iaas.pve_template.contracts import validate_template_record_v3, validate_ip_config
 
 Identifier = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")]
 Digest = Annotated[str, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
@@ -138,8 +139,19 @@ class TemporaryVM(Contract):
     cpus: Annotated[int, Field(ge=1, le=128)]
     memory_mib: Annotated[int, Field(ge=128, le=1048576)]
     disk_limit_bytes: Annotated[int, Field(gt=0, le=1099511627776)]
+    disk_size_gib: Annotated[int, Field(ge=8, le=1024)] | None = Field(default=None, exclude_if=lambda value: value is None)
+    nameservers: Annotated[list[str], Field(min_length=1, max_length=3)] | None = Field(default=None, exclude_if=lambda value: value is None)
     boot: Annotated[str, Field(pattern=r'^(?:scsi|virtio|sata)[0-9]+$')]
     firmware: Literal['bios', 'uefi']
+
+    @model_validator(mode='after')
+    def selected_growth_and_dns(self):
+        validate_ip_config(self.ip_config, 'temporary_vm.ip_config')
+        if self.disk_size_gib is not None and self.disk_size_gib * 1024 ** 3 >= self.disk_limit_bytes:
+            raise ValueError('disk limit must include system disk and clone-owned auxiliary volumes')
+        for value in self.nameservers or []:
+            ip_address(value)
+        return self
 
 
 class SSHConnection(Contract):
@@ -528,9 +540,15 @@ def _validate(model: type[Contract], value: Any) -> dict[str, Any]:
         if type(value.get('schema_version')) is not int:
             raise ValueError('unsupported schema version')
         return result.model_dump()
-    except ValidationError:
+    except ValidationError as exc:
         # Never expose rejected values, guest configuration or caller credentials.
-        raise ValueError(f'invalid {model.__name__} contract') from None
+        issues = []
+        for error in exc.errors(include_input=False, include_context=False, include_url=False)[:8]:
+            location = '.'.join(str(item) if isinstance(item, int) or
+                                re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,63}', str(item))
+                                else '<field>' for item in error['loc']) or 'input'
+            issues.append(f"{location}: {error['type']}")
+        raise ContractValidationError(f"invalid {model.__name__} contract; {'; '.join(issues)}") from None
 
 
 def validate_acceptance_request(value: Any) -> dict[str, Any]:

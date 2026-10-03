@@ -272,6 +272,15 @@ def admit_acceptance(client: Any, request: dict, *, helpers: Any) -> dict:
     if firmware != vm['firmware']:
         raise AdmissionError('disk_boot_mismatch')
     capacity = disk_capacity(client, source, record, vm['disk_limit_bytes'])
+    if vm.get('disk_size_gib') is not None:
+        target_bytes = vm['disk_size_gib'] * 1024 ** 3
+        boot = next(row for row in capacity['disks'] if row['slot'] == vm['boot'])
+        if target_bytes < boot['required_bytes']:
+            raise AdmissionError('disk_shrink_unsupported', capacity=capacity)
+        boot['required_bytes'] = target_bytes
+        capacity['total_required_bytes'] = sum(row['required_bytes'] for row in capacity['disks'])
+        if capacity['total_required_bytes'] > vm['disk_limit_bytes']:
+            raise AdmissionError('disk_limit_exceeded', capacity=capacity)
     for storage, content in ((vm['storage'], 'images'), (request['cloud_init']['snippet_storage'], 'snippets')):
         permissions.require('/storage/' + storage, ('Datastore.Audit', 'Datastore.AllocateSpace'), operation='storage')
         info = get(nodepath + '/storage/' + quote(storage, safe='') + '/status', 'storage_unavailable')

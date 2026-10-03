@@ -17,6 +17,7 @@ from .acceptance_execution import begin, observe, save
 from . import acceptance_snippets
 from .deadlines import DeadlineBudget, DeadlineExpired, LocalTimeout
 from .responses import RequestRejected
+from .guest_observation import GENERAL_GUEST_OBSERVATION
 from .admission import AdmissionError, Permissions, ACCEPTANCE_PRIVILEGES, admit_acceptance, disk_capacity
 from .acceptance_plan import ReadBudgetClient
 
@@ -290,6 +291,15 @@ class Acceptance:
 
     def configure(self, config: dict[str, Any]) -> None:
         vm = self.temporary
+        if vm.get('disk_size_gib') is not None:
+            self.identity(config)
+            self.mutation('resize', 'PUT', self.base + '/resize',
+                          fields={'disk': vm['boot'], 'size': f"{vm['disk_size_gib']}G"})
+            config = self.api('GET', self.base + '/config')
+            self.identity(config)
+            capacity = disk_capacity(self.client, config, vm, vm['disk_limit_bytes'])
+            actual_size = next(row['required_bytes'] for row in capacity['disks'] if row['slot'] == vm['boot'])
+            check(actual_size == vm['disk_size_gib'] * 1024 ** 3, 'disk_resize_mismatch')
         snippet = self.upload_user_data()
         fields = {'name': self.request['cloud_init']['hostname'], 'cores': vm['cpus'], 'sockets': 1,
                   'memory': vm['memory_mib'], 'agent': 'enabled=1', 'onboot': 0,
@@ -298,8 +308,12 @@ class Acceptance:
                   'cicustom': 'user=' + snippet['file_id']}
         if vm['vlan_tag'] is not None:
             fields['net0'] += f",tag={vm['vlan_tag']}"
+        if vm.get('nameservers') is not None:
+            fields['nameserver'] = ' '.join(vm['nameservers'])
         delete = [key for key in config if (re.fullmatch(r'(net|ipconfig)\d+', key) and key not in {'net0', 'ipconfig0'})
                   or key in {'nameserver', 'searchdomain', 'cipassword', 'sshkeys'}]
+        if vm.get('nameservers') is not None and 'nameserver' in delete:
+            delete.remove('nameserver')
         if delete:
             fields['delete'] = ','.join(sorted(delete))
         self.mutation('configure', 'PUT', self.base + '/config', fields=fields, task=False)
@@ -317,6 +331,8 @@ class Acceptance:
               and not any(re.fullmatch(r'(net|ipconfig)\d+', key) and key not in {'net0', 'ipconfig0'} for key in actual)
               and actual.get('cicustom') == 'user=' + snippet['file_id']
               and any('cloudinit' in str(value) for value in actual.values()), 'disk_boot_mismatch')
+        if vm.get('nameservers') is not None:
+            check(str(actual.get('nameserver', '')).split() == vm['nameservers'], 'network_configuration_mismatch')
 
     def identity(self, config: Any) -> None:
         self.pool_check()
@@ -354,8 +370,11 @@ class Acceptance:
             self.journal['facility_writes'] = 'unknown'
             self.persist()
             try:
+                command = ['cloud-init', 'status', '--format', 'json']
+                if self.temporary.get('disk_size_gib') is not None or self.temporary.get('nameservers') is not None:
+                    command = ['python3', '-c', GENERAL_GUEST_OBSERVATION]
                 process = self.api('POST', self.base + '/agent/exec',
-                                   body=json.dumps({'command': ['cloud-init', 'status', '--format', 'json']}).encode(),
+                                   body=json.dumps({'command': command}).encode(),
                                    content_type='application/json')
             except RequestRejected as exc:
                 intent.update(status='rejected', http_status=exc.http_status)
@@ -400,6 +419,8 @@ class Acceptance:
                   and cloud.get('errors') == [] and cloud.get('recoverable_errors') == {}
                   and str(cloud.get('boot_status_code', '')).startswith('enabled-'), 'cloud_init_failed')
             self.mark('cloud_init', 'passed', 'verified')
+            if self.temporary.get('disk_size_gib') is not None or self.temporary.get('nameservers') is not None:
+                self.verify_general_guest(cloud.get('general_template'))
             break
         else:
             raise AcceptanceFailure('guest_timeout')
@@ -409,6 +430,24 @@ class Acceptance:
         check(isinstance(hostname, dict) and isinstance(hostname.get('result'), dict)
               and hostname['result'].get('host-name') == self.request['cloud_init']['hostname'], 'hostname_mismatch')
         self.mark('injected_hostname', 'passed', 'verified')
+
+    def verify_general_guest(self, facts: Any) -> None:
+        self.stage = 'disk_boot'
+        check(isinstance(facts, dict), 'guest_observation_missing')
+        if self.temporary.get('disk_size_gib') is not None:
+            size = self.temporary['disk_size_gib'] * 1024 ** 3
+            check(facts.get('root_disk_bytes') == size
+                  and type(facts.get('root_partition_bytes')) is int and facts['root_partition_bytes'] >= size - 1024 ** 3
+                  and type(facts.get('root_filesystem_bytes')) is int and facts['root_filesystem_bytes'] >= size * 95 // 100,
+                  'guest_disk_growth_mismatch')
+        ip = dict(part.split('=', 1) for part in self.temporary['ip_config'].split(','))
+        check(ip.get('ip') in {'dhcp', None} or ip['ip'] in facts.get('addresses', []), 'guest_network_mismatch')
+        check('gw' not in ip or ip['gw'] in facts.get('default_gateways', []), 'guest_network_mismatch')
+        check(set(self.temporary.get('nameservers') or []) <= set(facts.get('nameservers', [])), 'guest_dns_mismatch')
+        check(facts.get('machine_id_initialized') is True and isinstance(facts.get('instance_id'), str)
+              and facts['instance_id'] and not facts['instance_id'].startswith('iaas-build'), 'guest_identity_mismatch')
+        self.journal['general_template_guest'] = facts
+        self.persist()
 
     def mark(self, name: str, status: str, reason: str) -> None:
         for item in self.result['checks']:

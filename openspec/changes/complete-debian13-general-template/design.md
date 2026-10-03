@@ -1,0 +1,20 @@
+## Context
+
+Implementation branch `feat/debian13-general-template` was explicitly approved. Current publisher request/v2 and record/preview/result/v3 are authoritative. Image build inputs gain a current request/v2 with a mandatory capacity; no v1 translation is provided. Artifact/v1 already distinguishes physical bytes from virtual capacity and binds normalized build inputs.
+
+## Decisions
+
+1. `disk_size_gib` is a positive whole GiB output capacity, separate from executor resource budgets. Debian profile minimum is 8 GiB. A checksummed base whose actual virtual capacity exceeds it is rejected before seed generation/Packer; no filesystem/partition shrinking is implemented. Packer receives an explicit GiB size and final qemu-img virtual-size must equal the request before artifact success.
+2. `customization.package_upgrade` is a typed boolean, normalized false when absent. When true, refresh selected trixie/trixie-updates/trixie-security repositories and perform a noninteractive distribution upgrade during construction. Any apt failure fails Packer/build before successful artifact delivery. No clone-time upgrade is required. Example uses both Tsinghua repositories and requested utilities.
+3. `hardware.bridge: null` explicitly requests no publication NIC; missing/empty/invalid values remain errors. No `netN` is created or adopted. `cloud_init_defaults.ip_config` conflicts with a no-NIC publication. All NIC absence is verified in native configuration and saved truthfully in the existing record configuration.
+4. Use native cloud-init cleanup of generated network configuration and seed/state along with offline sysprep/account/key cleanup. Preserve networking capability and growpart/resizefs packages/modules; never persist `network: {config: disabled}`. Retain cloud-init apt configuration that prevents cloud-init from reverting the selected sources.
+5. Reuse existing ordinary VM full-clone, 128 GiB disk, fresh SMBIOS, NIC and user/network snippet generation. Clone first-boot apt flags remain false. Existing dedicated acceptance pool is `iaas-acceptance`, documented VMID range 500–550; confirm current availability before mutation. Example ordinary VM uses pool `dev`, storage `memory`, 8 cores/8192 MiB and br_dev with 10.10.0.100/24, gateway 10.10.0.254 and DNS 10.5.0.15. The real temporary VM stays in the dedicated pool.
+6. Offline check performs no network, credential reads, state/provider initialization or facility effects. Report safe logical file paths and field/reason without echoing source values. Check declared capacities/relationships offline; actual base virtual capacity remains a build preflight after download, and current IP/bridge/pool/storage availability remains a real preflight.
+
+## Validation and delivery
+
+Group focused positive and negative tests for capacity/bounds/shrink/mismatch, upgrade failure, no-NIC create/verify/record, unsafe or unsupported input and offline zero-effects. Run relevant existing build/publish/clone/launcher regressions. Fixed release CI supplies standard reports/checksums and OCI digests. One real KVM build and PVE mainline verifies template 9000 (2 CPU, 1024 MiB, 8 GiB, no NIC), temporary full clone (8 CPU, 8192 MiB, 128 GiB), new identity, actual address/default route/DNS, cloud-init completion, guest agent, partition/filesystem growth, source preservation and exact cleanup. Unavailable live materials are an explicit pending boundary, never a synthetic success.
+
+## Responsibility and costs
+
+User explicitly requested the real path and fixed release (C scope). Reuse existing Linux/KVM executor, publisher, acceptance pool/helper and release pipeline; no new facility or evidence framework. Software work S–M; one real execution S with existing infrastructure. Future changes reuse focused tests and ordinary release artifacts; repeat real representative acceptance when build/publication/clone behavior changes. infra-ops owns formal inventories, permissions/credentials, approvals, daily apply and deployment guest/business checks.

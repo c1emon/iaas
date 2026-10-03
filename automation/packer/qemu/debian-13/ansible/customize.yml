@@ -29,11 +29,27 @@
     - name: Refresh package metadata
       ansible.builtin.apt:
         update_cache: true
+    - name: Upgrade installed packages during construction
+      ansible.builtin.apt:
+        upgrade: dist
+      when: image_package_upgrade | bool
     - name: Install requested image packages
       ansible.builtin.apt:
-        name: "{{ packages_list + ['locales', 'tzdata', 'util-linux-extra'] + (['cloud-init'] if image_cloud_init == 'installed' else []) + (['qemu-guest-agent'] if image_guest_agent == 'installed' else []) + ['openssh-server'] }}"
+        name: "{{ packages_list + ['locales', 'tzdata', 'util-linux-extra'] + (['cloud-init', 'cloud-guest-utils'] if image_cloud_init == 'installed' else []) + (['qemu-guest-agent'] if image_guest_agent == 'installed' else []) + ['openssh-server'] }}"
         state: present
         install_recommends: false
+    - name: Preserve image sources and automatic clone disk growth
+      ansible.builtin.copy:
+        dest: /etc/cloud/cloud.cfg.d/99-iaas-image.cfg
+        mode: "0644"
+        content: |
+          apt:
+            preserve_sources_list: true
+          growpart:
+            mode: auto
+            devices: ['/']
+          resize_rootfs: true
+      when: image_cloud_init == 'installed'
     - name: Enable requested services
       ansible.builtin.systemd:
         name: "{{ item }}"

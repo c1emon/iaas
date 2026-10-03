@@ -12,8 +12,10 @@ import json
 import re
 from typing import Any, Mapping, cast
 from urllib.parse import urlsplit
+from ipaddress import ip_address, ip_interface
 
 from iaas.common.errors import ValidationError, require
+from iaas.common.config_checks import require_fields
 from iaas.image.contracts import canonical_digest as image_canonical_digest
 from iaas.image.contracts import validate_artifact, validate_test_result
 
@@ -105,6 +107,30 @@ def _publish_storage(value: Any, label: str) -> str:
     return result
 
 
+def validate_ip_config(value: Any, label: str = "ip_config") -> str:
+    text = _text(value, label)
+    pairs = [part.split("=", 1) for part in text.split(",")]
+    require(all(len(pair) == 2 and pair[0] and pair[1] for pair in pairs), f"{label} must contain key=value parameters")
+    options = dict(pairs)
+    require(len(options) == len(pairs), f"{label} contains duplicate parameters")
+    require_fields(options, {"ip", "ip6", "gw", "gw6"}, label)
+    require(bool(set(options) & {"ip", "ip6"}), f"{label} requires ip or ip6")
+    for address_key, gateway_key, family, automatic in (("ip", "gw", 4, {"dhcp"}), ("ip6", "gw6", 6, {"dhcp", "auto"})):
+        address, gateway = options.get(address_key), options.get(gateway_key)
+        require(gateway is None or address is not None and address not in automatic,
+                f"{label}.{gateway_key} requires a static {address_key}")
+        try:
+            if address is not None and address not in automatic:
+                interface = ip_interface(address)
+                require('/' in address and interface.version == family,
+                        f"{label}.{address_key} must be a matching CIDR interface")
+            if gateway is not None:
+                require(ip_address(gateway).version == family, f"{label}.{gateway_key} has the wrong address family")
+        except ValueError:
+            raise ValidationError(f"{label}.{address_key}/{gateway_key} contains an invalid IP address") from None
+    return text
+
+
 def validate_publish_request(value: Any) -> dict[str, Any]:
     """Normalize the controller-upload PVE publication request."""
     request = _mapping(value, "pve template publish request")
@@ -140,12 +166,23 @@ def validate_publish_request(value: Any) -> dict[str, Any]:
     version = _text(request["version"], "publish version", pattern=IDENTIFIER)
     name = _text(request["name"], "publish name", pattern=IDENTIFIER)
     hardware = _mapping(request["hardware"], "publish hardware")
-    require(set(hardware) == PUBLISH_HARDWARE_FIELDS, "publish hardware is incomplete")
+    require_fields(hardware, PUBLISH_HARDWARE_FIELDS, "hardware", required=PUBLISH_HARDWARE_FIELDS)
     for field in ("cpus", "memory_mib"):
         require(type(hardware[field]) is int and hardware[field] > 0, f"hardware.{field} must be positive")
-    for field in ("machine", "scsi_controller", "boot_disk", "bridge", "firmware"):
+    for field in ("machine", "scsi_controller", "boot_disk", "firmware"):
         _text(hardware[field], f"hardware.{field}", pattern=IDENTIFIER)
+    if hardware["bridge"] is not None:
+        _text(hardware["bridge"], "hardware.bridge", pattern=IDENTIFIER)
     require(hardware["firmware"] in {"bios", "uefi"}, "hardware.firmware is invalid")
+    require(hardware["firmware"] == artifact["guest"]["firmware"],
+            "hardware.firmware must match artifact.guest.firmware")
+    require(re.fullmatch(r"(?:scsi[0-9]|scsi[12][0-9]|scsi3[01]|virtio[0-9]|virtio1[0-5]|sata[0-5])", hardware["boot_disk"]) is not None,
+            "hardware.boot_disk must be a supported scsi, virtio or sata system disk slot")
+    require(hardware["scsi_controller"] in {"virtio-scsi-pci", "virtio-scsi-single", "lsi", "lsi53c810", "megasas", "pvscsi"},
+            "hardware.scsi_controller is unsupported")
+    require(hardware["machine"] in {"q35", "pc", "i440fx"}, "hardware.machine is unsupported")
+    require(hardware["cpus"] <= 128 and hardware["memory_mib"] <= 1_048_576,
+            "hardware.cpus or hardware.memory_mib exceeds supported bounds")
     storages = {"staging_storage": _publish_storage(request["staging_storage"], "staging_storage"),
                 "disk_storage": _publish_storage(request["disk_storage"], "disk_storage"),
                 "cloud_init_storage": _publish_storage(request["cloud_init_storage"], "cloud_init_storage")}
@@ -156,9 +193,13 @@ def validate_publish_request(value: Any) -> dict[str, Any]:
     defaults = _mapping(request["cloud_init_defaults"], "cloud_init_defaults")
     require(not set(defaults) - {"user", "ssh_keys", "ip_config"},
             "cloud_init_defaults contains unsupported fields")
+    require(hardware["bridge"] is not None or "ip_config" not in defaults,
+            "cloud_init_defaults.ip_config requires hardware.bridge; a no-NIC template cannot bind interface IP configuration")
     for field in ("user", "ip_config"):
         if field in defaults:
             _text(defaults[field], f"cloud_init_defaults.{field}")
+    if "ip_config" in defaults:
+        validate_ip_config(defaults["ip_config"], "cloud_init_defaults.ip_config")
     if "ssh_keys" in defaults:
         require(isinstance(defaults["ssh_keys"], list) and
                 all(isinstance(item, str) and item for item in defaults["ssh_keys"]),

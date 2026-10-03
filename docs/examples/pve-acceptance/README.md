@@ -1,5 +1,10 @@
 # PVE 验收与独立 snippet 清理共用样例
 
+通用模板验收可额外选择 `temporary_vm.disk_size_gib` 和 `nameservers`。
+系统盘目标必须不小于来源，disk_limit_bytes 必须同时容纳辅助卷；配置和扩容均在
+首次启动之前完成。选择这些字段后，同一 cloud_init/disk_boot 检查进一步核验来宾
+根分区、文件系统、地址、路由、DNS 和新实例身份。仅写入受保护 guest evidence。
+
 本目录是 **synthetic contract fixtures**，不代表 PVE 现场验收或可直接执行的授权。域名、UUID、摘要和证据路径均为示例，引用文件并未提供。真实请求须使用原发布/部署材料、准确摘要和独立 execution admission。
 
 `cases.json` 是 IaaS 和 infra-ops 共用入口，列出每个 JSON 的 kind 和预期接受/拒绝；IaaS 的 `tests/python/test_pve_acceptance_contracts.py` 直接加载这份清单。文件名 `reject-*` 表示合同拒绝用例。结果成功样例也只是合同样例。
