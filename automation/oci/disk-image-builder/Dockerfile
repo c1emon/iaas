@@ -49,7 +49,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates curl unzip \
  && rm -rf /var/lib/apt/lists/*
 
-RUN curl -fL --retry 3 "https://releases.hashicorp.com/packer/${PACKER_VERSION}/packer_${PACKER_VERSION}_linux_amd64.zip" -o /tmp/packer.zip \
+RUN curl -fL --retry 3 --retry-max-time 180 --max-time 60 "https://releases.hashicorp.com/packer/${PACKER_VERSION}/packer_${PACKER_VERSION}_linux_amd64.zip" -o /tmp/packer.zip \
  && echo "${PACKER_SHA256}  /tmp/packer.zip" | sha256sum -c - \
  && unzip -q /tmp/packer.zip -d /usr/local/bin \
  && mkdir -p /usr/share/licenses/packer \
@@ -59,7 +59,7 @@ RUN curl -fL --retry 3 "https://releases.hashicorp.com/packer/${PACKER_VERSION}/
 WORKDIR /opt/iaas
 COPY pyproject.toml uv.lock ./
 ARG UV_DOWNLOAD_URL=https://github.com/astral-sh/uv/releases/download/0.12.9/uv-x86_64-unknown-linux-gnu.tar.gz
-RUN curl -fL --retry 3 "$UV_DOWNLOAD_URL" -o /tmp/uv.tar.gz \
+RUN curl -fL --retry 3 --retry-max-time 180 --max-time 60 "$UV_DOWNLOAD_URL" -o /tmp/uv.tar.gz \
  && echo 'ec7a99cd05e0cd7f80243f135ce1361c76835cb0ee60055d14d20eba8eba1460  /tmp/uv.tar.gz' | sha256sum -c - \
  && tar -xzf /tmp/uv.tar.gz -C /tmp \
  && cp /tmp/uv-x86_64-unknown-linux-gnu/uv /usr/local/bin/uv \

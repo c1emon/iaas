@@ -7,19 +7,19 @@ RUN case "$TARGETARCH" in \
       arm64) uv_arch=aarch64; checksum=c36fe17937ff6bd16dc42fc13854b5465999fcab2efe0af559381e945e3c6001 ;; \
       *) exit 2 ;; \
     esac \
- && curl -fL --retry 3 "https://github.com/astral-sh/uv/releases/download/0.12.9/uv-${uv_arch}-unknown-linux-gnu.tar.gz" -o uv.tar.gz \
+ && curl -fL --retry 3 --retry-max-time 180 --max-time 60 "https://github.com/astral-sh/uv/releases/download/0.12.9/uv-${uv_arch}-unknown-linux-gnu.tar.gz" -o uv.tar.gz \
  && echo "$checksum  uv.tar.gz" | sha256sum -c - \
  && tar -xzf uv.tar.gz \
  && cp "uv-${uv_arch}-unknown-linux-gnu/uv" /downloads/uv
 RUN mkdir -p /downloads/uv-licenses \
- && curl -fL --retry 3 https://raw.githubusercontent.com/astral-sh/uv/0.12.9/LICENSE-MIT -o /downloads/uv-licenses/LICENSE-MIT \
- && curl -fL --retry 3 https://raw.githubusercontent.com/astral-sh/uv/0.12.9/LICENSE-APACHE -o /downloads/uv-licenses/LICENSE-APACHE
+ && curl -fL --retry 3 --retry-max-time 180 --max-time 60 https://raw.githubusercontent.com/astral-sh/uv/0.12.9/LICENSE-MIT -o /downloads/uv-licenses/LICENSE-MIT \
+ && curl -fL --retry 3 --retry-max-time 180 --max-time 60 https://raw.githubusercontent.com/astral-sh/uv/0.12.9/LICENSE-APACHE -o /downloads/uv-licenses/LICENSE-APACHE
 RUN case "$TARGETARCH" in \
       amd64) checksum=5dc43da4f750f33873dc25e94587128709e819e544b7be9016b255316153c3a8 ;; \
       arm64) checksum=e573979ba68a17fe7b881752051a694a7efcd970e39521f6a25775197861ed4d ;; \
       *) exit 2 ;; \
     esac \
- && curl -fL --retry 3 "https://github.com/opentofu/opentofu/releases/download/v1.12.6/tofu_1.12.6_linux_${TARGETARCH}.zip" -o tofu.zip \
+ && curl -fL --retry 3 --retry-max-time 180 --max-time 60 "https://github.com/opentofu/opentofu/releases/download/v1.12.6/tofu_1.12.6_linux_${TARGETARCH}.zip" -o tofu.zip \
  && echo "$checksum  tofu.zip" | sha256sum -c - \
  && unzip tofu.zip -d tofu
 FROM python:3.12.12-slim-bookworm@sha256:593bd06efe90efa80dc4eee3948be7c0fde4134606dd40d8dd8dbcade98e669c AS dependencies
