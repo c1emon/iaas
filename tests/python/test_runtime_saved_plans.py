@@ -84,7 +84,7 @@ elif sys.argv[1] == 'apply':
 """)
     tofu.chmod(0o700)
     ssh = tmp_path / "ssh"
-    ssh.write_text(f"#!{sys.executable}\nimport os,sys\nraise SystemExit(int(os.environ.get('SSH_EXIT','0')))\n")
+    ssh.write_text(f"#!{sys.executable}\nimport os,sys,json\nif '--observe' in sys.argv[-1]: print(json.dumps({{'schema_version':1, 'status':'ready', 'reason_code':'digest_confirmed'}}))\nraise SystemExit(int(os.environ.get('SSH_EXIT','0')))\n")
     ssh.chmod(0o700)
     backend = S3Backend({"bucket": "synthetic", "key": "lab", "region": "us-east-1", "use_lockfile": True}, "default")
     state_admission = tmp_path / "state-admission.json"

@@ -48,6 +48,8 @@ def admission(request, execution_id):
 def begin(root, operation, request, admitted, execution_id, image_digest):
     planned = (build_preview(request, {'readiness': {'status': 'ready'}}, image_digest=image_digest)
                if operation == 'accept' else None)
+    if planned is not None:
+        admitted = {**admitted, 'plan_digest': planned['preview_digest'].removeprefix('sha256:')}
     return _begin(root, operation, request, admitted, execution_id, image_digest, preview=planned)
 
 
@@ -81,6 +83,9 @@ class FakeHelper:
     def inspect(self):
         return {'complete': self.complete, 'nodes': ['pve1', 'pve2'], 'local_node': 'pve1',
                 'vmids': self.vmids, 'references': self.refs, 'reference_strategy': 'all_storage_aliases_by_filename'}
+
+    def inspect_file(self, snippet):
+        return {'existence': 'absent', 'digest_matches': None, 'reason_code': 'exact_target_absent'}
 
     def delete(self, snippet):
         self.calls.append(snippet['file_id'])
@@ -486,7 +491,7 @@ def test_cleanup_cutoff_preserves_completed_items_and_stops_next_write(evidence,
     result = cleanup(request, helper, initial_result(request, 'cleanup-cutoff', 'sha256:' + 'f' * 64),
                      journal, root / 'cutoff', budget)
     assert len(helper.calls) == 1
-    assert [item['status'] for item in result['items']] == ['deleted', 'unknown']
+    assert [item['status'] for item in result['items']] == ['unknown', 'unknown']
     assert result['deadline_outcome'] == {'phase': 'cleanup', 'status': 'exceeded'}
     assert result['facility_writes'] == 'issued' and journal['mutation_active'] is False
 

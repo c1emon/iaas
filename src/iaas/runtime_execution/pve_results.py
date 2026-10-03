@@ -8,11 +8,12 @@ from __future__ import annotations
 from collections import Counter
 from copy import deepcopy
 import re
+import time
 from typing import Any
 
 from iaas.common.errors import require
 from iaas.pve_inventory.pve_api import (
-    ReadOnlyPveApi, PveApiRuntimeConfig, PveApiTlsError,
+    ReadOnlyPveApi, PveApiRuntimeConfig, PveApiTlsError, PveApiUnavailableError,
 )
 
 VM_TYPE = "proxmox_virtual_environment_vm"
@@ -268,46 +269,219 @@ def _vm_fields(expected: dict, config: dict, status: dict) -> dict[str, str]:
     return checks
 
 
-def verify_configuration(expected: list[dict], api: Any) -> dict:
+class VerificationBudget:
+    """One independent query window; an enclosing execution bound only tightens it."""
+    def __init__(self, timeout: float = 120, *, enclosing: Any = None, phase: str = "work"):
+        from iaas.observation import ObservationBudget
+        cutoff = (getattr(enclosing, 'absolute', {}).get(phase) if enclosing is not None else None)
+        if cutoff is None and enclosing is not None:
+            cutoff = getattr(enclosing, 'cutoff', None)
+        source = 'internal-default' if timeout == 120 else 'applicable-timeout'
+        self.budget = ObservationBudget(timeout, cutoff=cutoff, source=source + '+execution-cutoff' if cutoff is not None else source)
+        self.enclosing, self.phase = enclosing, phase
+        self.cutoff = self.budget.cutoff
+        self.window = self.budget.facts()
+        if enclosing is not None:
+            self.window['enclosing_cutoff'] = getattr(enclosing, 'deadlines', {}).get(f'{phase}_deadline_at')
+
+    def remaining(self, phase: str) -> float:
+        remaining = self.budget.remaining('work')
+        return min(remaining, self.enclosing.remaining(self.phase)) if self.enclosing else remaining
+
+
+def verify_configuration(expected: list[dict], api: Any, *, budget: Any = None,
+                         timeout: float = 120, interval: float = 1, window: Any = None) -> dict:
+    from iaas.observation import Decision, EvidenceSink, observe, utc_text
+    window = window or VerificationBudget(timeout, enclosing=budget)
+    observations = EvidenceSink()
+    if isinstance(api, ReadOnlyPveApi):
+        api.observation_budget = window
+    def query(method, *args):
+        window.remaining('work')
+        value = getattr(api, method)(*args)
+        window.remaining('work')
+        return value
+
     items = []
     for wanted in expected:
         checks: dict[str, str] = {}
+        def original_check(name, status):
+            observations({'phase': 'work', 'check': name, 'association': {
+                **{key: wanted[key] for key in ('node', 'vmid') if key in wanted},
+                **({'resource_id': wanted.get('values', {}).get('resource_id')} if wanted['kind'] == 'ha' else {})},
+                'attempt': 0, 'observed_at': utc_text(time.time()), 'status': status,
+                'reason': name + '_' + status, 'evidence': {'complete': wanted.get('snapshot_complete')}})
         if not wanted.get("snapshot_complete"):
+            original_check('original_snapshot', 'unknown')
             items.append({"status": "unknown", "checks": {"original_snapshot": "unknown"}})
             continue
         if wanted["kind"] == "vm" and not wanted["absent"] \
                 and wanted.get("snapshot_identity") != "passed":
             status = "failed" if wanted.get("snapshot_identity") == "failed" else "unknown"
+            original_check('snapshot_identity', status)
             items.append({"status": status, "checks": {"snapshot_identity": status}})
             continue
-        try:
+        comparison = {}
+        def probe(remaining):
+            checks = {}
+            comparison.clear()
+            values = wanted.get('values', {})
+            native = wanted.get('native_identity') or [{}]
+            comparison['expected'] = {'node': wanted.get('node'), 'vmid': wanted.get('vmid'),
+                                      'uuid': native[0].get('uuid'), 'pool': values.get('pool_id'),
+                                      'cores': (values.get('cpu') or [{}])[0].get('cores'),
+                                      'memory': (values.get('memory') or [{}])[0].get('dedicated'),
+                                      'power': 'running' if values.get('started') is True else 'stopped' if values.get('started') is False else None,
+                                      'volumes': [{'slot': d.get('interface'), 'storage': d.get('datastore_id'),
+                                                   'volid': d.get('file_id'), 'size': d.get('size')} for d in values.get('disk') or []],
+                                      'exists': not wanted.get('absent')}
+            comparison['actual'] = {}
             if wanted["kind"] == "ha":
                 values = wanted["values"]
                 resource_id = values.get("resource_id")
-                record = next((r for r in api.ha_status() if r.get("sid") == resource_id), None)
+                record = next((r for r in query('ha_status') if r.get("sid") == resource_id), None)
+                comparison['actual'] = {'status': record.get('state') if record else None, 'exists': record is not None}
                 if not resource_id:
                     checks["ha"] = "unknown"
                 elif wanted["absent"]:
-                    checks["ha"] = "passed" if record is None else "failed"
+                    checks["existence"] = "pending" if record else "passed"
                 else:
-                    checks["ha"] = "passed" if record and record.get("state") == values.get("state") else "failed"
+                    checks["ha"] = "passed" if record and record.get("state") == values.get("state") else "pending" if record is None else "failed"
             elif not isinstance(wanted.get("vmid"), int) or not wanted.get("node"):
                 checks["identity"] = "unknown"
+            elif wanted["absent"]:
+                query('node_status', wanted['node'])
+                # This helper makes several reads, all governed by the facade's budget.
+                occupied = observed_vmids(api, {wanted["vmid"]})
+                window.remaining('work')
+                checks["existence"] = "pending" if occupied else "passed"
+                comparison['actual'] = {'vmid': wanted['vmid'], 'exists': bool(occupied)}
+                if occupied:
+                    row = next((row for row in query('cluster_vm_resources') if row.get('vmid') == wanted['vmid']), None)
+                    if row:
+                        comparison['actual'].update(node=row.get('node'), pool=row.get('pool'))
+                    if row and (row.get('node') != wanted['node'] or row.get('type') != 'qemu'):
+                        checks['identity'] = 'failed'
             else:
-                if wanted["absent"]:
-                    api.node_status(wanted["node"])
-                    occupied = observed_vmids(api, {wanted["vmid"]})
-                    checks["existence"] = "failed" if occupied else "passed"
-                else:
-                    config = api.vm_config(wanted["node"], wanted["vmid"])
-                    checks = _vm_fields(wanted, config, api.vm_status(wanted["node"], wanted["vmid"]))
-                if wanted.get("deposed") or wanted.get("state_absent") is False:
-                    checks["state_residual"] = "failed"
-        except PveApiTlsError:
+                config = query('vm_config', wanted['node'], wanted['vmid'])
+                state = query('vm_status', wanted['node'], wanted['vmid'])
+                require(isinstance(config, dict) and isinstance(state, dict), 'invalid VM observation')
+                comparison['actual'] = {'node': wanted['node'], 'vmid': wanted['vmid'], 'exists': True,
+                                        'uuid': _parts(config.get('smbios1')).get('uuid'),
+                                        'cores': config.get('cores'), 'memory': config.get('memory'),
+                                        'power': state.get('status'),
+                                        'volumes': [{'slot': slot, 'volid': str(value).split(',', 1)[0],
+                                                     'size': _size_gib(_parts(value).get('size'))}
+                                                    for slot, value in config.items() if re.fullmatch(r'(?:scsi|virtio|sata|ide)\d+', slot)
+                                                    and 'media=cdrom' not in str(value) and 'cloudinit' not in str(value)]}
+                checks = _vm_fields(wanted, config, state)
+                # Explicit conflicting configuration/identity is terminal. Missing
+                # synchronized fields and power transition alone can converge.
+                missing_expected = {'replacement_identity'}
+                for name, value in [('cores', comparison['expected']['cores']), ('memory', comparison['expected']['memory']), ('power', comparison['expected']['power'])]:
+                    if value is None:
+                        missing_expected.add(name)
+                if not native[0].get('uuid'):
+                    checks['native_identity'] = 'unknown'
+                    missing_expected.add('native_identity')
+                if not values.get('disk'):
+                    missing_expected.add('disks')
+                for name, status in list(checks.items()):
+                    if status == 'unknown' and name not in missing_expected:
+                        checks[name] = 'pending'
+                    elif name == 'power' and status == 'failed':
+                        checks[name] = 'pending'
+                if wanted.get('values', {}).get('pool_id'):
+                    rows = query('cluster_vm_resources')
+                    require(isinstance(rows, list), 'invalid placement observation')
+                    row = next((r for r in rows if r.get('vmid') == wanted['vmid']), None)
+                    comparison['actual']['pool'] = row.get('pool') if row else None
+                    checks['placement'] = ('pending' if row is None else 'passed'
+                                           if row.get('node') == wanted['node'] and row.get('pool') == wanted['values']['pool_id'] else 'failed')
+            if wanted.get("deposed") or wanted.get("state_absent") is False:
+                checks["state_residual"] = "failed"
+            return checks
+
+        def classify(checks):
+            status = ('failed' if 'failed' in checks.values() else 'unknown'
+                      if not checks or 'unknown' in checks.values() else 'pending'
+                      if 'pending' in checks.values() else 'ready')
+            return Decision(status, 'configuration_' + status, {**comparison, 'checks': [{'reason': key, 'status': value} for key, value in checks.items()]})
+
+        def retry_error(exc):
+            if isinstance(exc, PveApiTlsError):
+                raise exc
+            return Decision('pending' if isinstance(exc, PveApiUnavailableError) else 'unknown',
+                            'temporary_read_unavailable' if isinstance(exc, PveApiUnavailableError) else 'query_unconfirmed',
+                            {'category': type(exc).__name__})
+
+        association = {**{k: wanted[k] for k in ('kind', 'node', 'vmid') if k in wanted},
+                       **({'resource_id': wanted['values'].get('resource_id')} if wanted['kind'] == 'ha' else {})}
+        try:
+            decision = observe(probe, classify, budget=window, phase='work', check='saved_plan_configuration',
+                               association=association,
+                               sink=observations, interval=interval,
+                               retry_error=retry_error)
+            checks = {row['reason']: row['status'] for row in decision.evidence.get('checks', [])} or {'observation': 'unknown'}
+            checks = {k: 'unknown' if v == 'pending' else v for k, v in checks.items()}
+            status = 'passed' if decision.status == 'ready' else decision.status
+        except PveApiTlsError as exc:
+            observations({'phase': 'work', 'check': 'saved_plan_configuration', 'association': association,
+                          'attempt': 0, 'observed_at': utc_text(time.time()), 'status': 'failed',
+                          'reason': 'tls_trust_failed', 'evidence': {'category': 'tls_trust'},
+                          'cutoff': window.window['cutoff']})
+            exc.verification_report = {'status': 'failed', 'scope': 'changed_objects',
+                                       'objects': [*items, {'status': 'failed', 'checks': {'tls_trust': 'failed'}}],
+                                       'observation_window': window.window, 'observations': observations.rows()}
             raise
-        except Exception:
-            checks["observation"] = "unknown"
-        status = "failed" if "failed" in checks.values() else "unknown" if not checks or "unknown" in checks.values() else "passed"
         items.append({"status": status, "checks": checks})
     status = "failed" if any(i["status"] == "failed" for i in items) else "unknown" if any(i["status"] == "unknown" for i in items) else "passed"
-    return {"status": status, "scope": "changed_objects" if items else "empty", "objects": items}
+    return {"status": status, "scope": "changed_objects" if items else "empty", "objects": items,
+            "observation_window": window.window, "observations": observations.rows()}
+
+
+def stop_diagnostics(result: dict, report: dict | None = None) -> dict:
+    """Safe native/query facts; current convergence cannot prove historical apply."""
+    from iaas.pve_acceptance_contracts import StopDiagnostics
+    report = report if report is not None else result.get('verification', {})
+    observations = [*result.get('snippet_verification', {}).get('observations', []),
+                    *report.get('observations', [])]
+    completed = [name for name in ('native_execution', 'state_persistence', 'collection')
+                 if result.get(name, {}).get('status') in {'success', 'passed'}]
+    completed.extend(row['check'] for row in observations if row.get('terminal', {}).get('status') == 'ready')
+    terminal = next((row.get('terminal') for row in observations
+                     if row.get('terminal', {}).get('status') in {'failed', 'unknown'}), None)
+    native = result.get('native_execution', result.get('original_native_execution', {})).get('status', 'unknown')
+    stopping = ({'phase': terminal['phase'], 'check': terminal['check'], 'status': terminal['status'],
+                 'reason_code': terminal['reason']} if terminal else None)
+    if stopping is None and ('native_execution' in result or 'original_native_execution' in result) and native in {'failed', 'unknown'}:
+        stopping = {'phase': 'apply', 'check': 'native_execution', 'status': native,
+                    'reason_code': 'native_execution_' + native}
+    if stopping is None and report.get('status') in {'failed', 'unknown'}:
+        stopping = {'phase': 'verify', 'check': 'configuration', 'status': report['status'],
+                    'reason_code': 'configuration_' + report['status']}
+    if stopping is None and result.get('phase') == 'failed' and result.get('phases'):
+        phase = result['phases'][-1]
+        stopping = {'phase': phase.get('phase', 'execution'), 'check': 'native_phase', 'status': 'failed'
+                    if phase.get('capture_complete') and phase.get('exit_code') else 'unknown', 'reason_code': 'native_phase_incomplete'}
+    effect = result.get('effects', {}).get('facility')
+    writes = ('issued' if effect == 'known' else 'none' if effect == 'none' else 'unknown')
+    if 'effects' not in result:
+        writes = 'unknown'  # Independent verification adds no write-authority evidence.
+    existence = [row.get('terminal', {}).get('evidence', {}).get('actual', {}).get('exists')
+                 for row in report.get('observations', [])]
+    exists = ('present' if existence and all(value is True for value in existence) else
+              'absent' if existence and all(value is False for value in existence) else 'unknown')
+    inventory_complete = bool(report.get('objects')) and all(
+        row.get('terminal', {}).get('evidence', {}).get('actual') for row in report.get('observations', [])) \
+        and len(report.get('observations', [])) == len(report.get('objects', []))
+    inventory_complete = inventory_complete or report.get('scope') == 'empty'
+    ownership = 'registered-owned' if report.get('status') == 'passed' and exists == 'present' else 'candidate-unknown'
+    activity = 'stopped' if native in {'success', 'failed'} or native == 'not_attempted' and effect in {'known', 'none'} else 'unknown'
+    return StopDiagnostics.model_validate({
+        'completed': completed, 'stopping': stopping, 'facility_writes': writes, 'activity': activity,
+        'ownership': ownership, 'existence': exists, 'inventory_complete': inventory_complete,
+        'tasks': [], 'observations': observations,
+        'recovery': {'supported': False, 'disposition': 'not_applicable',
+                     'reason_code': 'saved_plan_bounded_recovery_not_supported', 'required_evidence': []},
+    }).model_dump(mode='json')

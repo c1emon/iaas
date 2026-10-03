@@ -28,7 +28,7 @@ def api_for(rows, grants=None, calls=None):
 
 def deletion(api):
     return verify_configuration([{"kind": "vm", "node": "n1", "vmid": 101, "absent": True,
-                                  "snapshot_complete": True, "state_absent": True}], api)
+                                  "snapshot_complete": True, "state_absent": True}], api, timeout=.01, interval=.001)
 
 
 def creation(api):
@@ -52,7 +52,7 @@ def test_cluster_wide_vmid_occupancy_blocks_create_and_delete(kind, node):
     api = api_for([{"vmid": 101, "node": node, "type": kind}])
     with pytest.raises(ValidationError, match="occupied"):
         creation(api)
-    assert deletion(api)["status"] == "failed"
+    assert deletion(api)["status"] == ("unknown" if kind == "qemu" and node == "n1" else "failed")
 
 
 @pytest.mark.parametrize("grants", [{}, {"VM.Audit": None}, {"VM.Audit": "1"}, {"VM.Audit": 2}])
@@ -81,3 +81,20 @@ def test_permission_and_inventory_failures_never_prove_absence():
         with pytest.raises(PveApiUnavailableError):
             creation(api)
         assert deletion(api)["status"] == "unknown"
+
+
+def test_only_explicit_unavailability_allows_read_retry():
+    import errno
+    from requests.exceptions import ConnectionError, Timeout, SSLError
+    from iaas.pve_inventory.pve_api import PveApiError, PveApiTlsError
+    api = api_for([])
+    for exc in [Timeout(), ConnectionError(ConnectionResetError(errno.ECONNRESET, 'reset')),
+                ResourceException(503, 'unavailable', 'temporary')]:
+        with pytest.raises(PveApiUnavailableError):
+            api._call('fixture', lambda: (_ for _ in ()).throw(exc))
+    for exc in [ConnectionError('DNS or unknown transport'), ResourceException(501, 'unsupported', 'terminal')]:
+        with pytest.raises(PveApiError) as caught:
+            api._call('fixture', lambda: (_ for _ in ()).throw(exc))
+        assert not isinstance(caught.value, PveApiUnavailableError)
+    with pytest.raises(PveApiTlsError):
+        api._call('fixture', lambda: (_ for _ in ()).throw(SSLError('TLS')))

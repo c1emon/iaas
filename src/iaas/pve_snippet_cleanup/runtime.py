@@ -21,6 +21,11 @@ from iaas.pve_template.deadlines import DeadlineBudget, DeadlineExpired, LocalTi
 HELPER = '/usr/local/sbin/iaas-pve-snippet-delete'
 
 
+class InspectionUnavailable(OperationFailed):
+    """A read-only SSH probe timed out; it has no mutation activity."""
+
+
+
 class Helper:
     original_vmid: int
 
@@ -56,6 +61,10 @@ class Helper:
             payload = json.loads(result.stdout)
             require(isinstance(payload, dict) and payload.get('schema_version') == 2, 'invalid helper response')
             return payload
+        except subprocess.TimeoutExpired:
+            if args and args[0] in {'--inspect-file', '--inspect-cluster'}:
+                raise InspectionUnavailable('inspection_temporarily_unavailable') from None
+            raise OperationFailed('cleanup helper outcome is unknown') from None
         except (OSError, subprocess.SubprocessError, ValueError):
             raise OperationFailed('cleanup helper outcome is unknown') from None
 
@@ -65,6 +74,13 @@ class Helper:
         cutoff = self.budget.deadlines[f'{self.phase}_deadline_at']
         return self.call(['--inspect-cluster', '--deadline-at', cutoff])
 
+    def inspect_file(self, snippet: dict) -> dict:
+        require(self.budget is not None, 'snippet inspection requires a deadline budget')
+        assert self.budget is not None
+        cutoff = self.budget.deadlines[f'{self.phase}_deadline_at']
+        return self.call(['--inspect-file', '--storage', snippet['storage'], '--filename', snippet['file_name'],
+                          '--sha256', snippet['sha256'], '--deadline-at', cutoff])
+
     def delete(self, snippet: dict) -> dict:
         require(self.budget is not None, 'snippet deletion requires a deadline budget')
         assert self.budget is not None
@@ -73,8 +89,39 @@ class Helper:
                           '--node', snippet['node'], '--vmid', str(self.original_vmid), '--deadline-at', cutoff])
 
 
+def observe_file(helper: Helper, snippet: dict, *, absent: bool, sink=None, interval: float = 1):
+    from iaas.observation import Decision, observe
+    require(helper.budget is not None, 'snippet observation requires frozen deadlines')
+    def probe(remaining):
+        file = helper.inspect_file(snippet)
+        scope = helper.inspect()
+        return file, scope
+    def classify(value):
+        file, scope = value
+        facts = {'exists': file.get('existence'), 'digest': file.get('sha256'),
+                 'matched': file.get('digest_matches'), 'complete': scope.get('complete')}
+        if (scope.get('complete') is not True or not isinstance(scope.get('references'), list)
+                or scope.get('reference_strategy') != 'all_storage_aliases_by_filename'):
+            return Decision('unknown', 'reference_scope_unconfirmed', facts)
+        if snippet['file_name'] in scope['references']:
+            return Decision('failed', 'cluster_configuration_reference', facts)
+        if file.get('reason_code') in {'content_or_identity_changed', 'digest_mismatch', 'unsafe_or_oversized_file', 'unsafe_path'}:
+            return Decision('failed', 'content_or_identity_changed', facts)
+        existence = file.get('existence')
+        if absent:
+            status = 'ready' if existence == 'absent' else 'pending' if existence == 'present' and file.get('digest_matches') is True else 'unknown'
+        else:
+            status = 'ready' if existence == 'present' and file.get('digest_matches') is True else 'pending' if existence == 'absent' else 'unknown'
+        return Decision(status, 'exact_target_' + status, facts)
+    return observe(probe, classify, helper.budget, helper.phase, 'snippet_absence' if absent else 'snippet_upload',
+                   {'node': snippet['node'], 'storage': snippet['storage'], 'slot': snippet['file_name'], 'digest': snippet['sha256']}, sink=sink, interval=interval,
+                   retry_error=lambda exc: Decision('pending' if isinstance(exc, InspectionUnavailable) else 'unknown',
+                                                    'inspection_temporarily_unavailable' if isinstance(exc, InspectionUnavailable) else 'inspection_unconfirmed',
+                                                    {'category': 'temporary_read' if isinstance(exc, InspectionUnavailable) else 'unclassified'}))
+
+
 def initial_result(request: dict, execution_id: str, image_digest: str) -> dict:
-    return {'kind': 'pve-snippet-cleanup-result', 'schema_version': 2, 'execution_id': execution_id,
+    return {'kind': 'pve-snippet-cleanup-result', 'schema_version': 3, 'execution_id': execution_id,
             'deadlines': dict(request['deadlines']), 'deadline_outcome': {'phase': None, 'status': 'not_exceeded'},
             'facility_writes': 'none',
             'request_digest': canonical_digest(request), 'runtime': {'image_digest': image_digest},
@@ -102,6 +149,20 @@ def conclude(result: dict, *, ownership: str = 'owned') -> dict:
                or any(x['existence'] == 'unknown' for x in result['residuals']['items']))
     result['overall'] = ('unknown' if unknown else 'failed' if result['residuals']['items']
                          or result['deadline_outcome']['status'] != 'not_exceeded' else 'passed')
+    stopping = next((item for item in result['items'] if item['status'] not in {'deleted', 'already_absent'}), None)
+    result['stop_diagnostics'] = {
+        'completed': [item['file_id'] for item in result['items'] if item['status'] in {'deleted', 'already_absent'}],
+        'stopping': ({'phase': 'cleanup', 'check': 'snippet_absence',
+                      'status': 'unknown' if stopping['status'] == 'unknown' else 'failed',
+                      'reason_code': stopping['reason_code']} if stopping else None),
+        'facility_writes': result['facility_writes'],
+        'activity': result.pop('_activity', 'unknown'), 'ownership': 'registered-owned' if ownership == 'owned' else 'candidate-unknown',
+        'existence': 'absent' if not result['residuals']['items'] else 'unknown',
+        'inventory_complete': result['residuals']['inventory_complete'],
+        'tasks': [], 'observations': result.pop('_observations', []),
+        'recovery': {'supported': True, 'disposition': 'not_applicable' if result['overall'] == 'passed' else 'needs_evidence',
+                     'reason_code': 'cleanup_complete' if result['overall'] == 'passed' else 'cleanup_evidence_required',
+                     'required_evidence': [] if result['overall'] == 'passed' else ['helper_activity', 'exact_target', 'complete_references']}}
     return validate_snippet_cleanup_result(result)
 
 
@@ -111,6 +172,7 @@ def cleanup(request: dict, helper: Helper, result: dict, journal: dict, root: Pa
     try:
         if budget is not None:
             budget.remaining('work')
+            helper.budget = budget
             helper.phase = 'work'
         snapshot = helper.inspect()
         if budget is not None:
@@ -179,6 +241,14 @@ def cleanup(request: dict, helper: Helper, result: dict, journal: dict, root: Pa
             # A received terminal response proves the helper returned; an SSH
             # timeout/disconnect does not prove the remote process terminated.
             journal['mutation_active'] = False
+            if answer['status'] in {'deleted', 'already_absent'} and budget is not None:
+                from iaas.observation import EvidenceSink
+                evidence = EvidenceSink()
+                decision = observe_file(helper, item, absent=True, sink=evidence)
+                journal.setdefault('observations', []).extend(evidence.rows())
+                result['deadline_outcome'] = dict(budget.outcome)
+                if decision.status != 'ready':
+                    item.update(status='mismatch' if decision.status == 'failed' else 'unknown', reason_code=decision.reason)
         except (DeadlineExpired, LocalTimeout) as expired:
             journal.update(mutation_active=False, facility_writes=previous_writes)
             assert budget is not None
@@ -196,6 +266,8 @@ def cleanup(request: dict, helper: Helper, result: dict, journal: dict, root: Pa
             break
     result['facility_writes'] = journal.get('facility_writes', 'none')
     journal['deadline_outcome'] = result['deadline_outcome']
+    result['_observations'] = journal.get('observations', [])
+    result['_activity'] = 'stopped' if journal.get('mutation_active') is False else 'unknown'
     return conclude(result)
 
 
@@ -246,6 +318,8 @@ def run(selected: Any, operation: str, scope: str, execution: Any,
                             for old, snippet in zip(original_items, request['snippets']))):
                     result['items'] = original_items
                     result['scope_check'] = journal.get('scope_check', result['scope_check'])
+            result['_observations'] = journal.get('observations', []) if journal else []
+            result['_activity'] = 'stopped' if journal and journal.get('mutation_active') is False else 'unknown'
             result = conclude(result, ownership='unknown')
         save(execution.outputs.root / 'pve-snippet-cleanup-result.json', result)
         if result['overall'] == 'passed':

@@ -11,7 +11,7 @@ from uuid import uuid4
 import yaml
 
 from iaas.common.errors import require
-from iaas.pve_snippet_cleanup.runtime import Helper
+from iaas.pve_snippet_cleanup.runtime import Helper, observe_file
 
 
 def user_data(request: dict) -> str:
@@ -74,9 +74,28 @@ class Snippets(Helper):
         args = ['sudo', '-n', '/usr/local/sbin/iaas-pve-snippet-upload',
                 '--storage', snippet['storage'], '--filename', snippet['file_name'],
                 '--mode', 'acceptance', '--deadline-at', self.budget.deadlines['work_deadline_at']]
-        for suffix, payload in [(['--create-only'], content),
-                                (['--verify', '--sha256', snippet['sha256']], None)]:
-            remaining = min(self.deadline - time.monotonic(), self.budget.remaining('work'))
-            require(remaining > 0, 'snippet deadline expired')
-            subprocess.run([*self.command, shlex.join([*args, *suffix])], input=payload,
-                           env=self.env, capture_output=True, text=True, timeout=remaining, check=True)
+        remaining = min(self.deadline - time.monotonic(), self.budget.remaining('work'))
+        require(remaining > 0, 'snippet deadline expired')
+        # Dispatch exactly once. A timeout retains unknown helper activity and
+        # prevents post-hoc inspection from implying historical create success.
+        self.upload_completed = False
+        subprocess.run([*self.command, shlex.join([*args, '--create-only'])], input=content,
+                       env=self.env, capture_output=True, text=True, timeout=remaining, check=True)
+        self.upload_completed = True
+        from iaas.observation import EvidenceSink
+        sink = EvidenceSink()
+        decision = observe_file(self, snippet, absent=False, sink=sink)
+        self.observations = getattr(self, 'observations', []) + sink.rows()
+        require(decision.status == 'ready', decision.reason)
+
+    def delete(self, snippet: dict) -> dict:
+        answer = super().delete(snippet)
+        if answer.get('status') not in {'deleted', 'already_absent'}:
+            return answer
+        from iaas.observation import EvidenceSink
+        sink = EvidenceSink()
+        decision = observe_file(self, snippet, absent=True, sink=sink)
+        self.observations = getattr(self, 'observations', []) + sink.rows()
+        if decision.status != 'ready':
+            return {'status': 'mismatch' if decision.status == 'failed' else 'unknown', 'reason_code': decision.reason}
+        return answer

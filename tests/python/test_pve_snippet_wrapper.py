@@ -206,3 +206,26 @@ def test_verify_rejects_invalid_sha256_argument() -> None:
 
     assert result.returncode == 1
     assert "sha256 must be a 64-character hexadecimal digest" in result.stderr
+
+
+def test_observation_missing_then_ready_and_symlink_conflict(tmp_path):
+    filename = 'vm-501-user-data.yml'
+    target = tmp_path / 'snippets' / filename
+    target.parent.mkdir()
+    fake = make_fake_pvesm(tmp_path, target)
+    env = os.environ | {'IAAS_PVE_SNIPPET_UPLOAD_PVESM': str(fake), 'FAKE_PVESM_TARGET': str(target)}
+    payload = '#cloud-config\nhostname: vm\n'
+    args = ['--verify', '--observe', '--storage', 'local', '--filename', filename,
+            '--sha256', hashlib.sha256(payload.encode()).hexdigest()]
+    missing = json.loads(run_wrapper(args, env).stdout)
+    assert missing['status'] == 'pending' and missing['reason_code'] == 'exact_target_absent'
+    target.write_text(payload)
+    ready = json.loads(run_wrapper(args, env).stdout)
+    assert ready['status'] == 'ready' and ready['inode'] == target.stat().st_ino
+    target.unlink()
+    other = tmp_path / 'other.yml'
+    other.write_text(payload)
+    target.symlink_to(other)
+    failed = json.loads(run_wrapper(args, env).stdout)
+    assert failed['status'] == 'failed' and failed['reason_code'] == 'not_exclusive_regular_file'
+    assert other.read_text() == payload

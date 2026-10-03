@@ -152,7 +152,9 @@ def test_deposed_state_and_permission_failure_do_not_pass():
 
 
 def test_empty_scope_is_explicit():
-    assert verify_configuration([], API()) == {"status": "passed", "scope": "empty", "objects": []}
+    report = verify_configuration([], API())
+    assert {k: report[k] for k in ('status', 'scope', 'objects')} == {"status": "passed", "scope": "empty", "objects": []}
+    assert report['observation_window']['source'] == 'internal-default'
 
 
 def test_missing_node_is_not_successful_deletion():
@@ -174,3 +176,102 @@ def test_unexpected_attachments_fail(attachment):
 
     item = change()
     assert verify_configuration(expectations([item], snapshot(item)), Extra())["status"] == "failed"
+
+
+def test_power_converges_without_reapplying():
+    class Converging(API):
+        calls = 0
+        def vm_status(self, node, vmid):
+            self.calls += 1
+            return {'status': 'running' if self.calls == 1 else 'stopped'}
+    api = Converging()
+    item = change()
+    report = verify_configuration(expectations([item], snapshot(item)), api, interval=0)
+    assert report['status'] == 'passed'
+    assert api.calls == 2
+    assert report['observations'][0]['terminal']['attempt'] == 2
+
+
+def test_one_window_shared_across_objects_and_retries():
+    from iaas.observation import ObservationExpired
+    class Bound:
+        remaining_calls = 0
+        def remaining(self, phase):
+            self.remaining_calls += 1
+            if self.remaining_calls > 6:
+                raise ObservationExpired()
+            return 1
+    item = change()
+    api = API()
+    expected = expectations([item], snapshot(item))
+    expected.append({**deepcopy(expected[0]), 'vmid': 102})
+    report = verify_configuration(expected, api, budget=Bound(), interval=0)
+    assert report['objects'][0]['status'] == 'passed'
+    assert report['objects'][1]['status'] == 'unknown'
+    assert report['observations'][1]['terminal']['reason'] == 'observation_deadline_expired'
+
+
+def test_independent_window_does_not_reuse_ended_original_verification():
+    item = change()
+    expected = expectations([item], snapshot(item))
+    class Ended:
+        def remaining(self, phase):
+            raise RuntimeError('ended')
+    assert verify_configuration(expected, API(), budget=Ended())['status'] == 'unknown'
+    report = verify_configuration(expected, API())
+    assert report['status'] == 'passed'
+    assert report['observation_window']['source'] == 'internal-default'
+
+
+def test_temporary_query_retry_retains_bound_identity_and_comparisons():
+    from iaas.pve_inventory.pve_api import PveApiUnavailableError
+    class Temporary(API):
+        reads = 0
+        def vm_config(self, node, vmid):
+            self.reads += 1
+            if self.reads == 1:
+                raise PveApiUnavailableError('unavailable')
+            return super().vm_config(node, vmid)
+    item = change()
+    api = Temporary()
+    report = verify_configuration(expectations([item], snapshot(item)), api, interval=0)
+    assert report['status'] == 'passed' and api.reads == 2
+    evidence = report['observations'][0]['terminal']['evidence']
+    assert evidence['actual']['uuid'] == 'new-native-uuid'
+    assert evidence['expected']['volumes'][0]['size'] == 8
+    assert evidence['actual']['volumes'][0]['volid'] == 'local:vm-101-disk-0'
+
+
+def test_tighter_execution_cutoff_is_reported_as_actual_window():
+    from iaas.observation import ObservationBudget
+    from iaas.runtime_execution.pve_results import VerificationBudget
+    enclosing = ObservationBudget(1, source='bound-execution')
+    window = VerificationBudget(120, enclosing=enclosing)
+    assert window.cutoff == enclosing.cutoff
+    assert window.window['cutoff'] == enclosing.facts()['cutoff']
+    assert window.window['source'] == 'internal-default+execution-cutoff'
+
+
+def test_ha_targets_preserve_separate_terminal_evidence():
+    class HA:
+        def ha_status(self):
+            return [{'sid': 'vm:101', 'state': 'started'}, {'sid': 'vm:102', 'state': 'started'}]
+    expected = [{'kind': 'ha', 'values': {'resource_id': name, 'state': 'started'},
+                 'absent': False, 'snapshot_complete': True} for name in ('vm:101', 'vm:102')]
+    report = verify_configuration(expected, HA())
+    assert report['status'] == 'passed'
+    assert {row['association']['resource_id'] for row in report['observations']} == {'vm:101', 'vm:102'}
+
+
+def test_native_diagnostics_keep_historical_failure_separate_from_convergence():
+    from iaas.runtime_execution.pve_results import stop_diagnostics
+    item = change()
+    report = verify_configuration(expectations([item], snapshot(item)), API())
+    result = {'native_execution': {'status': 'failed'}, 'state_persistence': {'status': 'unknown'},
+              'collection': {'status': 'passed'}, 'effects': {'facility': 'known'}}
+    diagnosis = stop_diagnostics(result, report)
+    assert diagnosis['stopping']['check'] == 'native_execution'
+    assert diagnosis['stopping']['status'] == 'failed'
+    assert diagnosis['activity'] == 'stopped' and diagnosis['existence'] == 'present'
+    assert diagnosis['observations'][0]['terminal']['status'] == 'ready'
+    assert diagnosis['recovery']['supported'] is False

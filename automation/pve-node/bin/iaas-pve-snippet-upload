@@ -9,7 +9,7 @@ readonly MKTEMP='/usr/bin/mktemp'
 
 usage() {
   printf '       %s --capabilities (read-only JSON)\n' "$0" >&2
-  printf 'usage: %s [--mode ordinary|acceptance] [--deadline-at UTC] [--create-only | --verify --sha256 SHA256] --storage STORAGE --filename PREFIX-N-{user-data,network-config}.yml\n' "$0" >&2
+  printf 'usage: %s [--mode ordinary|acceptance] [--deadline-at UTC] [--create-only | --verify --sha256 SHA256 [--observe]] --storage STORAGE --filename PREFIX-N-{user-data,network-config}.yml\n' "$0" >&2
 }
 
 die() {
@@ -37,6 +37,7 @@ print(json.dumps({'schema_version': 'helper-capabilities/v1', 'helper': 'upload'
                   'protocol_version': 2, 'capabilities': {
                       'acceptance': pvesm_available, 'create_only': pvesm_available,
                       'verify': pvesm_available and yaml_available,
+                      'observe': pvesm_available and yaml_available,
                       'deadline': pvesm_available}}))
 PYTHON
 fi
@@ -44,6 +45,7 @@ fi
 storage_id=''
 filename=''
 verify='false'
+observe='false'
 create_only='false'
 expected_sha256=''
 mode='ordinary'
@@ -69,6 +71,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --create-only)
       create_only='true'
+      shift
+      ;;
+    --observe)
+      observe='true'
       shift
       ;;
     --verify)
@@ -100,6 +106,7 @@ done
 [[ ${filename} =~ ^[A-Za-z0-9][A-Za-z0-9._-]*-[0-9]+-(user-data|network-config)\.yml$ ]] || die 'filename must match PREFIX-N-{user-data,network-config}.yml with a conservative prefix'
 [[ ${filename} != *'/'* ]] || die 'filename must not contain path separators'
 
+[[ ${observe} != 'true' || ${verify} == 'true' && ${mode} == 'ordinary' ]] || die '--observe requires ordinary verify'
 [[ ${verify} != 'true' || ${create_only} != 'true' ]] || die '--create-only and --verify are mutually exclusive'
 
 if [[ ${verify} == 'true' ]]; then
@@ -218,51 +225,65 @@ target_dir="$(dirname "${target_path}")"
 storage_dir="$(dirname "${target_dir}")"
 
 if [[ ${verify} == 'true' ]]; then
-  [[ -f ${target_path} ]] || die "missing snippet: ${target_path}"
-  [[ -s ${target_path} ]] || die "empty snippet: ${target_path}"
   if ! command -v python3 >/dev/null 2>&1; then
     die 'python3 is required for verify'
   fi
-  if ! python3 - "${target_path}" "${expected_sha256}" <<'PY'
-import pathlib
+  exec python3 - "${target_path}" "${expected_sha256}" "${observe}" <<'PYTHON'
 import hashlib
+import json
+import os
+from pathlib import Path
+import stat
 import sys
 
+path, expected, observing = Path(sys.argv[1]), sys.argv[2], sys.argv[3] == 'true'
+def conclude(status, reason, **facts):
+    if observing:
+        print(json.dumps({'schema_version': 1, 'status': status, 'reason_code': reason, **facts}))
+        raise SystemExit(0)
+    if status != 'ready':
+        print('error: ' + {'exact_target_absent': 'missing snippet', 'digest_mismatch': 'checksum mismatch'}.get(reason, reason), file=sys.stderr)
+        raise SystemExit(1)
+    raise SystemExit(0)
 try:
     import yaml
-except Exception as exc:
-    print(f'error: PyYAML is required for verify: {exc}', file=sys.stderr)
-    raise SystemExit(1)
-
-path = pathlib.Path(sys.argv[1])
-expected_sha256 = sys.argv[2]
-try:
-    payload = path.read_bytes()
-except OSError as exc:
-    print(f'error: unable to read {path}: {exc}', file=sys.stderr)
-    raise SystemExit(1)
-
-actual_sha256 = hashlib.sha256(payload).hexdigest()
-if actual_sha256 != expected_sha256:
-    print(f'error: checksum mismatch for {path}', file=sys.stderr)
-    raise SystemExit(1)
-
-try:
-    text = payload.decode('utf-8')
-except UnicodeDecodeError as exc:
-    print(f'error: invalid UTF-8 in {path}: {exc}', file=sys.stderr)
-    raise SystemExit(1)
-
-try:
-    yaml.safe_load(text)
-except yaml.YAMLError as exc:
-    print(f'error: invalid YAML in {path}: {exc}', file=sys.stderr)
-    raise SystemExit(1)
-PY
-  then
-    exit 1
-  fi
-  exit 0
+    # Resolve each directory component without following symlinks, then open
+    # exactly the named file once. Recheck its original inode before deciding.
+    directory = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in path.parts[1:-1]:
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+            os.close(directory)
+            directory = child
+        try:
+            before = os.stat(path.name, dir_fd=directory, follow_symlinks=False)
+        except FileNotFoundError:
+            conclude('pending', 'exact_target_absent', exists=False)
+        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or not 0 < before.st_size <= 4 * 1024 * 1024:
+            conclude('failed', 'not_exclusive_regular_file', exists=True)
+        descriptor = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory)
+        with os.fdopen(descriptor, 'rb') as source:
+            opened = os.fstat(source.fileno())
+            payload = source.read(4 * 1024 * 1024 + 1)
+        after = os.stat(path.name, dir_fd=directory, follow_symlinks=False)
+        identity = lambda row: (row.st_dev, row.st_ino, row.st_size, row.st_mtime_ns, row.st_ctime_ns)
+        if identity(before) != identity(opened) or identity(opened) != identity(after):
+            conclude('failed', 'content_or_identity_changed', exists=True)
+        digest = hashlib.sha256(payload).hexdigest()
+        if len(payload) > 4 * 1024 * 1024 or digest != expected:
+            conclude('failed', 'digest_mismatch', exists=True, digest=digest, inode=opened.st_ino)
+        try:
+            yaml.safe_load(payload.decode('utf-8'))
+        except (UnicodeDecodeError, yaml.YAMLError):
+            conclude('failed', 'invalid_cloud_init_content', exists=True, digest=digest, inode=opened.st_ino)
+        conclude('ready', 'digest_confirmed', exists=True, digest=digest, inode=opened.st_ino)
+    finally:
+        os.close(directory)
+except FileNotFoundError:
+    conclude('pending', 'exact_target_absent', exists=False)
+except (OSError, ImportError):
+    conclude('unknown', 'inspection_unavailable')
+PYTHON
 fi
 
 tmp_file=''
