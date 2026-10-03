@@ -9,6 +9,7 @@ infra-ops needs a Debian 13 general template for its current PVE deployment cont
 - Clean build network state, credentials and instance identity while retaining cloud-init network initialization, growpart/resizefs and enabled QEMU Guest Agent.
 - Complete the existing offline check paths for build, publication and clone declarations: strict fields, relationships, capability checks and safe file/field/reason diagnostics.
 - Reuse full clone, pool, independent network/identity injection and disk growth. Extend only a proven gap in the bounded acceptance path for DNS and 128 GiB growth.
+- Accept current v3 acceptance snapshots in the existing exact recovery path, preserving original results and requiring a new bounded cleanup admission.
 - Release fixed runtime/image-builder versions and run one representative real build → publish → full clone → first boot → guest checks → exact cleanup path.
 
 ## Capabilities
@@ -23,6 +24,7 @@ None.
 - `pve-template-lifecycle`: explicit publication without a NIC.
 - `runtime-environment-config`: actionable offline checking of current inputs.
 - `pve-template-acceptance`: representative clone network and disk-growth verification.
+- `pve-acceptance-recovery`: current snapshot validation for exact cleanup after a native deletion failure.
 
 ## Impact
 

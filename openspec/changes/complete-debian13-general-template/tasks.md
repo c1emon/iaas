@@ -12,9 +12,9 @@
 
 ## 3. Delivery and representative acceptance
 
-- [ ] 3.1 Run relevant regressions and OpenSpec/schema checks, review diff/graph impacts and commit staged delivery.
-- [ ] 3.2 Publish immutable fixed runtime/image-builder and launcher artifacts with normal CI checksums/digests.
-- [ ] 3.3 Build and publish retained template 9000 with requested software, sources, 2 CPU/1 GiB/8 GiB and no NIC.
+- [x] 3.1 Run relevant regressions and OpenSpec/schema checks, review diff/graph impacts and commit staged delivery.
+- [x] 3.2 Publish immutable fixed runtime/image-builder and launcher artifacts with normal CI checksums/digests.
+- [x] 3.3 Build and publish retained template 9000 with requested software, sources, 2 CPU/1 GiB/8 GiB and no NIC.
 - [ ] 3.4 Full-clone a temporary VM in the existing dedicated pool, configure independent network/identity before first boot, expand to 128 GiB and verify actual guest growth/network/cloud-init/agent.
 - [ ] 3.5 Recheck unchanged source, clean only this execution's temporary resources and record real evidence or explicit blockers.
 - [ ] 3.6 Update current contracts/docs and infra-ops adaptation guidance; separate offline, real template and caller deployment conclusions.

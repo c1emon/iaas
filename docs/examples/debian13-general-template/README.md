@@ -6,6 +6,7 @@
 - 构建：复用 [build request](../image-publish/image-build-request.json)，8 GiB、清华 Debian/security 源、
   `package_upgrade: true`、七项基础工具、cloud-init/growpart、QGA。构建内存预算独立于模板 1 GiB。
 - 发布：`publish-request.json` 表达 9000、2 核、1024 MiB、8 GiB、`bridge: null`，无 `ip_config`。
+  `local` 用于暂存上传镜像，`memory` 用于系统盘和 cloud-init 盘；暂存存储须允许 import 内容及上传/删除。
   artifact、摘要和对象引用必须替换为此次成功构建材料，现有 artifact 是合成数据。
 - 日常克隆：`environment.yml` 选择 `cluster.yml` / `vms.yml`，完整克隆，8 核、8192 MiB、
   128 GiB、memory、dev；启动前设置 br_dev、10.10.0.100/24、10.10.0.254、10.5.0.15。

@@ -13,8 +13,9 @@ from uuid import UUID
 from iaas.common.errors import ValidationError
 from iaas.pve_acceptance_contracts import (
     Authorization, CloudInit, Deadlines, RuntimeIdentity, Target, Timeouts, canonical_digest, deadline_timestamp, load_strict_json,
+    validate_acceptance_request, validate_acceptance_result,
 )
-from .acceptance_execution import confined
+from .acceptance_execution import confined, validate_acceptance_materials
 from .recovery_contracts import validate_recovery_request
 
 
@@ -39,7 +40,35 @@ def material(root: Path, ref: dict) -> dict:
 
 def validate_retained_acceptance(request: dict, journal: dict, result: dict | None,
                                  original_execution_id: str) -> None:
-    """Only here may current runtime parse rc.19 request/result v2, unchanged."""
+    """Validate current snapshots; retained rc.19 parsing remains confined here."""
+    if type(request.get('schema_version')) is int and request['schema_version'] == 3:
+        validate_acceptance_request(request)
+        check(journal.get('kind') == 'pve-one-shot-journal'
+              and type(journal.get('schema_version')) is int and journal['schema_version'] == 1
+              and journal.get('operation') == 'accept' and journal.get('execution_id') == original_execution_id
+              and isinstance(journal.get('tasks'), list)
+              and type(journal.get('mutation_active')) is bool
+              and journal.get('status') in {'running', 'interrupted', 'finished'}, 'original_journal_binding_conflict')
+        validate_acceptance_materials(request, journal)
+        if result is not None:
+            validate_acceptance_result(result)
+            check(result.get('execution_id') == original_execution_id
+                  and result.get('request_digest') == journal['request_digest']
+                  and result.get('runtime') == journal['runtime'] and result.get('deadlines') == request['deadlines']
+                  and result.get('facility_writes') == journal.get('facility_writes')
+                  and result.get('preview_digest') == journal['preview_digest']
+                  and result.get('cluster_scope') == request['cluster_scope']
+                  and result.get('pool') == request['temporary_vm']['pool']
+                  and result.get('vmid_policy') == request['vmid_policy']
+                  and journal.get('result_digest') == canonical_digest(result), 'original_result_binding_conflict')
+            check(result.get('overall') == 'unknown'
+                  or journal['status'] == 'finished' and journal['mutation_active'] is False,
+                  'original_result_activity_conflict')
+            record, template = request['template_record'], result.get('template', {})
+            check(all(template.get(key) == record.get(key) for key in
+                      ('record_id', 'execution_id', 'artifact_digest', 'node', 'vmid', 'smbios_uuid')),
+                  'original_result_source_conflict')
+        return
     fields = {'kind', 'schema_version', 'target', 'template_record', 'temporary_vm',
               'cloud_init', 'required_checks', 'timeouts', 'authorization', 'deadlines'}
     check(set(request) == fields and request.get('kind') == 'pve-template-acceptance-request'

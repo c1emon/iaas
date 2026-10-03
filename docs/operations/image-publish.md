@@ -55,6 +55,12 @@ volumes. Admission rejects shrink/insufficient capacity before clone; resize
 and network configuration precede start. Protected guest evidence records
 root disk/partition/filesystem capacities, addresses, routes, resolvers and
 initialized identity. The six check IDs and exact ownership cleanup remain.
+For systemd-resolved stub configurations, DNS verification reads the actual
+upstream resolver file as well as `/etc/resolv.conf`; missing or mismatched
+upstream evidence fails verification. After VM deletion, transient HTTP
+500/502/503/504 from the read-only storage inventory may be retried for up to
+30 seconds within the frozen cleanup budget. Deletes are not replayed;
+persistent inventory failure remains unknown.
 This evidence does not promote unrelated daily deployments.
 
 ## Promotion, revocation, rollback and unknown results

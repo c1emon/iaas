@@ -27,6 +27,9 @@
 下保留 unknown 验收结论，不能从现存 VM 补造历史成功。
 
 原 rc.19 acceptance request/result v2、journal v1 仅在 recover 中按原形读取。
+当前 v3 acceptance request/result 也可作为原材料恢复，必须保持原 preview/v2 admission、
+runtime、cluster/pool/VMID policy、源模板与结果摘要绑定。不能把当前材料降成 v2 或
+重新生成旧 request/journal；恢复成功不改变原验收失败/未知结论。
 VM798 不受新验收 VMID 区间阻挡；原材料没有 pool 时不会补出一个历史池绑定。
 若原来有 pool，保持原绑定并核当前归属；恢复永不修改池或 ACL。
 
