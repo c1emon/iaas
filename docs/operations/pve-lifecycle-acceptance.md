@@ -1,12 +1,13 @@
 # PVE 生命周期验收材料
 
-整理日期：2026-10-02。本页是 IaaS 的材料与结论入口；操作步骤仍以对应手册为准。固定软件为 rc.25，完整镜像/launcher 摘要与发布检查见[固定交付](../../openspec/changes/archive/2026-10-02-fix-pve-pool-and-acceptance-recovery/delivery.md)。
+更新日期：2026-10-03。本页是 IaaS 的材料与结论入口；操作步骤仍以对应手册为准。最新软件为 [rc.26](../../openspec/changes/archive/2026-10-03-fix-pve-template-check-action-dispatch/delivery.md)，修复模板 check 的 action 分派。下列历史现场证据使用 rc.25，完整镜像/launcher 摘要与发布检查见[rc.25交付](../../openspec/changes/archive/2026-10-02-fix-pve-pool-and-acceptance-recovery/delivery.md)。
 
 ## 当前结论及边界
 
 | 范围 | 已有证据 | 能够说明的结论 |
 | --- | --- | --- |
 | IaaS软件与产物 | rc.25两个平台各2132 passed、4 skipped；实际镜像保存计划准入、匿名消费、launcher校验通过 | 配套软件与产物验证通过，不代替现场验收 |
+| rc.26软件修复与产物 | 两个平台各2145 passed、4 skipped；实际镜像保存计划准入、匿名消费、launcher校验通过 | action分派修复已交付，不代表模板9006退役或现场最终收尾完成 |
 | 原run-120-1受控恢复 | 调用方记录新恢复 `recover-run-120-1-20261002-01` 清除VM798、两盘和snippet | 原验收仍未知，9004保留但不可用；不是重放原操作 |
 | 模板9005 | 调用方记录六项原生检查、临时资源清理通过及record/v3 available | 限定模板验收通过，不包含应用或压力测试 |
 | 普通VM与独立清理 | 调用方记录rc.24创建关机VM799，rc.25删除、state写回和新批准专属snippet清理；最终无残留/pending | 限定普通VM生命周期闭环，未执行普通VM guest/业务验收 |
@@ -38,6 +39,6 @@
 | 保存计划漏review.json/discovery原因覆盖 | rc.24完整传输原review，缺失/冲突在设施写入前拒绝；failed discovery保留安全原因，ready仍严格绑定身份 |
 | rc.23镜像集成失败 | 测试漏传执行UID:GID，rc.24与正式launcher对齐；保留失败工作流，不降低文件所有权检查 |
 | provider空pool误报 | rc.25统一普通VM的空字符串/null语义；真实池权限和验收必填池不放宽，历史state/批准不改写 |
-| rc.25模板退役check误用发布校验 | `check action=retire/cleanup` 固定按publish校验，合法请求被拒绝；[修复变更](../../openspec/changes/archive/2026-10-03-fix-pve-template-check-action-dispatch/proposal.md)按action选择输入和校验器，保持离线、无设施写入。此修复尚未发布，不代表模板退役或最终现场收尾完成 |
+| rc.25模板退役check误用发布校验 | `check action=retire/cleanup` 固定按publish校验，合法请求被拒绝；[rc.26修复交付](../../openspec/changes/archive/2026-10-03-fix-pve-template-check-action-dispatch/delivery.md)按action选择输入和校验器，保持离线、无设施写入。模板退役及最终现场收尾仍由调用方执行 |
 
 caller参数、通知、数据库和工作流的验收材料由调用方维护；本页不扩大为那些系统的验收记录。后续变更按实际风险选代表性回归，不因本次整理新增全套重验要求。

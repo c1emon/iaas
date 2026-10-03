@@ -1,6 +1,6 @@
 # 验证范围
 
-实现分支：`fix/pve-template-check-action-dispatch`。仅修复 check 的输入及校验器分派，没有设施访问、发布新 runtime 或修改 infra-ops。
+实现分支：`fix/pve-template-check-action-dispatch`。以下为发布前的软件实现验证，仅修复 check 的输入及校验器分派，没有设施访问或修改 infra-ops；后续镜像发布结果见[交付记录](delivery.md)。
 
 - 相关模板入口、cleanup、publisher、publication failures、请求合同、runtime dispatch、admission、acceptance：159 passed。
 - acceptance plan、recovery runtime dispatch、recovery 及 recovery contracts：50 passed；既有 accept/recover 分派回归通过。
