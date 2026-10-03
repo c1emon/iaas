@@ -11,13 +11,21 @@ if cloud.get('status') == 'done':
     fs = os.statvfs('/')
     addresses = json.loads(output(['ip', '-j', 'address']))
     routes = json.loads(output(['ip', '-j', 'route']))
+    resolver_nameservers = [row.split()[1] for row in pathlib.Path('/etc/resolv.conf').read_text().splitlines()
+                            if len(row.split()) >= 2 and row.split()[0] == 'nameserver']
+    nameservers = resolver_nameservers
+    resolved = pathlib.Path('/run/systemd/resolve/resolv.conf')
+    if any(server in {'127.0.0.53', '127.0.0.54'} for server in resolver_nameservers) and resolved.is_file():
+        nameservers = [row.split()[1] for row in resolved.read_text().splitlines()
+                       if len(row.split()) >= 2 and row.split()[0] == 'nameserver']
     cloud['general_template'] = {
         'root_partition_bytes': int(output(['blockdev', '--getsize64', root])),
         'root_disk_bytes': int(output(['blockdev', '--getsize64', '/dev/' + parent])),
         'root_filesystem_bytes': fs.f_blocks * fs.f_frsize,
         'addresses': [str(a['local']) + '/' + str(a['prefixlen']) for row in addresses for a in row.get('addr_info', [])],
         'default_gateways': [row['gateway'] for row in routes if row.get('dst') == 'default' and 'gateway' in row],
-        'nameservers': [row.split()[1] for row in pathlib.Path('/etc/resolv.conf').read_text().splitlines() if row.startswith('nameserver ')],
+        'resolver_nameservers': resolver_nameservers,
+        'nameservers': nameservers,
         'machine_id_initialized': len(pathlib.Path('/etc/machine-id').read_text().strip()) == 32,
         'instance_id': output(['cloud-init', 'query', 'instance_id']),
     }
