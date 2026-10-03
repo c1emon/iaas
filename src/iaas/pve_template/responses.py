@@ -18,9 +18,23 @@ class RequestRejected(OperationFailed):
 class RequestOutcomeUnknown(OperationFailed):
     """No authoritative evidence establishes whether the request executed."""
 
-    def __init__(self, http_status: int | None = None) -> None:
+    def __init__(self, http_status: int | None = None, *, category: str = 'unclassified') -> None:
         super().__init__('request_outcome_unknown')
         self.http_status = http_status
+        self.category = category
+
+
+def read_retry_decision(error: Exception):
+    """Explicit allowlist for PVE read queries, never for dispatch."""
+    from iaas.observation import Decision
+    if isinstance(error, RequestRejected):
+        return Decision('failed', 'permission_denied', {'category': 'permission', 'http_status': error.http_status})
+    if isinstance(error, RequestOutcomeUnknown):
+        facts = {'category': error.category, 'http_status': error.http_status}
+        if error.http_status in {500, 502, 503, 504} or error.category in {'timeout', 'connection_reset'}:
+            return Decision('pending', 'transient_read_error', facts)
+        return Decision('unknown', 'read_not_retryable', facts)
+    return Decision('unknown', 'unclassified_query_error', {'category': 'unclassified'})
 
 
 def permission_rejection(error: HTTPError, *, url: str, path: str) -> bool:
