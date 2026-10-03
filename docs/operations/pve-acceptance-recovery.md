@@ -6,7 +6,7 @@
 
 ## 输入及文件映射
 
-当前合同为 recovery request/preview/result v1，start 使用共享 one-shot admission v2。
+当前合同为 recovery request v1、preview/result v2，start 使用共享 one-shot admission v2。
 [schema](../../automation/schemas/pve-acceptance-recovery/v1/README.md) 与
 [完整脱敏样例](../examples/recovery/README.md) 可供 IaaS/infra-ops 共用校验。
 样例中的未来截止、摘要及成功结果都是软件 fixture，不是可直接消费的设施批准。
@@ -27,7 +27,7 @@
 下保留 unknown 验收结论，不能从现存 VM 补造历史成功。
 
 原 rc.19 acceptance request/result v2、journal v1 仅在 recover 中按原形读取。
-当前 v3 acceptance request/result 也可作为原材料恢复，必须保持原 preview/v2 admission、
+当前 acceptance request v3/result v4 也可作为原材料恢复，必须保持原 preview/v2 admission、
 runtime、cluster/pool/VMID policy、源模板与结果摘要绑定。不能把当前材料降成 v2 或
 重新生成旧 request/journal；恢复成功不改变原验收失败/未知结论。
 VM798 不受新验收 VMID 区间阻挡；原材料没有 pool 时不会补出一个历史池绑定。
@@ -130,6 +130,31 @@ launcher/runtime/helper 能力版本并冻结实际 digest/截止；不要改写
 消费记录、删除执行目录或重放旧 acceptance start。本 change 不修改 infra-ops 仓库。
 
 继续使用现有 release 流程发布固定 runtime manifest 与 amd64/arm64 digest，以及
-`iaas-linux-amd64`、`iaas-darwin-arm64` 和 SHA256SUMS。发布说明应列明恢复合同 v1、
+`iaas-linux-amd64`、`iaas-darwin-arm64` 和 SHA256SUMS。发布说明应列明恢复 request v1、preview/result v2、
 共享 admission v2、原 v2 仅恢复读取、只读文件/reference helper 要求、实际软件测试
 结果与现场结论范围。软件产物发布不等于某次现场恢复完成；已记录的限定结论见验收材料入口。
+
+## 当前登记前恢复与停止诊断
+
+当前验收 preview v2 在原 clone description 中绑定一次性 `clone_marker`。
+原成功 UPID、完整空闲目标准入以及 marker 匹配的 candidate UUID/完整
+slot→volid 快照必须已经留存；缺字段或部分快照给出 `needs_evidence`，
+不能以当前 VMID/marker 补造归属。candidate 尚未 registered-owned，原验收
+不会自动 stop/delete。新的只读 plan 联合核对当前 config/content/pool、源模板、
+权限与引用和全部相关活动，固定 UUID 与完整卷集到 preview v2 的
+`proof_bindings`。新批准只授权该完整原范围；start 重查并拒绝新增盘、UUID/marker
+替换、活动未知或 preview/start 漂移，不重放 clone/configure/start/guest exec。
+
+若 VM 在已独立证明的 present-VM preview 批准后、start 前变为 authoritative absent，
+可沿用该批准冻结的完整 scope 核验精确孤卷。若为已不存在 VM 重新生成 plan，
+必须引用前次恢复材料、相同已证明冻结 scope 和已知不活跃任务；前次活动未知则拒绝。
+两种分支均仅处理原范围内精确余项，不再次删除 VM，也不扩充卷集。
+没有已证明 scope 则拒绝。原 request/journal/result 保持只读。
+
+验收与恢复结果及 CLI 摘要的 `stop_diagnostics` 按 phase/check/task-or-resource
+保留最后必要观察和终止证据；后续 cleanup/source 不覆盖先前 claim 的 volid/vmid、
+时间和原因。failed 检查可以与整体 unknown 共存，未观察不是空集合。
+软件替身已覆盖同步延迟、暂时查询失败、原 PID、缺证据和部分恢复；这些不是
+真实 PVE 验收或日常部署代验。
+
+请求可显式声明 `evidence_mode: registered` 或 `pre_registration`。离线 check 校验模式以及已必填的 original request/journal、caller 关联和完整 UUID/卷范围；不打开原材料、不发现资源、不认定归属。在线 plan/start 要求声明与原 journal 的登记状态一致。省略该可选声明时仍按原 journal 判定模式。

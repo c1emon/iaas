@@ -104,3 +104,21 @@ def test_actual_missing_recovery_observation_preserves_unknown_public_outcome(tm
     summary = json.loads((output / 'summary.json').read_text())
     assert summary['overall'] == 'unknown'
     assert summary['reason_code'] == 'recovery_observation_unavailable'
+
+
+def test_actual_offline_check_declared_pre_registration_mode_has_no_discovery(tmp_path, monkeypatch):
+    from iaas.pve_template.recovery_contracts import validate_recovery_request
+    data = setup(tmp_path)
+    request = data[0]
+    request['evidence_mode'] = 'pre_registration'
+    assert validate_recovery_request(request)['evidence_mode'] == 'pre_registration'
+    request_file = tmp_path / 'pre-registration-request.json'
+    request_file.write_text(json.dumps(request))
+    monkeypatch.setattr(runtime, '_client', lambda *args: pytest.fail('offline check attempted API'))
+    monkeypatch.setattr(acceptance_snippets, 'Snippets', lambda *args, **kwargs: pytest.fail('offline check attempted helper'))
+    monkeypatch.setattr(recovery, 'load_original', lambda *args: pytest.fail('offline check discovered original resource'))
+    entry = tmp_path / 'environment.yml'
+    write_entry(entry, {'recovery_request': request_file}, {'action': 'recover'})
+    assert main(['--environment', str(entry), '--component', 'pve-template', '--operation', 'check',
+                 '--scope', 'cohe', '--image-digest', request['runtime']['image_digest'],
+                 '--output', str(tmp_path / 'checked')]) == 0

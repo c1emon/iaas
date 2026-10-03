@@ -62,3 +62,5 @@ execution mode or admission, start includes the actual plan preview and new v2
 approval, and observe maps only the dispatched recovery directory. Formal
 `run-120-1` commands and release boundaries are documented in
 [the recovery operation guide](../../operations/pve-acceptance-recovery.md).
+
+`pre-registration-request.json` 演示可选显式 `evidence_mode: pre_registration`。它的 candidate-request/journal 引用为未提供的合成占位材料，不能用本目录历史 registered 原材料替代。离线 check 仅校验枚举、完整 UUID/卷范围及 original/caller 引用格式；原 marker/成功 UPID/完整候选与当前归属由在线 plan/start 校验。`registered` 声明必须与原登记状态一致；省略声明时在线入口从原 journal 判定模式，不改写历史材料。

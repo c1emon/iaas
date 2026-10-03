@@ -1,4 +1,4 @@
-# PVE acceptance v3 / snippet cleanup v2 schemas
+# Current PVE acceptance and snippet cleanup schemas
 
 The acceptance request/result/preview, snippet request/result and scoped execution-admission schemas are exported from
 `iaas.pve_acceptance_contracts.contract_schemas()`. Shared accepted and rejected
@@ -15,3 +15,5 @@ select `temporary_vm.disk_size_gib` and `temporary_vm.nameservers`; these option
 fields enable root growth and actual guest network/DNS verification. Evidence references are
 relative to the protected mapped evidence root. Schema validation cannot replace
 filesystem confinement, digest verification or original-material comparisons.
+
+Current field versions are acceptance request v3, preview v2, result v4; snippet cleanup request v2/result v3. Results expose schema-defined stop_diagnostics. Preview binds a generated clone_marker; it is not a credential or ownership proof.

@@ -195,6 +195,45 @@
       "title": "Outcome",
       "type": "object"
     },
+    "RecoveryDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "supported": {
+          "title": "Supported",
+          "type": "boolean"
+        },
+        "disposition": {
+          "enum": [
+            "eligible",
+            "blocked",
+            "needs_evidence",
+            "not_applicable"
+          ],
+          "title": "Disposition",
+          "type": "string"
+        },
+        "reason_code": {
+          "pattern": "^[a-z][a-z0-9_]{0,95}$",
+          "title": "Reason Code",
+          "type": "string"
+        },
+        "required_evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Required Evidence",
+          "type": "array"
+        }
+      },
+      "required": [
+        "supported",
+        "disposition",
+        "reason_code",
+        "required_evidence"
+      ],
+      "title": "RecoveryDiagnostic",
+      "type": "object"
+    },
     "Residual": {
       "additionalProperties": false,
       "properties": {
@@ -343,6 +382,135 @@
       "title": "RuntimeIdentity",
       "type": "object"
     },
+    "StopCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "phase": {
+          "title": "Phase",
+          "type": "string"
+        },
+        "check": {
+          "title": "Check",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "failed",
+            "unknown"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "reason_code": {
+          "pattern": "^[a-z][a-z0-9_]{0,95}$",
+          "title": "Reason Code",
+          "type": "string"
+        }
+      },
+      "required": [
+        "phase",
+        "check",
+        "status",
+        "reason_code"
+      ],
+      "title": "StopCheck",
+      "type": "object"
+    },
+    "StopDiagnostics": {
+      "additionalProperties": false,
+      "properties": {
+        "completed": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Completed",
+          "type": "array"
+        },
+        "stopping": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StopCheck"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "facility_writes": {
+          "enum": [
+            "none",
+            "issued",
+            "unknown"
+          ],
+          "title": "Facility Writes",
+          "type": "string"
+        },
+        "activity": {
+          "enum": [
+            "running",
+            "stopped",
+            "unknown"
+          ],
+          "title": "Activity",
+          "type": "string"
+        },
+        "ownership": {
+          "enum": [
+            "registered-owned",
+            "candidate-unknown",
+            "not-owned"
+          ],
+          "title": "Ownership",
+          "type": "string"
+        },
+        "existence": {
+          "enum": [
+            "present",
+            "absent",
+            "unknown"
+          ],
+          "title": "Existence",
+          "type": "string"
+        },
+        "inventory_complete": {
+          "title": "Inventory Complete",
+          "type": "boolean"
+        },
+        "tasks": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Tasks",
+          "type": "array"
+        },
+        "observations": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Observations",
+          "type": "array"
+        },
+        "recovery": {
+          "$ref": "#/$defs/RecoveryDiagnostic"
+        }
+      },
+      "required": [
+        "completed",
+        "stopping",
+        "facility_writes",
+        "activity",
+        "ownership",
+        "existence",
+        "inventory_complete",
+        "tasks",
+        "observations",
+        "recovery"
+      ],
+      "title": "StopDiagnostics",
+      "type": "object"
+    },
     "TemplateIdentity": {
       "additionalProperties": false,
       "properties": {
@@ -456,9 +624,12 @@
       "$ref": "#/$defs/Collection"
     },
     "schema_version": {
-      "const": 3,
+      "const": 4,
       "title": "Schema Version",
       "type": "integer"
+    },
+    "stop_diagnostics": {
+      "$ref": "#/$defs/StopDiagnostics"
     },
     "kind": {
       "const": "pve-template-acceptance-result",
@@ -539,6 +710,7 @@
     "overall",
     "collection",
     "schema_version",
+    "stop_diagnostics",
     "kind",
     "cluster_scope",
     "pool",

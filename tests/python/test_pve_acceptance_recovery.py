@@ -462,7 +462,8 @@ def test_pre_registration_reviewed_scope_rejects_drift_or_cleans_exact_absent_re
     candidate = original_journal['clone_candidate']
     class OrphanAPI(CloneAPI):
         def request(self, method, path, fields=None, **kwargs):
-            if path == '/api2/json/nodes': return [{'node': 'pve1'}]
+            if path == '/api2/json/nodes':
+                return [{'node': 'pve1'}]
             if path.endswith('/status/current') and current_change == 'marker_after_reconcile':
                 self.clone['description'] = 'iaas-acceptance-clone:33333333-3333-4333-8333-333333333333'
             if method == 'DELETE' and '/content/' in path:

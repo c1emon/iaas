@@ -328,8 +328,10 @@ def test_pre_registration_reconciliation_matches_full_config_and_freezes_proof(t
     class Client:
         def request(self, method, path, **kwargs):
             assert method == 'GET'
-            if '/tasks/' in path: return {'status': 'stopped', 'exitstatus': 'OK'}
-            if '/9000/' in path: return original['template_record']['configuration']
+            if '/tasks/' in path:
+                return {'status': 'stopped', 'exitstatus': 'OK'}
+            if '/9000/' in path:
+                return original['template_record']['configuration']
             return {'description': journal['clone_marker'], 'smbios1': 'uuid=' + VM_UUID,
                     **{slot: value + ',size=8G' for slot, value in candidate['slots'].items()}}
     facts = reconcile_original(request, old, evidence, Client(), object())
@@ -375,7 +377,8 @@ def test_pre_registration_partial_recovery_uses_frozen_scope_and_current_activit
         def request(self, method, path, **kwargs):
             assert method == 'GET'
             if '/tasks/' in path:
-                if self.prior_unknown and '00000002' in path: raise TimeoutError()
+                if self.prior_unknown and '00000002' in path:
+                    raise TimeoutError()
                 return {'status': 'stopped', 'exitstatus': 'OK'}
             return original['template_record']['configuration']
     client = Client()

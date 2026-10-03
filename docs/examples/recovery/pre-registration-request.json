@@ -1,0 +1,80 @@
+{
+  "kind": "pve-acceptance-recovery-request",
+  "schema_version": 1,
+  "target": {
+    "api_endpoint": "https://pve.example.invalid:8006",
+    "node": "cohe",
+    "tls_verify": true
+  },
+  "cluster_scope": "fixture-cluster",
+  "runtime": {
+    "image_digest": "runtime@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "deadlines": {
+    "work_deadline_at": "2099-01-01T00:00:00Z",
+    "cleanup_deadline_at": "2099-01-01T00:10:00Z"
+  },
+  "timeouts": {
+    "work_seconds": 600,
+    "cleanup_seconds": 180
+  },
+  "authorization": {
+    "cleanup_original_resources": true
+  },
+  "original_execution_id": "01591395-b75d-4108-a19d-7e5ccdb99acc-accept",
+  "caller_association": {
+    "plan_id": "run-120-1",
+    "execution_id": "01591395-b75d-4108-a19d-7e5ccdb99acc",
+    "pending_record_id": "original-pending",
+    "reservation_id": "original-consumption",
+    "material": {
+      "path": "caller.json",
+      "sha256": "450d4740d80667c1d19163e9df3e9275bf53302126d2e14b37f9a34ead789541"
+    }
+  },
+  "original_materials": {
+    "request": {
+      "path": "candidate-request.json",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "journal": {
+      "path": "candidate-journal.json",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  },
+  "rejection_evidence": [
+    {
+      "material": {
+        "path": "rejection.json",
+        "sha256": "2da597065521a3fcf049fd716133256510efeb7a21d19e6201839b2c6345f9e7"
+      },
+      "source_id": "pve-access-export",
+      "provenance": "administrator_export",
+      "authenticated_principal": "fixture@pve!automation",
+      "source_description": "Sanitized fixture of an explicitly approved administrator export",
+      "authorize_trusted_source": true
+    }
+  ],
+  "full_original_resources": {
+    "vm": {
+      "node": "cohe",
+      "vmid": 798,
+      "smbios_uuid": "22222222-2222-4222-8222-222222222222",
+      "created_by": "01591395-b75d-4108-a19d-7e5ccdb99acc-accept"
+    },
+    "volumes": [
+      "local-lvm:vm-798-disk-0",
+      "local-lvm:vm-798-cloudinit"
+    ],
+    "snippets": [
+      {
+        "node": "cohe",
+        "file_id": "local:snippets/iaas-accept-fixture-798-user-data.yml",
+        "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "created_by": "01591395-b75d-4108-a19d-7e5ccdb99acc-accept"
+      }
+    ]
+  },
+  "previous_recoveries": [],
+  "evidence_mode": "pre_registration"
+}

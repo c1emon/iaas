@@ -1,5 +1,4 @@
 {
-  "schema_version": 2,
   "deadlines": {
     "work_deadline_at": "2000-01-01T00:00:00Z",
     "cleanup_deadline_at": "2000-01-01T00:10:00Z"
@@ -22,7 +21,7 @@
         "node": "pve1",
         "identity": "local:snippets/accept-001.yaml",
         "created_by": "accept-001",
-        "ownership": "unknown",
+        "ownership": "owned",
         "existence": "unknown",
         "reason_code": "not_checked"
       }
@@ -32,6 +31,33 @@
   "collection": {
     "status": "complete",
     "reason_code": "result_collected"
+  },
+  "schema_version": 3,
+  "stop_diagnostics": {
+    "completed": [],
+    "stopping": {
+      "phase": "cleanup",
+      "check": "snippet_absence",
+      "status": "unknown",
+      "reason_code": "not_checked"
+    },
+    "facility_writes": "none",
+    "activity": "unknown",
+    "ownership": "registered-owned",
+    "existence": "unknown",
+    "inventory_complete": false,
+    "tasks": [],
+    "observations": [],
+    "recovery": {
+      "supported": true,
+      "disposition": "needs_evidence",
+      "reason_code": "cleanup_evidence_required",
+      "required_evidence": [
+        "helper_activity",
+        "exact_target",
+        "complete_references"
+      ]
+    }
   },
   "kind": "pve-snippet-cleanup-result",
   "origin": "acceptance",
