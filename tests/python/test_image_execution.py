@@ -150,6 +150,7 @@ def test_identity_cleanup_fails_closed_on_required_directory_reads(
     assert runtime._identity_cleanup_status(disk) == "failed"
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="exact process-group cancellation qualifies the Linux image executor")
 def test_process_group_is_stopped_on_cancellation(tmp_path: Path) -> None:
     child_file = tmp_path / "child.pid"
     process = subprocess.Popen([sys.executable, "-c",
@@ -173,6 +174,27 @@ def test_process_group_is_stopped_on_cancellation(tmp_path: Path) -> None:
         time.sleep(0.01)
     else:
         pytest.fail("descendant process survived process-group stop")
+
+
+def test_process_group_permission_failure_retains_unknown_cleanup_gate(monkeypatch):
+    class Process:
+        pid = 123
+        returncode = 0
+        def wait(self, **kwargs):
+            return 0
+        def poll(self):
+            return 0
+    signals = []
+    def signal_group(pid, sig):
+        signals.append(sig)
+        if sig == 0:
+            raise PermissionError("group state inaccessible")
+    monkeypatch.setattr(runtime.os, "killpg", signal_group)
+    entry = {"pid": 123, "state": "running"}
+    runtime._stop_process(Process(), entry)
+    assert entry["state"] == "unknown"
+    assert runtime._task_has_uncertain_process({"processes": [entry]})
+    assert signals == [runtime.signal.SIGTERM, 0, runtime.signal.SIGKILL]
 
 
 def test_tracked_tool_keeps_unknown_state_when_descendant_holds_capture(tmp_path: Path) -> None:

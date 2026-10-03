@@ -130,6 +130,7 @@ def test_pve_template_apply_hydrates_preview_and_admission_from_selected_files(t
                  "consumption": {"reserved": True, "reservation_id": "reservation-1"},
                  "pending": {"record_id": "pending-1"},
                  "serialization": {"held": True, "context_id": "context-1"}}
+    admission["deadlines"] = request["deadlines"]
     admission["vmid_reservation"] = {"cluster_scope": request["cluster_scope"], "vmids": [request["vmid"]],
                                     "reservation_id": "reservation-1", "context_id": "context-1"}
     request_path = tmp_path / "request.json"

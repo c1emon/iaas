@@ -393,6 +393,9 @@ def _stop_process(process: subprocess.Popen[bytes], entry: dict[str, Any]) -> No
         os.killpg(process.pid, signal.SIGTERM)
     except ProcessLookupError:
         pass
+    except PermissionError:
+        entry.update(state="unknown", exit_code=process.poll())
+        return
     try:
         process.wait(timeout=PROCESS_GRACE_SECONDS)
     except subprocess.TimeoutExpired:
@@ -400,6 +403,9 @@ def _stop_process(process: subprocess.Popen[bytes], entry: dict[str, Any]) -> No
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
+        except PermissionError:
+            entry.update(state="unknown", exit_code=process.poll())
+            return
         process.wait()
     group_gone = False
     for _ in range(20):
@@ -408,12 +414,17 @@ def _stop_process(process: subprocess.Popen[bytes], entry: dict[str, Any]) -> No
         except ProcessLookupError:
             group_gone = True
             break
+        except PermissionError:
+            # An inaccessible group is not proof that descendants exited.
+            break
         time.sleep(0.05)
     if not group_gone:
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
             group_gone = True
+        except PermissionError:
+            pass
     entry["state"] = "stopped" if group_gone else "unknown"
     entry["exit_code"] = process.returncode
 
@@ -712,7 +723,8 @@ def _build(selected: Any, execution: Execution, execution_id: str, resolved_runt
     runtime_digest = _runtime_digest(selected, resolved_runtime_digest)
     execution.__dict__["image_max_output_bytes"] = request["resources"]["max_output_bytes"]
     execution.__dict__["image_timeout_seconds"] = request["resources"]["timeout_seconds"]
-    execution.__dict__["image_observation_budget"] = ObservationBudget(request["resources"]["timeout_seconds"], source="execution-timeout")
+    budget = ObservationBudget(request["resources"]["timeout_seconds"], source="execution-timeout")
+    execution.__dict__["image_observation_budget"] = budget
     task = _task_dir(execution, execution_id)
     task_path, input_digest = task / "task.json", canonical_digest(request)
     with _resource_lock(task):
@@ -725,7 +737,7 @@ def _build(selected: Any, execution: Execution, execution_id: str, resolved_runt
         facts = _executor_check(request["resources"])
         facts["memory_observation"] = _memory_observation(request["resources"])
         task_record = _new_task(execution_id, "build", input_digest, runtime_digest, facts)
-        task_record["observation_window"] = execution.image_observation_budget.facts()
+        task_record["observation_window"] = budget.facts()
         base, packer_output, disk = task / "base.img", task / "packer-output", task / "disk.qcow2"
         build_result_path = task / "build-result.json"
         task_record["owned_resources"] = [_relative_resource(task, item)
@@ -737,7 +749,7 @@ def _build(selected: Any, execution: Execution, execution_id: str, resolved_runt
         statuses: list[dict[str, Any]] = []
         try:
             _require_executor(request["resources"], facts)
-            _download_base(request, base, request["resources"], budget=execution.image_observation_budget)
+            _download_base(request, base, request["resources"], budget=budget)
             base_info = _require_self_contained(base, execution)
             require(type(base_info.get("virtual-size")) is int and base_info["virtual-size"] > 0,
                     "base virtual capacity could not be established")
@@ -1007,7 +1019,8 @@ def _test(selected: Any, execution: Execution, execution_id: str, resolved_runti
     runtime_digest = _runtime_digest(selected, resolved_runtime_digest)
     execution.__dict__["image_max_output_bytes"] = request["resources"]["max_output_bytes"]
     execution.__dict__["image_timeout_seconds"] = request["resources"]["timeout_seconds"]
-    execution.__dict__["image_observation_budget"] = ObservationBudget(request["resources"]["timeout_seconds"], source="execution-timeout")
+    budget = ObservationBudget(request["resources"]["timeout_seconds"], source="execution-timeout")
+    execution.__dict__["image_observation_budget"] = budget
     root = Path(request["artifact_root"]).resolve()
     artifact = validate_artifact(request["artifact"], artifact_root=root, require_disk=True)
     disk = resolve_artifact_path(root, artifact)
@@ -1023,7 +1036,7 @@ def _test(selected: Any, execution: Execution, execution_id: str, resolved_runti
             require(isinstance(previous, Mapping) and previous.get("input_digest") == input_digest, "execution_id is already bound to different image inputs")
             require(previous.get("status") not in {"running", "succeeded", "failed", "unknown", "interrupted"}, "existing image execution cannot be replayed")
         task = _new_task(execution_id, "test", input_digest, runtime_digest, facts, disk_sha256=before, source=str(disk), source_root=str(root))
-        task["observation_window"] = execution.image_observation_budget.facts()
+        task["observation_window"] = budget.facts()
         _write_task(task_path, task)
         result: dict[str, Any] | None = None
         try:

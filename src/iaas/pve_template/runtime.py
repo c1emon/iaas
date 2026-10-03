@@ -16,7 +16,6 @@ import re
 import shutil
 import ssl
 import subprocess
-import time
 import uuid
 from typing import Any, Mapping
 from urllib.error import HTTPError, URLError
@@ -29,7 +28,9 @@ from iaas.common.io import load_json, write_text
 from iaas.runtime_execution.execution import Execution, OperationFailed
 from iaas.runtime_execution.pve_contracts import validate_execution_admission, validate_vmid_reservation
 from iaas.runtime_execution.pve_results import template_identity
-from .responses import RequestRejected, RequestOutcomeUnknown, permission_rejection
+from .responses import RequestRejected, RequestOutcomeUnknown, permission_rejection, read_retry_decision
+from iaas.observation import Decision, EvidenceSink, ObservationBudget, observe, task_decision
+from .deadlines import DeadlineBudget
 
 from .contracts import (
     PUBLISH_PREVIEW_VERSION,
@@ -39,6 +40,7 @@ from .contracts import (
     validate_cleanup_request,
     validate_publish_preview,
     validate_publish_request,
+    validate_publication_result,
     validate_retire_request,
     validate_template_record_v3,
 )
@@ -161,8 +163,29 @@ class PveHttpsClient:
         self.endpoint = endpoint.rstrip("/")
         self.token = token
         self.timeout = timeout
+        self._operation_budget: Any = None
+        self._operation_phase = 'work'
         self.context = ssl.create_default_context(cafile=ca_file)
         self.opener = build_opener(_NoRedirect(), ProxyHandler({}), HTTPSHandler(context=self.context))
+
+    def _remaining(self):
+        budget = getattr(self, '_operation_budget', None)
+        return min(self.timeout, budget.remaining(self._operation_phase)) if budget else self.timeout
+
+    def _response_bytes(self, response):
+        chunks, size = [], 0
+        reader = getattr(response, 'read1', response.read)
+        while True:
+            self._remaining()
+            chunk = reader(64 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > 16 * 1024 * 1024:
+                raise RequestOutcomeUnknown(category='response_limit')
+            chunks.append(chunk)
+        self._remaining()
+        return b''.join(chunks)
 
     def request(self, method: str, path: str, *, fields: Mapping[str, Any] | None = None,
                 body: bytes | None = None, content_type: str | None = None) -> Any:
@@ -182,15 +205,28 @@ class PveHttpsClient:
             body = encoded_fields if body is None else body
             headers.setdefault("Content-Type", "application/x-www-form-urlencoded")
         try:
-            with self.opener.open(Request(url, data=body, method=method, headers=headers), timeout=self.timeout) as response:
-                value = json.loads(response.read().decode("utf-8"))
+            with self.opener.open(Request(url, data=body, method=method, headers=headers), timeout=self._remaining()) as response:
+                value = json.loads(self._response_bytes(response).decode("utf-8"))
                 return value.get("data", value) if isinstance(value, Mapping) else value
         except HTTPError as exc:
             if permission_rejection(exc, url=url, path=path):
                 raise RequestRejected(method, path, exc.code) from None
             raise RequestOutcomeUnknown(exc.code) from None
-        except (URLError, TimeoutError, OSError, json.JSONDecodeError):
-            raise RequestOutcomeUnknown() from None
+        except ssl.SSLError:
+            raise RequestOutcomeUnknown(category='tls') from None
+        except TimeoutError:
+            raise RequestOutcomeUnknown(category='timeout') from None
+        except ConnectionResetError:
+            raise RequestOutcomeUnknown(category='connection_reset') from None
+        except URLError as exc:
+            category = ('tls' if isinstance(exc.reason, ssl.SSLError) else
+                        'timeout' if isinstance(exc.reason, TimeoutError) else
+                        'connection_reset' if isinstance(exc.reason, ConnectionResetError) else 'transport')
+            raise RequestOutcomeUnknown(category=category) from None
+        except json.JSONDecodeError:
+            raise RequestOutcomeUnknown(category='invalid_response') from None
+        except OSError:
+            raise RequestOutcomeUnknown(category='transport') from None
 
     def upload_file(self, upload_path: str, path: Path, filename: str, checksum: str) -> Any:
         parsed = urlsplit(self.endpoint)
@@ -218,12 +254,19 @@ class PveHttpsClient:
             connection.send(prefix)
             with path.open("rb") as source:
                 while chunk := source.read(1024 * 1024):
+                    remaining = self._remaining()
+                    if getattr(connection, 'sock', None) is not None:
+                        connection.sock.settimeout(remaining)
                     connection.send(chunk)
+            self._remaining()
             connection.send(suffix)
+            remaining = self._remaining()
+            if getattr(connection, 'sock', None) is not None:
+                connection.sock.settimeout(remaining)
             response = connection.getresponse()
             if response.status >= 300:
                 raise OperationFailed(f"PVE API upload request failed (HTTP {response.status})")
-            value = json.loads(response.read().decode("utf-8"))
+            value = json.loads(self._response_bytes(response).decode("utf-8"))
             return value.get("data", value) if isinstance(value, Mapping) else value
         except OperationFailed:
             raise
@@ -248,7 +291,7 @@ def _client(selected: Any, execution: Execution, target: Mapping[str, Any]) -> P
                           tls_verify=bool(target["tls_verify"]))
 
 
-def _assert_publication_pool(client: PveHttpsClient, pool: str | None, vmid: int) -> None:
+def _assert_publication_pool(client: PveHttpsClient | _BoundClient, pool: str | None, vmid: int) -> None:
     from .admission import Permissions
     permissions = Permissions(client)
     if pool is not None:
@@ -259,7 +302,7 @@ def _assert_publication_pool(client: PveHttpsClient, pool: str | None, vmid: int
         "VM.Config.HWType", "VM.Config.Cloudinit"))
 
 
-def _assert_pool_membership(client: PveHttpsClient, vmid: int, pool: str | None) -> None:
+def _assert_pool_membership(client: PveHttpsClient | _BoundClient, vmid: int, pool: str | None) -> None:
     resources = client.request("GET", "/api2/json/cluster/resources", fields={"type": "vm"})
     require(isinstance(resources, list), "publication pool membership is unavailable")
     matches = [row for row in resources if isinstance(row, Mapping) and row.get("vmid") == vmid]
@@ -267,7 +310,7 @@ def _assert_pool_membership(client: PveHttpsClient, vmid: int, pool: str | None)
     require((matches[0].get("pool") or None) == pool, "publication pool membership changed")
 
 
-def _observed(selected: Any, client: PveHttpsClient | None, target: Mapping[str, Any], request: Mapping[str, Any]) -> dict[str, Any]:
+def _observed(selected: Any, client: PveHttpsClient | _BoundClient | None, target: Mapping[str, Any], request: Mapping[str, Any]) -> dict[str, Any]:
     if client is None:
         raise ValidationError("PVE observation requires an HTTPS client")
     node = quote(str(target["node"]), safe="")
@@ -339,46 +382,66 @@ def _source_locator(execution: Execution, request: Mapping[str, Any]) -> str:
     return value
 
 
-def _download(locator: str, destination: Path, expected_digest: str, expected_size: int) -> None:
-    digest = hashlib.sha256()
-    try:
-        opener = build_opener(_NoRedirect(), ProxyHandler({}), HTTPSHandler(context=ssl.create_default_context()))
-        total = 0
-        with opener.open(Request(locator, headers={"Accept": "application/octet-stream"}), timeout=120) as source, destination.open("wb") as output:
-            while chunk := source.read(1024 * 1024):
-                total += len(chunk)
-                if total > expected_size:
-                    raise OperationFailed("artifact exceeds the selected byte bound")
-                digest.update(chunk)
-                output.write(chunk)
-    except HTTPError as exc:
-        destination.unlink(missing_ok=True)
-        raise OperationFailed(f"artifact download failed (HTTP {exc.code})") from None
-    except URLError:
-        destination.unlink(missing_ok=True)
-        raise OperationFailed("artifact download failed (url-error)") from None
-    except TimeoutError:
-        destination.unlink(missing_ok=True)
-        raise OperationFailed("artifact download failed (timeout)") from None
-    except OSError as exc:
-        destination.unlink(missing_ok=True)
-        category = f"os-error-{exc.errno}" if exc.errno is not None else "os-error"
-        raise OperationFailed(f"artifact download failed ({category})") from None
-    except OperationFailed:
-        destination.unlink(missing_ok=True)
-        raise OperationFailed("artifact download failed; inspect protected recovery material") from None
-    if destination.stat().st_size != expected_size or digest.hexdigest() != expected_digest:
-        destination.unlink(missing_ok=True)
-        raise OperationFailed("downloaded artifact does not match selected digest or size")
+def _download(locator: str, destination: Path, expected_digest: str, expected_size: int,
+              *, budget=None, sink=None) -> None:
+    budget = budget or ObservationBudget(120, source='artifact-transfer')
+    def probe(remaining):
+        digest, total = hashlib.sha256(), 0
+        try:
+            opener = build_opener(_NoRedirect(), ProxyHandler({}), HTTPSHandler(context=ssl.create_default_context()))
+            with opener.open(Request(locator, headers={"Accept": "application/octet-stream"}), timeout=min(120, remaining)) as source, destination.open("wb") as output:
+                while chunk := source.read(1024 * 1024):
+                    budget.remaining('work')
+                    total += len(chunk)
+                    if total > expected_size:
+                        raise OperationFailed('artifact_byte_bound')
+                    digest.update(chunk)
+                    output.write(chunk)
+            budget.remaining('work')
+            if total != expected_size or digest.hexdigest() != expected_digest:
+                raise OperationFailed('artifact_checksum_or_size_mismatch')
+            return {'size': total, 'digest': expected_digest}
+        except Exception:
+            destination.unlink(missing_ok=True)
+            raise
+    def retry(error):
+        if isinstance(error, HTTPError):
+            category, status = 'http', error.code
+        elif isinstance(error, ssl.SSLError):
+            category, status = 'tls', None
+        elif isinstance(error, TimeoutError):
+            category, status = 'timeout', None
+        elif isinstance(error, ConnectionResetError):
+            category, status = 'connection_reset', None
+        elif isinstance(error, URLError):
+            category = ('tls' if isinstance(error.reason, ssl.SSLError) else
+                        'timeout' if isinstance(error.reason, TimeoutError) else
+                        'connection_reset' if isinstance(error.reason, ConnectionResetError) else 'transport')
+            status = None
+        elif isinstance(error, OSError):
+            category = f'os-error-{error.errno}' if error.errno is not None else 'os-error'
+            status = None
+        else:
+            category, status = 'local_or_integrity', None
+        temporary = status in {500, 502, 503, 504} or category in {'timeout', 'connection_reset'}
+        return Decision('pending' if temporary else 'failed', 'artifact_transfer_error',
+                        {'category': category, 'http_status': status})
+    result = observe(probe, lambda value: Decision('ready', 'artifact_verified', value), budget,
+                     'work', 'artifact-transfer', {'digest': expected_digest}, sink,
+                     retry_error=retry, interval=0.2)
+    if result.status != 'ready':
+        category = result.evidence.get('category', '')
+        reason = category if category.startswith('os-error') else result.reason
+        raise OperationFailed('artifact download failed (' + reason + ')')
 
 
-def _verify_qcow2(path: Path, artifact: Mapping[str, Any]) -> None:
+def _verify_qcow2(path: Path, artifact: Mapping[str, Any], *, timeout: float = 30) -> None:
     qemu_img = shutil.which("qemu-img")
     if qemu_img is None:
         raise OperationFailed("qemu-img is unavailable for artifact format verification")
     try:
         completed = subprocess.run([qemu_img, "info", "--output=json", str(path)],
-                                   capture_output=True, text=True, check=False, timeout=30)
+                                   capture_output=True, text=True, check=False, timeout=timeout)
         info = json.loads(completed.stdout) if completed.returncode == 0 else {}
     except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
         raise OperationFailed("artifact format verification failed; inspect protected recovery material") from None
@@ -423,17 +486,223 @@ def _phase_failure_reason(phase: str, error: Exception) -> str:
     return "publication-phase-failed"
 
 
-def _upid(client: PveHttpsClient, value: Any, phase: str, *, node: str = "localhost", timeout: float = 300) -> dict[str, Any]:
+def _upid(client: PveHttpsClient | _BoundClient, value: Any, phase: str, *, node: str = "localhost", timeout: float = 300) -> dict[str, Any]:
     upid = _normalize_upid(value, node)
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        path = f"/api2/json/nodes/{quote(node, safe='')}/tasks/{quote(upid, safe='')}/status"
-        row = client.request("GET", path)
-        if isinstance(row, Mapping) and row.get("status") == "stopped":
-            require(row.get("exitstatus") == "OK", f"PVE {phase} task did not finish successfully")
-            return {"phase": phase, "status": "succeeded", "upid": upid}
-        time.sleep(0.2)
-    raise OperationFailed(f"PVE {phase} task observation timed out; execution remains unknown")
+    budget = getattr(client, 'budget', None) or ObservationBudget(timeout, source='task-timeout')
+    window = getattr(client, 'phase', 'work')
+    path = f"/api2/json/nodes/{quote(node, safe='')}/tasks/{quote(upid, safe='')}/status"
+    result = observe(lambda remaining: client.request('GET', path), task_decision, budget,
+                     window, phase + '-task', {'upid': upid}, getattr(client, 'sink', None),
+                     interval=0.2, retry_error=read_retry_decision)
+    if result.status != 'ready':
+        raise OperationFailed(f'PVE {phase} {result.reason}')
+    return {"phase": phase, "status": "succeeded", "upid": upid}
+
+
+class _BoundClient:
+    """All native requests consume the same approved operation budget."""
+    def __init__(self, client, budget, sink: Any):
+        self.client, self.budget, self.sink = client, budget, sink
+        self.phase = 'work'
+        self.timeout = getattr(client, 'timeout', 30)
+
+    def request(self, *args, **kwargs):
+        self.client._operation_budget = self.budget
+        self.client._operation_phase = self.phase
+        self.client.timeout = min(self.timeout, self.budget.remaining(self.phase))
+        return self.client.request(*args, **kwargs)
+
+    def upload_file(self, *args, **kwargs):
+        self.client._operation_budget = self.budget
+        self.client._operation_phase = self.phase
+        self.client.timeout = min(self.timeout, self.budget.remaining(self.phase))
+        return self.client.upload_file(*args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self.client, name)
+
+
+def _converge(client, check, association, probe, classify):
+    decision = observe(lambda remaining: probe(), classify, client.budget, client.phase,
+                       check, association, client.sink, interval=0.2,
+                       retry_error=read_retry_decision)
+    if decision.status != 'ready':
+        raise OperationFailed(f'PVE {check} {decision.reason}')
+
+
+def _volume_absent(client, node, storage, volid):
+    def classify(rows):
+        identity = _volume_owner_decision(rows, volid)
+        if identity.status == 'failed':
+            return identity
+        present = any(row.get('volid') == volid for row in rows)
+        return Decision('pending' if present else 'ready', 'volume_present' if present else 'volume_absent',
+                        {'volid': volid, 'exists': present, 'complete': True})
+    _converge(client, 'volume-absent', {'volid': volid},
+              lambda: _storage_content(client, node, storage),
+              classify)
+
+
+def _volume_owner_decision(rows, volid):
+    selected = [row for row in rows if row.get('volid') == volid]
+    owner = re.search(r'(?:vm|base)-(\d+)-', volid)
+    expected = int(owner[1]) if owner else None
+    facts = {'volid': volid, 'expected': {'vmid': expected},
+             'actual': [{'volid': row.get('volid'), 'vmid': row.get('vmid')} for row in selected]}
+    if len(selected) > 1 or any(expected is not None and row.get('vmid') is not None and row.get('vmid') != expected for row in selected):
+        return Decision('failed', 'volume_owner_conflict', facts)
+    if expected is not None and any(row.get('vmid') is None for row in selected):
+        return Decision('unknown', 'volume_owner_unobserved', facts)
+    return Decision('ready', 'volume_owner_matches', facts)
+
+
+def _check_volume_owner(client, rows, volid):
+    decision = _volume_owner_decision(rows, volid)
+    observe(lambda remaining: rows, lambda value: decision, client.budget, client.phase,
+            'volume-owner', {'volid': volid}, client.sink)
+    require(decision.status == 'ready', 'cleanup volume ownership is not confirmed')
+
+
+def _vm_absent(client, vmid, expected_uuid, node):
+    _assert_vmid_visibility(client, vmid)
+    def probe():
+        rows = client.request('GET', '/api2/json/cluster/resources', fields={'type': 'vm'})
+        require(isinstance(rows, list), 'PVE VM inventory is incomplete')
+        found = [row for row in rows if row.get('vmid') == vmid]
+        if not found:
+            return None
+        require(len(found) == 1, 'PVE VM inventory is ambiguous')
+        return client.request('GET', f'/api2/json/nodes/{quote(node, safe="")}/qemu/{vmid}/config')
+    def classify(config):
+        if config is None:
+            return Decision('ready', 'vm_absent', {'vmid': vmid, 'exists': False, 'complete': True})
+        if not isinstance(config, Mapping):
+            return Decision('unknown', 'invalid_config')
+        actual_uuid = _config_uuid(config)
+        return Decision('pending' if actual_uuid == expected_uuid else 'failed',
+                        'vm_present' if actual_uuid == expected_uuid else 'identity_conflict',
+                        {'vmid': vmid, 'uuid': actual_uuid, 'exists': True})
+    _converge(client, 'vm-absent', {'vmid': vmid, 'uuid': expected_uuid},
+              probe, classify)
+
+
+def _publication_pool(client, vmid, expected, stage):
+    def classify(rows):
+        if not isinstance(rows, list):
+            return Decision('unknown', 'invalid_inventory')
+        found = [row for row in rows if isinstance(row, Mapping) and row.get('vmid') == vmid]
+        if not found or (expected is not None and found[0].get('pool') is None):
+            return Decision('pending', 'pool_not_visible', {'vmid': vmid, 'expected': {'pool': expected}})
+        if len(found) != 1 or (found[0].get('pool') or None) != expected:
+            return Decision('failed', 'pool_conflict', {'vmid': vmid, 'expected': {'pool': expected},
+                                                       'actual': {'pool': found[0].get('pool')}})
+        return Decision('ready', 'pool_matches', {'vmid': vmid, 'pool': expected})
+    _converge(client, 'pool-' + stage, {'vmid': vmid},
+              lambda: client.request('GET', '/api2/json/cluster/resources', fields={'type': 'vm'}), classify)
+
+
+def _publication_config(client, request, expected_uuid, stage):
+    current = {}
+    def classify(config):
+        if not isinstance(config, Mapping):
+            return Decision('unknown', 'invalid_config')
+        current.clear()
+        current.update(config)
+        actual_uuid = _config_uuid(config)
+        facts = {'vmid': request['vmid'], 'uuid': actual_uuid,
+                 'volumes': _volume_attachments(config), 'template': config.get('template'),
+                 'expected': {'uuid': expected_uuid}}
+        if not actual_uuid:
+            return Decision('pending', 'uuid_not_visible', facts)
+        if actual_uuid != expected_uuid:
+            return Decision('failed', 'identity_conflict', facts)
+        if stage == 'created':
+            return Decision('ready', 'identity_matches', facts)
+        slot = request['hardware']['boot_disk']
+        if slot not in config or 'ide2' not in config:
+            return Decision('pending', 'import_not_visible', facts)
+        if 'import-from=' in str(config[slot]):
+            return Decision('pending', 'import_not_visible', facts)
+        try:
+            _final_disk(config, request)
+        except ValidationError:
+            return Decision('failed', 'disk_conflict', facts)
+        if stage == 'template':
+            if config.get('template') in {None, 0, False, '0'}:
+                return Decision('pending', 'template_flag_pending', facts)
+            if config.get('template') not in {1, True, '1'}:
+                return Decision('unknown', 'invalid_template_flag', facts)
+            try:
+                _verify_requested_config(config, request)
+            except ValidationError:
+                expected_keys = {'name', 'cores', 'memory', 'machine', 'scsihw', 'boot', 'agent'}
+                if not expected_keys <= config.keys():
+                    return Decision('pending', 'configuration_not_visible', facts)
+                return Decision('failed', 'configuration_conflict', facts)
+        return Decision('ready', 'configuration_matches', facts)
+    _converge(client, 'config-' + stage, {'vmid': request['vmid'], 'uuid': expected_uuid},
+              lambda: client.request('GET', f'/api2/json/nodes/{quote(request["target"]["node"], safe="")}/qemu/{request["vmid"]}/config'), classify)
+    return dict(current)
+
+
+def _publication_content(client, request, config, stage):
+    slot, volid = _final_disk(config, request)
+    expected_size = request['artifact']['disk']['virtual_size_bytes']
+    def classify(rows):
+        found = [row for row in rows if row.get('volid') == volid]
+        facts = {'expected': {'volid': volid, 'vmid': request['vmid'], 'size': expected_size},
+                 'actual': [{'volid': row.get('volid'), 'vmid': row.get('vmid'), 'size': row.get('size')} for row in found]}
+        if not found:
+            return Decision('pending', 'volume_not_visible', facts)
+        if len(found) != 1:
+            return Decision('unknown', 'volume_inventory_invalid', facts)
+        owner, size = found[0].get('vmid'), found[0].get('size')
+        if owner is not None and owner != request['vmid']:
+            return Decision('failed', 'volume_owner_conflict', facts)
+        if owner is None or size is None:
+            return Decision('pending', 'volume_fields_not_visible', facts)
+        if type(size) is not int or size < 0:
+            return Decision('unknown', 'volume_size_invalid', facts)
+        if size < expected_size:
+            return Decision('pending', 'volume_capacity_pending', facts)
+        return Decision('ready', 'volume_matches', facts)
+    _converge(client, 'volume-capacity', {'kind': stage, 'vmid': request['vmid'], 'volid': volid, 'slot': slot},
+              lambda: _storage_content(client, request['target']['node'], request['disk_storage']), classify)
+
+
+def _publication_diagnostics(intent):
+    from iaas.pve_acceptance_contracts import StopDiagnostics
+    groups = intent.get('observations', [])
+    terminal = [group.get('terminal', {}) for group in groups]
+    stopped = next((row for row in reversed(terminal) if row.get('status') in {'failed', 'unknown'}), None)
+    events = intent.get('events', [])
+    if stopped is None:
+        event = next((row for row in reversed(events) if row.get('status') in {'failed', 'unknown'}), None)
+        if event:
+            reason = str(event.get('reason', 'native_outcome_unknown')).replace('-', '_')
+            if re.fullmatch(r'[a-z][a-z0-9_]{0,95}', reason) is None:
+                reason = 'native_phase_failed'
+            stopped = {'phase': 'cleanup' if 'cleanup' in event['phase'] else 'work',
+                       'check': event['phase'], 'status': event['status'],
+                       'reason': reason}
+    writes = [row for row in events if row.get('phase') in _NATIVE_PHASES and row.get('status') in {'intent', 'submitted'}]
+    tasks = [{'upid': row['upid'], 'status': row['status']} for row in events if isinstance(row.get('upid'), str)]
+    status = intent.get('status')
+    completed = list(dict.fromkeys(row['phase'] for row in events if row.get('status') == 'succeeded'))
+    data = {'completed': completed,
+            'stopping': {'phase': stopped['phase'], 'check': stopped['check'], 'status': stopped['status'],
+                         'reason_code': stopped['reason']} if stopped else None,
+            'facility_writes': 'issued' if writes else 'none',
+            'activity': 'stopped' if status == 'succeeded' else 'unknown',
+            'ownership': 'registered-owned' if 'template' in completed else 'candidate-unknown' if writes else 'not-owned',
+            'existence': 'absent' if any(row.get('check') == 'vm-absent' and row.get('status') == 'ready' for row in terminal)
+                         else 'present' if any(str(row.get('check', '')).startswith('config-') and row.get('status') == 'ready' for row in terminal)
+                         else 'unknown', 'inventory_complete': status == 'succeeded',
+            'tasks': tasks, 'observations': groups,
+            'recovery': {'supported': True, 'disposition': 'needs_evidence' if status != 'succeeded' else 'not_applicable',
+                         'reason_code': 'exact_publication_scope_required' if status != 'succeeded' else 'completed',
+                         'required_evidence': ['original_journal', 'exact_identity', 'current_inactivity'] if status != 'succeeded' else []}}
+    return StopDiagnostics.model_validate(data).model_dump(mode='json')
 
 
 def _record_from_config(request: Mapping[str, Any], config: Mapping[str, Any], execution_id: str,
@@ -468,7 +737,10 @@ def _failure_result(intent: Mapping[str, Any], execution_id: str, preview_digest
                     and event.get("status") in {"intent", "submitted", "unknown"} for event in events)
     residue = [str(item) for item in intent.get("residue", []) if isinstance(item, str)]
     action = intent.get("action", "publish")
-    result = {"kind": "pve-template-result", "schema_version": 3, "execution_id": execution_id,
+    result = {"kind": "pve-template-result", "schema_version": 4, "execution_id": execution_id,
+            'deadlines': dict(intent.get('deadlines', {})),
+            'deadline_outcome': intent.get('deadline_outcome', {'phase': None, 'status': 'not_exceeded'}),
+            'stop_diagnostics': _publication_diagnostics(intent),
             "component": "pve-template", "operation": "apply", "action": action,
             "runtime_digest": intent.get("runtime_digest", "unknown"), "phase": "unknown" if submitted else "failed",
             "status": "unknown" if submitted else "failed", "effects": {"pve": "unknown" if submitted else "none",
@@ -486,7 +758,7 @@ def _failure_result(intent: Mapping[str, Any], execution_id: str, preview_digest
     return result
 
 
-def _storage_content(client: PveHttpsClient, node: str, storage: str) -> list[Mapping[str, Any]]:
+def _storage_content(client: PveHttpsClient | _BoundClient, node: str, storage: str) -> list[Mapping[str, Any]]:
     # PVE accepts one content enum value per request; an apparently natural
     # comma-separated filter is rejected with HTTP 400.  The unfiltered
     # listing is bounded to this storage path, and callers select the exact
@@ -497,13 +769,13 @@ def _storage_content(client: PveHttpsClient, node: str, storage: str) -> list[Ma
     return list(value)
 
 
-def _assert_upload_target_free(client: PveHttpsClient, node: str, storage: str, volid: str) -> None:
+def _assert_upload_target_free(client: PveHttpsClient | _BoundClient, node: str, storage: str, volid: str) -> None:
     content = _storage_content(client, node, storage)
     require(not any(item.get("volid") == volid for item in content),
             "publisher upload volume identity is already present")
 
 
-def _assert_vmid_free(client: PveHttpsClient, vmid: int) -> None:
+def _assert_vmid_free(client: PveHttpsClient | _BoundClient, vmid: int) -> None:
     _assert_vmid_visibility(client, vmid)
     resources = client.request("GET", "/api2/json/cluster/resources", fields={"type": "vm"})
     require(isinstance(resources, list) and all(isinstance(item, Mapping) for item in resources),
@@ -512,16 +784,16 @@ def _assert_vmid_free(client: PveHttpsClient, vmid: int) -> None:
             "selected template VMID is occupied; force replacement is unsupported")
 
 
-def _assert_vmid_visibility(client: PveHttpsClient, vmid: int) -> None:
+def _assert_vmid_visibility(client: PveHttpsClient | _BoundClient, vmid: int) -> None:
     permissions = client.request("GET", "/api2/json/access/permissions",
                                  fields={"path": f"/vms/{vmid}"})
     grants = permissions.get(f"/vms/{vmid}") if isinstance(permissions, Mapping) else None
     require(isinstance(grants, Mapping) and type(grants.get("VM.Audit")) in {int, bool}
-            and grants["VM.Audit"] in (0, 1),
+            and grants["VM.Audit"] == 1,
             "PVE VMID observation requires effective VM.Audit on the selected VMID")
 
 
-def _assert_storage_permissions(client: PveHttpsClient, storage: str, required: set[str],
+def _assert_storage_permissions(client: PveHttpsClient | _BoundClient, storage: str, required: set[str],
                                 *, operation: str = 'publish') -> None:
     from .admission import AdmissionError, Permissions
     path = f"/storage/{quote(storage, safe='')}"
@@ -532,7 +804,7 @@ def _assert_storage_permissions(client: PveHttpsClient, storage: str, required: 
         raise
 
 
-def _assert_upload_absent(client: PveHttpsClient, node: str, storage: str, volid: str) -> None:
+def _assert_upload_absent(client: PveHttpsClient | _BoundClient, node: str, storage: str, volid: str) -> None:
     content = _storage_content(client, node, storage)
     require(not any(item.get("volid") == volid for item in content),
             "PVE staging deletion was not confirmed")
@@ -686,7 +958,7 @@ def _original_publish_evidence(selected: Any, fixed: Mapping[str, Any]) -> dict[
             "volumes": journal_volumes, "upload_volid": upload_volid, "completed": False}
 
 
-def _observe_original_tasks(client: PveHttpsClient, journal: Mapping[str, Any], node: str) -> dict[str, str]:
+def _observe_original_tasks(client: PveHttpsClient | _BoundClient, journal: Mapping[str, Any], node: str) -> dict[str, str]:
     events_value = journal.get("events")
     if not isinstance(events_value, list) or not events_value:
         raise ValidationError("original publish journal task history is missing")
@@ -697,6 +969,7 @@ def _observe_original_tasks(client: PveHttpsClient, journal: Mapping[str, Any], 
                 "original publish journal event is invalid")
         history.setdefault(event["phase"], []).append(event)
     outcomes: dict[str, str] = {}
+    budget = getattr(client, 'budget', None) or ObservationBudget(120, source='original-task-observation')
     local_phases = {"download", "artifact-verify", "upload-target", "local-cleanup"}
     for phase, entries in history.items():
         if phase in local_phases:
@@ -717,12 +990,32 @@ def _observe_original_tasks(client: PveHttpsClient, journal: Mapping[str, Any], 
             continue
         normalized = _normalize_upid(upid, node)
         path = f"/api2/json/nodes/{quote(node, safe='')}/tasks/{quote(normalized, safe='')}/status"
-        observed = client.request("GET", path)
-        require(isinstance(observed, Mapping) and observed.get("status") == "stopped",
-                f"original PVE {phase} task is still active or unknown")
-        exitstatus = observed.get("exitstatus")
-        if not isinstance(exitstatus, str) or not exitstatus:
-            raise ValidationError(f"original PVE {phase} task exit status is unknown")
+        def classify(observed):
+            if not isinstance(observed, Mapping):
+                return Decision('unknown', 'invalid_original_task_response')
+            facts = {key: observed[key] for key in ('status', 'exitstatus') if key in observed}
+            if observed.get('status') == 'running':
+                return Decision('failed', 'original_task_active', facts)
+            if observed.get('status') != 'stopped':
+                return Decision('unknown', 'invalid_original_task_response', facts)
+            if not isinstance(observed.get('exitstatus'), str) or not observed['exitstatus']:
+                return Decision('unknown', 'original_task_outcome_missing', facts)
+            # Terminal failure proves inactivity, while remaining a separate
+            # failed native task rather than successful publication.
+            return Decision('ready', 'original_task_inactive', facts)
+        sink = getattr(client, 'sink', None)
+        window = getattr(client, 'phase', 'cleanup')
+        decision = observe(lambda remaining: client.request('GET', path), classify, budget,
+                           window, phase + '-original-task-inactivity', {'upid': normalized}, sink,
+                           interval=0.2, retry_error=read_retry_decision)
+        require(decision.status == 'ready', f"original PVE {phase} task is still active or unknown")
+        exitstatus = decision.evidence['exitstatus']
+        if exitstatus != 'OK' and sink:
+            from iaas.observation import utc_text
+            import time
+            sink({'phase': window, 'check': phase + '-original-task-outcome',
+                  'association': {'upid': normalized}, 'status': 'failed', 'reason': 'task_failed',
+                  'observed_at': utc_text(time.time()), 'evidence': decision.evidence})
         outcomes[phase] = exitstatus
     return outcomes
 
@@ -730,7 +1023,10 @@ def _observe_original_tasks(client: PveHttpsClient, journal: Mapping[str, Any], 
 def _publish(selected: Any, execution: Execution, request: Mapping[str, Any], preview: Mapping[str, Any], execution_id: str) -> dict[str, Any]:
     require(validate_publish_request(request) == preview["fixed_input"],
             "publication request does not match approved preview")
-    client = _client(selected, execution, request["target"])
+    budget = DeadlineBudget(request['deadlines'])
+    budget.admit()
+    evidence = EvidenceSink()
+    client = _BoundClient(_client(selected, execution, request["target"]), budget, evidence)
     artifact = request["artifact"]
     work = execution.outputs.path("work") / "publisher"
     work.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -747,6 +1043,7 @@ def _publish(selected: Any, execution: Execution, request: Mapping[str, Any], pr
         "runtime_digest": preview["runtime"]["image_digest"],
         "artifact_digest": request["artifact_digest"], "vmid": request["vmid"],
         "upload_volid": upload_volid, "boot_disk": boot_disk, "events": [], "residue": [],
+        "deadlines": dict(request['deadlines']), "observations": [],
     }
     _write_intent(intent_path, intent)
 
@@ -754,6 +1051,12 @@ def _publish(selected: Any, execution: Execution, request: Mapping[str, Any], pr
         event = {"phase": phase, "status": status, **values}
         intent["events"].append(event)
         _write_intent(intent_path, intent)
+
+    def retain(row):
+        evidence(row)
+        intent['observations'] = evidence.rows()
+        _write_intent(intent_path, intent)
+    client.sink = retain
 
     try:
         intent["observed"] = _observed(selected, client, request["target"], request)
@@ -767,7 +1070,7 @@ def _publish(selected: Any, execution: Execution, request: Mapping[str, Any], pr
                 "publisher workspace has insufficient known capacity")
         journal("download", "intent", expected_bytes=artifact["disk"]["size_bytes"])
         try:
-            _download(_source_locator(execution, request), disk, artifact["disk"]["sha256"], artifact["disk"]["size_bytes"])
+            _download(_source_locator(execution, request), disk, artifact["disk"]["sha256"], artifact["disk"]["size_bytes"], budget=budget, sink=client.sink)
         except OperationFailed as exc:
             # Keep only the bounded category/status in the protected journal;
             # never persist the locator, credentials, or native URL text.
@@ -776,7 +1079,7 @@ def _publish(selected: Any, execution: Execution, request: Mapping[str, Any], pr
         journal("download", "succeeded", bytes=artifact["disk"]["size_bytes"])
         journal("artifact-verify", "intent")
         try:
-            _verify_qcow2(disk, artifact)
+            _verify_qcow2(disk, artifact, timeout=min(30, budget.remaining('work')))
         except Exception as exc:
             journal("artifact-verify", "failed", reason=_phase_failure_reason("artifact-verify", exc))
             raise
@@ -817,10 +1120,10 @@ def _publish(selected: Any, execution: Execution, request: Mapping[str, Any], pr
         create = client.request("POST", f"/api2/json/nodes/{node}/qemu", fields=create_fields)
         journal("create", "submitted", upid=create)
         create_result = _upid(client, create, "create", node=node_name)
-        created_config = client.request("GET", f"/api2/json/nodes/{node}/qemu/{vmid}/config")
+        created_config = _publication_config(client, request, created_uuid, 'created')
         require(isinstance(created_config, Mapping), "PVE created VM configuration is invalid")
         observed_uuid = _config_uuid(created_config)
-        _assert_pool_membership(client, vmid, request.get("pool"))
+        _publication_pool(client, vmid, request.get('pool'), 'created')
         require(observed_uuid == created_uuid, "PVE created VM UUID does not match the fixed identity")
         journal("create", "succeeded", upid=create_result.get("upid"), smbios_uuid=created_uuid,
                 attachments=_volume_attachments(created_config))
@@ -844,11 +1147,12 @@ def _publish(selected: Any, execution: Execution, request: Mapping[str, Any], pr
         config_result = _upid(client, configured, "import-config", node=node_name)
         journal("import-config", "succeeded", upid=config_result.get("upid"), source=upload_volid)
 
-        imported_config = client.request("GET", f"/api2/json/nodes/{node}/qemu/{vmid}/config")
+        imported_config = _publication_config(client, request, created_uuid, 'imported')
         require(isinstance(imported_config, Mapping), "PVE imported VM configuration is invalid")
         require(_config_uuid(imported_config) == created_uuid,
                 "PVE imported VM UUID differs from the created VM identity")
         imported_disk, imported_volume = _final_disk(imported_config, request)
+        _publication_content(client, request, imported_config, 'imported')
 
         imported_attachments = _volume_attachments(imported_config)
         journal("template", "intent", vmid=vmid, imported_volume=imported_volume,
@@ -857,21 +1161,23 @@ def _publish(selected: Any, execution: Execution, request: Mapping[str, Any], pr
         journal("template", "submitted", upid=templated, imported_volume=imported_volume,
                 disk_slot=imported_disk, attachments=imported_attachments)
         template_result = _upid(client, templated, "template", node=node_name)
-        current = client.request("GET", f"/api2/json/nodes/{node}/qemu/{vmid}/config")
+        current = _publication_config(client, request, created_uuid, 'template')
         require(isinstance(current, Mapping) and _config_uuid(current) == created_uuid and
                 current.get("template") in (1, True, "1") and
                 isinstance(current.get("ide2"), str) and current["ide2"].startswith(request["cloud_init_storage"] + ":"),
                 "PVE template flag/configuration verification failed")
         final_disk, final_volume = _final_disk(current, request)
+        _publication_content(client, request, current, 'template')
         _verify_requested_config(current, request)
         journal("template", "succeeded", upid=template_result.get("upid"), imported_volume=imported_volume,
                 final_volume=final_volume, disk_slot=final_disk, smbios_uuid=created_uuid,
                 attachments=_volume_attachments(current))
-        _assert_pool_membership(client, request["vmid"], request.get("pool"))
+        _publication_pool(client, request['vmid'], request.get('pool'), 'template')
         record = _record_from_config(request, current, execution_id)
 
         cleanup_status = "succeeded"
         cleanup_residue: list[str] = []
+        client.phase = 'cleanup'
         try:
             content = _storage_content(client, node_name, request["staging_storage"])
             present = any(item.get("volid") == upload_volid for item in content)
@@ -880,7 +1186,7 @@ def _publish(selected: Any, execution: Execution, request: Mapping[str, Any], pr
                 deleted = client.request("DELETE", f"/api2/json/nodes/{node}/storage/{quote(request['staging_storage'], safe='')}/content/{quote(upload_volid, safe='')}")
                 journal("remote-cleanup", "submitted", upid=deleted, volid=upload_volid)
                 deleted_result = _upid(client, deleted, "remote-cleanup", node=node_name)
-                _assert_upload_absent(client, node_name, request["staging_storage"], upload_volid)
+                _volume_absent(client, node_name, request["staging_storage"], upload_volid)
                 journal("remote-cleanup", "succeeded", upid=deleted_result.get("upid"), volid=upload_volid,
                         verified_absent=True)
         except (OperationFailed, ValidationError):
@@ -916,7 +1222,9 @@ def _publish(selected: Any, execution: Execution, request: Mapping[str, Any], pr
         outcome = "unknown" if cleanup_status == "unknown" else "succeeded"
         intent["status"] = outcome
         _write_intent(intent_path, intent)
-        return {"kind": "pve-template-result", "schema_version": 3, "execution_id": execution_id,
+        return {"kind": "pve-template-result", "schema_version": 4, "execution_id": execution_id,
+                'deadlines': dict(request['deadlines']), 'deadline_outcome': dict(budget.outcome),
+                'stop_diagnostics': _publication_diagnostics(intent),
                 "component": "pve-template", "operation": "apply", "action": "publish",
                 "runtime_digest": preview["runtime"]["image_digest"],
                 "phase": outcome, "status": outcome,
@@ -930,6 +1238,7 @@ def _publish(selected: Any, execution: Execution, request: Mapping[str, Any], pr
         intent["status"] = "unknown" if any(event.get("phase") in _NATIVE_PHASES
                                               and event.get("status") in {"intent", "submitted", "unknown"}
                                               for event in intent["events"]) else "failed"
+        intent['deadline_outcome'] = dict(budget.outcome)
         _write_intent(intent_path, intent)
         raise
 
@@ -939,7 +1248,11 @@ def _delete_action(selected: Any, execution: Execution, request: Mapping[str, An
     """Delete only the exact publisher-owned resources in an admitted action."""
     fixed = preview["fixed_input"]
     target = fixed["target"]
-    client = _client(selected, execution, target)
+    budget = DeadlineBudget(fixed['deadlines'])
+    budget.admit()
+    evidence_sink = EvidenceSink()
+    client = _BoundClient(_client(selected, execution, target), budget, evidence_sink)
+    client.phase = 'cleanup'
     owner = fixed["ownership_admission"]["owner"]
     require(owner == "publisher", "publisher cleanup cannot delete resources owned by another root")
     intent_path = execution.outputs.path("diagnostics") / "delete-intent.json"
@@ -947,7 +1260,8 @@ def _delete_action(selected: Any, execution: Execution, request: Mapping[str, An
                               "execution_id": execution_id, "action": preview["action"],
                               "preview_digest": preview["preview_digest"],
                               "runtime_digest": preview["runtime"]["image_digest"],
-                              "events": [], "residue": []}
+                              "events": [], "residue": [], 'deadlines': dict(fixed['deadlines']),
+                              'observations': []}
     if isinstance(fixed.get("original_execution_id"), str):
         intent["original_execution_id"] = fixed["original_execution_id"]
     elif isinstance(fixed.get("template_record"), Mapping) and isinstance(fixed["template_record"].get("execution_id"), str):
@@ -957,6 +1271,13 @@ def _delete_action(selected: Any, execution: Execution, request: Mapping[str, An
     def journal(phase: str, status: str, **values: Any) -> None:
         intent["events"].append({"phase": phase, "status": status, **values})
         _write_intent(intent_path, intent)
+
+    def retain(row):
+        evidence_sink(row)
+        intent['observations'] = evidence_sink.rows()
+        intent['deadline_outcome'] = dict(budget.outcome)
+        _write_intent(intent_path, intent)
+    client.sink = retain
 
     if preview["action"] == "cleanup":
         require(fixed["ownership_admission"].get("activity") in {"stopped", "inactive"},
@@ -1016,6 +1337,7 @@ def _delete_action(selected: Any, execution: Execution, request: Mapping[str, An
                 deferred_specs.append((storage, volid))
                 continue
             content = _storage_content(client, target["node"], storage)
+            _check_volume_owner(client, content, volid)
             if any(row.get("volid") == volid for row in content):
                 delete_specs.append((storage, volid))
             else:
@@ -1029,10 +1351,12 @@ def _delete_action(selected: Any, execution: Execution, request: Mapping[str, An
             value = client.request("DELETE", f"/api2/json/nodes/{node}/qemu/{vmid}", fields={"purge": 1})
             journal("cleanup-vm", "submitted", vmid=vmid, upid=value)
             phase = _upid(client, value, "cleanup-vm", node=target["node"])
+            _vm_absent(client, vmid, expected_uuid, target['node'])
             phases.append(phase)
             journal("cleanup-vm", "succeeded", vmid=vmid, upid=phase["upid"])
         for storage, volid in deferred_specs:
             content = _storage_content(client, target["node"], storage)
+            _check_volume_owner(client, content, volid)
             if any(row.get("volid") == volid for row in content):
                 delete_specs.append((storage, volid))
             else:
@@ -1052,12 +1376,14 @@ def _delete_action(selected: Any, execution: Execution, request: Mapping[str, An
                 raise
             journal("cleanup-volume", "submitted", volid=volid, upid=value)
             phase = _upid(client, value, "cleanup-volume", node=target["node"])
-            _assert_upload_absent(client, target["node"], storage, volid)
+            _volume_absent(client, target['node'], storage, volid)
             phases.append(phase)
             journal("cleanup-volume", "succeeded", volid=volid, upid=phase["upid"])
         intent["status"] = "succeeded"
         _write_intent(intent_path, intent)
-        return {"kind": "pve-template-result", "schema_version": 3, "execution_id": execution_id,
+        return {"kind": "pve-template-result", "schema_version": 4, "execution_id": execution_id,
+                'deadlines': dict(fixed['deadlines']), 'deadline_outcome': dict(budget.outcome),
+                'stop_diagnostics': _publication_diagnostics(intent),
                 "component": "pve-template", "operation": "apply", "action": "cleanup",
                 "runtime_digest": preview["runtime"]["image_digest"],
                 "phase": "succeeded", "status": "succeeded", "effects": {"pve": "known"},
@@ -1098,10 +1424,16 @@ def _delete_action(selected: Any, execution: Execution, request: Mapping[str, An
     value = client.request("DELETE", f"/api2/json/nodes/{node}/qemu/{vmid}", fields={"purge": 1})
     journal("retire-template", "submitted", vmid=vmid, upid=value)
     phase = _upid(client, value, "retire-template", node=target["node"])
+    _vm_absent(client, vmid, record['smbios_uuid'], target['node'])
+    for volid in set(expected_attachments.values()):
+        storage = volid.split(':', 1)[0]
+        _volume_absent(client, target['node'], storage, volid)
     journal("retire-template", "succeeded", vmid=vmid, upid=phase["upid"])
     intent["status"] = "succeeded"
     _write_intent(intent_path, intent)
-    return {"kind": "pve-template-result", "schema_version": 3, "execution_id": execution_id,
+    return {"kind": "pve-template-result", "schema_version": 4, "execution_id": execution_id,
+            'deadlines': dict(fixed['deadlines']), 'deadline_outcome': dict(budget.outcome),
+            'stop_diagnostics': _publication_diagnostics(intent),
             "component": "pve-template", "operation": "apply", "action": "retire",
             "runtime_digest": preview["runtime"]["image_digest"],
             "phase": "succeeded", "status": "succeeded", "effects": {"pve": "known"},
@@ -1141,14 +1473,15 @@ def run(selected: Any, operation: str, scope: str, execution: Execution,
         return
     if operation == "verify":
         value = _file_mapping(selected, "result", "template_result")
-        if not isinstance(value, Mapping) or value.get("kind") != "pve-template-result" or value.get("schema_version") != 3:
-            raise ValidationError("pve-template verify requires pve-template-result/v3")
+        if not isinstance(value, Mapping) or value.get("kind") != "pve-template-result" or value.get("schema_version") != 4:
+            raise ValidationError("pve-template verify requires pve-template-result/v4")
         bound_preview = validate_publish_preview(_file_mapping(selected, "preview", "template_preview"))
         require(bound_preview["action"] == value.get("action")
                 and value.get("preview_digest") == bound_preview["preview_digest"]
                 and value.get("runtime_digest") == bound_preview["runtime"]["image_digest"],
                 "template result is not bound to the selected publication preview")
         fixed_request = bound_preview["fixed_input"]
+        value = validate_publication_result(value, bound_preview)
         if bound_preview["action"] != "publish":
             require(value.get("status") == "succeeded" and value.get("publication") == "not_applicable"
                     and value.get("cleanup", {}).get("status") == "succeeded"
@@ -1254,6 +1587,8 @@ def run(selected: Any, operation: str, scope: str, execution: Execution,
     validate_execution_admission(options["admission"],
                                              digest=preview["preview_digest"].removeprefix("sha256:"),
                                              execution_id=execution_id, target=request["target"])
+    require(options['admission'].get('deadlines') == request['deadlines'],
+            'publication admission deadlines conflict with approved request')
     if action == "publish":
         validate_vmid_reservation(dict(options["admission"]), cluster_scope=request["cluster_scope"],
                                   vmids=[request["vmid"]])
@@ -1270,13 +1605,21 @@ def run(selected: Any, operation: str, scope: str, execution: Execution,
                 failure = _failure_result(intent, execution_id, preview["preview_digest"], artifact_digest)
                 write_text(execution.outputs.path("diagnostics") / "result.json",
                            json.dumps(failure, sort_keys=True, indent=2) + "\n", secure=True)
+                execution.outputs.summary({'component': 'pve-template', 'operation': operation,
+                    'action': preview['action'], 'execution_id': execution_id, 'status': 'failed',
+                    'overall': failure['status'], 'stop_diagnostics': failure['stop_diagnostics']})
         raise
     if "template_record" in result:
         write_text(execution.outputs.path("generated") / "template-record.json", json.dumps(result["template_record"], sort_keys=True, indent=2) + "\n", secure=True)
     write_text(execution.outputs.path("diagnostics") / "result.json", json.dumps(result, sort_keys=True, indent=2) + "\n", secure=True)
     if result.get("status") != "succeeded":
+        execution.outputs.summary({'component': 'pve-template', 'operation': operation,
+            'action': preview['action'], 'execution_id': execution_id, 'status': 'failed',
+            'overall': result['status'], 'publication': result['publication'],
+            'stop_diagnostics': result['stop_diagnostics']})
         raise OperationFailed("PVE publication remains unresolved; inspect protected result and publish intent")
     execution.finish({"component": "pve-template", "operation": operation, "action": preview["action"],
                       "execution_id": execution_id, "preview_digest": preview["preview_digest"],
                       "status": result.get("status"), "publication": result.get("publication"),
-                      "cleanup": result.get("cleanup", {}).get("status")})
+                      "cleanup": result.get("cleanup", {}).get("status"),
+                      'stop_diagnostics': result['stop_diagnostics']})

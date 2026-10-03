@@ -48,6 +48,8 @@ sudo visudo -c
 1. 在专用 Linux amd64/KVM 执行器上直接运行 image build/test/clean，保留原任务目录与结果；检查、读取和被动验证不启动来宾。
 2. infra-ops 上传固定镜像与证据，生成新的 PVE publish 请求、preview 和当前准入，再经 HTTPS 发布。PVE 发布、VM 克隆、cleanup/retire 使用站点对应的同一互斥范围。
 
+当前发布 request/v3、cleanup/retire request/v2、preview/result/v4，模板 record 保持 v3。调用方在请求内固定 work/cleanup UTC 截止；admission/v1 复制同一 deadlines 并绑定新 preview 的无前缀 digest。结果接收方读取 deadline_outcome 和 stop_diagnostics，保留明确失败检查及活动／归属未知结论；不得因观察超时重放写操作。此软件适配不包含真实设施准入或 infra-ops 日常部署代验。
+
 旧模板不必仅为接入而重建。通过新版 read/verify 获得当前 UUID、磁盘和配置事实，按站点验收要求登记新模板记录与当前准入；历史加工和来宾检查未做的就保持未知。VM 消费方直接切换到新记录格式，不自动翻译旧输入。
 
 软件切换后先执行代表性离线入口与隔离检查，再在新授权窗口内串行验证一个模板和一个临时 VM，并按实际归属清理。仅有明确静止 staging 残留的成功发布，可在持久化结果和独立清理待办后结清发布 pending；未知活动、归属或结果收集仍需核清。

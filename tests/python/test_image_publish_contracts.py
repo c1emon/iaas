@@ -33,7 +33,7 @@ def artifact() -> dict:
 
 
 def request() -> dict:
-    value = {"kind": "pve-template-publish-request", "schema_version": 2, "cluster_scope": "test-cluster", "pool": None, "artifact": artifact(),
+    value = {"kind": "pve-template-publish-request", "schema_version": 3, "cluster_scope": "test-cluster", "pool": None, "artifact": artifact(),
              "source": {"object_ref": "https://objects.example.invalid/disk.qcow2", "object_version": "v1"},
              "target": {"api_endpoint": "https://pve.example.invalid:8006", "node": "cohe", "tls_verify": True},
              "vmid": 9001, "version": "v1", "name": "debian-template", "staging_storage": "images",
@@ -43,7 +43,7 @@ def request() -> dict:
              "cloud_init_defaults": {"user": "debian"},
              "requirements": {"required": [{"id": "format", "scope": "static"}], "optional": [],
                               "native_template_config_verify": True, "guest_acceptance_scope": "caller"},
-             "transport": "controller-upload"}
+             "transport": "controller-upload", "deadlines": {"work_deadline_at": "2099-01-01T00:00:00Z", "cleanup_deadline_at": "2099-01-01T00:10:00Z"}}
     value["artifact_digest"] = canonical_digest(value["artifact"])
     return value
 
@@ -65,7 +65,7 @@ def image_test_result(*, disk_sha256: str = "b" * 64, status: str = "passed") ->
 def test_publish_preview_is_canonically_bound() -> None:
     preview = build_publish_preview(request(), runtime={"image_digest": "registry.invalid/runtime@sha256:" + "a" * 64},
                                     observed={"vmid_free": True})
-    assert validate_publish_preview(copy.deepcopy(preview))["schema_version"] == 3
+    assert validate_publish_preview(copy.deepcopy(preview))["schema_version"] == 4
     formatted = copy.deepcopy(preview)
     formatted["fixed_input"] = {key: formatted["fixed_input"][key] for key in reversed(formatted["fixed_input"])}
     assert validate_publish_preview(formatted)["preview_digest"] == preview["preview_digest"]

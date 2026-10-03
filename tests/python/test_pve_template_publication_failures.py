@@ -16,8 +16,8 @@ def publish_setup(tmp_path, monkeypatch, api):
     outputs = Outputs(tmp_path / "outputs")
     execution = SimpleNamespace(outputs=outputs, environ={"PVE_ARTIFACT_URL": request["source"]["object_ref"]})
     monkeypatch.setattr(runtime, "_client", lambda *args: api)
-    monkeypatch.setattr(runtime, "_download", lambda url, path, digest, size: path.write_bytes(b"disk"))
-    monkeypatch.setattr(runtime, "_verify_qcow2", lambda *args: None)
+    monkeypatch.setattr(runtime, "_download", lambda url, path, digest, size, **kwargs: path.write_bytes(b"disk"))
+    monkeypatch.setattr(runtime, "_verify_qcow2", lambda *args, **kwargs: None)
     return request, preview, execution
 
 
@@ -28,7 +28,7 @@ def test_cleanup_failure_preserves_publication_and_unknown_precedence(tmp_path, 
     original_content = runtime._storage_content
 
     def content(client, node, storage):
-        if remote_unknown and client.config.get("template") == 1:
+        if remote_unknown and client.phase == "cleanup":
             raise runtime.OperationFailed("staging observation unavailable")
         return original_content(client, node, storage)
 
@@ -119,7 +119,7 @@ def test_verified_template_must_match_requested_hardware(tmp_path, monkeypatch):
             return result
 
     request, preview, execution = publish_setup(tmp_path, monkeypatch, ChangedConfig())
-    with pytest.raises(Exception, match="does not match the fixed publication request"):
+    with pytest.raises(Exception, match="configuration_conflict"):
         runtime._publish(SimpleNamespace(), execution, request, preview, "publish-1")
 
 
@@ -176,8 +176,8 @@ def test_download_http_failure_records_status_without_locator(tmp_path, monkeypa
 
     monkeypatch.setattr(runtime, "build_opener", lambda *args: FailingOpener())
     destination = tmp_path / "disk.qcow2"
-    with pytest.raises(runtime.OperationFailed, match=r"artifact download failed \(HTTP 503\)"):
-        runtime._download("https://objects.invalid/private?token=redacted", destination, "0" * 64, 1)
+    with pytest.raises(runtime.OperationFailed, match="observation_deadline_expired"):
+        runtime._download("https://objects.invalid/private?token=redacted", destination, "0" * 64, 1, budget=runtime.ObservationBudget(0.01))
     assert not destination.exists()
 
 
@@ -187,7 +187,7 @@ def test_preupload_failure_journals_bounded_phase_and_known_local_effects(tmp_pa
     request, preview, execution = publish_setup(tmp_path, monkeypatch, api)
     if failed_phase == "artifact-verify":
         monkeypatch.setattr(runtime, "_verify_qcow2",
-                            lambda *args: (_ for _ in ()).throw(runtime.OperationFailed("private-token")))
+                            lambda *args, **kwargs: (_ for _ in ()).throw(runtime.OperationFailed("private-token")))
         expected_reason = "artifact-format-verification-failed"
     else:
         monkeypatch.setattr(runtime, "_assert_upload_target_free",
@@ -221,6 +221,8 @@ def test_same_artifact_supports_two_admitted_publications_without_rebuild(tmp_pa
 
         def request(self, method, path, **kwargs):
             result = super().request(method, path, **kwargs)
+            if method == "GET" and path.endswith("/content"):
+                return [{**row, "vmid": self.vmid} for row in result]
             if method == "GET" and path.endswith("/cluster/resources"):
                 return [{"vmid": self.vmid, "pool": self.pool}] if self.created else []
             if method == "GET" and path.endswith("/access/permissions"):
@@ -236,12 +238,12 @@ def test_same_artifact_supports_two_admitted_publications_without_rebuild(tmp_pa
                 self.config["scsi0"] = f"images:base-{self.vmid}-disk-0,size=8G"
             return result
 
-    def download(locator, destination, digest, size):
+    def download(locator, destination, digest, size, **kwargs):
         download_calls.append((digest, destination.name))
         destination.write_bytes(artifact_bytes)
 
     monkeypatch.setattr(runtime, "_download", download)
-    monkeypatch.setattr(runtime, "_verify_qcow2", lambda *args: None)
+    monkeypatch.setattr(runtime, "_verify_qcow2", lambda *args, **kwargs: None)
 
     executions = []
     for execution_id, vmid in (("publish-a", 9001), ("publish-b", 9002)):
@@ -253,7 +255,7 @@ def test_same_artifact_supports_two_admitted_publications_without_rebuild(tmp_pa
                                                   observed={"vmid_free": True})
         admission = {
             "schema_version": 1, "execution_id": execution_id,
-            "plan_digest": preview["preview_digest"].removeprefix("sha256:"),
+            "deadlines": request["deadlines"], "plan_digest": preview["preview_digest"].removeprefix("sha256:"),
             "target": request["target"], "approved": True,
             "consumption": {"reserved": True, "reservation_id": f"reservation-{execution_id}"},
             "pending": {"record_id": f"pending-{execution_id}"},

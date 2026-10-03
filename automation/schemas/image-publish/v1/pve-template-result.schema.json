@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://iaas.invalid/schemas/image-publish/v1/pve-template-result.schema.json",
-  "title": "pve-template-result/v3",
+  "title": "pve-template-result/v4",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -20,14 +20,17 @@
     "verification",
     "collection",
     "native_execution",
-    "cleanup"
+    "cleanup",
+    "deadlines",
+    "deadline_outcome",
+    "stop_diagnostics"
   ],
   "properties": {
     "kind": {
       "const": "pve-template-result"
     },
     "schema_version": {
-      "const": 3
+      "const": 4
     },
     "execution_id": {
       "$ref": "#/$defs/id"
@@ -109,6 +112,15 @@
     },
     "cleanup": {
       "$ref": "#/$defs/cleanup"
+    },
+    "deadlines": {
+      "$ref": "#/$defs/Deadlines"
+    },
+    "deadline_outcome": {
+      "$ref": "#/$defs/DeadlineOutcome"
+    },
+    "stop_diagnostics": {
+      "$ref": "#/$defs/StopDiagnostics"
     }
   },
   "$defs": {
@@ -204,6 +216,231 @@
           "type": "string"
         }
       }
+    },
+    "Deadlines": {
+      "additionalProperties": false,
+      "properties": {
+        "work_deadline_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+          "title": "Work Deadline At",
+          "type": "string"
+        },
+        "cleanup_deadline_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+          "title": "Cleanup Deadline At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "work_deadline_at",
+        "cleanup_deadline_at"
+      ],
+      "title": "Deadlines",
+      "type": "object"
+    },
+    "DeadlineOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "phase": {
+          "anyOf": [
+            {
+              "enum": [
+                "admission",
+                "work",
+                "cleanup"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Phase"
+        },
+        "status": {
+          "enum": [
+            "not_exceeded",
+            "rejected",
+            "exceeded"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "phase",
+        "status"
+      ],
+      "title": "DeadlineOutcome",
+      "type": "object"
+    },
+    "RecoveryDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "supported": {
+          "title": "Supported",
+          "type": "boolean"
+        },
+        "disposition": {
+          "enum": [
+            "eligible",
+            "blocked",
+            "needs_evidence",
+            "not_applicable"
+          ],
+          "title": "Disposition",
+          "type": "string"
+        },
+        "reason_code": {
+          "pattern": "^[a-z][a-z0-9_]{0,95}$",
+          "title": "Reason Code",
+          "type": "string"
+        },
+        "required_evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Required Evidence",
+          "type": "array"
+        }
+      },
+      "required": [
+        "supported",
+        "disposition",
+        "reason_code",
+        "required_evidence"
+      ],
+      "title": "RecoveryDiagnostic",
+      "type": "object"
+    },
+    "StopCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "phase": {
+          "title": "Phase",
+          "type": "string"
+        },
+        "check": {
+          "title": "Check",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "failed",
+            "unknown"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "reason_code": {
+          "pattern": "^[a-z][a-z0-9_]{0,95}$",
+          "title": "Reason Code",
+          "type": "string"
+        }
+      },
+      "required": [
+        "phase",
+        "check",
+        "status",
+        "reason_code"
+      ],
+      "title": "StopCheck",
+      "type": "object"
+    },
+    "StopDiagnostics": {
+      "additionalProperties": false,
+      "properties": {
+        "completed": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Completed",
+          "type": "array"
+        },
+        "stopping": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StopCheck"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "facility_writes": {
+          "enum": [
+            "none",
+            "issued",
+            "unknown"
+          ],
+          "title": "Facility Writes",
+          "type": "string"
+        },
+        "activity": {
+          "enum": [
+            "running",
+            "stopped",
+            "unknown"
+          ],
+          "title": "Activity",
+          "type": "string"
+        },
+        "ownership": {
+          "enum": [
+            "registered-owned",
+            "candidate-unknown",
+            "not-owned"
+          ],
+          "title": "Ownership",
+          "type": "string"
+        },
+        "existence": {
+          "enum": [
+            "present",
+            "absent",
+            "unknown"
+          ],
+          "title": "Existence",
+          "type": "string"
+        },
+        "inventory_complete": {
+          "title": "Inventory Complete",
+          "type": "boolean"
+        },
+        "tasks": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Tasks",
+          "type": "array"
+        },
+        "observations": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Observations",
+          "type": "array"
+        },
+        "recovery": {
+          "$ref": "#/$defs/RecoveryDiagnostic"
+        }
+      },
+      "required": [
+        "completed",
+        "stopping",
+        "facility_writes",
+        "activity",
+        "ownership",
+        "existence",
+        "inventory_complete",
+        "tasks",
+        "observations",
+        "recovery"
+      ],
+      "title": "StopDiagnostics",
+      "type": "object"
     }
   }
 }

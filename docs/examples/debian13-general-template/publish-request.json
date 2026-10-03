@@ -1,6 +1,6 @@
 {
   "kind": "pve-template-publish-request",
-  "schema_version": 2,
+  "schema_version": 3,
   "artifact": {
     "kind": "image-artifact",
     "schema_version": 1,
@@ -95,5 +95,9 @@
   },
   "transport": "controller-upload",
   "cluster_scope": "example-cluster",
-  "pool": null
+  "pool": null,
+  "deadlines": {
+    "work_deadline_at": "2099-01-01T00:00:00Z",
+    "cleanup_deadline_at": "2099-01-01T00:10:00Z"
+  }
 }

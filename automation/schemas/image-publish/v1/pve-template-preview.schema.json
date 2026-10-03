@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://iaas.invalid/schemas/image-publish/v1/pve-template-preview.schema.json",
-  "title": "pve-template-preview/v3",
+  "title": "pve-template-preview/v4",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -18,7 +18,7 @@
       "const": "pve-template-preview"
     },
     "schema_version": {
-      "const": 3
+      "const": 4
     },
     "action": {
       "enum": [

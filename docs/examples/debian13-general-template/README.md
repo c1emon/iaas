@@ -1,6 +1,6 @@
 # Debian 13 通用模板代表性配置
 
-当前 build request/v2、publish request/v2、record/preview/result/v3；不接受旧构建版本。
+当前 build request/v2、publish request/v3、record/v3、preview/result/v4；不接受旧构建版本。
 示例地址、摘要、VMID 和身份由调用方替换，不是执行批准。
 
 - 构建：复用 [build request](../image-publish/image-build-request.json)，8 GiB、清华 Debian/security 源、
