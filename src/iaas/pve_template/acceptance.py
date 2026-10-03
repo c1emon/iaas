@@ -16,7 +16,7 @@ from . import runtime as pve
 from .acceptance_execution import begin, observe, save
 from . import acceptance_snippets
 from .deadlines import DeadlineBudget, DeadlineExpired, LocalTimeout
-from .responses import RequestRejected
+from .responses import RequestRejected, RequestOutcomeUnknown
 from .guest_observation import GENERAL_GUEST_OBSERVATION
 from .admission import AdmissionError, Permissions, ACCEPTANCE_PRIVILEGES, admit_acceptance, disk_capacity
 from .acceptance_plan import ReadBudgetClient
@@ -480,7 +480,18 @@ class Acceptance:
                                    **{k: v for k, v in self.owned.items() if k != 'volumes'},
                                    'upid': self.journal['tasks'][-1]['upid']}
         self.persist()
-        rows = self.api('GET', f"/api2/json/nodes/{quote(self.temporary['node'], safe='')}/storage/{quote(self.temporary['storage'], safe='')}/content")
+        retry_until = time.monotonic() + min(30, self.remaining())
+        while True:
+            try:
+                rows = self.api('GET', f"/api2/json/nodes/{quote(self.temporary['node'], safe='')}/storage/{quote(self.temporary['storage'], safe='')}/content")
+                break
+            except RequestOutcomeUnknown as exc:
+                if exc.http_status not in {500, 502, 503, 504} or time.monotonic() >= retry_until:
+                    raise
+                prior = self.journal.get('cleanup_inventory_retries', {}).get('count', 0)
+                self.journal['cleanup_inventory_retries'] = {'count': prior + 1, 'last_http_status': exc.http_status}
+                self.persist()
+                time.sleep(min(1, self.remaining(), max(0, retry_until - time.monotonic())))
         check(isinstance(rows, list) and all(isinstance(row, dict) and 'volid' in row for row in rows),
               'volume_inventory_incomplete')
         self.remaining_volumes = sorted(set(self.owned['volumes']).intersection(row['volid'] for row in rows))
