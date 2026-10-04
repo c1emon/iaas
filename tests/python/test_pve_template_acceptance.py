@@ -301,6 +301,123 @@ def test_cleanup_only_failure_has_stopping_diagnostics(tmp_path):
     assert result['stop_diagnostics']['stopping']['status'] == 'unknown'
 
 
+class StoragePluginDeleteAPI(API):
+    """Explicit plugin task failures, never a general transport retry."""
+    def __init__(self, value, failures=1, fault=''):
+        super().__init__(value)
+        self.failures, self.retry_fault = failures, fault
+        self.delete_attempts = 0
+        self.delete_status_reads = 0
+
+    def task(self, phase):
+        if phase == 'delete':
+            self.last_task = phase
+            return f'UPID:pve1:{self.delete_attempts:08X}:00000001:00000001:qmdelete:9100:root@pam:'
+        return super().task(phase)
+
+    def request(self, method, path, fields=None, **kwargs):
+        if method == 'DELETE' and path.endswith('/9100'):
+            self.delete_attempts += 1
+            if self.delete_attempts <= self.failures:
+                self.calls.append((method, path, fields, kwargs))
+                if self.retry_fault == 'lost':
+                    raise OperationFailed('unknown delete response')
+                if self.retry_fault == 'absent':
+                    self.clone, self.volumes = None, []
+                return self.task('delete')
+        if '/tasks/' in path and self.last_task == 'delete' and self.delete_attempts <= self.failures:
+            self.calls.append((method, path, fields, kwargs))
+            self.delete_status_reads += 1
+            if self.retry_fault == 'invalid-task':
+                return None
+            if self.retry_fault == 'task-active' and self.delete_status_reads > 1:
+                return {'status': 'running'}
+            return {'status': 'stopped', 'exitstatus': 'ERROR' if self.retry_fault == 'other-error' else 'unexpected status'}
+        result = super().request(method, path, fields=fields, **kwargs)
+        if self.delete_attempts:
+            if path.endswith('/9100/config'):
+                if self.retry_fault == 'uuid':
+                    result['smbios1'] = 'uuid=33333333-3333-4333-8333-333333333333'
+                if self.retry_fault == 'locked':
+                    result['lock'] = 'disk'
+            if path.endswith('/cluster/resources') and self.retry_fault == 'pool':
+                result[0]['pool'] = 'other'
+            if path.endswith('/status/current') and self.retry_fault == 'running':
+                result['status'] = 'running'
+            if path.endswith('/content') and self.retry_fault == 'volume-owner':
+                result[0]['vmid'] = 999
+            if path.endswith('/content') and self.retry_fault == 'missing-volume':
+                result.pop()
+        return result
+
+
+def run_plugin_delete(tmp_path, api, value):
+    journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
+    result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets(api)).execute()
+    return result, journal
+
+
+@pytest.mark.parametrize('failures,overall,delays', [(1, 'passed', [5]), (2, 'passed', [5, 15]), (3, 'unknown', [5, 15])])
+def test_storage_plugin_delete_fallback_is_bounded_and_preserves_each_task(tmp_path, monkeypatch, failures, overall, delays):
+    waited = []
+    monkeypatch.setattr(mod.time, 'sleep', waited.append)
+    value = request()
+    api = StoragePluginDeleteAPI(value, failures)
+    result, journal = run_plugin_delete(tmp_path, api, value)
+    deletes = [row for row in journal['tasks'] if row['phase'] == 'delete']
+    assert result['overall'] == overall
+    assert api.delete_attempts == min(failures + 1, 3)
+    assert waited == delays
+    assert len({row['upid'] for row in deletes}) == len(deletes)
+    assert all(row['status'] == 'failed' and row['activity'] == 'stopped' for row in deletes[:failures])
+    groups = [g for g in result['stop_diagnostics']['observations'] if g['check'] == 'native_task' and 'qmdelete' in g['association'].get('upid', '')]
+    assert sum(g['terminal']['status'] == 'failed' for g in groups) == failures
+    if overall == 'passed':
+        assert result['stop_diagnostics']['stopping'] is None
+        assert result['residuals']['items'] == []
+    else:
+        assert result['stop_diagnostics']['stopping']['reason_code'] == 'task_failed'
+
+
+@pytest.mark.parametrize('fault', ['lost', 'invalid-task', 'other-error', 'uuid', 'pool', 'locked', 'running', 'volume-owner', 'missing-volume', 'task-active'])
+def test_storage_plugin_delete_fallback_refuses_unknown_or_changed_scope(tmp_path, monkeypatch, fault):
+    monkeypatch.setattr(mod.time, 'sleep', lambda seconds: None)
+    value = request()
+    api = StoragePluginDeleteAPI(value, fault=fault)
+    result, _ = run_plugin_delete(tmp_path, api, value)
+    assert result['overall'] != 'passed'
+    assert api.delete_attempts == 1
+
+
+def test_failed_delete_with_confirmed_absence_is_not_reissued(tmp_path, monkeypatch):
+    waited = []
+    monkeypatch.setattr(mod.time, 'sleep', waited.append)
+    value = request()
+    api = StoragePluginDeleteAPI(value, fault='absent')
+    result, journal = run_plugin_delete(tmp_path, api, value)
+    assert api.delete_attempts == 1 and waited == []
+    assert journal['tasks'][-1]['status'] == 'failed'
+    assert result['overall'] == 'passed'
+    assert result['cleanup']['vm']['reason_code'] == 'absent_after_failed_delete'
+
+
+def test_delete_backoff_expires_original_cleanup_budget_without_new_delete(tmp_path, monkeypatch):
+    now = [100.0]
+    waited = []
+    monkeypatch.setattr(mod.time, 'monotonic', lambda: now[0])
+    def sleep(seconds):
+        waited.append(seconds)
+        now[0] += seconds
+    monkeypatch.setattr(mod.time, 'sleep', sleep)
+    value = request()
+    value['timeouts']['cleanup_seconds'] = 3
+    api = StoragePluginDeleteAPI(value)
+    result, _ = run_plugin_delete(tmp_path, api, value)
+    assert api.delete_attempts == 1
+    assert waited == [3]
+    assert result['overall'] != 'passed'
+
+
 def test_runtime_observe_different_output_never_constructs_client(tmp_path, monkeypatch):
     value = request()
     api = API(value)

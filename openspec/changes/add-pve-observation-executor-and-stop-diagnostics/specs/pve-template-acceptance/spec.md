@@ -41,16 +41,32 @@ Acceptance SHALL wait for requested configuration and disk capacity after the or
 - **THEN** the affected check SHALL fail with necessary facts and SHALL NOT be delayed as a generic transient error
 
 ### Requirement: Acceptance cleanup waits for resource disappearance
-After a known successful delete task, acceptance SHALL use bounded read-only checks for original VM and exact owned volume absence, including successful queries still showing stale original objects. Permitted query retries SHALL share the original cleanup deadline. Native task failure SHALL stop dependent deletion processing without write replay; uncertain activity, ownership, visibility or disappearance SHALL remain explicit.
+After a known successful delete task, acceptance SHALL use bounded read-only checks for original VM and exact owned volume absence, including successful queries still showing stale original objects. Permitted query retries SHALL share the original cleanup deadline. Native task failure SHALL stop dependent deletion processing without write replay except the explicitly scoped storage-plugin DELETE fallback below; uncertain activity, ownership, visibility or disappearance SHALL remain explicit.
 
 #### Scenario: VM or storage inventory lags deletion
 - **WHEN** delete completed OK but an initial successful inventory still lists the original VM or owned volumes
 - **THEN** cleanup SHALL wait within the original window for complete absence evidence without issuing delete again
 
 #### Scenario: Delete fails or disappearance cannot be confirmed
-- **WHEN** delete returns an explicit non-OK task outcome or observation reaches cutoff without complete absence evidence
+- **WHEN** delete returns an explicit non-OK task outcome outside the scoped storage-plugin fallback or observation reaches cutoff without complete absence evidence
 - **THEN** results SHALL preserve the failed task or unknown disappearance separately with exact known residue identities and last observations
 - **AND** neither case SHALL trigger repeated facility deletion
+
+### Requirement: Acceptance DELETE has a bounded storage-plugin fallback
+Only the registered temporary VM's DELETE in acceptance cleanup SHALL permit a storage-plugin fallback for a retained task confirmed stopped with exitstatus exactly `unexpected status`. It SHALL permit at most two additional DELETE dispatches after fixed waits of 5 and 15 seconds under the original cleanup deadline and local timeout, with the original serialization and exact resource scope retained. It SHALL NOT retry publication, retirement, recovery, clone, stop, resize, configuration, guest execution or snippet mutations. Code comments and documentation SHALL explicitly identify this behavior as a storage-plugin fallback, not a confirmed repair of the plugin or a general mutation retry mechanism.
+
+#### Scenario: A plugin failure is followed by a successful exact delete
+- **WHEN** a qualifying failed task is retained and the temporary VM remains present
+- **THEN** after the applicable wait, cleanup SHALL independently reconfirm the preceding task stopped with the same failure, VM stopped and unlocked, original UUID/pool/complete attachments and complete matching storage volid/vmid ownership before another DELETE
+- **AND** each attempt SHALL retain its own UPID and terminal observation; a successful cleanup SHALL require complete VM/volume/snippet absence, while prior task failures remain visible and SHALL NOT become the stopping point of a completed cleanup
+
+#### Scenario: Failure left no VM
+- **WHEN** independent visibility-qualified inventory confirms VM absence after a qualifying failed delete
+- **THEN** cleanup SHALL NOT send another DELETE, SHALL retain the failed task, SHALL distinguish observed absence from task success and SHALL still confirm exact owned volume/snippet absence
+
+#### Scenario: Fallback is exhausted or unsafe
+- **WHEN** three delete tasks fail, the shared budget expires, a request/UPID/activity is unknown, another error occurs, or fresh identity/pool/lock/VM-state/volume evidence conflicts or is incomplete
+- **THEN** no further DELETE SHALL be sent and the failed/unknown cleanup with retained attempts and resource evidence SHALL remain available for independent recovery
 
 ## MODIFIED Requirements
 

@@ -604,13 +604,53 @@ class Acceptance:
         if status['status'] == 'running':
             self.mutation('stop', 'POST', self.base + '/status/stop')
         self.identity(self.api('GET', self.base + '/config'))
-        self.mutation('delete', 'DELETE', self.base, fields={'purge': 0, 'destroy-unreferenced-disks': 0})
+        # Storage-plugin fallback ONLY for this acceptance cleanup DELETE.
+        # The observed plugin failure reports stopped / "unexpected status".
+        # Allow two extra attempts after 5s and 15s within the original budget;
+        # never replay an unknown/active request or relax exact ownership.
+        delete_reason = 'deleted'
+        for attempt in range(3):
+            try:
+                self.mutation('delete', 'DELETE', self.base, fields={'purge': 0, 'destroy-unreferenced-disks': 0})
+                break
+            except AcceptanceFailure as exc:
+                item = self.journal['tasks'][-1]
+                terminal = next((r.get('terminal', {}) for r in self.observations.rows()
+                                 if r['check'] == 'native_task' and r['association'].get('upid') == item.get('upid')), {})
+                if (str(exc) != 'task_failed' or self.journal['mutation_active']
+                        or item.get('status') != 'failed' or item.get('activity') != 'stopped'
+                        or terminal.get('evidence') != {'status': 'stopped', 'exitstatus': 'unexpected status'}):
+                    raise
+                if self.vm_absent():
+                    delete_reason = 'absent_after_failed_delete'
+                    break
+                if attempt == 2:
+                    raise
+                time.sleep(min((5, 15)[attempt], self.remaining()))
+                self.remaining()
+                if self.vm_absent():
+                    delete_reason = 'absent_after_failed_delete'
+                    break
+                previous = self.api('GET', f"/api2/json/nodes/{quote(item['node'], safe='')}/tasks/{quote(item['upid'], safe='')}/status")
+                check(isinstance(previous, dict) and previous.get('status') == 'stopped'
+                      and previous.get('exitstatus') == 'unexpected status', 'delete_retry_task_activity_unproven')
+                self.identity(self.api('GET', self.base + '/config'))
+                state = self.api('GET', self.base + '/status/current')
+                check(isinstance(state, dict) and state.get('status') == 'stopped', 'delete_retry_vm_not_stopped')
+                rows = self.api('GET', f"/api2/json/nodes/{quote(self.temporary['node'], safe='')}/storage/{quote(self.temporary['storage'], safe='')}/content")
+                check(isinstance(rows, list) and all(isinstance(row, dict) and 'volid' in row for row in rows),
+                      'volume_inventory_incomplete')
+                volumes = [row for row in rows if row['volid'] in self.owned['volumes']]
+                check(len(volumes) == len(self.owned['volumes'])
+                      and {row['volid'] for row in volumes} == set(self.owned['volumes'])
+                      and all(str(row.get('vmid')) == str(self.temporary['vmid']) for row in volumes),
+                      'delete_retry_volume_ownership_unproven')
         self.observe_check('vm_absence', self.vm_absent,
                            lambda absent: Decision('ready' if absent else 'pending', 'vm_absent' if absent else 'vm_still_present', {'absent': absent}))
-        cleanup['vm'] = {'status': 'passed', 'reason_code': 'deleted', 'evidence_ref': 'journal.json'}
+        cleanup['vm'] = {'status': 'passed', 'reason_code': delete_reason, 'evidence_ref': 'journal.json'}
         self.journal['vm_delete'] = {'status': 'deleted', 'execution_id': self.journal['execution_id'],
                                    **{k: v for k, v in self.owned.items() if k != 'volumes'},
-                                   'upid': self.journal['tasks'][-1]['upid']}
+                                   'upid': self.journal['tasks'][-1]['upid'], 'reason_code': delete_reason}
         self.persist()
         owned = self.owned
         def volume_absence(rows):
@@ -726,8 +766,8 @@ class Acceptance:
         stopped = ({'phase': 'work', 'check': stopping['id'], 'status': stopping['status'],
                     'reason_code': stopping['reason_code']}
                    if stopping and stopping['status'] in {'failed', 'unknown'} else None)
-        if stopped is None:
-            terminal = next((r['terminal'] for r in observations
+        if stopped is None and any(row['status'] in {'failed', 'unknown'} for row in self.result['cleanup'].values()):
+            terminal = next((r['terminal'] for r in reversed(observations)
                              if r['phase'] == 'cleanup' and r.get('terminal', {}).get('status') in {'failed', 'unknown'}), None)
             if terminal is not None:
                 stopped = {'phase': 'cleanup', 'check': terminal['check'], 'status': terminal['status'],
