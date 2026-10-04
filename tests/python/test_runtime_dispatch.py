@@ -18,18 +18,46 @@ REPO = Path(__file__).resolve().parents[2]
 
 def test_capabilities_advertise_lifecycle_contract_versions() -> None:
     assert capabilities()["lifecycle_versions"] == {
-        "pve": {"plan": 2, "result": 1, "snippet_cleanup_request": 2, "snippet_cleanup_result": 2},
-        "pve-template": {"preview": 3, "result": 3, "record": 3, "publication_request": 2,
-                         "acceptance_request": 3, "acceptance_result": 3, "acceptance_preview": 1,
-                         "recovery_request": 1, "recovery_result": 1, "recovery_preview": 1,
+        "pve": {"plan": 2, "result": 1, "snippet_cleanup_request": 2, "snippet_cleanup_result": 3},
+        "pve-template": {"preview": 4, "result": 4, "record": 3, "publication_request": 3,
+                         "acceptance_request": 3, "acceptance_result": 4, "acceptance_preview": 2,
+                         "recovery_request": 1, "recovery_result": 2, "recovery_preview": 2,
                          "one_shot_execution_admission": 2},
-        "image": {"artifact": 1, "build_request": 1, "test_request": 1, "test_result": 1},
+        "image": {"artifact": 1, "build_request": 2, "test_request": 1, "test_result": 1},
     }
     assert capabilities()["operation_capabilities"] == {
         "pve-template": {"accept": {"absolute_deadlines": True}, "recover": {"absolute_deadlines": True},
                          "check": {"accept": True}, "plan": {"accept": True, "recover": True, "absolute_deadlines": True}},
         "pve": {"snippet-cleanup": {"absolute_deadlines": True}},
     }
+
+
+def test_capability_versions_match_current_contract_schemas() -> None:
+    versions = capabilities()['lifecycle_versions']
+    groups = [
+        ('image-publish/v1', 'image', {
+            'artifact': 'image-artifact', 'build_request': 'image-build-request',
+            'test_request': 'image-test-request', 'test_result': 'image-test-result'}),
+        ('image-publish/v1', 'pve-template', {
+            'preview': 'pve-template-preview', 'result': 'pve-template-result',
+            'record': 'pve-template-record', 'publication_request': 'pve-template-publish-request'}),
+        ('pve-acceptance/v3', 'pve', {
+            'snippet_cleanup_request': 'pve-snippet-cleanup-request',
+            'snippet_cleanup_result': 'pve-snippet-cleanup-result'}),
+        ('pve-acceptance/v3', 'pve-template', {
+            'acceptance_request': 'pve-template-acceptance-request',
+            'acceptance_result': 'pve-template-acceptance-result',
+            'acceptance_preview': 'pve-template-acceptance-preview',
+            'one_shot_execution_admission': 'pve-one-shot-execution-admission'}),
+        ('pve-acceptance-recovery/v1', 'pve-template', {
+            'recovery_request': 'pve-acceptance-recovery-request',
+            'recovery_result': 'pve-acceptance-recovery-result',
+            'recovery_preview': 'pve-acceptance-recovery-preview'}),
+    ]
+    for directory, component, contracts in groups:
+        for field, name in contracts.items():
+            schema = json.loads((REPO / 'automation/schemas' / directory / f'{name}.schema.json').read_text())
+            assert versions[component][field] == schema['properties']['schema_version']['const'], (component, field)
 
 
 def test_template_operations_do_not_forward_api_or_state_credentials():

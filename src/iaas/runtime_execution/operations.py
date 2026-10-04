@@ -7,6 +7,8 @@ import re
 from typing import Any, Mapping
 
 from iaas.common.errors import require
+from iaas.image.contracts import ARTIFACT_VERSION, BUILD_REQUEST_VERSION, TEST_REQUEST_VERSION
+from iaas.pve_template.contracts import PUBLISH_PREVIEW_VERSION, PUBLISH_REQUEST_VERSION, TEMPLATE_RECORD_VERSION
 from iaas.runtime_config.selection import runtime_platform
 from .state import PVE_ENV, S3_ENV
 from .pve_contracts import PLAN_METADATA_VERSION, RESULT_VERSION
@@ -62,12 +64,14 @@ def capabilities() -> dict[str, Any]:
     return {"interface_version": 1, "network_proxy_version": 1, "schema_versions": [1], "platforms": [runtime_platform()],
             "lifecycle_versions": {
                 "pve": {"plan": PLAN_METADATA_VERSION, "result": RESULT_VERSION,
-                        "snippet_cleanup_request": 2, "snippet_cleanup_result": 2},
-                "pve-template": {"preview": 3, "result": 3, "record": 3, "publication_request": 2,
-                                 "acceptance_request": 3, "acceptance_result": 3, "acceptance_preview": 1,
-                                 "recovery_request": 1, "recovery_result": 1, "recovery_preview": 1,
+                        "snippet_cleanup_request": 2, "snippet_cleanup_result": 3},
+                "pve-template": {"preview": PUBLISH_PREVIEW_VERSION, "result": 4,
+                                 "record": TEMPLATE_RECORD_VERSION, "publication_request": PUBLISH_REQUEST_VERSION,
+                                 "acceptance_request": 3, "acceptance_result": 4, "acceptance_preview": 2,
+                                 "recovery_request": 1, "recovery_result": 2, "recovery_preview": 2,
                                  "one_shot_execution_admission": 2},
-                "image": {"artifact": 1, "build_request": 1, "test_request": 1, "test_result": 1},
+                "image": {"artifact": ARTIFACT_VERSION, "build_request": BUILD_REQUEST_VERSION,
+                          "test_request": TEST_REQUEST_VERSION, "test_result": 1},
             },
             "operation_capabilities": {
                 "pve-template": {"accept": {"absolute_deadlines": True}, "recover": {"absolute_deadlines": True},
