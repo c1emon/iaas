@@ -1,5 +1,8 @@
 # ONE 限定真实验收（2026-10-04）
 
+本文为首次测试的历史记录；追加授权后的最新代码复验见 [复验记录](acceptance-retest.md)：
+新执行完整通过，DELETE 一次成功，兜底重试未触发。下文原失败/unknown 结论保持不变。
+
 用户授权在 ONE 本地构建、使用宿主 Docker（无 DinD、无 CI 发布），工作目录仅
 `/home/clemon/iaas-test-oesd`；最多两次顺序克隆，并清理本次资源。
 实际目标为 `astra-pve` / cohe，验收池 `iaas-acceptance`，新模板 9001、临时 VM 501。
