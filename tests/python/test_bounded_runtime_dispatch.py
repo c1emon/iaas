@@ -110,10 +110,11 @@ def test_actual_acceptance_entrypoint_roundtrip_and_collection_failure(tmp_path,
     value = request()
     req = tmp_path / 'request.json'
     req.write_text(json.dumps(value))
+    planned_value = preview(value)
     adm = tmp_path / 'admission.json'
-    adm.write_text(json.dumps(admission(value)))
+    adm.write_text(json.dumps(admission(value, planned_value)))
     planned = tmp_path / 'preview.json'
-    planned.write_text(json.dumps(preview(value)))
+    planned.write_text(json.dumps(planned_value))
     entry = tmp_path / 'entry.yml'
     entry.write_text(yaml.safe_dump({'schema_version': 1, 'environment': 'test', 'components': {
         'pve-template': {'inputs': {}, 'files': {'acceptance_request': str(req), 'acceptance_preview': str(planned), 'execution_admission': str(adm)},
