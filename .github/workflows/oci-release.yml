@@ -26,6 +26,13 @@ jobs:
         with:
           go-version: "1.27.1"
           cache: false
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          version: "0.12.9"
+          python-version: "3.12"
+      - run: uv sync --locked --dev
+      - name: Verify schemas, runtime capabilities and launcher integration
+        run: make check-runtime-contracts
       - name: Build versioned launcher assets
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
