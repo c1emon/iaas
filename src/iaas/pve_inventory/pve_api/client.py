@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+import errno
 from tempfile import TemporaryDirectory
 from typing import Any, Callable
 from urllib.parse import urlparse
 
 from proxmoxer import AuthenticationError, ProxmoxAPI, ResourceException
-from requests.exceptions import SSLError
+from requests.exceptions import SSLError, Timeout, ConnectionError
 
 from iaas.common.pve_tls import write_ca_bundle
 
@@ -37,10 +38,27 @@ def _normalize_endpoint(endpoint: str) -> tuple[str, int | None]:
     return parsed.hostname, parsed.port
 
 
+def _connection_reset(exc: Exception) -> bool:
+    """Retry only an explicitly represented reset, never arbitrary transport text."""
+    pending = [exc]
+    seen = set()
+    while pending and len(seen) < 12:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, OSError) and current.errno in {errno.ECONNRESET, 54, 104}:
+            return True
+        pending.extend(value for value in (current.__cause__, current.__context__, getattr(current, 'reason', None),
+                                            *current.args) if isinstance(value, Exception))
+    return False
+
+
 class ReadOnlyPveApi:
     """Named read-only PVE API queries for health and related checks."""
 
     def __init__(self, runtime: PveApiRuntimeConfig, *, timeout: int = 30, prox: Any | None = None) -> None:
+        self.observation_budget = None
         self._api_token_secret = runtime.api_token_secret
         self._trust_directory: TemporaryDirectory[str] | None = None
         verify_ssl: bool | str = not runtime.insecure
@@ -81,17 +99,30 @@ class ReadOnlyPveApi:
 
     def _call(self, action: str, getter: Callable[[], Any]) -> Any:
         try:
-            return getter()
+            if self.observation_budget is not None:
+                remaining = self.observation_budget.remaining('work')
+                store = getattr(self._prox, '_store', None)
+                if isinstance(store, dict):
+                    store['session'].auth.timeout = min(30, remaining)
+            value = getter()
+            if self.observation_budget is not None:
+                self.observation_budget.remaining('work')
+            return value
         except AuthenticationError as exc:
             raise PveApiAuthenticationError(self._safe_message(action, exc)) from None
         except SSLError as exc:
             raise PveApiTlsError(self._safe_message(action, exc)) from None
+        except Timeout as exc:
+            raise PveApiUnavailableError(self._safe_message(action, exc)) from None
+        except ConnectionError as exc:
+            error = PveApiUnavailableError if _connection_reset(exc) else PveApiError
+            raise error(self._safe_message(action, exc)) from None
         except ResourceException as exc:
             status_code = getattr(exc, "status_code", None)
             message = self._safe_message(action, exc)
             if status_code == 404:
                 raise PveApiNotConfiguredError(message, status_code=status_code) from None
-            if isinstance(status_code, int) and 500 <= status_code < 600:
+            if status_code in {500, 502, 503, 504}:
                 raise PveApiUnavailableError(message, status_code=status_code) from None
             raise PveApiError(message, status_code=status_code) from None
         except Exception as exc:  # pragma: no cover - defensive boundary

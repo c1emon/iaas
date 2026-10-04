@@ -164,7 +164,7 @@ def test_packer_command_capture_keeps_system_disk_and_boot_media(tmp_path: Path,
                "-var", f"firmware={firmware}", "-var", f"seed_directory={seed}", "-var", "ssh_username=packer",
                "-var", f"ssh_private_key_file={key}", "-var", "apt_mirror=https://deb.debian.org/debian",
                "-var", "apt_security_mirror=https://security.debian.org/debian-security", "-var", "cpus=1",
-               "-var", "memory_mib=512"]
+               "-var", "memory_mib=512", "-var", "disk_size_gib=1", "-var", "package_upgrade=false"]
     if firmware == "uefi":
         command += ["-var", f"uefi_code={code}", "-var", f"uefi_vars={vars_template}"]
     command.append(str(PROFILE))

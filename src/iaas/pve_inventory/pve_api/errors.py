@@ -36,6 +36,8 @@ class PveApiAuthenticationError(PveApiError):
 class PveApiTlsError(PveApiError):
     """TLS failure that must not be reduced to an optional observation gap."""
 
+    verification_report: dict
+
 
 class PveApiNotConfiguredError(PveApiError):
     """Optional endpoint is missing or not configured (404)."""

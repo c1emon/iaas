@@ -16,8 +16,8 @@ category. `image clean` accepts the original task identity and execution
 directory and removes only task-owned temporary resources; it does not remove
 a delivered artifact or a shared cache.
 
-PVE publication consumes `pve-template-publish-request/v2` and a selected
-`pve-template-preview/v3`. The request fixes `cluster_scope` and optional `pool`;
+PVE publication consumes `pve-template-publish-request/v3` and a selected
+`pve-template-preview/v4`. The request fixes `cluster_scope` and optional `pool`;
 the native create request places the template directly into that existing pool,
 and the result verifies actual membership. Pool and ACL creation remains an
 administrator operation. The publisher resolves the fixed credential-free
@@ -92,3 +92,59 @@ current configuration or create a fresh execution ID to retry the mutation.
 Only after an unambiguous reconciliation may the caller create a new cleanup
 or retirement preview, with `recovery_of` where required. An unresolved
 unknown remains pending for manual recovery.
+
+## Image executor observations and dependency retries
+
+Build/test freeze `resources.timeout_seconds` once at task entry. Download,
+Packer, guest reachability and test commands consume the remaining task window;
+a retry or later phase does not renew it. `task.json` records the observation
+window and runtime memory observation under `resources.memory_observation`.
+Before guest dispatch, the executor samples Linux `MemAvailable` and the directly
+visible current unified cgroup `memory.max` minus `memory.current`, comparing
+each known remainder with the requested `memory_mib`. A measured insufficiency
+stops dispatch. Missing host data, an unlimited container or an unsupported
+layout stays `unknown` and alone does not block; successful boot never changes
+that observation into a capacity pass. These samples are temporary runtime
+facts, not reservations. Passive `image check` does not use planning-machine
+memory as a remote capacity gate.
+
+The checksum-bound base-image GET retries only timeout/reset/abort and the
+allowlisted HTTP 408/429/500/502/503/504 responses within that same window.
+Each attempt removes only its own `.part` file. A checksum mismatch, permission
+failure or TLS trust error stops immediately. No build, guest launch or write
+operation is retried as a unit.
+
+Existing native dependency mechanisms remain separate: pinned uv, OpenTofu and
+Packer archive GETs in OCI builds use at most three curl retries, a 180-second
+retry window and a 60-second attempt cap before their existing checksum checks.
+`uv sync --locked` uses its native package-download mechanism and preserves the
+lock selection. Packer plugins and Ansible Galaxy use their native mechanisms;
+apt failure still fails the build. Dependency preparation invokes
+`tofu init -backend=false -lockfile=readonly` once and checks that the caller
+lockfile is unchanged. This change does not retry whole init/provider apply or
+wrap their possible backend/facility effects. No full image rebuild or real
+executor capacity acceptance is implied by software tests.
+
+## Caller publication adaptation
+
+Callers generate publish request/v3 or cleanup/retire request/v2 with finite
+work/cleanup UTC cutoffs before plan. Preview/v4 binds that request, runtime
+and both deadlines. Admission/v1 repeats the exact deadlines and binds its
+`plan_digest` to the preview digest without the display `sha256:` prefix;
+publication also supplies the exact cluster/VMID reservation. Replan when
+these bindings change. Cleanup/retire receive a new approval window rather
+than extending the original write authority.
+
+Consume result/v4 `deadline_outcome` and `stop_diagnostics` alongside native
+execution, collection and verification. An expired observer stops further
+queries/dispatch; it does not cancel a remote task, repeat a write or prove
+that an object is absent. Preserve pending state when activity/ownership or
+collection is unknown. A failed check remains failed even if overall result
+is unknown. Template record/v3 and guest acceptance/promotion remain separate.
+These are software interface adaptations; real facility acceptance and
+infra-ops daily deployment still require their own authorized runs.
+
+The current macOS image software regression passed 37 tests and skipped one
+Linux-only real process-group cancellation check. Injected permission failures
+confirm that inaccessible process-group state remains unknown and blocks
+cleanup; Linux cancellation qualification was not rerun in this change.

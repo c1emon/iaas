@@ -12,9 +12,20 @@ from iaas.pve_template.acceptance_plan import build_preview
 from iaas.pve_acceptance_contracts import canonical_digest, load_strict_json
 from iaas.runtime_execution.execution import Execution, OperationFailed
 from iaas.runtime_execution.outputs import TaskOutputs
+from test_pve_acceptance_execution import PlannedAdmission
 
 FIXTURES = Path(__file__).resolve().parents[2] / 'docs/examples/pve-acceptance'
 DIGEST = 'runtime@sha256:' + 'b' * 64
+
+
+@pytest.fixture(autouse=True)
+def bounded_test_cleanup(monkeypatch):
+    original = mod.Acceptance.cleanup
+    def bounded(self):
+        if getattr(self.client, 'fault', '') == 'volume-remains':
+            self.budget.limit('cleanup', .1)
+        return original(self)
+    monkeypatch.setattr(mod.Acceptance, 'cleanup', bounded)
 
 
 def request():
@@ -36,18 +47,19 @@ def preview(value):
 
 
 def begin(root, operation, value, admitted, execution_id, image_digest):
-    return _begin(root, operation, value, admitted, execution_id, image_digest, preview=preview(value))
+    return _begin(root, operation, value, admitted, execution_id, image_digest, preview=admitted.preview)
 
 
-def admission(value):
-    return {'schema_version': 2, 'execution_id': 'accept-001',
-            'plan_digest': preview(value)['preview_digest'].removeprefix('sha256:'),
+def admission(value, planned=None):
+    planned = preview(value) if planned is None else planned
+    return PlannedAdmission({'schema_version': 2, 'execution_id': 'accept-001',
+            'plan_digest': planned['preview_digest'].removeprefix('sha256:'),
             'request_digest': canonical_digest(value), 'runtime': value['runtime'],
             'vmid_reservation': {'cluster_scope': value['cluster_scope'], 'vmids': [value['temporary_vm']['vmid']],
                                  'reservation_id': 'r-1', 'context_id': 'c-1'},
             'target': value['target'], 'deadlines': value['deadlines'],
             'approved': True, 'consumption': {'reserved': True, 'reservation_id': 'r-1'},
-            'pending': {'record_id': 'p-1'}, 'serialization': {'held': True, 'context_id': 'c-1'}}
+            'pending': {'record_id': 'p-1'}, 'serialization': {'held': True, 'context_id': 'c-1'}}, planned)
 
 
 class Snippets:
@@ -161,7 +173,7 @@ class API:
         if path.endswith('/clone'):
             if self.fault == 'clone-lost':
                 raise OperationFailed('private raw response must not leak')
-            self.clone = {**self.source, 'template': 0, 'digest': 'clone',
+            self.clone = {**self.source, 'template': 0, 'digest': 'clone', 'description': fields['description'],
                           'smbios1': 'uuid=22222222-2222-4222-8222-222222222222',
                           'scsi0': 'local-lvm:vm-9100-disk-0,size=8G',
                           'ide2': 'local-lvm:vm-9100-cloudinit,media=cdrom,size=4M'}
@@ -271,7 +283,7 @@ def test_pool_movement_prevents_dependent_writes(tmp_path, when):
     ('source-change', 'failed', True), ('occupied', 'unknown', False),
     ('clone-lost', 'unknown', False), ('start-lost', 'unknown', False),
     ('delete-lost', 'unknown', True), ('identity-replaced', 'unknown', False),
-    ('start-task-error', 'failed', True), ('volume-remains', 'failed', True),
+    ('start-task-error', 'failed', True), ('volume-remains', 'unknown', True),
 ])
 def test_failure_cleanup_and_unknown_boundaries(tmp_path, fault, overall, delete):
     result, journal, api = execute(tmp_path, fault)
@@ -282,6 +294,130 @@ def test_failure_cleanup_and_unknown_boundaries(tmp_path, fault, overall, delete
         assert journal['mutation_active'] is True
 
 
+def test_cleanup_only_failure_has_stopping_diagnostics(tmp_path):
+    result, _, _ = execute(tmp_path, 'delete-lost')
+    assert all(row['status'] == 'passed' for row in result['checks'])
+    assert result['stop_diagnostics']['stopping']['phase'] == 'cleanup'
+    assert result['stop_diagnostics']['stopping']['status'] == 'unknown'
+
+
+class StoragePluginDeleteAPI(API):
+    """Explicit plugin task failures, never a general transport retry."""
+    def __init__(self, value, failures=1, fault=''):
+        super().__init__(value)
+        self.failures, self.retry_fault = failures, fault
+        self.delete_attempts = 0
+        self.delete_status_reads = 0
+
+    def task(self, phase):
+        if phase == 'delete':
+            self.last_task = phase
+            return f'UPID:pve1:{self.delete_attempts:08X}:00000001:00000001:qmdelete:9100:root@pam:'
+        return super().task(phase)
+
+    def request(self, method, path, fields=None, **kwargs):
+        if method == 'DELETE' and path.endswith('/9100'):
+            self.delete_attempts += 1
+            if self.delete_attempts <= self.failures:
+                self.calls.append((method, path, fields, kwargs))
+                if self.retry_fault == 'lost':
+                    raise OperationFailed('unknown delete response')
+                if self.retry_fault == 'absent':
+                    self.clone, self.volumes = None, []
+                return self.task('delete')
+        if '/tasks/' in path and self.last_task == 'delete' and self.delete_attempts <= self.failures:
+            self.calls.append((method, path, fields, kwargs))
+            self.delete_status_reads += 1
+            if self.retry_fault == 'invalid-task':
+                return None
+            if self.retry_fault == 'task-active' and self.delete_status_reads > 1:
+                return {'status': 'running'}
+            return {'status': 'stopped', 'exitstatus': 'ERROR' if self.retry_fault == 'other-error' else 'unexpected status'}
+        result = super().request(method, path, fields=fields, **kwargs)
+        if self.delete_attempts:
+            if path.endswith('/9100/config'):
+                if self.retry_fault == 'uuid':
+                    result['smbios1'] = 'uuid=33333333-3333-4333-8333-333333333333'
+                if self.retry_fault == 'locked':
+                    result['lock'] = 'disk'
+            if path.endswith('/cluster/resources') and self.retry_fault == 'pool':
+                result[0]['pool'] = 'other'
+            if path.endswith('/status/current') and self.retry_fault == 'running':
+                result['status'] = 'running'
+            if path.endswith('/content') and self.retry_fault == 'volume-owner':
+                result[0]['vmid'] = 999
+            if path.endswith('/content') and self.retry_fault == 'missing-volume':
+                result.pop()
+        return result
+
+
+def run_plugin_delete(tmp_path, api, value):
+    journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
+    result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets(api)).execute()
+    return result, journal
+
+
+@pytest.mark.parametrize('failures,overall,delays', [(1, 'passed', [5]), (2, 'passed', [5, 15]), (3, 'unknown', [5, 15])])
+def test_storage_plugin_delete_fallback_is_bounded_and_preserves_each_task(tmp_path, monkeypatch, failures, overall, delays):
+    waited = []
+    monkeypatch.setattr(mod.time, 'sleep', waited.append)
+    value = request()
+    api = StoragePluginDeleteAPI(value, failures)
+    result, journal = run_plugin_delete(tmp_path, api, value)
+    deletes = [row for row in journal['tasks'] if row['phase'] == 'delete']
+    assert result['overall'] == overall
+    assert api.delete_attempts == min(failures + 1, 3)
+    assert waited == delays
+    assert len({row['upid'] for row in deletes}) == len(deletes)
+    assert all(row['status'] == 'failed' and row['activity'] == 'stopped' for row in deletes[:failures])
+    groups = [g for g in result['stop_diagnostics']['observations'] if g['check'] == 'native_task' and 'qmdelete' in g['association'].get('upid', '')]
+    assert sum(g['terminal']['status'] == 'failed' for g in groups) == failures
+    if overall == 'passed':
+        assert result['stop_diagnostics']['stopping'] is None
+        assert result['residuals']['items'] == []
+    else:
+        assert result['stop_diagnostics']['stopping']['reason_code'] == 'task_failed'
+
+
+@pytest.mark.parametrize('fault', ['lost', 'invalid-task', 'other-error', 'uuid', 'pool', 'locked', 'running', 'volume-owner', 'missing-volume', 'task-active'])
+def test_storage_plugin_delete_fallback_refuses_unknown_or_changed_scope(tmp_path, monkeypatch, fault):
+    monkeypatch.setattr(mod.time, 'sleep', lambda seconds: None)
+    value = request()
+    api = StoragePluginDeleteAPI(value, fault=fault)
+    result, _ = run_plugin_delete(tmp_path, api, value)
+    assert result['overall'] != 'passed'
+    assert api.delete_attempts == 1
+
+
+def test_failed_delete_with_confirmed_absence_is_not_reissued(tmp_path, monkeypatch):
+    waited = []
+    monkeypatch.setattr(mod.time, 'sleep', waited.append)
+    value = request()
+    api = StoragePluginDeleteAPI(value, fault='absent')
+    result, journal = run_plugin_delete(tmp_path, api, value)
+    assert api.delete_attempts == 1 and waited == []
+    assert journal['tasks'][-1]['status'] == 'failed'
+    assert result['overall'] == 'passed'
+    assert result['cleanup']['vm']['reason_code'] == 'absent_after_failed_delete'
+
+
+def test_delete_backoff_expires_original_cleanup_budget_without_new_delete(tmp_path, monkeypatch):
+    now = [100.0]
+    waited = []
+    monkeypatch.setattr(mod.time, 'monotonic', lambda: now[0])
+    def sleep(seconds):
+        waited.append(seconds)
+        now[0] += seconds
+    monkeypatch.setattr(mod.time, 'sleep', sleep)
+    value = request()
+    value['timeouts']['cleanup_seconds'] = 3
+    api = StoragePluginDeleteAPI(value)
+    result, _ = run_plugin_delete(tmp_path, api, value)
+    assert api.delete_attempts == 1
+    assert waited == [3]
+    assert result['overall'] != 'passed'
+
+
 def test_runtime_observe_different_output_never_constructs_client(tmp_path, monkeypatch):
     value = request()
     api = API(value)
@@ -289,8 +425,9 @@ def test_runtime_observe_different_output_never_constructs_client(tmp_path, monk
     monkeypatch.setattr(mod.acceptance_snippets, 'Snippets', lambda *args, **kwargs: Snippets())
     reqfile, admfile, prevfile = tmp_path / 'request.json', tmp_path / 'admission.json', tmp_path / 'preview.json'
     reqfile.write_text(json.dumps(value))
-    admfile.write_text(json.dumps(admission(value)))
-    prevfile.write_text(json.dumps(preview(value)))
+    admitted = admission(value)
+    admfile.write_text(json.dumps(admitted))
+    prevfile.write_text(json.dumps(admitted.preview))
     selected = SimpleNamespace(options={'execution_mode': 'start'}, files={'acceptance_request': reqfile, 'execution_admission': admfile,
                                                                          'acceptance_preview': prevfile})
     outputs = TaskOutputs.create(tmp_path / 'start', Path(__file__).parents[2], [reqfile, admfile])
@@ -318,12 +455,13 @@ def test_guest_timeout_uses_independent_cleanup_budget(tmp_path, monkeypatch):
     original = api.request
     def call(method, path, **kwargs):
         if path.endswith('/agent/ping'):
-            raise OperationFailed('not ready')
+            from iaas.pve_template.responses import RequestOutcomeUnknown
+            raise RequestOutcomeUnknown(503)
         return original(method, path, **kwargs)
     api.request = call
     journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
     result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets()).execute()
-    assert result['overall'] == 'failed'
+    assert result['overall'] == 'unknown'
     assert result['failure_stage'] == 'guest_agent'
     assert result['cleanup']['vm']['status'] == 'passed'
     assert api.clone is None
@@ -406,7 +544,7 @@ def test_disk_bound_rejected_before_clone(tmp_path):
 
 @pytest.mark.parametrize('fault,reason,status', [
     ('changed', 'source_changed', 'failed'),
-    ('query', 'source_query_failed', 'unknown'),
+    ('query', 'unclassified_query_error', 'unknown'),
     ('shape', 'source_evidence_insufficient', 'unknown'),
 ])
 def test_source_recheck_diagnostics(tmp_path, fault, reason, status):
@@ -447,9 +585,9 @@ def test_cloudinit_residual_is_reported_even_if_system_disk_deleted(tmp_path):
     api.request = call
     journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
     result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets()).execute()
-    assert result['overall'] == 'failed'
+    assert result['overall'] == 'unknown'
     assert result['cleanup']['vm']['status'] == 'passed'
-    assert [x['identity'] for x in result['residuals']['items']] == ['local-lvm:vm-9100-cloudinit']
+    assert [x['identity'] for x in result['residuals']['items'] if x['kind'] == 'volume'] == ['local-lvm:vm-9100-cloudinit']
 
 
 def test_metadata_volumes_count_against_disk_limit(tmp_path):
@@ -491,3 +629,100 @@ def test_missing_config_size_requires_exact_storage_evidence(tmp_path, fault):
     assert result['overall'] == ('unknown' if fault else 'passed')
     if fault:
         assert not any(method != 'GET' for method, *_ in api.calls)
+
+
+def test_task_pool_content_and_exec_status_converge_without_replaying_writes(tmp_path):
+    from iaas.pve_template.responses import RequestOutcomeUnknown
+    value = request()
+    api = API(value)
+    original = api.request
+    counts = {}
+    def delayed(method, path, **kwargs):
+        result = original(method, path, **kwargs)
+        key = 'task' if '/tasks/' in path else 'pool' if path.endswith('/cluster/resources') and api.clone else 'content' if path.endswith('/content') and api.clone else 'exec' if path.endswith('/agent/exec-status') else None
+        if key:
+            counts[key] = counts.get(key, 0) + 1
+            if counts[key] == 1:
+                if key == 'task':
+                    return {'status': 'stopped'}
+                if key == 'pool':
+                    return [{**r, 'pool': None} if r.get('vmid') == 9100 else r for r in result]
+                if key == 'content':
+                    return result[:1]
+                raise RequestOutcomeUnknown(503)
+        return result
+    api.request = delayed
+    journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
+    result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets()).execute()
+    assert result['overall'] == 'passed'
+    assert journal['clone_candidate']['complete'] is True
+    assert journal['clone_candidate']['clone_marker'] == journal['preview']['clone_marker']
+    assert all(counts[key] >= 2 for key in ('task', 'pool', 'content', 'exec'))
+    assert sum(path.endswith('/clone') for method, path, *_ in api.calls if method == 'POST') == 1
+    assert sum(path.endswith('/agent/exec') for method, path, *_ in api.calls if method == 'POST') == 1
+    assert {row['check'] for row in result['stop_diagnostics']['observations']} >= {'native_task', 'clone_content', 'exec_status'}
+
+
+def test_failed_claim_keeps_both_volume_owners_after_cleanup_and_source_checks(tmp_path):
+    value = request()
+    api = API(value)
+    original = api.request
+    def conflict(method, path, **kwargs):
+        result = original(method, path, **kwargs)
+        if path.endswith('/content') and api.clone:
+            return [{**row, 'vmid': 999} for row in result]
+        return result
+    api.request = conflict
+    journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
+    result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets()).execute()
+    assert result['overall'] == 'unknown'
+    assert journal.get('temporary_vm') is None
+    assert result['stop_diagnostics']['recovery']['disposition'] == 'needs_evidence'
+    assert journal['clone_candidate']['complete'] is True
+    group = next(row for row in result['stop_diagnostics']['observations'] if row['check'] == 'clone_content')
+    assert group['terminal']['status'] == 'failed'
+    assert {row['volid'] for row in group['terminal']['evidence']['volumes']} == set(api.volumes)
+    assert {row['vmid'] for row in group['terminal']['evidence']['volumes']} == {999}
+    assert group['terminal']['observed_at']
+    assert not any(method == 'DELETE' for method, *_ in api.calls)
+
+
+def test_partial_candidate_waits_for_complete_uuid_and_expected_slots(tmp_path):
+    value = request()
+    api = API(value)
+    original = api.request
+    samples = []
+    def partial(method, path, **kwargs):
+        result = original(method, path, **kwargs)
+        if method == 'GET' and path.endswith('/9100/config') and not samples:
+            samples.append(True)
+            result.pop('smbios1')
+            result.pop('ide2')
+        return result
+    api.request = partial
+    journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
+    result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets()).execute()
+    assert result['overall'] == 'passed'
+    assert journal['clone_candidate']['complete'] is True
+    group = next(g for g in result['stop_diagnostics']['observations'] if g['check'] == 'clone_candidate')
+    assert group['terminal']['attempt'] == 2
+    assert len(journal['clone_candidate']['slots']) == 2
+
+
+def test_illegal_configuration_fails_immediately_with_safe_decision(tmp_path):
+    value = request()
+    api = API(value)
+    original = api.request
+    def invalid(method, path, **kwargs):
+        result = original(method, path, **kwargs)
+        if method == 'PUT' and path.endswith('/9100/config'):
+            api.clone['cores'] = 'invalid'
+        return result
+    api.request = invalid
+    journal = begin(tmp_path / 'original', 'accept', value, admission(value), 'accept-001', DIGEST)
+    result = mod.Acceptance(api, value, journal, tmp_path / 'original', Snippets()).execute()
+    group = next(g for g in result['stop_diagnostics']['observations'] if g['check'] == 'configuration')
+    assert group['terminal']['status'] == 'failed'
+    assert group['terminal']['reason'] == 'configuration_invalid'
+    assert group['terminal']['attempt'] == 1
+    assert not any(path.endswith('/status/start') for _, path, *_ in api.calls)

@@ -1,0 +1,5 @@
+# add-pve-observation-executor-and-stop-diagnostics
+
+Unify bounded read-only observation waits, capture stop evidence, enable proven pre-registration recovery, and perform a simple image-executor memory observation. Ordinary verification uses a once-frozen finite observation window without adding apply approval gates; unavailable memory measurements remain unknown and do not alone block guest startup.
+
+Implementation completed on `feat/pve-observation-executor-and-stop-diagnostics`. See [implementation evidence](implementation.md), [completed tasks and conditional scope](tasks.md), the [original acceptance record](acceptance.md), the [latest retest](acceptance-retest.md), and the [caller adaptation checklist](infra-ops-adaptation.md). The latest ONE acceptance passed end to end; DELETE succeeded on its first attempt, so the storage-plugin fallback (5s/15s, at most three attempts) was not triggered. Earlier failures remain unchanged. No OCI release or infra-ops deployment was performed.

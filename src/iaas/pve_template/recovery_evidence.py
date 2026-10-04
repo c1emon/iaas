@@ -5,14 +5,18 @@ No code in this module dispatches a mutation or rewrites original evidence.
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote
 from uuid import UUID
+
+from pydantic import create_model
 
 from iaas.common.errors import ValidationError
 from iaas.pve_acceptance_contracts import (
     Authorization, CloudInit, Deadlines, RuntimeIdentity, Target, Timeouts, canonical_digest, deadline_timestamp, load_strict_json,
+    AcceptancePreview, AcceptanceResult, StopDiagnostics,
     validate_acceptance_request, validate_acceptance_result,
 )
 from .acceptance_execution import confined, validate_acceptance_materials
@@ -38,6 +42,14 @@ def material(root: Path, ref: dict) -> dict:
     return value
 
 
+# Validation-only historical models. They are never exported, serialized or
+# admitted by a new start; original evidence bytes remain untouched.
+RetainedPreviewV1 = create_model('RetainedPreviewV1', __base__=AcceptancePreview,
+                                schema_version=(Literal[1], ...), clone_marker=(None, None))
+RetainedResultV3 = create_model('RetainedResultV3', __base__=AcceptanceResult,
+                               schema_version=(Literal[3], ...), stop_diagnostics=(StopDiagnostics | None, None))
+
+
 def validate_retained_acceptance(request: dict, journal: dict, result: dict | None,
                                  original_execution_id: str) -> None:
     """Validate current snapshots; retained rc.19 parsing remains confined here."""
@@ -49,9 +61,30 @@ def validate_retained_acceptance(request: dict, journal: dict, result: dict | No
               and isinstance(journal.get('tasks'), list)
               and type(journal.get('mutation_active')) is bool
               and journal.get('status') in {'running', 'interrupted', 'finished'}, 'original_journal_binding_conflict')
-        validate_acceptance_materials(request, journal)
+        retained = journal.get('preview', {}).get('schema_version') == 1
+        if retained:
+            preview = journal['preview']
+            check('clone_marker' not in preview, 'retained_preview_marker_conflict')
+            RetainedPreviewV1.model_validate(preview)
+            check(preview['request_digest'] == canonical_digest(request) and preview['fixed_input'] == request
+                  and preview['preview_digest'] == canonical_digest({k: v for k, v in preview.items() if k != 'preview_digest'})
+                  and journal['preview_digest'] == preview['preview_digest']
+                  and journal['request_digest'] == preview['request_digest']
+                  and journal['runtime'] == request['runtime'] == preview['runtime']
+                  and journal['target'] == request['target'] == preview['target']
+                  and journal['deadlines'] == request['deadlines'], 'retained_preview_binding_conflict')
+            from .one_shot_admission import validate_one_shot_admission
+            validate_one_shot_admission(journal['admission'], request=request, preview=preview,
+                execution_id=original_execution_id, image_digest=request['runtime']['image_digest'],
+                vmids=[request['temporary_vm']['vmid']])
+        else:
+            validate_acceptance_materials(request, journal)
         if result is not None:
-            validate_acceptance_result(result)
+            if retained:
+                check('stop_diagnostics' not in result, 'retained_result_diagnostics_conflict')
+                RetainedResultV3.model_validate(result)
+            else:
+                validate_acceptance_result(result)
             check(result.get('execution_id') == original_execution_id
                   and result.get('request_digest') == journal['request_digest']
                   and result.get('runtime') == journal['runtime'] and result.get('deadlines') == request['deadlines']
@@ -150,6 +183,35 @@ def load_original(request: dict, original_root: Path, evidence_root: Path) -> di
     full = request['full_original_resources']
     vm = full['vm']
     owned = journal.get('temporary_vm')
+    actual_mode = 'registered' if owned is not None else 'pre_registration'
+    check(request.get('evidence_mode') in (None, actual_mode), 'recovery_evidence_mode_conflict')
+    if owned is None:
+        candidate = journal.get('clone_candidate', {})
+        marker = journal.get('clone_marker')
+        clones = [t for t in journal['tasks'] if t.get('phase') == 'clone']
+        admission_observed = journal.get('admission_observed', {})
+        check(candidate.get('complete') is True and marker
+              and journal.get('preview', {}).get('clone_marker') == marker
+              and candidate.get('clone_marker') == marker
+              and len(clones) == 1 and clones[0].get('status') == 'succeeded'
+              and clones[0].get('upid') and clones[0].get('clone_marker') == marker
+              and clones[0].get('method') == 'POST'
+              and clones[0].get('request_fields', {}).get('description') == marker
+              and clones[0].get('request_fields', {}).get('newid') == original['temporary_vm']['vmid']
+              and clones[0].get('request_fields', {}).get('target') == original['temporary_vm']['node']
+              and clones[0].get('request_fields', {}).get('full') == 1
+              and clones[0].get('request_fields', {}).get('pool') == original['temporary_vm']['pool']
+              and clones[0].get('request_fields', {}).get('storage') == original['temporary_vm']['storage']
+              and clones[0].get('path') == f"/api2/json/nodes/{original['template_record']['node']}/qemu/{original['template_record']['vmid']}/clone"
+              and admission_observed.get('readiness', {}).get('vmid_free') is True,
+              'pre_registration_needs_evidence')
+        slots = candidate.get('slots', {})
+        from .acceptance import attachments
+        check(isinstance(slots, dict) and set(slots) == set(attachments(original['template_record']['configuration']))
+              and set(slots.values()).isdisjoint(original['template_record']['volumes'].values())
+              and all(v.startswith(original['temporary_vm']['storage'] + ':') for v in slots.values()),
+              'pre_registration_scope_conflict')
+        owned = {**candidate, 'volumes': sorted(slots.values())}
     check(isinstance(owned, dict) and all(owned.get(key) == vm[key] for key in ('node', 'vmid', 'smbios_uuid'))
           and owned['vmid'] == original['temporary_vm']['vmid']
           and sorted(owned.get('volumes', [])) == sorted(full['volumes']), 'original_resource_list_conflict')
@@ -157,7 +219,7 @@ def load_original(request: dict, original_root: Path, evidence_root: Path) -> di
     historical_pool = original['temporary_vm'].get('pool')
     check(('pool' in vm) == ('pool' in original['temporary_vm'])
           and vm.get('pool') == historical_pool, 'historical_pool_binding_conflict')
-    snippets = journal.get('snippets')
+    snippets = journal.get('snippets', [] if journal.get('temporary_vm') is None else None)
     if not isinstance(snippets, list):
         raise RecoveryEvidenceError('original_snippet_evidence_missing')
     expected = sorted((s['node'], s['file_id'], s['sha256']) for s in full['snippets'])
@@ -250,6 +312,26 @@ def _task_activity(client: Any, task: dict, node: str) -> tuple[str, str]:
         except Exception:
             pass
         return 'unknown', 'task_activity_unknown'
+    if task.get('phase') == 'guest_exec' and type(task.get('pid')) is int:
+        vmid = task.get('vmid')
+        if vmid is None:
+            match = re.fullmatch(r'/api2/json/nodes/[^/]+/qemu/(\d+)/agent/exec', task.get('path', ''))
+            vmid = int(match[1]) if match else None
+        if vmid is None:
+            return 'unknown', 'guest_process_association_missing'
+        try:
+            row = client.request('GET', f"/api2/json/nodes/{quote(task.get('node', node), safe='')}/qemu/{vmid}/agent/exec-status", fields={'pid': task['pid']})
+            if isinstance(row, dict) and row.get('exited') in (True, 1):
+                return 'inactive', 'guest_process_exited'
+            if isinstance(row, dict) and row.get('exited') in (False, 0):
+                return 'active', 'guest_process_running'
+        except Exception:
+            pass
+        # A stopped VM cannot answer QGA. Preserve its recorded terminal success;
+        # a PID alone or an unresolved/failed request still needs live evidence.
+        if task.get('status') == 'succeeded':
+            return 'inactive', 'retained_terminal_request'
+        return 'unknown', 'guest_process_activity_unknown'
     if task.get('status') == 'running':
         return 'active', 'retained_running_task'
     if task.get('status') in {'not_sent', 'rejected'}:
@@ -262,7 +344,8 @@ def _task_activity(client: Any, task: dict, node: str) -> tuple[str, str]:
 
 
 def reconcile_original(request: dict, original_root: Path, evidence_root: Path, client: Any,
-                       snippets: Any, *, trusted_rejection_exports: dict[str, dict] | None = None) -> dict:
+                       snippets: Any, *, trusted_rejection_exports: dict[str, dict] | None = None,
+                       approved_frozen_proof: dict | None = None) -> dict:
     """Read-only GET/helper inspection; return facts used by plan and start.
 
     trusted_rejection_exports is derived from declarations bound by the approved
@@ -323,16 +406,34 @@ def reconcile_original(request: dict, original_root: Path, evidence_root: Path, 
         activity, writes = 'unknown', 'unknown'
         unresolved = True
     current = inspect_resources(request, client, snippets)
+    candidate = journal.get('clone_candidate') if journal.get('temporary_vm') is None else None
+    proof = {'mode': 'pre_registration' if candidate else 'registered',
+             'request_digest': journal['request_digest'],
+             'scope_digest': canonical_digest(request['full_original_resources'])}
+    if candidate:
+        proof.update(clone_marker=journal['clone_marker'], smbios_uuid=candidate['smbios_uuid'],
+                     slots=candidate['slots'], clone_upid=next(t['upid'] for t in journal['tasks'] if t['phase'] == 'clone'))
+        if current['vm']['existence'] == 'present':
+            config = client.request('GET', f"/api2/json/nodes/{quote(old['temporary_vm']['node'], safe='')}/qemu/{old['temporary_vm']['vmid']}/config")
+            from .acceptance import attachments
+            from .runtime import _config_uuid
+            check(isinstance(config, dict) and config.get('description') == proof['clone_marker']
+                  and _config_uuid(config) == proof['smbios_uuid'] and attachments(config) == proof['slots'],
+                  'pre_registration_identity_conflict')
+        else:
+            check(approved_frozen_proof == proof or any(p['journal'].get('proof_bindings') == proof
+                      and any(t.get('phase') == 'delete' and t.get('status') == 'succeeded' for t in p['journal'].get('tasks', []))
+                      for p in originals['previous']), 'pre_registration_absent_needs_frozen_scope')
     source = old['template_record']
     try:
         from .runtime import _config_uuid
-        from .acceptance import attachments
+        from .acceptance import attachments, stable
         configuration = client.request('GET', f"/api2/json/nodes/{quote(source['node'], safe='')}/qemu/{source['vmid']}/config")
         if not isinstance(configuration, dict):
             source_observation = {'status': 'unavailable'}
         else:
             identity_matches = _config_uuid(configuration) == source['smbios_uuid']
-            source_observation = {'status': 'unchanged' if identity_matches and attachments(configuration) == attachments(source['configuration']) else 'changed',
+            source_observation = {'status': 'unchanged' if identity_matches and stable(configuration) == stable(source['configuration']) else 'changed',
                                   'identity_matches': identity_matches}
     except Exception:
         source_observation = {'status': 'unavailable'}
@@ -341,6 +442,10 @@ def reconcile_original(request: dict, original_root: Path, evidence_root: Path, 
     # required for unlinked legacy guest exec. Failed current task observations
     # cannot be replaced by an administrator approval.
     safe = not active and not unresolved and current['ownership'] == 'confirmed'
+    if candidate:
+        safe = safe and source_observation['status'] == 'unchanged'
+        if current['vm']['existence'] == 'present':
+            safe = safe and all(v['existence'] == 'present' for v in current['volumes'])
     return {'status': 'eligible' if safe else 'unknown', 'cleanup_eligible': safe,
             'disposition': 'blocked' if not safe else 'administrator_decision' if activity == 'unknown' else 'automatic',
             'active_tasks': active,
@@ -350,7 +455,7 @@ def reconcile_original(request: dict, original_root: Path, evidence_root: Path, 
             'previous_activity': 'unknown' if previous_unknown else 'inactive',
             'original_runtime': journal['runtime'], 'original_deadlines': journal['deadlines'],
             'original_acceptance': originals['result'].get('overall') if originals['result'] else 'unknown',
-            'resources': current, 'source_observation': source_observation, 'facility_writes': 'none'}
+            'resources': current, 'source_observation': source_observation, 'proof_bindings': proof, 'facility_writes': 'none'}
 
 
 def inspect_resources(request: dict, client: Any, snippets: Any) -> dict:

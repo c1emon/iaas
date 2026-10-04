@@ -70,7 +70,7 @@ class API:
         if method == "GET" and path.endswith("/config"):
             return dict(self.config)
         if method == "GET" and path.endswith("/content"):
-            return []
+            return [{"volid": str(self.config["scsi0"]).split(",")[0], "vmid": 9001, "size": 8 * 1024**3}] if "scsi0" in self.config else []
         raise AssertionError((method, path, fields))
 
 
@@ -86,12 +86,12 @@ def test_publish_uses_config_import_from_and_remote_residue_check(tmp_path, monk
     execution = SimpleNamespace(outputs=outputs, environ={"PVE_ARTIFACT_URL": request["source"]["object_ref"]})
     selected = SimpleNamespace()
 
-    def download(locator, destination, digest, size):
+    def download(locator, destination, digest, size, **kwargs):
         destination.write_bytes(b"qcow2-placeholder")
 
     monkeypatch.setattr(runtime, "_client", lambda selected, execution, target: api)
     monkeypatch.setattr(runtime, "_download", download)
-    monkeypatch.setattr(runtime, "_verify_qcow2", lambda path, artifact: None)
+    monkeypatch.setattr(runtime, "_verify_qcow2", lambda path, artifact, **kwargs: None)
 
     result = runtime._publish(selected, execution, contracts.validate_publish_request(request), preview, "exec-1")
 
@@ -123,8 +123,8 @@ def test_upid_requires_valid_identity_and_explicit_ok_exitstatus() -> None:
     with pytest.raises(Exception, match="valid UPID"):
         runtime._upid(StatusAPI(), "UPID:short", "create", node="cohe")
     valid = "UPID:cohe:00000000:00000000:00000001:create:100:root@pam:"
-    with pytest.raises(Exception, match="did not finish successfully"):
-        runtime._upid(StatusAPI(), valid, "create", node="cohe")
+    with pytest.raises(Exception, match="observation_deadline_expired"):
+        runtime._upid(StatusAPI(), valid, "create", node="cohe", timeout=0.001)
 
     empty_task_id = "UPID:cohe:00267DCD:0AA89612:6AB35280:imgcopy::pve-ops@pve!opentofu:"
     assert runtime._normalize_upid(empty_task_id, "cohe") == empty_task_id
@@ -235,8 +235,10 @@ def test_upload_multipart_uses_quoted_headers_and_pve_field_order(tmp_path, monk
     class Response:
         status = 200
 
-        def read(self):
-            return b'{"data":"UPID:cohe:task"}'
+        def read(self, size=-1):
+            value = getattr(self, "value", b'{"data":"UPID:cohe:task"}')
+            self.value = b""
+            return value
 
     class Connection:
         def putrequest(self, *args, **kwargs):
@@ -319,8 +321,8 @@ def test_publication_pool_is_bound_created_and_verified(tmp_path, monkeypatch, p
     api = PoolAPI()
     execution = SimpleNamespace(outputs=Outputs(tmp_path / "outputs"), environ={"PVE_ARTIFACT_URL": request["source"]["object_ref"]})
     monkeypatch.setattr(runtime, "_client", lambda *args: api)
-    monkeypatch.setattr(runtime, "_download", lambda url, path, digest, size: path.write_bytes(b"disk"))
-    monkeypatch.setattr(runtime, "_verify_qcow2", lambda *args: None)
+    monkeypatch.setattr(runtime, "_download", lambda url, path, digest, size, **kwargs: path.write_bytes(b"disk"))
+    monkeypatch.setattr(runtime, "_verify_qcow2", lambda *args, **kwargs: None)
     result = runtime._publish(SimpleNamespace(), execution, request, preview, "publish-pool")
     create = next(row[2] for row in api.calls if row[0] == "POST" and row[1].endswith("/qemu"))
     assert create.get("pool") == pool

@@ -428,7 +428,7 @@ def test_cloud_init_upload_and_verify_use_existing_manifest_without_rerender(mon
 
     def fake_run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[object]:
         calls.append(argv)
-        return subprocess.CompletedProcess(argv, 0)
+        return subprocess.CompletedProcess(argv, 0, stdout=json.dumps({"schema_version": 1, "status": "ready", "reason_code": "digest_confirmed"}))
 
     monkeypatch.setattr(cloud_init_ssh.subprocess, "run", fake_run)
 
@@ -540,7 +540,7 @@ def test_cloud_init_ssh_builds_single_quoted_remote_command(monkeypatch: pytest.
 
     def fake_run(argv: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[object]:
         calls.append(argv)
-        return subprocess.CompletedProcess(argv, 0)
+        return subprocess.CompletedProcess(argv, 0, stdout=json.dumps({"schema_version": 1, "status": "ready", "reason_code": "digest_confirmed"}))
 
     monkeypatch.setattr(cloud_init_ssh.subprocess, "run", fake_run)
 
@@ -570,7 +570,7 @@ def test_cloud_init_ssh_rejects_unsafe_storage_id_before_ssh(monkeypatch: pytest
 
     def fake_run(argv: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[object]:
         calls.append(argv)
-        return subprocess.CompletedProcess(argv, 0)
+        return subprocess.CompletedProcess(argv, 0, stdout=json.dumps({"schema_version": 1, "status": "ready", "reason_code": "digest_confirmed"}))
 
     monkeypatch.setattr(cloud_init_ssh.subprocess, "run", fake_run)
 
@@ -597,7 +597,7 @@ def test_cloud_init_ssh_rejects_unsafe_file_names_before_ssh(monkeypatch: pytest
 
     def fake_run(argv: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[object]:
         calls.append(argv)
-        return subprocess.CompletedProcess(argv, 0)
+        return subprocess.CompletedProcess(argv, 0, stdout=json.dumps({"schema_version": 1, "status": "ready", "reason_code": "digest_confirmed"}))
 
     monkeypatch.setattr(cloud_init_ssh.subprocess, "run", fake_run)
 
@@ -622,7 +622,7 @@ def test_cloud_init_verify_rejects_non_hex_sha256_before_ssh(monkeypatch: pytest
 
     def fake_run(argv: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[object]:
         calls.append(argv)
-        return subprocess.CompletedProcess(argv, 0)
+        return subprocess.CompletedProcess(argv, 0, stdout=json.dumps({"schema_version": 1, "status": "ready", "reason_code": "digest_confirmed"}))
 
     monkeypatch.setattr(cloud_init_ssh.subprocess, "run", fake_run)
 

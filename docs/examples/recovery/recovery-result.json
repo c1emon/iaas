@@ -1,11 +1,11 @@
 {
   "kind": "pve-acceptance-recovery-result",
-  "schema_version": 1,
+  "schema_version": 2,
   "execution_id": "fixture-recovery-1",
   "original_execution_id": "01591395-b75d-4108-a19d-7e5ccdb99acc-accept",
   "recovery_of": "01591395-b75d-4108-a19d-7e5ccdb99acc-accept",
   "request_digest": "sha256:99344f2ee49f6084644ce6a8751a521a1e274219c32c62074590b1ac86353e55",
-  "preview_digest": "sha256:d5a9b21d2c9e0c6972d2d5d4e673aa774f1c5d7fb9e08b4bb794f083f489c9d8",
+  "preview_digest": "sha256:1eb2d4f9c42b5afd7ab0743363b982e0161768d2996bbe252297f46644a427f3",
   "runtime": {
     "image_digest": "runtime@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   },
@@ -148,7 +148,12 @@
       "status": "changed",
       "identity_matches": false
     },
-    "facility_writes": "none"
+    "facility_writes": "none",
+    "proof_bindings": {
+      "mode": "registered",
+      "request_digest": "sha256:9f916fb92e3ad159136c9939ad213a3f3f5cbc0f6bf5175f5b59ea13acee72dd",
+      "scope_digest": "sha256:d0c834dd069e610925390741a3807a0cc5fb18a1c22cf0f11d6593eec49e3505"
+    }
   },
   "resources": [
     {
@@ -200,5 +205,22 @@
     "phase": null,
     "status": "not_exceeded"
   },
-  "reason_code": "recovery_cleanup_confirmed"
+  "reason_code": "recovery_cleanup_confirmed",
+  "stop_diagnostics": {
+    "completed": [],
+    "stopping": null,
+    "facility_writes": "issued",
+    "activity": "stopped",
+    "ownership": "registered-owned",
+    "existence": "absent",
+    "inventory_complete": true,
+    "tasks": [],
+    "observations": [],
+    "recovery": {
+      "supported": true,
+      "disposition": "not_applicable",
+      "reason_code": "cleanup_confirmed",
+      "required_evidence": []
+    }
+  }
 }

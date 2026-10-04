@@ -4,13 +4,13 @@
 
 见 proposal.md。当前 acceptance/recovery 已有冻结 work/cleanup 的 `DeadlineBudget`、写前 intent、UPID/PID 和只执行一次的写边界，适合复用。缺口主要在任务查询短暂失败及任务结束后的目标状态：`claim` 完成全部检查后才登记资源，`configure` 与若干 cleanup 检查立即读取；guest exec-status 查询失败会停止。publication 的 `_upid` 每次另起局部计时。image executor 目前只检查平台、KVM 和磁盘。
 
-此前本地替身复现了短暂缺 pool／卷行、任务或 exec-status GET 500、删除后清单仍显示对象时的提前停止，写操作没有重复。该证据说明观察缺口，不能证明真实 PVE 的同步时延。现有 `bounded-http-read-transport` 明确执行单次已准入请求且不自动重试，本设计保持该边界。
+此前本地替身复现了短暂缺 pool／卷行、任务或 exec-status GET 500、删除后清单仍显示对象时的提前停止，写操作没有重复。该证据说明观察缺口，不能证明真实 PVE 的同步时延。现有 `bounded-http-read-transport` 明确执行单次已准入请求且不自动重试，本设计保持传输层边界；后续用户单独授权的 acceptance cleanup DELETE 存储插件兜底在域层实施，见下文。
 
 ## Goals / Non-Goals
 
 目标是让同一任务／资源在原预算内获得可靠判定，失败时留下可解释且安全的最少事实，并支持有独立身份依据的登记前恢复。
 
-不建立持久作业调度器、自动回滚、通用工作流 DSL、设施写操作重试器、全量日志审计服务或资源预留系统。不接管 infra-ops，不修复外部插件，不将当前配置当作历史 apply 成功。
+不建立持久作业调度器、自动回滚、通用工作流 DSL、通用设施写操作重试器、全量日志审计服务或资源预留系统。不接管 infra-ops，不修复外部插件，不将当前配置当作历史 apply 成功。唯一域层写重试例外是用户授权的验收清理 DELETE 存储插件兜底。
 
 ## Decisions
 
@@ -20,7 +20,17 @@
 
 组件不接受 mutation／dispatch callback，不重新调用整个阶段。`clone/resize/start/delete/upload/unlink` 仍在原写边界先记录 intent、再派发一次；观察器仅绑定收到的 UPID/PID 或已冻结资源身份。未知写响应不能通过重发来获得关联，也不能以扫描到相同 VMID 自动补出任务关联。
 
-备选的每处加 sleep／retry 会重复截止和错误分类逻辑；包装整个操作又会重放写操作，均不采用。域适配器允许暂缺字段或旧视图，但有明确归属冲突时立即结束。对原生任务，只有 `stopped + exitstatus=OK` 证明成功；`stopped` 缺失终态信息属于尚未确认，明确非 OK（包括 `unexpected status`）立即失败。
+备选的每处加 sleep／retry 会重复截止和错误分类逻辑；包装整个操作又会重放写操作，均不采用。域适配器允许暂缺字段或旧视图，但有明确归属冲突时立即结束。对原生任务，只有 `stopped + exitstatus=OK` 证明成功；`stopped` 缺失终态信息属于尚未确认，明确非 OK（包括 `unexpected status`）立即结束该任务检查并保留失败。下述兜底可新建一次 DELETE 尝试，不能改写该失败检查。
+
+### 验收清理 DELETE 的存储插件兜底
+
+2026-10-04 ONE 实测中常规删除任务 stopped / `unexpected status`，后续独立恢复使用相同 DELETE 参数成功。用户随后明确授权仅对此处增加重试。代码注释与文档必须标明这是**存储插件兜底行为**，不能声称修复了插件或已经确认具体故障根因。
+
+仅 `Acceptance.cleanup` 删除已登记的本次临时 VM：最多总计 3 次 DELETE，第一次失败后等待 5 秒，第二次失败后等待 15 秒。间隔从收到明确失败终态后计算；采用固定间隔，适合当前单资源串行清理，不新增配置项或随机抖动。5 秒提供短暂恢复机会，15 秒降低连续失败时的请求频率；这是一项暂定策略，没有真实间隔对比试验证明最优。等待、核对、每次任务轮询与消失检查共用原 cleanup 绝对截止及局部 timeout，余额不足时只等到余额耗尽，不发送下一次 DELETE。
+
+必须保留原 UPID 的明确 stopped / `unexpected status`。等待后重新核对该任务终态、VM 已停止且无锁、原 UUID／池／完整附件，以及完整存储清单中所有原 volid 的匹配 vmid。对象已消失则不重发，但仍确认卷及 snippet 全部消失，并区分资源消失与原任务成功。其他非 OK、响应丢失／未知 UPID／活动未知、归属漂移／缺证据均停止；不再 stop、修改配置或补删孤卷来促成重试。每次使用新 UPID，复用原 journal/分组 observation 保留失败证据。最终清理全部通过时 stopping 为空，历史失败仍保留；耗尽后 overall 继续按失败／未知汇总。
+
+不扩大到 publication、retire、recovery、clone、stop、resize、guest exec、snippet 或传输层。原 ONE 真实记录不重写；新增策略由定向软件测试验证，未增加第三次真实克隆。
 
 ### 2. 固定预算与窄重试分类
 
@@ -30,7 +40,7 @@
 
 独立 verify 继续绑定原 plan、execution/native output/state 和 expectation，但不会把原已结束观察窗口当作新查询的截止，不续原写权、不要求新的设施写批准、不修改原 admission/result，也不推断原 apply 成功。到期只停止当前在线查询，原生 execution/state/collection 事实独立保留，不取消或重跑 provider；本地 read/observe 仍只读取原材料且不构造预算。局部 probe cap 只在观察开始时收紧，重试不续时。image 既有相对 execution timeout 则在原 task 启动时只转换一次为有限观察上界，不能进入下载／测试子阶段再重置。
 
-固定适配器定义可重试的临时传输失败／明确允许的 HTTP 状态及 pending 原因。不能按异常基类或 `http_status=None` 全部重试；需要区分 timeout/reset、TLS 信任错误、拒绝、无效 JSON／字段、响应限额和未知写结果。401/403、非法输入、明确归属／引用冲突、任务失败立即停止；503 等只有对应只读 probe 准入后才允许重查。缺权限的 404 不能当作不存在。
+固定适配器定义可重试的临时传输失败／明确允许的 HTTP 状态及 pending 原因。不能按异常基类或 `http_status=None` 全部重试；需要区分 timeout/reset、TLS 信任错误、拒绝、无效 JSON／字段、响应限额和未知写结果。401/403、非法输入、明确归属／引用冲突、任务失败立即结束当前检查；任务失败仅允许上述域层 DELETE 兜底例外。503 等只有对应只读 probe 准入后才允许重查。缺权限的 404 不能当作不存在。
 
 `agent/ping` 虽是 POST，语义可为观察；`agent/exec` 派发仍在组件外。已取得 PID 的 exec-status 查询仅查同一 PID。只有此前只读程序已明确退出，才可在原预算内启动下一次固定只读采样程序；PID／响应未知时停止派发。探测行为、证据和查询错误分开，避免一次 GET 失败误记为新 guest exec。
 
@@ -90,7 +100,7 @@ build/test 客体启动前读取 Linux `/proc/meminfo` 的 MemAvailable，并在
 
 ## Risks / Trade-offs
 
-- 暂态分类过宽 → 每个 probe 显式 pending／retry allowlist，反例验证权限、冲突、非法响应立即停止；外部任务失败不重试。
+- 暂态分类过宽 → 每个 probe 显式 pending／retry allowlist，反例验证权限、冲突、非法响应立即停止；外部任务失败仅允许验收 DELETE 的严格存储插件兜底例外。
 - 登记前关联材料可能不足 → 软件提供可证明路径和明确 blocked/needs_evidence；存在性不替代所有权，不强行通过恢复。
 - 多个阶段消耗同一窗口 → 新合同明确截止绑定，局部 cap 只收紧；诊断展示剩余观察不足，而不续时。
 - 内存观察存在盲点与竞争 → 记录采样及直接观察范围；已知不足拒绝，缺测量单独不阻断，未知不默认充足，不承诺保留资源。

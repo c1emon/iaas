@@ -1,6 +1,6 @@
 {
   "kind": "pve-acceptance-recovery-preview",
-  "schema_version": 1,
+  "schema_version": 2,
   "action": "recover",
   "fixed_input": {
     "kind": "pve-acceptance-recovery-request",
@@ -172,7 +172,17 @@
       "status": "changed",
       "identity_matches": false
     },
-    "facility_writes": "none"
+    "facility_writes": "none",
+    "proof_bindings": {
+      "mode": "registered",
+      "request_digest": "sha256:9f916fb92e3ad159136c9939ad213a3f3f5cbc0f6bf5175f5b59ea13acee72dd",
+      "scope_digest": "sha256:d0c834dd069e610925390741a3807a0cc5fb18a1c22cf0f11d6593eec49e3505"
+    }
   },
-  "preview_digest": "sha256:d5a9b21d2c9e0c6972d2d5d4e673aa774f1c5d7fb9e08b4bb794f083f489c9d8"
+  "preview_digest": "sha256:1eb2d4f9c42b5afd7ab0743363b982e0161768d2996bbe252297f46644a427f3",
+  "proof_bindings": {
+    "mode": "registered",
+    "request_digest": "sha256:9f916fb92e3ad159136c9939ad213a3f3f5cbc0f6bf5175f5b59ea13acee72dd",
+    "scope_digest": "sha256:d0c834dd069e610925390741a3807a0cc5fb18a1c22cf0f11d6593eec49e3505"
+  }
 }

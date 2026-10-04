@@ -1,11 +1,10 @@
-# PVE acceptance v3 and snippet cleanup v2
+# PVE acceptance and snippet cleanup current contracts
 
-The implementation branch uses acceptance request/result v3 and publication
-record/result/preview v3 (publish request v2). This change is not yet released;
-its acceptance plan/start is implemented; recovery entrypoints are still being integrated.
-Software fixtures are
-separate from qualification of a released image or a real facility.
-Launcher interface remains v1; snippet cleanup request/result remains v2.
+Acceptance request remains v3; preview is v2 and result is v4. Snippet cleanup
+request remains v2 and result is v3. Recovery request is v1, preview/result are v2.
+Publication request is v3, preview/result are v4, and template record remains v3.
+These changes have software fixture evidence; they have not been released or
+qualified against a real PVE facility. Launcher interface remains v1.
 Consumers must check the released image's advertised capabilities before invoking it.
 
 ## Contract artifacts
@@ -292,3 +291,30 @@ UUID expression changes. The UUID is retained in native state, creation results
 and deletion plans; missing historical UUID evidence is still refused. Deployment
 targets are cluster-scoped: node binding comes from the matching plan and snapshot
 VM records, rather than a nonexistent target.node field.
+
+## Bounded observations and stopping evidence
+
+Task reads, configuration/capacity checks, QGA/exec-status and exact deletion
+absence share the original work/cleanup windows. Only the same UPID/PID is
+retried; writes are dispatched once. A missing final task exitstatus or
+unconfirmed disappearance ends unknown. Permission, TLS, invalid response and
+explicit ownership/task failures stop immediately.
+
+Acceptance preview v2 generates a one-use `clone_marker` carried by the original
+clone description. The journal retains that request, UPID and a candidate UUID
+and complete slot-to-volid snapshot before registration. Candidates are unknown
+ownership and cannot authorize automatic cleanup. Current result `stop_diagnostics`
+and the CLI summary preserve each check's last necessary and frozen terminal
+evidence, completed checks, write/activity facts, ownership/existence, inventory
+completeness and the recovery evidence needed. No raw API response, credential or
+cloud-init content enters this summary.
+
+Pre-registration recovery independently joins original preview/marker, successful
+clone task, free-target admission, complete candidate scope and current exact
+UUID/slot/content/pool/source facts. Recovery preview v2 freezes `proof_bindings`
+and the full original scope under a fresh approval. Start rejects drift; an
+VM that becomes authoritatively absent after an independently proved present-VM
+preview may use that approved frozen scope to check exact orphan remnants. A new
+plan for an already absent VM requires associated previous recovery evidence with
+the same proved frozen scope and known inactive tasks. Neither branch repeats VM
+deletion or expands the original volume set.

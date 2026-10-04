@@ -223,7 +223,6 @@ def load_operation(entry: Path, component: str, operation: str, scenario: str | 
         mode = metadata.options.get("execution_mode")
         planning = operation in {"check", "plan"}
         if planning:
-            require(operation == "plan" or metadata.options.get("action") == "accept", "recover only supports online plan")
             require(mode is None, "check/plan must not select an execution mode")
         elif operation == "read":
             require(mode in {None, "observe"}, "read only supports observe mode")

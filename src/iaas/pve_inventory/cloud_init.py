@@ -72,7 +72,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"uploaded {len(snippets)} cloud-init snippets to {args.pve_host}")
     elif args.command == "verify":
         snippets = load_rendered_artifacts(args.output_dir, args.storage_id, args.tfvars)
-        verify_snippets(snippets, args)
+        try:
+            verify_snippets(snippets, args)
+        finally:
+            import json
+            from iaas.common.io import write_text
+            if hasattr(args, 'observations'):
+                write_text(args.output_dir / 'snippet-verification.json', json.dumps({
+                    'schema_version': 1, 'observation_window': args.observation_window,
+                    'observations': args.observations}, indent=2) + '\n', secure=True)
         print(f"verified {len(snippets)} cloud-init snippets on {args.pve_host}")
     return 0
 

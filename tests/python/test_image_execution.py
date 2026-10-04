@@ -150,6 +150,7 @@ def test_identity_cleanup_fails_closed_on_required_directory_reads(
     assert runtime._identity_cleanup_status(disk) == "failed"
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="exact process-group cancellation qualifies the Linux image executor")
 def test_process_group_is_stopped_on_cancellation(tmp_path: Path) -> None:
     child_file = tmp_path / "child.pid"
     process = subprocess.Popen([sys.executable, "-c",
@@ -173,6 +174,27 @@ def test_process_group_is_stopped_on_cancellation(tmp_path: Path) -> None:
         time.sleep(0.01)
     else:
         pytest.fail("descendant process survived process-group stop")
+
+
+def test_process_group_permission_failure_retains_unknown_cleanup_gate(monkeypatch):
+    class Process:
+        pid = 123
+        returncode = 0
+        def wait(self, **kwargs):
+            return 0
+        def poll(self):
+            return 0
+    signals = []
+    def signal_group(pid, sig):
+        signals.append(sig)
+        if sig == 0:
+            raise PermissionError("group state inaccessible")
+    monkeypatch.setattr(runtime.os, "killpg", signal_group)
+    entry = {"pid": 123, "state": "running"}
+    runtime._stop_process(Process(), entry)
+    assert entry["state"] == "unknown"
+    assert runtime._task_has_uncertain_process({"processes": [entry]})
+    assert signals == [runtime.signal.SIGTERM, 0, runtime.signal.SIGKILL]
 
 
 def test_tracked_tool_keeps_unknown_state_when_descendant_holds_capture(tmp_path: Path) -> None:
@@ -322,7 +344,7 @@ def test_test_boot_uses_fresh_uefi_vars_and_preserves_source_hash(tmp_path: Path
         elif command[0] == "cloud-localds":
             Path(command[1]).write_bytes(b"seed")
     monkeypatch.setattr(runtime, "_run_tool", fake_tool)
-    monkeypatch.setattr(runtime, "_wait_port", lambda process, port, timeout: None)
+    monkeypatch.setattr(runtime, "_wait_port", lambda process, port, timeout, **kwargs: None)
     class FakeProcess:
         pid = os.getpid()
         returncode = 0
@@ -443,3 +465,133 @@ def test_owned_symlink_cleanup_removes_link_but_keeps_target(tmp_path: Path) -> 
     assert failures == ["link"]
     assert link.is_symlink()
     assert outside.read_text() == "retain"
+
+
+@pytest.mark.parametrize("host,limit,usage,status", [
+    (256, "max", 0, "insufficient"),
+    (1024, "700", 300, "insufficient"),
+    (1024, "max", 0, "unknown"),
+    (None, "1024", 100, "unknown"),
+    (None, "300", 0, "insufficient"),
+    (1024, "1024", 100, "sufficient"),
+])
+def test_runtime_memory_observation_scopes(tmp_path, host, limit, usage, status):
+    proc, cgroup = tmp_path / "proc", tmp_path / "cgroup"
+    (proc / "self").mkdir(parents=True)
+    cgroup.mkdir()
+    if host is not None:
+        (proc / "meminfo").write_text(f"MemAvailable: {host * 1024} kB\n")
+    (proc / "self/cgroup").write_text("0::/\n")
+    (cgroup / "memory.max").write_text("max" if limit == "max" else str(int(limit) * 1024 ** 2))
+    (cgroup / "memory.current").write_text(str(usage * 1024 ** 2))
+    facts = runtime._memory_observation(_request()["resources"], proc=proc, cgroup=cgroup)
+    assert facts["status"] == status
+    assert facts["requested_memory_mib"] == 512
+    assert {row["scope"] for row in facts["observations"]} == {"host", "current_container"}
+    assert facts["sampled_at"] > 0
+
+
+@pytest.mark.parametrize("status,blocked", [("insufficient", True), ("unknown", False)])
+def test_build_memory_refusal_persists_before_dispatch(tmp_path, monkeypatch, status, blocked):
+    execution = _execution(tmp_path)
+    monkeypatch.setattr(runtime, "_executor_check", lambda _: {"supported_platform": True, "supported_kvm": True, "enough_disk": True})
+    memory = {"status": status, "requested_memory_mib": 512, "sampled_at": 123, "observations": []}
+    monkeypatch.setattr(runtime, "_memory_observation", lambda _: memory)
+    downloads = []
+    def stop(*args, **kwargs):
+        downloads.append(True)
+        raise OperationFailed("download stop")
+    monkeypatch.setattr(runtime, "_download_base", stop)
+    with pytest.raises((OperationFailed, ValidationError)):
+        runtime._build(_selected(_request(), execution_id="memory"), execution, "memory")
+    task = json.loads((runtime._task_dir(execution, "memory") / "task.json").read_text())
+    assert task["resources"]["memory_observation"] == memory
+    assert task["status"] == "failed"
+    assert bool(downloads) != blocked
+    assert task["processes"] == []
+
+
+def test_fixed_base_transfer_retries_only_partial_get(tmp_path, monkeypatch):
+    import hashlib
+    request = _request()
+    request["base"]["checksum"]["value"] = hashlib.sha256(b"verified").hexdigest()
+    request["resources"]["timeout_seconds"] = 3
+    calls = []
+    class Response(io.BytesIO):
+        headers = {}
+        def read(self, size=-1):
+            if len(calls) == 1:
+                super().read(2)
+                raise ConnectionResetError("private URL must not escape")
+            return super().read(size)
+    def open_url(*args, **kwargs):
+        calls.append(kwargs["timeout"])
+        return Response(b"verified")
+    monkeypatch.setattr(runtime, "urlopen", open_url)
+    destination = tmp_path / "base.img"
+    runtime._download_base(request, destination, request["resources"])
+    assert len(calls) == 2
+    assert destination.read_bytes() == b"verified"
+    assert not (tmp_path / "base.img.part").exists()
+
+
+@pytest.mark.parametrize("failure", ["checksum", "permission", "tls"])
+def test_fixed_base_transfer_does_not_retry_rejected_reads(tmp_path, monkeypatch, failure):
+    import ssl
+    from urllib.error import HTTPError, URLError
+    calls = []
+    class Response(io.BytesIO):
+        headers = {}
+    def open_url(*args, **kwargs):
+        calls.append(True)
+        if failure == "permission":
+            raise HTTPError("https://private.invalid", 403, "secret", {}, None)
+        if failure == "tls":
+            raise URLError(ssl.SSLCertVerificationError("secret"))
+        return Response(b"incorrect")
+    monkeypatch.setattr(runtime, "urlopen", open_url)
+    with pytest.raises(OperationFailed) as error:
+        runtime._download_base(_request(), tmp_path / "base.img", _request()["resources"])
+    assert len(calls) == 1
+    assert "secret" not in str(error.value)
+    assert not (tmp_path / "base.img.part").exists()
+
+
+def test_image_task_timeout_is_not_renewed_by_substage(tmp_path):
+    from iaas.observation import ObservationBudget
+    now = [100.0]
+    execution = _execution(tmp_path)
+    execution.image_timeout_seconds = 20
+    execution.image_observation_budget = ObservationBudget(20, utc=lambda: now[0], monotonic=lambda: now[0])
+    assert runtime._current_timeout(execution) == 20
+    now[0] += 15
+    assert runtime._current_timeout(execution) == 5
+    now[0] += 5
+    with pytest.raises(OperationFailed, match="timeout expired"):
+        runtime._current_timeout(execution)
+
+
+@pytest.mark.parametrize("status", ["insufficient", "unknown"])
+def test_qemu_memory_observation_controls_dispatch(tmp_path, monkeypatch, status):
+    execution = _execution(tmp_path)
+    directory = runtime._task_dir(execution, "memory-qemu")
+    disk = directory / "disk.qcow2"
+    disk.write_bytes(b"disk")
+    key = directory / "key"
+    key.write_text("unused fixture")
+    monkeypatch.setattr(runtime.shutil, "which", lambda _: "/usr/bin/tool")
+    monkeypatch.setattr(runtime, "_run_tool", lambda *args: None)
+    monkeypatch.setattr(runtime, "_make_seed", lambda *args, **kwargs: (directory / "seed", key))
+    monkeypatch.setattr(runtime, "_memory_observation", lambda _: {"status": status, "requested_memory_mib": 512})
+    calls = []
+    def dispatch(*args, **kwargs):
+        calls.append(True)
+        raise OperationFailed("dispatch fixture stop")
+    monkeypatch.setattr(runtime, "_start_qemu", dispatch)
+    task = {"processes": [], "owned_resources": []}
+    with pytest.raises((OperationFailed, ValidationError)):
+        runtime._boot_guest(execution, directory, task, disk, "bios", _request()["resources"], username="test", phase="memory-test")
+    assert bool(calls) == (status == "unknown")
+    if status == "insufficient":
+        assert task["processes"] == []
+    assert json.loads((directory / "task.json").read_text())["resources"]["memory_observation"]["status"] == status

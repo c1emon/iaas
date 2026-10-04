@@ -73,7 +73,7 @@ make pve-bootstrap-guests-syntax
 
 Image construction runs as the independent local `image` capability. Template
 publication runs in the controller through the HTTPS PVE API and consumes an
-`image-artifact/v1` plus `pve-template-publish-request/v2`; it does not install
+`image-artifact/v1` plus `pve-template-publish-request/v3`; it does not install
 or invoke a node template worker, storage probe, Packer PVE builder or template
 sudo rule. Supply the fixed API endpoint with a matching CA, an operation-scoped
 `PVE_API_TOKEN`, and a protected `PVE_ARTIFACT_URL` locator resolved for the
@@ -249,6 +249,18 @@ iaas run --runtime-config runtime.json --environment environment.yml \
   --scope <root-id> --plan ./pve-plan/plan/plan.tfplan \
   --companions ./pve-plan/plan --output ./pve-verify
 ```
+
+保存计划的 apply 后配置核验在该核验组入口冻结一次窗口；独立 `verify`
+在调用入口冻结自己的窗口，使用已有适用 timeout 或内部默认 120 秒。
+所有对象、查询和只读重试共享截止，已绑定的较紧执行截止只收紧 apply 后核验。
+普通 verify 不需要新增 approval/deadline 文件，原窗口结束后仍可用完整原
+plan/output/state 关联材料查询当前事实；当前匹配不证明历史 apply 成功。
+结果保留 `observation_window` 与按对象分组的安全 expected/actual UUID、pool、
+配置和容量事实；原 native execution/state/collection 事实独立保留。
+缺失同步字段、power 转换和原对象消失可等待；身份、配置冲突立即停止，
+不取消或重跑 OpenTofu。普通 snippet 上传后的 `--verify --observe` 仅重查
+原 exact file/digest/inode 与 YAML，所有文件共享原 SSH timeout；安全观察
+摘要保留在 `snippet-verification.json` 与 saved-plan result。
 
 审查计划时逐项确认 clone 源、VMID、节点、storage、NIC bridge/MAC、cloud-init
 snippet、long-lived destroy protection、启动策略与 passthrough。删除通过

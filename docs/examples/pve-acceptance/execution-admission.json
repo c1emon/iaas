@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "execution_id": "accept-001",
-  "plan_digest": "8008e4792a0ede832f82bdac2c793e5062e782ef5ecc358abdbd76a8fa16539a",
+  "plan_digest": "08da6ac629623caee21ed9768890730f3442c1b9a878d0d46b19b48294655f6d",
   "target": {
     "api_endpoint": "https://pve.example.invalid:8006",
     "node": "pve1",

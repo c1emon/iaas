@@ -115,6 +115,16 @@ check immediately before each file and uses no-follow directory/file handles,
 original digest/inode checks, exact unlink and an absence recheck. Missing
 parents, symlinks and inaccessible paths never count as an absent file.
 
+After a known completed upload/delete, the runtime observes the original exact
+file and complete reference scope under the same frozen budget. Only inspection
+is retried for an explicitly temporary read timeout or a pending matching view;
+content/identity conflict, foreign reference, or incomplete visibility stops the
+check. The original create/unlink is never replayed. A lost SSH mutation response
+keeps historical outcome and helper activity unknown even if a later file view
+shows absence. Cleanup result v3 exposes `stop_diagnostics`, including completed
+files, stopped check, activity and retained per-file observations; helper wire
+responses remain protocol v2.
+
 Retain `diagnostics/execution` outside the temporary runtime. Map that directory
 as `files.original_execution_dir` for observe. A retry uses a new execution ID
 with previous request/journal/available-result references and the unchanged

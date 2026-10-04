@@ -36,6 +36,7 @@ class CleanupAPI:
                  failed_task: bool = False, upload: str = UPLOAD,
                  delete_error: Exception | None = None) -> None:
         self.config = config
+        self.present = True
         self.volumes = set(volumes)
         self.active = active
         self.failed_task = failed_task
@@ -53,14 +54,17 @@ class CleanupAPI:
                 return {fields["path"]: {"Datastore.Audit": 1, "Datastore.Allocate": 1,
                                           "Datastore.AllocateTemplate": 1, "Datastore.AllocateSpace": 1}}
             return {"/vms/9001": {name: 1 for name in ("VM.Audit", "VM.Allocate", "VM.Config.CPU", "VM.Config.Memory", "VM.Config.Disk", "VM.Config.Network", "VM.Config.Options", "VM.Config.HWType", "VM.Config.Cloudinit")}}
+        if method == "GET" and path.endswith("/cluster/resources"):
+            return [{"vmid": 9001}] if self.present else []
         if method == "GET" and path.endswith("/config"):
             return dict(self.config)
         if method == "GET" and path.endswith("/content"):
             storage = path.split("/storage/", 1)[1].rsplit("/content", 1)[0]
-            return [{"volid": value} for value in sorted(self.volumes) if value.startswith(storage + ":")]
+            return [{"volid": value, **({"vmid": 9001} if ":vm-" in value or ":base-" in value else {})} for value in sorted(self.volumes) if value.startswith(storage + ":")]
         if method == "DELETE" and "/qemu/" in path:
             self.deletes.append((method, path))
             self.volumes.discard(DISK)
+            self.present = False
             return "UPID:cohe:00000000:00000000:00000006:vmdelete:100:root@pam:"
         if method == "DELETE" and "/content/" in path:
             if self.delete_error is not None:
@@ -122,7 +126,7 @@ def _selected(original: Path) -> SimpleNamespace:
 
 def _fixed(*, objects: list[dict], volumes: list[object], execution_id: str = EXECUTION_ID,
            preview_digest: str = PREVIEW_DIGEST) -> dict:
-    return {"target": TARGET, "original_execution_id": execution_id,
+    return {"target": TARGET, "deadlines": publish_request()["deadlines"], "original_execution_id": execution_id,
             "original_execution_dir": "retained/publish-1", "original_preview_digest": preview_digest,
             "objects": objects, "volumes": volumes,
             "ownership_admission": {"owner": "publisher", "reference": "journal/publish-1", "activity": "stopped"}}
@@ -358,7 +362,7 @@ def test_cleanup_consumes_real_publish_failure_journal(tmp_path: Path, monkeypat
                 return [{"storage": "images", "enabled": 1, "active": 1,
                          "avail": 2**40, "content": "import,images"}]
             if method == "GET" and path.endswith("/content"):
-                return []
+                return [{"volid": DISK, "vmid": 9001, "size": 8 * 1024**3}] if self.configured else []
             if method == "POST" and path.endswith("/qemu"):
                 assert fields is not None
                 self.create_fields = dict(fields)
@@ -382,8 +386,8 @@ def test_cleanup_consumes_real_publish_failure_journal(tmp_path: Path, monkeypat
 
     publish_api = PublishAPI()
     monkeypatch.setattr(runtime, "_client", lambda selected, execution, target: publish_api)
-    monkeypatch.setattr(runtime, "_download", lambda locator, destination, digest, size: destination.write_bytes(b"x" * size))
-    monkeypatch.setattr(runtime, "_verify_qcow2", lambda path, artifact: None)
+    monkeypatch.setattr(runtime, "_download", lambda locator, destination, digest, size, **kwargs: destination.write_bytes(b"x" * size))
+    monkeypatch.setattr(runtime, "_verify_qcow2", lambda path, artifact, **kwargs: None)
 
     def fail_template(client: object, value: object, phase: str, node: str = "localhost", timeout: int = 300) -> dict:
         if phase == "template":
@@ -404,7 +408,7 @@ def test_cleanup_consumes_real_publish_failure_journal(tmp_path: Path, monkeypat
     cleanup_api = CleanupAPI(config={"template": 0, "smbios1": "uuid=" + created_uuid, **attachments},
                              volumes={upload_volid, *attachments.values()}, failed_task=True, upload=upload_volid)
     monkeypatch.setattr(runtime, "_client", lambda selected, execution, target: cleanup_api)
-    fixed = {"target": TARGET, "original_execution_id": EXECUTION_ID,
+    fixed = {"target": TARGET, "deadlines": publish_request()["deadlines"], "original_execution_id": EXECUTION_ID,
              "original_execution_dir": "retained/publish-1",
              "original_preview_digest": preview["preview_digest"],
              "objects": [{"vmid": 9001, "smbios_uuid": created_uuid, "volumes": attachments}],
@@ -432,11 +436,11 @@ def test_cleanup_recovers_real_publish_remote_observation_unknown(
     api = API()
     original_content = runtime._storage_content
     monkeypatch.setattr(runtime, "_client", lambda selected, execution, target: api)
-    monkeypatch.setattr(runtime, "_download", lambda locator, destination, digest, size: destination.write_bytes(b"x" * size))
-    monkeypatch.setattr(runtime, "_verify_qcow2", lambda path, artifact: None)
+    monkeypatch.setattr(runtime, "_download", lambda locator, destination, digest, size, **kwargs: destination.write_bytes(b"x" * size))
+    monkeypatch.setattr(runtime, "_verify_qcow2", lambda path, artifact, **kwargs: None)
 
     def fail_after_template(client: Any, node: str, storage: str) -> Any:
-        if api.config.get("template") == 1:
+        if client.phase == "cleanup":
             raise runtime.OperationFailed("staging observation unavailable")
         return original_content(client, node, storage)
 
@@ -472,7 +476,7 @@ def test_retire_rejects_extra_current_volume(tmp_path: Path, monkeypatch: pytest
               "verification": {"template_config": "passed"}}
     fixed = {"target": TARGET, "template_record": record,
              "ownership_admission": {"owner": "publisher", "reference": "record", "activity": "stopped"},
-             "retirement_admission": {"authorized": True, "dependencies_resolved": True, "reference": "review"}}
+             "deadlines": publish_request()["deadlines"], "retirement_admission": {"authorized": True, "dependencies_resolved": True, "reference": "review"}}
     api = CleanupAPI(config={"template": 1, "smbios1": "uuid=template-uuid", "scsi0": DISK,
                              "scsi1": "images:extra"}, volumes=set())
     execution = _execution(tmp_path)
@@ -492,7 +496,7 @@ def test_retire_rejects_current_config_lock(tmp_path: Path, monkeypatch: pytest.
               "verification": {"template_config": "passed"}}
     fixed = {"target": TARGET, "template_record": record,
              "ownership_admission": {"owner": "publisher", "reference": "record", "activity": "stopped"},
-             "retirement_admission": {"authorized": True, "dependencies_resolved": True, "reference": "review"}}
+             "deadlines": publish_request()["deadlines"], "retirement_admission": {"authorized": True, "dependencies_resolved": True, "reference": "review"}}
     api = CleanupAPI(config={"template": 1, "lock": "backup", "smbios1": "uuid=template-uuid", "scsi0": DISK},
                      volumes=set())
     execution = _execution(tmp_path)
@@ -513,7 +517,7 @@ def test_retire_does_not_require_storage_delete_permission(tmp_path: Path,
               "verification": {"template_config": "passed"}}
     fixed = {"target": TARGET, "template_record": record,
              "ownership_admission": {"owner": "publisher", "reference": "record", "activity": "stopped"},
-             "retirement_admission": {"authorized": True, "dependencies_resolved": True, "reference": "review"}}
+             "deadlines": publish_request()["deadlines"], "retirement_admission": {"authorized": True, "dependencies_resolved": True, "reference": "review"}}
 
     class NoDeletePermissionAPI(CleanupAPI):
         def request(self, method: str, path: str, *, fields: dict | None = None, **kwargs: object) -> object:

@@ -10,9 +10,10 @@ Each schema declares its concrete version in both `title` and
 
 | Document family | Concrete version |
 | --- | ---: |
-| Image build request and PVE publish request | 2 |
-| Image build result, image test request/result, artifact, cleanup request and retire request | 1 |
-| PVE template preview, template record and template result | 3 |
+| Image build request, cleanup request and retire request | 2 |
+| PVE publish request and template record | 3 |
+| Image build result, image test request/result and artifact | 1 |
+| PVE template preview and result | 4 |
 
 Keep the directory path, schema `$id` URLs and filenames stable when consuming
 this bundle. Validate the document's `kind` and its declared `schema_version`
@@ -23,3 +24,9 @@ The current build request requires `disk_size_gib` and accepts boolean
 `customization.package_upgrade`. Publication requires `hardware.bridge`, with
 explicit null selecting no NIC. Cross-field capacity, firmware and network
 relationships are also validated by the offline `check` implementation.
+
+Publish/cleanup/retire require ordered finite UTC work/cleanup deadlines.
+Preview binds the normalized request and result preserves those deadlines,
+deadline outcome and shared structured stop diagnostics. Calendar/order and
+cross-document bindings are checked by the native contract validator in
+addition to the JSON schema structure.

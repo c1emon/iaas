@@ -35,16 +35,24 @@ RUNTIME_DIGEST = re.compile(r"^(?:[^@/\s]+(?:/[^@\s]+)*)?@?sha256:[0-9a-fA-F]{64
 
 # Current publication contracts.  The old node-build constants remain private
 # implementation history while the runtime accepts only these new functions.
-PUBLISH_PREVIEW_VERSION = 3
+PUBLISH_PREVIEW_VERSION = 4
 TEMPLATE_RECORD_VERSION = 3
-PUBLISH_REQUEST_VERSION = 2
+PUBLISH_REQUEST_VERSION = 3
 PUBLISH_FIELDS = {
     "kind", "schema_version", "artifact", "artifact_digest", "test_results", "source", "target",
     "vmid", "version", "name", "staging_storage", "disk_storage", "cloud_init_storage", "efi_storage",
-    "hardware", "cloud_init_defaults", "requirements", "transport", "cluster_scope", "pool",
+    "hardware", "cloud_init_defaults", "requirements", "transport", "cluster_scope", "pool", "deadlines",
 }
 PUBLISH_TARGET_FIELDS = {"api_endpoint", "node", "tls_verify"}
 PUBLISH_HARDWARE_FIELDS = {"cpus", "memory_mib", "machine", "scsi_controller", "boot_disk", "bridge", "firmware"}
+
+
+def _deadlines(value):
+    from iaas.pve_acceptance_contracts import Deadlines
+    try:
+        return Deadlines.model_validate(value).model_dump(mode='json')
+    except ValueError:
+        raise ValidationError('publication.deadlines requires finite ordered UTC work_deadline_at and cleanup_deadline_at') from None
 
 
 def _mapping(value: Any, label: str) -> dict[str, Any]:
@@ -139,8 +147,9 @@ def validate_publish_request(value: Any) -> dict[str, Any]:
             "unsupported pve template publish request")
     required = {"artifact", "artifact_digest", "source", "target", "vmid", "version", "name",
                 "staging_storage", "disk_storage", "cloud_init_storage", "hardware", "cloud_init_defaults",
-                "requirements", "transport", "cluster_scope"}
-    require(required <= request.keys(), "pve template publish request is incomplete")
+                "requirements", "transport", "cluster_scope", "deadlines"}
+    require(required <= request.keys(), 'pve template publish request missing fields: ' + ', '.join(sorted(required - request.keys())))
+    deadlines = _deadlines(request['deadlines'])
     cluster_scope = _text(request["cluster_scope"], "cluster_scope", pattern=IDENTIFIER)
     pool = request.get("pool")
     if pool is not None:
@@ -233,7 +242,7 @@ def validate_publish_request(value: Any) -> dict[str, Any]:
                                "guest_acceptance_scope": "caller"}
     require(request["transport"] == "controller-upload", "only controller-upload transport is supported")
     result = {"kind": "pve-template-publish-request", "schema_version": PUBLISH_REQUEST_VERSION, "artifact": artifact,
-              "cluster_scope": cluster_scope, "pool": pool,
+              "cluster_scope": cluster_scope, "pool": pool, "deadlines": deadlines,
               "artifact_digest": digest, "source": normalized_source, "target": normalized_target,
               "vmid": vmid, "version": version, "name": name, **storages, "hardware": dict(hardware),
               "cloud_init_defaults": dict(defaults), "requirements": normalized_requirements,
@@ -375,10 +384,11 @@ def validate_cleanup_request(value: Any) -> dict[str, Any]:
     request = _mapping(value, "pve template cleanup request")
     require(set(request) == {"kind", "schema_version", "target", "original_execution_id",
                              "original_execution_dir", "original_preview_digest", "objects", "volumes",
-                             "ownership_admission"}, "cleanup request is incomplete")
+                             "ownership_admission", "deadlines"}, "cleanup request is incomplete")
     require(request["kind"] == "pve-template-cleanup-request" and type(request["schema_version"]) is int and
-            request["schema_version"] == 1,
+            request["schema_version"] == 2,
             "unsupported cleanup request")
+    _deadlines(request['deadlines'])
     target = _mapping(request["target"], "cleanup.target")
     require(set(target) == PUBLISH_TARGET_FIELDS and target.get("tls_verify") is True,
             "cleanup target must be a fixed verified HTTPS target")
@@ -397,10 +407,11 @@ def validate_cleanup_request(value: Any) -> dict[str, Any]:
 def validate_retire_request(value: Any) -> dict[str, Any]:
     request = _mapping(value, "pve template retire request")
     require(set(request) == {"kind", "schema_version", "target", "template_record",
-                             "ownership_admission", "retirement_admission"}, "retire request is incomplete")
+                             "ownership_admission", "retirement_admission", "deadlines"}, "retire request is incomplete")
     require(request["kind"] == "pve-template-retire-request" and type(request["schema_version"]) is int and
-            request["schema_version"] == 1,
+            request["schema_version"] == 2,
             "unsupported retire request")
+    _deadlines(request['deadlines'])
     target = _mapping(request["target"], "retire.target")
     require(set(target) == PUBLISH_TARGET_FIELDS and target.get("tls_verify") is True,
             "retire target must be a fixed verified HTTPS target")
@@ -468,3 +479,35 @@ def build_action_preview(request: Mapping[str, Any], *, action: str,
             "action": action, "fixed_input": fixed, "runtime": dict(runtime), "observed": dict(observed or {})}
     body["preview_digest"] = canonical_digest(body)
     return body
+
+
+def validate_publication_result(value: Any, preview: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate the current result and its frozen binding without online reads."""
+    from iaas.pve_acceptance_contracts import Deadlines, DeadlineOutcome, StopDiagnostics
+    result = _mapping(value, 'pve template result')
+    bound = validate_publish_preview(preview)
+    required = {'kind', 'schema_version', 'execution_id', 'component', 'operation', 'action',
+                'runtime_digest', 'phase', 'status', 'effects', 'preview_digest', 'publication',
+                'verification', 'collection', 'native_execution', 'cleanup', 'deadlines',
+                'deadline_outcome', 'stop_diagnostics'}
+    require(required <= set(result), 'pve template result is incomplete')
+    require(result['kind'] == 'pve-template-result' and type(result['schema_version']) is int
+            and result['schema_version'] == 4, 'unsupported pve template result')
+    require(result['component'] == 'pve-template' and result['operation'] == 'apply'
+            and isinstance(result['status'], str) and result['status'] in {'succeeded', 'failed', 'unknown'}
+            and isinstance(result['phase'], str) and result['phase'] in {'succeeded', 'failed', 'unknown'},
+            'invalid pve template result outcome')
+    require(result['action'] == bound['action'] and result['preview_digest'] == bound['preview_digest']
+            and result['runtime_digest'] == bound['runtime']['image_digest'],
+            'pve template result preview binding conflicts')
+    try:
+        deadlines = Deadlines.model_validate(result['deadlines'])
+        outcome = DeadlineOutcome.model_validate(result['deadline_outcome'])
+        StopDiagnostics.model_validate(result['stop_diagnostics'])
+    except (ValueError, TypeError):
+        raise ValidationError('invalid pve template result observation fields') from None
+    require(deadlines.model_dump(mode='json') == bound['fixed_input']['deadlines'],
+            'pve template result deadline binding conflicts')
+    require(outcome.status == 'not_exceeded' or result['status'] != 'succeeded',
+            'pve template result success conflicts with exceeded deadline')
+    return result

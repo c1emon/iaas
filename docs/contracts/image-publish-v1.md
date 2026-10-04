@@ -3,8 +3,9 @@
 This is the stable consumer entrypoint for the image/PVE handoff. The
 normative OpenSpec source is
 [`contracts/image-publish-v1.md`](../../openspec/changes/archive/2026-09-29-separate-image-build-and-pve-publish/contracts/image-publish-v1.md);
-the JSON schemas shipped below are the machine-readable subset of that
-contract.
+the JSON schemas shipped below are the current machine-readable subset.
+The current observation/deadline extension is specified in
+[`add-pve-observation-executor-and-stop-diagnostics`](../../openspec/changes/archive/2026-10-04-add-pve-observation-executor-and-stop-diagnostics/design.md).
 
 The stable schemas live under `automation/schemas/image-publish/v1/`:
 
@@ -16,8 +17,8 @@ The stable schemas live under `automation/schemas/image-publish/v1/`:
 The `v1` directory is the stable image-publish contract bundle version. It is
 not a promise that every document inside the bundle has
 `schema_version: 1`: each `kind` owns its own evolution. The build request is
-version 2, the PVE publish request is version 2, and the PVE preview,
-template record and template result are version 3. Use the `title` and `schema_version` in each schema for
+version 2, the PVE publish request is version 3, cleanup/retire requests are
+version 2, preview/result are version 4, and template records remain version 3. Use the `title` and `schema_version` in each schema for
 the concrete document version, while keeping this directory and its `$id`
 paths stable for the v1 bundle.
 
@@ -81,3 +82,23 @@ publication journal. These selectors are mutually exclusive. `verify`
 reads `files.result` and `files.preview` offline and checks their binding.
 For HTTPS read/plan/apply with a private CA, declare `files.api_ca`; the
 launcher maps it into the runtime as `PVE_API_CA`.
+
+Publication, cleanup and retire requests require `deadlines.work_deadline_at`
+and `deadlines.cleanup_deadline_at` as UTC seconds (`YYYY-MM-DDTHH:MM:SSZ`),
+with work no later than cleanup. The normalized preview binds both cutoffs.
+The generic execution admission remains version 1 and must repeat exactly the
+request deadlines; its prefix-free `plan_digest` binds the selected preview.
+For publication, the VMID reservation also binds cluster scope, selected VMID,
+consumption reservation and serialization context. Example dates in 2099 are
+synthetic placeholders; a real approval must select a finite current window.
+
+All admitted reads and retries share the frozen operation budgets. Native
+writes are dispatched once, and a UPID proves success only after
+`stopped + exitstatus=OK`. Query failure, missing terminal outcome or deadline
+expiry cannot establish failure/success of the underlying write.
+`pve-template-result/v4` preserves `deadlines`, `deadline_outcome` and shared
+`stop_diagnostics`: completed phases, stopping check, task activity, ownership,
+existence, inventory completeness, bounded observations and recovery evidence
+requirements. Overall unknown may retain a separately proven failed check.
+The template record remains v3; it does not certify guest acceptance or caller
+promotion. Original evidence is preserved when a new cleanup plan is approved.

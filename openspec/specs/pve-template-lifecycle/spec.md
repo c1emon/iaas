@@ -10,7 +10,7 @@ The system SHALL expose check/read/plan/apply/verify for publication of an exist
 
 #### Scenario: Plan and publish an existing image
 - **WHEN** a caller selects an image-artifact/v1, exact source object, runtime, target, optional pool, stores, hardware and free VMID
-- **THEN** plan SHALL bind those inputs into pve-template-preview/v3 without downloading/uploading the disk or changing PVE
+- **THEN** plan SHALL bind those inputs into the current versioned publication preview without downloading/uploading the disk or changing PVE
 - **AND** apply SHALL require the exact association, current caller execution admission and serialization, and SHALL never build or customize the image
 - **AND** the runtime SHALL recheck full-authority VM inventory, API permissions, storage capability/enabled/active state, node visibility, bridge, firmware and known capacity/size constraints before dependent writes
 - **AND** known insufficient publisher-local or API-visible storage capacity SHALL block dependent writes
@@ -53,7 +53,7 @@ The system SHALL report technical PVE publication facts separately from image co
 #### Scenario: Deliver a technically published template
 - **WHEN** native conversion finishes successfully
 - **THEN** the publisher SHALL additionally verify exact object identity, associated volumes, template flag and required hardware/Cloud-init configuration
-- **AND** it SHALL return pve-template-record/v3 linked to the artifact and execution without declaring caller promotion or unperformed guest acceptance
+- **AND** it SHALL return the current versioned template record linked to the artifact and execution without declaring caller promotion or unperformed guest acceptance
 - **AND** required template verification or result collection failure SHALL prevent overall success while preserving independently confirmed template facts
 
 #### Scenario: Only known staging cleanup remains
@@ -110,7 +110,7 @@ Cleanup and retirement SHALL consume explicit action-specific requests/previews 
 - **AND** failed-publication cleanup, revoked status or creation provenance alone SHALL NOT authorize retirement or S3 artifact deletion
 
 ### Requirement: Template pool placement is a publication binding
-Current publication request/v2 and preview/result/record/v3 SHALL preserve optional pool placement separately from stable VM configuration and bind the stable cluster scope for VMID reservation. Omission/null SHALL request no pool; a specified name SHALL be nonempty and refer to an existing authorized pool. Native VM creation SHALL receive the pool directly and verification SHALL confirm actual membership without pool or ACL management.
+Current versioned publication request and preview/result/record SHALL preserve optional pool placement separately from stable VM configuration and bind the stable cluster scope for VMID reservation. Omission/null SHALL request no pool; a specified name SHALL be nonempty and refer to an existing authorized pool. Native VM creation SHALL receive the pool directly and verification SHALL confirm actual membership without pool or ACL management.
 
 #### Scenario: Publish a template into an existing pool
 - **WHEN** plan and approval fix an existing pool and current effective permissions satisfy creation and publication
@@ -166,3 +166,28 @@ Current publication SHALL accept hardware.bridge null as an explicit no-NIC sele
 - **WHEN** a no-NIC request includes cloud_init_defaults.ip_config or the observed template has any netN
 - **THEN** the dependent check or publication verification SHALL fail with a network field/reason
 - **AND** missing or empty bridge SHALL NOT be silently treated as null
+
+### Requirement: Publication observation uses execution-bound deadlines
+Current publication, cleanup and retirement contracts SHALL bind finite work and cleanup deadlines into request, preview, admission, journal and result. They SHALL enforce one frozen budget across relevant transfers, native tasks, target-state verification and cleanup using the shared observation semantics. A fresh per-task timeout SHALL NOT extend the approved execution window.
+
+#### Scenario: Publication crosses multiple native tasks
+- **WHEN** upload, image import and template conversion each return a UPID
+- **THEN** the publisher SHALL observe each original task under the remaining bound budget before advancing dependent phases
+- **AND** permitted transient status-query failure SHALL NOT replay upload, import or conversion
+
+#### Scenario: Deadline is absent or conflicts
+- **WHEN** a current action request lacks valid ordered absolute deadlines or disagrees with its preview/admission
+- **THEN** check or execution admission SHALL reject with field/reason before facility mutation
+
+### Requirement: Publication waits for exact target state after task success
+After known task success or acknowledged synchronous modification, the publisher SHALL perform bounded read-only convergence checks for exact VM identity, pool placement, imported volume set and capacity, requested configuration and template flag. Cleanup and retirement SHALL similarly verify exact VM and staging/volume disappearance. Temporary absence or stale inventory SHALL be distinguished from explicit identity or ownership conflicts; object presence SHALL NOT prove task success.
+
+#### Scenario: Import succeeded before configuration inventory synchronizes
+- **WHEN** the original import task is confirmed OK but the first config or content view lacks its expected disk
+- **THEN** publication SHALL wait within its original budget for the associated configuration and volume view
+- **AND** publication SHALL NOT issue import again
+
+#### Scenario: Conversion or deletion view is temporarily stale
+- **WHEN** a task is confirmed OK and a successful query still shows the pre-conversion flag or the original deleted object/file
+- **THEN** the publisher SHALL perform permitted bounded read-only observations rather than fail solely on the first stale view
+- **AND** a replacement identity or known foreign owner SHALL stop affected processing immediately

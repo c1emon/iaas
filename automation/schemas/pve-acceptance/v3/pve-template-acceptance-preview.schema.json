@@ -410,9 +410,14 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 1,
+      "const": 2,
       "title": "Schema Version",
       "type": "integer"
+    },
+    "clone_marker": {
+      "pattern": "^iaas-acceptance-clone:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "title": "Clone Marker",
+      "type": "string"
     },
     "fixed_input": {
       "$ref": "#/$defs/AcceptanceRequest"
@@ -447,6 +452,7 @@
   "required": [
     "kind",
     "schema_version",
+    "clone_marker",
     "fixed_input",
     "request_digest",
     "runtime",

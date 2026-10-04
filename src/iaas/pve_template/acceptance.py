@@ -5,18 +5,21 @@ import json
 import os
 import re
 import time
+from datetime import datetime, timezone
+from uuid import UUID
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
 from iaas.common.errors import ValidationError, require
+from iaas.observation import Decision, EvidenceSink, observe as observe_state, task_decision, safe_facts
 from iaas.pve_acceptance_contracts import canonical_digest, load_strict_json, validate_acceptance_request, validate_acceptance_result
 from iaas.runtime_execution.execution import OperationFailed
 from . import runtime as pve
 from .acceptance_execution import begin, observe, save
 from . import acceptance_snippets
 from .deadlines import DeadlineBudget, DeadlineExpired, LocalTimeout
-from .responses import RequestRejected, RequestOutcomeUnknown
+from .responses import RequestRejected, read_retry_decision
 from .guest_observation import GENERAL_GUEST_OBSERVATION
 from .admission import AdmissionError, Permissions, ACCEPTANCE_PRIVILEGES, admit_acceptance, disk_capacity
 from .acceptance_plan import ReadBudgetClient
@@ -65,6 +68,7 @@ class Acceptance:
         self.owned: dict[str, Any] | None = None
         self.remaining_volumes: list[str] | None = None
         self.result: dict[str, Any] = {}
+        self.observations = EvidenceSink()
         self.snippets = snippets
         if snippets is not None:
             snippets.budget, snippets.phase, snippets.deadline = self.budget, self.phase, self.deadline
@@ -92,7 +96,15 @@ class Acceptance:
             self.journal.update(mutation_active=False, facility_writes=previous_writes)
             self.persist()
             raise
-        self.snippets.upload(snippet, content)
+        try:
+            self.snippets.upload(snippet, content)
+        except Exception:
+            if getattr(self.snippets, 'upload_completed', False):
+                self.journal.update(mutation_active=False, facility_writes='issued')
+                snippet['uploaded'] = True
+                snippet['observation'] = 'unconfirmed'
+                self.persist()
+            raise
         self.journal['facility_writes'] = 'issued'
         snippet['uploaded'] = True
         self.journal['mutation_active'] = False
@@ -154,6 +166,11 @@ class Acceptance:
         self.remaining()
         item: dict[str, Any] = {'phase': phase, 'status': 'intent', 'node': node or self.temporary['node'],
                                 'method': method, 'path': path}
+        if phase == 'clone':
+            item['clone_marker'] = self.journal['clone_marker']
+            item['request_fields'] = dict(fields or {})
+            item['source'] = {'node': self.record['node'], 'vmid': self.record['vmid']}
+            item['target'] = {k: self.temporary[k] for k in ('node', 'vmid', 'pool', 'storage')}
         self.journal['tasks'].append(item)
         previous_active = self.journal['mutation_active']
         self.journal['mutation_active'] = True
@@ -191,20 +208,31 @@ class Acceptance:
             self.persist()
             raise UnknownOutcome('native_operation_unknown') from None
 
+    def observe_check(self, name, probe, classify, association=None):
+        decision = observe_state(lambda timeout: probe(), classify, self.budget, self.phase,
+                                 name, association or {'vmid': self.temporary['vmid']},
+                                 self.observations, interval=.2, retry_error=read_retry_decision, sleep=lambda seconds: time.sleep(seconds))
+        self.journal['observations'] = self.observations.rows()
+        self.persist()
+        if decision.status == 'failed':
+            raise AcceptanceFailure(decision.reason)
+        if decision.status != 'ready':
+            raise UnknownOutcome(decision.reason)
+        return decision
+
     def wait_task(self, item: dict[str, Any]) -> None:
-        while True:
-            try:
-                self.remaining()
-            except (DeadlineExpired, LocalTimeout):
-                raise UnknownOutcome('native_task_unknown') from None
-            row = self.api('GET', f"/api2/json/nodes/{quote(item['node'], safe='')}/tasks/{quote(item['upid'], safe='')}/status")
-            if isinstance(row, dict) and row.get('status') == 'stopped':
-                item['status'] = 'succeeded' if row.get('exitstatus') == 'OK' else 'failed'
-                self.journal['mutation_active'] = False
-                self.persist()
-                check(item['status'] == 'succeeded', 'native_task_failed')
-                return
-            self.pause()
+        try:
+            self.observe_check('native_task',
+                lambda: self.api('GET', f"/api2/json/nodes/{quote(item['node'], safe='')}/tasks/{quote(item['upid'], safe='')}/status"),
+                task_decision, {'upid': item['upid']})
+        except AcceptanceFailure:
+            item.update(status='failed', observed_at=datetime.now(timezone.utc).isoformat(), activity='stopped')
+            self.journal['mutation_active'] = False
+            self.persist()
+            raise
+        item.update(status='succeeded', observed_at=datetime.now(timezone.utc).isoformat(), activity='stopped')
+        self.journal['mutation_active'] = False
+        self.persist()
 
     def vm_absent(self) -> bool:
         path = f"/vms/{self.temporary['vmid']}"
@@ -215,11 +243,26 @@ class Acceptance:
         rows = self.api('GET', '/api2/json/cluster/resources', fields={'type': 'vm'})
         check(isinstance(rows, list) and all(isinstance(row, dict) and 'vmid' in row for row in rows),
               'vm_inventory_incomplete')
-        return not any(str(row['vmid']) == str(self.temporary['vmid']) for row in rows)
+        present = any(str(row['vmid']) == str(self.temporary['vmid']) for row in rows)
+        if present and self.owned:
+            config = self.api('GET', self.base + '/config')
+            check(isinstance(config, dict) and pve._config_uuid(config) == self.owned['smbios_uuid']
+                  and sorted(attachments(config).values()) == self.owned['volumes'], 'deleted_vm_identity_replaced')
+        return not present
 
     def source_check(self, *, initial: bool) -> None:
         if not initial and self.source_before is None:
             raise UnknownOutcome('source_snapshot_missing')
+        if not initial:
+            def source_state(config):
+                if not isinstance(config, dict):
+                    return Decision('unknown', 'source_evidence_insufficient')
+                matched = stable(config) == stable(self.source_before or {}) and pve._config_uuid(config) == self.record['smbios_uuid'] and config.get('template') in (1, '1')
+                return Decision('ready' if matched else 'failed', 'source_verified' if matched else 'source_changed',
+                                {'uuid': pve._config_uuid(config), 'config_matches': matched})
+            self.observe_check('source_unchanged', lambda: self.api('GET', self.source + '/config'), source_state,
+                               {'vmid': self.record['vmid'], 'node': self.record['node']})
+            return
         try:
             config = self.api('GET', self.source + '/config')
         except (DeadlineExpired, LocalTimeout):
@@ -257,31 +300,74 @@ class Acceptance:
         disk_capacity(self.client, config, owner, self.temporary['disk_limit_bytes'])
 
     def pool_check(self) -> None:
-        rows = self.api('GET', '/api2/json/cluster/resources', fields={'type': 'vm'})
-        check(isinstance(rows, list), 'pool_membership_mismatch')
-        matches = [row for row in rows if isinstance(row, dict)
-                   and str(row.get('vmid')) == str(self.temporary['vmid'])]
-        check(len(matches) == 1 and matches[0].get('node') == self.temporary['node']
-              and matches[0].get('pool') == self.temporary['pool'], 'pool_membership_mismatch')
+        def classify(rows):
+            if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+                return Decision('unknown', 'pool_inventory_invalid')
+            matches = [r for r in rows if str(r.get('vmid')) == str(self.temporary['vmid'])]
+            if not matches:
+                return Decision('pending', 'pool_membership_missing', {'vmid': self.temporary['vmid']})
+            row = matches[0]
+            facts = {k: row[k] for k in ('vmid', 'pool', 'node') if k in row}
+            if len(matches) != 1 or row.get('node') != self.temporary['node'] or row.get('pool') not in (None, '', self.temporary['pool']):
+                return Decision('failed', 'pool_membership_mismatch', facts)
+            return Decision('ready' if row.get('pool') == self.temporary['pool'] else 'pending',
+                            'pool_membership_verified' if row.get('pool') else 'pool_membership_missing', facts)
+        self.observe_check('pool_membership', lambda: self.api('GET', '/api2/json/cluster/resources', fields={'type': 'vm'}), classify)
         Permissions(self.client).placement(self.temporary['vmid'], self.temporary['pool'],
                                            ACCEPTANCE_PRIVILEGES, future=False)
 
     def claim(self) -> dict[str, Any]:
-        self.pool_check()
-        config = self.api('GET', self.base + '/config')
-        check(isinstance(config, dict) and config.get('template', 0) in (0, '0'), 'clone_identity_invalid')
-        identity = pve._config_uuid(config)
-        volumes = attachments(config)
+        config = {}
+        marker = self.journal['clone_marker']
+        expected_slots = set(attachments(self.source_before or {}))
         source_volumes = set(attachments(self.source_before or {}).values())
-        check(identity and identity != self.record['smbios_uuid'] and volumes
-              and not source_volumes.intersection(volumes.values()), 'clone_ownership_unproven')
-        check(all(volid.startswith(self.temporary['storage'] + ':') for volid in volumes.values()),
-              'clone_storage_mismatch')
-        rows = self.api('GET', f"/api2/json/nodes/{quote(self.temporary['node'], safe='')}/storage/{quote(self.temporary['storage'], safe='')}/content")
-        check(isinstance(rows, list), 'volume_inventory_incomplete')
-        indexed = {row.get('volid'): row for row in rows if isinstance(row, dict)}
-        check(all(str(indexed.get(volid, {}).get('vmid')) == str(self.temporary['vmid']) for volid in volumes.values()),
-              'clone_volume_ownership_unproven')
+        def candidate_config(actual):
+            if not isinstance(actual, dict):
+                return Decision('unknown', 'clone_config_invalid')
+            identity = pve._config_uuid(actual)
+            volumes = attachments(actual)
+            candidate = {'node': self.temporary['node'], 'vmid': self.temporary['vmid'],
+                         'clone_marker': actual.get('description'), 'smbios_uuid': identity,
+                         'slots': volumes, 'complete': False,
+                         'observed_at': datetime.now(timezone.utc).isoformat()}
+            self.journal['clone_candidate'] = candidate
+            self.persist()
+            facts = {'uuid': identity, 'slots': volumes, 'complete': False}
+            if actual.get('description') not in (None, '', marker):
+                return Decision('failed', 'clone_marker_mismatch', facts)
+            if actual.get('template', 0) not in (0, '0') or identity == self.record['smbios_uuid']:
+                return Decision('failed', 'clone_identity_invalid', facts)
+            if set(volumes) - expected_slots or source_volumes.intersection(volumes.values()):
+                return Decision('failed', 'clone_ownership_unproven', facts)
+            if any(not v.startswith(self.temporary['storage'] + ':') for v in volumes.values()):
+                return Decision('failed', 'clone_storage_mismatch', facts)
+            if identity:
+                try:
+                    UUID(identity)
+                except (ValueError, TypeError):
+                    return Decision('failed', 'clone_uuid_invalid', facts)
+            if actual.get('description') != marker or not identity or set(volumes) != expected_slots:
+                return Decision('pending', 'clone_candidate_incomplete', facts)
+            candidate['complete'] = True
+            self.persist()
+            config.update(actual)
+            return Decision('ready', 'clone_candidate_complete', {**facts, 'complete': True})
+        self.observe_check('clone_candidate', lambda: self.api('GET', self.base + '/config'), candidate_config)
+        candidate = self.journal['clone_candidate']
+        identity, volumes = candidate['smbios_uuid'], candidate['slots']
+        def content(rows):
+            if not isinstance(rows, list) or not all(isinstance(row, dict) and 'volid' in row for row in rows):
+                return Decision('unknown', 'volume_inventory_incomplete')
+            candidate['content'] = [{key: row[key] for key in ('volid', 'vmid', 'size') if key in row}
+                                    for row in rows if row.get('volid') in volumes.values()]
+            self.persist()
+            facts = {'volumes': candidate['content'], 'complete': len(candidate['content']) == len(volumes)}
+            if any(row.get('vmid') is not None and str(row['vmid']) != str(self.temporary['vmid']) for row in candidate['content']):
+                return Decision('failed', 'clone_volume_ownership_unproven', facts)
+            ready = facts['complete'] and all(str(row.get('vmid')) == str(self.temporary['vmid']) for row in candidate['content'])
+            return Decision('ready' if ready else 'pending', 'clone_content_verified' if ready else 'clone_content_pending', facts)
+        self.observe_check('clone_content', lambda: self.api('GET', f"/api2/json/nodes/{quote(self.temporary['node'], safe='')}/storage/{quote(self.temporary['storage'], safe='')}/content"), content)
+        self.pool_check()
         self.owned = {'node': self.temporary['node'], 'vmid': self.temporary['vmid'],
                       'smbios_uuid': identity, 'volumes': sorted(volumes.values())}
         self.journal['temporary_vm'] = self.owned
@@ -295,11 +381,16 @@ class Acceptance:
             self.identity(config)
             self.mutation('resize', 'PUT', self.base + '/resize',
                           fields={'disk': vm['boot'], 'size': f"{vm['disk_size_gib']}G"})
+            def resized(actual):
+                self.identity(actual)
+                capacity = disk_capacity(self.client, actual, vm, vm['disk_limit_bytes'])
+                actual_size = next(row['required_bytes'] for row in capacity['disks'] if row['slot'] == vm['boot'])
+                expected = vm['disk_size_gib'] * 1024 ** 3
+                return Decision('ready' if actual_size == expected else 'pending' if actual_size < expected else 'failed',
+                                'disk_resize_verified' if actual_size == expected else 'disk_resize_mismatch',
+                                {'size_bytes': actual_size, 'expected': expected})
+            self.observe_check('disk_resize', lambda: self.api('GET', self.base + '/config'), resized)
             config = self.api('GET', self.base + '/config')
-            self.identity(config)
-            capacity = disk_capacity(self.client, config, vm, vm['disk_limit_bytes'])
-            actual_size = next(row['required_bytes'] for row in capacity['disks'] if row['slot'] == vm['boot'])
-            check(actual_size == vm['disk_size_gib'] * 1024 ** 3, 'disk_resize_mismatch')
         snippet = self.upload_user_data()
         fields = {'name': self.request['cloud_init']['hostname'], 'cores': vm['cpus'], 'sockets': 1,
                   'memory': vm['memory_mib'], 'agent': 'enabled=1', 'onboot': 0,
@@ -317,22 +408,32 @@ class Acceptance:
         if delete:
             fields['delete'] = ','.join(sorted(delete))
         self.mutation('configure', 'PUT', self.base + '/config', fields=fields, task=False)
-        actual = self.api('GET', self.base + '/config')
-        self.identity(actual)
-        self.disk_bound(actual)
-        check(actual.get('boot') == 'order=' + vm['boot']
-              and int(actual.get('cores', 0)) == vm['cpus'] and int(actual.get('sockets', 1)) == 1
-              and int(actual.get('memory', 0)) == vm['memory_mib']
-              and actual.get('bios', 'seabios') == ('ovmf' if vm['firmware'] == 'uefi' else 'seabios')
-              and actual.get('name') == self.request['cloud_init']['hostname']
-              and actual.get('ipconfig0') == vm['ip_config']
-              and f"bridge={vm['bridge']}" in str(actual.get('net0', '')).split(',')
-              and (vm['vlan_tag'] is None or f"tag={vm['vlan_tag']}" in str(actual.get('net0', '')).split(','))
-              and not any(re.fullmatch(r'(net|ipconfig)\d+', key) and key not in {'net0', 'ipconfig0'} for key in actual)
-              and actual.get('cicustom') == 'user=' + snippet['file_id']
-              and any('cloudinit' in str(value) for value in actual.values()), 'disk_boot_mismatch')
-        if vm.get('nameservers') is not None:
-            check(str(actual.get('nameserver', '')).split() == vm['nameservers'], 'network_configuration_mismatch')
+        def classify_config(actual):
+            try:
+                self.identity(actual)
+                self.disk_bound(actual)
+                check(actual.get('bios', 'seabios') == ('ovmf' if vm['firmware'] == 'uefi' else 'seabios'), 'firmware_conflict')
+                check(actual.get('boot') == 'order=' + vm['boot']
+                      and int(actual.get('cores', 0)) == vm['cpus'] and int(actual.get('sockets', 1)) == 1
+                      and int(actual.get('memory', 0)) == vm['memory_mib']
+                      and actual.get('bios', 'seabios') == ('ovmf' if vm['firmware'] == 'uefi' else 'seabios')
+                      and actual.get('name') == self.request['cloud_init']['hostname']
+                      and actual.get('ipconfig0') == vm['ip_config']
+                      and f"bridge={vm['bridge']}" in str(actual.get('net0', '')).split(',')
+                      and (vm['vlan_tag'] is None or f"tag={vm['vlan_tag']}" in str(actual.get('net0', '')).split(','))
+                      and not any(re.fullmatch(r'(net|ipconfig)\d+', key) and key not in {'net0', 'ipconfig0'} for key in actual)
+                      and actual.get('cicustom') == 'user=' + snippet['file_id']
+                      and any('cloudinit' in str(value) for value in actual.values()), 'disk_boot_mismatch')
+                if vm.get('nameservers') is not None:
+                    check(str(actual.get('nameserver', '')).split() == vm['nameservers'], 'network_configuration_mismatch')
+            except AcceptanceFailure as exc:
+                if str(exc) not in {'disk_boot_mismatch', 'network_configuration_mismatch'}:
+                    return Decision('failed', str(exc), {'config_matches': False})
+                return Decision('pending', str(exc), {'config_matches': False})
+            except (ValueError, TypeError):
+                return Decision('failed', 'configuration_invalid', {'config_matches': False})
+            return Decision('ready', 'configuration_verified', {'config_matches': True})
+        self.observe_check('configuration', lambda: self.api('GET', self.base + '/config'), classify_config)
 
     def identity(self, config: Any) -> None:
         self.pool_check()
@@ -346,16 +447,9 @@ class Acceptance:
         guest_deadline = min(self.budget.bounds['work'], self.budget.local['work'])
         self.deadline = guest_deadline
         self.stage = 'guest_agent'
-        while True:
-            try:
-                self.api('POST', self.base + '/agent/ping')
-                break
-            except RequestRejected:
-                raise AcceptanceFailure('request_rejected') from None
-            except OperationFailed:
-                if time.monotonic() >= guest_deadline:
-                    raise AcceptanceFailure('guest_timeout') from None
-                self.pause()
+        self.observe_check('guest_ping', lambda: self.api('POST', self.base + '/agent/ping'),
+                           lambda row: Decision('ready', 'guest_agent_ready') if isinstance(row, dict)
+                           else Decision('unknown', 'guest_response_invalid'))
         self.mark('guest_agent', 'passed', 'verified')
         self.stage = 'cloud_init'
         while time.monotonic() < guest_deadline:
@@ -394,17 +488,30 @@ class Acceptance:
             intent.update(status='running', pid=process['pid'])
             self.journal['facility_writes'] = 'issued'
             self.persist()
-            while True:
-                status = self.api('GET', self.base + '/agent/exec-status', fields={'pid': process['pid']})
-                check(isinstance(status, dict), 'guest_response_invalid')
-                if status.get('exited') in (True, 1):
-                    intent['status'] = 'succeeded' if status.get('exitcode') == 0 else 'failed'
-                    self.journal['mutation_active'] = False
-                    self.persist()
-                    break
-                if time.monotonic() >= guest_deadline:
-                    raise AcceptanceFailure('guest_timeout')
-                self.pause()
+            sampled = {}
+            def exec_status(row):
+                if not isinstance(row, dict):
+                    return Decision('unknown', 'guest_response_invalid')
+                sampled.update(row)
+                if row.get('exited') not in (True, 1):
+                    return Decision('pending', 'guest_exec_running', {'pid': process['pid'], 'exited': False})
+                if type(row.get('exitcode')) is not int:
+                    return Decision('pending', 'guest_exitcode_missing', {'pid': process['pid'], 'exited': True})
+                return Decision('ready' if row['exitcode'] == 0 else 'failed',
+                                'guest_exec_complete' if row['exitcode'] == 0 else 'cloud_init_failed',
+                                {'pid': process['pid'], 'exited': True, 'exitcode': row['exitcode']})
+            try:
+                self.observe_check('exec_status', lambda: self.api('GET', self.base + '/agent/exec-status', fields={'pid': process['pid']}),
+                                   exec_status, {'pid': process['pid'], 'vmid': self.temporary['vmid']})
+            except AcceptanceFailure:
+                intent['status'] = 'failed'
+                self.journal['mutation_active'] = False
+                self.persist()
+                raise
+            status = sampled
+            intent['status'] = 'succeeded'
+            self.journal['mutation_active'] = False
+            self.persist()
             save(self.root / 'cloud-init-status.json', status)
             check(not status.get('out-truncated') and status.get('exitcode') == 0, 'cloud_init_failed')
             try:
@@ -420,33 +527,57 @@ class Acceptance:
                   and str(cloud.get('boot_status_code', '')).startswith('enabled-'), 'cloud_init_failed')
             self.mark('cloud_init', 'passed', 'verified')
             if self.temporary.get('disk_size_gib') is not None or self.temporary.get('nameservers') is not None:
-                self.verify_general_guest(cloud.get('general_template'))
+                try:
+                    self.verify_general_guest(cloud.get('general_template'))
+                except AcceptanceFailure as exc:
+                    self.observations({'phase': self.phase, 'check': 'guest_facts',
+                        'association': {'vmid': self.temporary['vmid'], 'pid': process['pid']}, 'attempt': 1,
+                        'observed_at': datetime.now(timezone.utc).isoformat(),
+                        'status': 'pending' if str(exc).endswith('_pending') else 'failed',
+                        'reason': str(exc), 'evidence': safe_facts(cloud.get('general_template') or {})})
+                    if str(exc) in {'guest_disk_growth_pending', 'guest_network_pending', 'guest_dns_pending', 'guest_identity_pending'}:
+                        self.pause()
+                        continue
+                    raise
             break
         else:
-            raise AcceptanceFailure('guest_timeout')
+            raise UnknownOutcome('guest_observation_deadline_expired')
         self.stage = 'injected_hostname'
-        hostname = self.api('GET', self.base + '/agent/get-host-name')
-        save(self.root / 'hostname.json', hostname)
-        check(isinstance(hostname, dict) and isinstance(hostname.get('result'), dict)
-              and hostname['result'].get('host-name') == self.request['cloud_init']['hostname'], 'hostname_mismatch')
+        def hostname_state(row):
+            if not isinstance(row, dict) or not isinstance(row.get('result'), dict):
+                return Decision('unknown', 'hostname_response_invalid')
+            name = row['result'].get('host-name')
+            if not name:
+                return Decision('pending', 'hostname_uninitialized', {'matched': False})
+            matched = name == self.request['cloud_init']['hostname']
+            save(self.root / 'hostname.json', row)
+            return Decision('ready' if matched else 'failed', 'hostname_verified' if matched else 'hostname_mismatch', {'matched': matched})
+        self.observe_check('injected_hostname', lambda: self.api('GET', self.base + '/agent/get-host-name'), hostname_state)
         self.mark('injected_hostname', 'passed', 'verified')
 
     def verify_general_guest(self, facts: Any) -> None:
         self.stage = 'disk_boot'
         check(isinstance(facts, dict), 'guest_observation_missing')
+        self.journal['general_template_guest'] = safe_facts(facts)
+        self.persist()
         if self.temporary.get('disk_size_gib') is not None:
             size = self.temporary['disk_size_gib'] * 1024 ** 3
+            check(facts.get('root_disk_bytes') in (None, size), 'guest_disk_growth_mismatch')
             check(facts.get('root_disk_bytes') == size
                   and type(facts.get('root_partition_bytes')) is int and facts['root_partition_bytes'] >= size - 1024 ** 3
                   and type(facts.get('root_filesystem_bytes')) is int and facts['root_filesystem_bytes'] >= size * 95 // 100,
-                  'guest_disk_growth_mismatch')
+                  'guest_disk_growth_pending')
         ip = dict(part.split('=', 1) for part in self.temporary['ip_config'].split(','))
-        check(ip.get('ip') in {'dhcp', None} or ip['ip'] in facts.get('addresses', []), 'guest_network_mismatch')
-        check('gw' not in ip or ip['gw'] in facts.get('default_gateways', []), 'guest_network_mismatch')
-        check(set(self.temporary.get('nameservers') or []) <= set(facts.get('nameservers', [])), 'guest_dns_mismatch')
+        check(ip.get('ip') in {'dhcp', None} or ip['ip'] in facts.get('addresses', []), 'guest_network_pending')
+        check('gw' not in ip or not facts.get('default_gateways') or ip['gw'] in facts['default_gateways'], 'guest_network_mismatch')
+        check('gw' not in ip or ip['gw'] in facts.get('default_gateways', []), 'guest_network_pending')
+        check(not self.temporary.get('nameservers') or not facts.get('nameservers')
+              or set(self.temporary['nameservers']) <= set(facts['nameservers']), 'guest_dns_mismatch')
+        check(set(self.temporary.get('nameservers') or []) <= set(facts.get('nameservers', [])), 'guest_dns_pending')
+        check(facts.get('instance_id') is None or not str(facts['instance_id']).startswith('iaas-build'), 'guest_identity_mismatch')
         check(facts.get('machine_id_initialized') is True and isinstance(facts.get('instance_id'), str)
-              and facts['instance_id'] and not facts['instance_id'].startswith('iaas-build'), 'guest_identity_mismatch')
-        self.journal['general_template_guest'] = facts
+              and facts['instance_id'] and not facts['instance_id'].startswith('iaas-build'), 'guest_identity_pending')
+        self.journal['general_template_guest'] = safe_facts(facts)
         self.persist()
 
     def mark(self, name: str, status: str, reason: str) -> None:
@@ -473,33 +604,69 @@ class Acceptance:
         if status['status'] == 'running':
             self.mutation('stop', 'POST', self.base + '/status/stop')
         self.identity(self.api('GET', self.base + '/config'))
-        self.mutation('delete', 'DELETE', self.base, fields={'purge': 0, 'destroy-unreferenced-disks': 0})
-        check(self.vm_absent(), 'vm_still_present')
-        cleanup['vm'] = {'status': 'passed', 'reason_code': 'deleted', 'evidence_ref': 'journal.json'}
+        # Storage-plugin fallback ONLY for this acceptance cleanup DELETE.
+        # The observed plugin failure reports stopped / "unexpected status".
+        # Allow two extra attempts after 5s and 15s within the original budget;
+        # never replay an unknown/active request or relax exact ownership.
+        delete_reason = 'deleted'
+        for attempt in range(3):
+            try:
+                self.mutation('delete', 'DELETE', self.base, fields={'purge': 0, 'destroy-unreferenced-disks': 0})
+                break
+            except AcceptanceFailure as exc:
+                item = self.journal['tasks'][-1]
+                terminal = next((r.get('terminal', {}) for r in self.observations.rows()
+                                 if r['check'] == 'native_task' and r['association'].get('upid') == item.get('upid')), {})
+                if (str(exc) != 'task_failed' or self.journal['mutation_active']
+                        or item.get('status') != 'failed' or item.get('activity') != 'stopped'
+                        or terminal.get('evidence') != {'status': 'stopped', 'exitstatus': 'unexpected status'}):
+                    raise
+                if self.vm_absent():
+                    delete_reason = 'absent_after_failed_delete'
+                    break
+                if attempt == 2:
+                    raise
+                time.sleep(min((5, 15)[attempt], self.remaining()))
+                self.remaining()
+                if self.vm_absent():
+                    delete_reason = 'absent_after_failed_delete'
+                    break
+                previous = self.api('GET', f"/api2/json/nodes/{quote(item['node'], safe='')}/tasks/{quote(item['upid'], safe='')}/status")
+                check(isinstance(previous, dict) and previous.get('status') == 'stopped'
+                      and previous.get('exitstatus') == 'unexpected status', 'delete_retry_task_activity_unproven')
+                self.identity(self.api('GET', self.base + '/config'))
+                state = self.api('GET', self.base + '/status/current')
+                check(isinstance(state, dict) and state.get('status') == 'stopped', 'delete_retry_vm_not_stopped')
+                rows = self.api('GET', f"/api2/json/nodes/{quote(self.temporary['node'], safe='')}/storage/{quote(self.temporary['storage'], safe='')}/content")
+                check(isinstance(rows, list) and all(isinstance(row, dict) and 'volid' in row for row in rows),
+                      'volume_inventory_incomplete')
+                volumes = [row for row in rows if row['volid'] in self.owned['volumes']]
+                check(len(volumes) == len(self.owned['volumes'])
+                      and {row['volid'] for row in volumes} == set(self.owned['volumes'])
+                      and all(str(row.get('vmid')) == str(self.temporary['vmid']) for row in volumes),
+                      'delete_retry_volume_ownership_unproven')
+        self.observe_check('vm_absence', self.vm_absent,
+                           lambda absent: Decision('ready' if absent else 'pending', 'vm_absent' if absent else 'vm_still_present', {'absent': absent}))
+        cleanup['vm'] = {'status': 'passed', 'reason_code': delete_reason, 'evidence_ref': 'journal.json'}
         self.journal['vm_delete'] = {'status': 'deleted', 'execution_id': self.journal['execution_id'],
                                    **{k: v for k, v in self.owned.items() if k != 'volumes'},
-                                   'upid': self.journal['tasks'][-1]['upid']}
+                                   'upid': self.journal['tasks'][-1]['upid'], 'reason_code': delete_reason}
         self.persist()
-        retry_until = time.monotonic() + min(30, self.remaining())
-        while True:
-            try:
-                rows = self.api('GET', f"/api2/json/nodes/{quote(self.temporary['node'], safe='')}/storage/{quote(self.temporary['storage'], safe='')}/content")
-                break
-            except RequestOutcomeUnknown as exc:
-                if exc.http_status not in {500, 502, 503, 504} or time.monotonic() >= retry_until:
-                    raise
-                prior = self.journal.get('cleanup_inventory_retries', {}).get('count', 0)
-                self.journal['cleanup_inventory_retries'] = {'count': prior + 1, 'last_http_status': exc.http_status}
-                self.persist()
-                time.sleep(min(1, self.remaining(), max(0, retry_until - time.monotonic())))
-        check(isinstance(rows, list) and all(isinstance(row, dict) and 'volid' in row for row in rows),
-              'volume_inventory_incomplete')
-        self.remaining_volumes = sorted(set(self.owned['volumes']).intersection(row['volid'] for row in rows))
-        check(not self.remaining_volumes, 'volumes_still_present')
+        owned = self.owned
+        def volume_absence(rows):
+            if not isinstance(rows, list) or not all(isinstance(row, dict) and 'volid' in row for row in rows):
+                return Decision('unknown', 'volume_inventory_incomplete')
+            remaining = [row for row in rows if row['volid'] in owned['volumes']]
+            self.remaining_volumes = sorted(row['volid'] for row in remaining)
+            facts = {'volumes': [{k: row[k] for k in ('volid', 'vmid', 'size') if k in row} for row in remaining], 'complete': True}
+            if any(row.get('vmid') is not None and str(row['vmid']) != str(self.temporary['vmid']) for row in remaining):
+                return Decision('failed', 'volume_owner_changed', facts)
+            return Decision('pending' if remaining else 'ready', 'volumes_still_present' if remaining else 'volumes_absent', facts)
+        self.observe_check('volume_absence', lambda: self.api('GET', f"/api2/json/nodes/{quote(self.temporary['node'], safe='')}/storage/{quote(self.temporary['storage'], safe='')}/content"), volume_absence)
         cleanup['volumes'] = {'status': 'passed', 'reason_code': 'deleted', 'evidence_ref': 'journal.json'}
 
     def execute(self) -> dict[str, Any]:
-        self.result = {'kind': 'pve-template-acceptance-result', 'schema_version': 3,
+        self.result = {'kind': 'pve-template-acceptance-result', 'schema_version': 4,
             'cluster_scope': self.request['cluster_scope'], 'pool': self.temporary['pool'],
             'vmid_policy': self.request['vmid_policy'],
             'preview_digest': self.journal['preview_digest'], 'capacity': None,
@@ -522,7 +689,8 @@ class Acceptance:
             self.mutation('clone', 'POST', self.source + '/clone',
                           fields={'newid': self.temporary['vmid'], 'full': 1, 'target': self.temporary['node'],
                                   'storage': self.temporary['storage'], 'pool': self.temporary['pool'],
-                                  'name': self.request['cloud_init']['hostname']}, node=self.record['node'])
+                                  'name': self.request['cloud_init']['hostname'],
+                                  'description': self.journal['clone_marker']}, node=self.record['node'])
             config = self.claim()
             self.mark('full_clone', 'passed', 'verified')
             self.stage = 'disk_boot'
@@ -547,7 +715,9 @@ class Acceptance:
                 self.journal['deadline_outcome'] = dict(self.budget.outcome)
                 self.result['deadline_outcome'] = self.budget.outcome
                 self.result['facility_writes'] = self.journal['facility_writes']
-                self.result['overall'] = 'failed'
+                self.result['residuals']['inventory_complete'] = False
+                self.result['overall'] = 'unknown'
+                self.result['stop_diagnostics'] = self.diagnostics()
                 return validate_acceptance_result(self.result)
             try:
                 self.cleanup()
@@ -582,7 +752,44 @@ class Acceptance:
         statuses = [item['status'] for item in self.result['checks']] + [item['status'] for item in self.result['cleanup'].values()]
         self.result['overall'] = ('unknown' if 'unknown' in statuses or any(x['existence'] == 'unknown' for x in self.result['residuals']['items']) or not self.result['residuals']['inventory_complete'] else 'passed'
                                   if all(item in {'passed', 'not_required'} for item in statuses) else 'failed')
+        self.result['stop_diagnostics'] = self.diagnostics()
         return validate_acceptance_result(self.result)
+
+    def diagnostics(self):
+        stopping = next((row for row in self.result['checks'] if row['id'] == self.result['failure_stage']), None)
+        candidate = self.journal.get('clone_candidate')
+        present = 'absent' if self.result['cleanup']['vm']['status'] == 'passed' else 'unknown'
+        observations = self.observations.rows()
+        helper = getattr(self.snippets, 'observations', None)
+        if helper is not None:
+            observations += helper.rows() if hasattr(helper, 'rows') else helper
+        stopped = ({'phase': 'work', 'check': stopping['id'], 'status': stopping['status'],
+                    'reason_code': stopping['reason_code']}
+                   if stopping and stopping['status'] in {'failed', 'unknown'} else None)
+        if stopped is None and any(row['status'] in {'failed', 'unknown'} for row in self.result['cleanup'].values()):
+            terminal = next((r['terminal'] for r in reversed(observations)
+                             if r['phase'] == 'cleanup' and r.get('terminal', {}).get('status') in {'failed', 'unknown'}), None)
+            if terminal is not None:
+                stopped = {'phase': 'cleanup', 'check': terminal['check'], 'status': terminal['status'],
+                           'reason_code': terminal['reason']}
+            else:
+                failed_cleanup = next(((key, row) for key, row in self.result['cleanup'].items()
+                                       if row['status'] in {'failed', 'unknown'}), None)
+                if failed_cleanup is not None:
+                    key, row = failed_cleanup
+                    stopped = {'phase': 'cleanup', 'check': key, 'status': row['status'],
+                               'reason_code': row['reason_code']}
+        return {'completed': [r['id'] for r in self.result['checks'] if r['status'] == 'passed'],
+                'stopping': stopped,
+                'facility_writes': self.journal['facility_writes'],
+                'activity': 'unknown' if self.journal['mutation_active'] else 'stopped',
+                'ownership': 'registered-owned' if self.owned else 'candidate-unknown' if candidate else 'not-owned',
+                'existence': present, 'inventory_complete': self.result['residuals']['inventory_complete'],
+                'tasks': [safe_facts(t) for t in self.journal['tasks']], 'observations': observations,
+                'recovery': {'supported': True,
+                             'disposition': 'not_applicable' if self.result['overall'] == 'passed' else 'needs_evidence' if self.journal['mutation_active'] or not self.owned else 'eligible',
+                             'reason_code': 'independent_recovery_inspection_required',
+                             'required_evidence': [] if self.result['overall'] == 'passed' else ['original_materials', 'current_activity', 'exact_resource_scope', 'new_preview_and_approval']}}
 
     def resources(self) -> list[dict[str, Any]]:
         if not any(item['status'] != 'not_sent' for item in self.journal['tasks']):
@@ -590,7 +797,7 @@ class Acceptance:
         common = {'node': self.temporary['node'], 'created_by': self.journal['execution_id'],
                   'ownership': 'owned' if self.owned else 'unknown'}
         return [{**common, 'kind': 'vm', 'identity': str(self.temporary['vmid'])}] + [
-            {**common, 'kind': 'volume', 'identity': volume} for volume in (self.owned or {}).get('volumes', [])] + [
+            {**common, 'kind': 'volume', 'identity': volume} for volume in (self.owned or {}).get('volumes', sorted((self.journal.get('clone_candidate') or {}).get('slots', {}).values()))] + [
             {**common, 'kind': 'snippet', 'identity': s['file_id'],
              'ownership': 'owned' if s['uploaded'] else 'unknown'} for s in self.journal.get('snippets', [])]
 
@@ -652,7 +859,11 @@ def run(selected: Any, operation: str, scope: str, execution: Any, image_digest:
         save(root / 'journal.json', journal)
     save(root / 'result.json', result)
     save(execution.outputs.path('diagnostics') / 'result.json', result)
+    execution.outputs.summary({'component': 'pve-template', 'operation': operation,
+                               'execution_id': result['execution_id'], 'overall': result['overall'],
+                               'stop_diagnostics': result['stop_diagnostics']})
     if result['overall'] != 'passed':
         raise OperationFailed('template acceptance did not pass; inspect protected result')
     execution.finish({'component': 'pve-template', 'operation': operation, 'execution_id': result['execution_id'],
-                      'overall': result['overall'], 'request_digest': result['request_digest']})
+                      'overall': result['overall'], 'request_digest': result['request_digest'],
+                      'stop_diagnostics': result['stop_diagnostics']})

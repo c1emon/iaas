@@ -11,6 +11,13 @@ from iaas.pve_template.acceptance_plan import build_preview
 FIXTURES = Path(__file__).resolve().parents[2] / 'docs/examples/pve-acceptance'
 
 
+class PlannedAdmission(dict):
+    """One generated test preview accompanies its approval, without wire fields."""
+    def __init__(self, value, preview):
+        super().__init__(value)
+        self.preview = preview
+
+
 def materials():
     request = load_strict_json(FIXTURES / 'acceptance-request.json')
     preview = build_preview(request, {'readiness': {'status': 'ready'}}, image_digest=request['runtime']['image_digest'])
@@ -25,7 +32,7 @@ def materials():
         'pending': {'record_id': 'pending-001'},
         'serialization': {'held': True, 'context_id': 'complete-workflow-lock'},
     }
-    return request, admission
+    return request, PlannedAdmission(admission, preview)
 
 
 def preview(request):
@@ -35,7 +42,7 @@ def preview(request):
 def started(tmp_path):
     request, admission = materials()
     root = tmp_path / 'original'
-    journal = begin(root, 'accept', request, admission, 'accept-001', 'sha256:' + 'e' * 64, preview=preview(request))
+    journal = begin(root, 'accept', request, admission, 'accept-001', 'sha256:' + 'e' * 64, preview=admission.preview)
     return root, request, journal
 
 
@@ -174,7 +181,7 @@ def test_observe_exposes_bound_unknown_result_while_task_active(tmp_path, status
 @pytest.mark.parametrize('fault', ['missing_preview', 'legacy_admission', 'preview_digest', 'request_digest', 'runtime', 'reservation'])
 def test_current_start_requires_reviewed_preview_and_v2_association_before_state(tmp_path, fault):
     request, admission = materials()
-    planned = preview(request)
+    planned = admission.preview
     digest = request['runtime']['image_digest']
     if fault == 'missing_preview':
         planned = None

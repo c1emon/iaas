@@ -11,6 +11,7 @@
 | 安装、版本选择、本地 Docker / DinD、凭据与失败恢复 | [启动器指南](runtime-launcher.md) |
 | 镜像接口、构建和发布 | [OCI runtime](operations/06-oci-runtime.md) |
 | 历史验证范围及特殊失败结论 | [验证边界](runtime-adaptation-validation.md) |
+| 当前观察执行器、停止诊断与登记前恢复 | [本次调用方适配清单](../openspec/changes/archive/2026-10-04-add-pve-observation-executor-and-stop-diagnostics/infra-ops-adaptation.md) |
 | 并发保护等后置事项 | [路线图](roadmap.md#deferred-pve-concurrency-protection-beyond-serial-execution) |
 
 IaaS 维护通用配置契约与运行时。调用方维护真实环境、版本选择、凭据、S3 backend、

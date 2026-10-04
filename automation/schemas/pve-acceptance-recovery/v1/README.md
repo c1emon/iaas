@@ -1,11 +1,11 @@
-# Acceptance recovery v1
+# Current acceptance recovery contracts
 
 Generated structural contracts from
 `iaas.pve_template.recovery_contracts.contract_schemas()`:
 
 - `pve-acceptance-recovery-request/v1`
-- `pve-acceptance-recovery-preview/v1`
-- `pve-acceptance-recovery-result/v1`
+- `pve-acceptance-recovery-preview/v2`
+- `pve-acceptance-recovery-result/v2`
 
 Current start approval uses the shared
 `automation/schemas/pve-acceptance/v3/pve-one-shot-execution-admission.schema.json`
@@ -29,3 +29,5 @@ acceptance start.
 
 Software fixtures: `docs/examples/recovery/`. Current export/example consistency
 is tested by `tests/python/test_pve_acceptance_recovery_contracts.py`.
+
+Preview v2 freezes schema-defined proof_bindings and the complete exact original resource scope. Result v2 includes stop_diagnostics. Registered prior acceptance request v3/preview v1/result v3 is also readable only in the isolated recovery evidence reader; no historical version is admitted for a new acceptance start.

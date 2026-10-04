@@ -438,3 +438,77 @@ def test_missing_cleanup_permission_rejects_before_new_facility_writes(tmp_path,
     with pytest.raises(AdmissionError, match='^permission_missing$'):
         recovery.plan(data[0], data[3], data[4], api, snippets)
     assert api.new_calls == []
+
+
+def test_preview_frozen_proof_drift_refuses_all_cleanup_writes(tmp_path):
+    data = setup(tmp_path)
+    request, preview, approved = data[:3]
+    changed = deepcopy(preview['reconciliation'])
+    changed['proof_bindings']['request_digest'] = 'sha256:' + '0' * 64
+    preview = build_recovery_preview(request, changed)
+    approved['plan_digest'] = preview['preview_digest'].removeprefix('sha256:')
+    data = (request, preview, approved, *data[3:])
+    result = invoke(tmp_path, data)
+    assert result['overall'] != 'passed'
+    assert data[-2].new_calls == []
+    assert data[-1].deletes == []
+
+
+@pytest.mark.parametrize('current_change', ['absent', 'marker', 'uuid', 'extra_volume', 'marker_after_reconcile'])
+def test_pre_registration_reviewed_scope_rejects_drift_or_cleans_exact_absent_remnants(tmp_path, current_change):
+    from test_pve_acceptance_recovery_evidence import candidate_fixture
+    from test_pve_template_acceptance import API as CloneAPI
+    original_root, evidence_root, request, original_journal, original_request = candidate_fixture(tmp_path)
+    candidate = original_journal['clone_candidate']
+    class OrphanAPI(CloneAPI):
+        def request(self, method, path, fields=None, **kwargs):
+            if path == '/api2/json/nodes':
+                return [{'node': 'pve1'}]
+            if path.endswith('/status/current') and current_change == 'marker_after_reconcile':
+                self.clone['description'] = 'iaas-acceptance-clone:33333333-3333-4333-8333-333333333333'
+            if method == 'DELETE' and '/content/' in path:
+                from urllib.parse import unquote
+                self.calls.append((method, path, fields, kwargs))
+                self.volumes.remove(unquote(path.rsplit('/', 1)[1]))
+                return self.task('volume_delete')
+            return super().request(method, path, fields, **kwargs)
+    api = OrphanAPI(original_request)
+    api.clone = {**api.source, 'template': 0, 'description': original_journal['clone_marker'],
+                 'smbios1': 'uuid=' + candidate['smbios_uuid'],
+                 **{slot: volid + ',size=8G' for slot, volid in candidate['slots'].items()}}
+    api.volumes = sorted(candidate['slots'].values())
+    class Helpers:
+        def inspect(self):
+            return {'complete': True, 'local_node': 'pve1', 'nodes': ['pve1'],
+                    'vmids': [9000, 9100] if api.clone else [9000], 'references': [],
+                    'volume_references': [], 'snippet_references': []}
+    helper = Helpers()
+    facts = reconcile_original(request, original_root, evidence_root, api, helper)
+    assert facts['cleanup_eligible'] is True
+    preview = build_recovery_preview(request, facts)
+    approved = {'schema_version': 2, 'execution_id': ID,
+        'plan_digest': preview['preview_digest'].removeprefix('sha256:'), 'request_digest': canonical_digest(request),
+        'runtime': request['runtime'], 'target': request['target'], 'deadlines': request['deadlines'], 'approved': True,
+        'consumption': {'reserved': True, 'reservation_id': 'new-reservation'},
+        'pending': {'record_id': 'new-pending', 'execution_id': CALLER},
+        'serialization': {'held': True, 'context_id': 'new-context'}, 'recovery_of': ORIGINAL,
+        'vmid_reservation': {'cluster_scope': request['cluster_scope'], 'vmids': [9100], 'reservation_id': 'new-reservation', 'context_id': 'new-context'}}
+    if current_change == 'absent':
+        api.clone = None
+        api.volumes = api.volumes[:1]
+    elif current_change == 'marker':
+        api.clone['description'] = 'iaas-acceptance-clone:33333333-3333-4333-8333-333333333333'
+    elif current_change == 'uuid':
+        api.clone['smbios1'] = 'uuid=33333333-3333-4333-8333-333333333333'
+    elif current_change == 'extra_volume':
+        api.clone['scsi1'] = 'local-lvm:vm-9100-extra,size=8G'
+    api.calls.clear()
+    result = recovery.start(tmp_path / 'new', request, preview, approved, ID, request['runtime']['image_digest'],
+                            original_root, evidence_root, api, helper)
+    writes = [(method, path) for method, path, *_ in api.calls if method != 'GET']
+    if current_change != 'absent':
+        assert result['overall'] != 'passed' and writes == []
+        return
+    assert result['overall'] == 'passed'
+    assert len(writes) == 1 and writes[0][0] == 'DELETE' and '/content/' in writes[0][1]
+    assert next(r for r in result['resources'] if r['kind'] == 'vm')['status'] == 'already_absent'

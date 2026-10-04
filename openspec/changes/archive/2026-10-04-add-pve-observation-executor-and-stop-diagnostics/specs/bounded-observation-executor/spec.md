@@ -5,7 +5,7 @@ Define shared finite read-only observation semantics for task completion, target
 ## ADDED Requirements
 
 ### Requirement: Observation never dispatches or replays mutations
-The system SHALL provide a shared observation executor operating on admitted read-only probes and frozen task, process or resource associations. Mutation dispatch SHALL remain outside the executor and occur at most once per original operation. HTTP method alone SHALL NOT establish read-only semantics. Unknown write acceptance or missing association SHALL NOT authorize redispatch, resource adoption or inferred historical success.
+The system SHALL provide a shared observation executor operating on admitted read-only probes and frozen task, process or resource associations. Mutation dispatch SHALL remain outside the executor and occur at most once per original operation except the separately specified acceptance-cleanup storage-plugin DELETE fallback, which SHALL remain outside the observer. HTTP method alone SHALL NOT establish read-only semantics. Unknown write acceptance or missing association SHALL NOT authorize redispatch, resource adoption or inferred historical success.
 
 #### Scenario: Observe a clone after a temporary query failure
 - **WHEN** a dispatched clone returned a bound UPID and an admitted task-status query temporarily fails
@@ -26,7 +26,7 @@ Each probe SHALL use an explicit policy distinguishing ready, pending, known fai
 #### Scenario: Explicit failure or ownership conflict
 - **WHEN** a task reports a non-OK exitstatus such as unexpected status, or the probe establishes a conflicting owner
 - **THEN** the check SHALL fail immediately with the necessary observation retained
-- **AND** no retry SHALL hide that failure or repeat the facility operation
+- **AND** no observer retry SHALL hide that failure or repeat the facility operation; only the separately specified acceptance-cleanup storage-plugin DELETE fallback may initiate a new bounded attempt outside the observer while retaining the failed check
 
 #### Scenario: Failure is not safely classified as transient
 - **WHEN** a query has an unclassified exception, malformed data, denied permission or failed TLS trust

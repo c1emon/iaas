@@ -5,6 +5,13 @@
 首次启动之前完成。选择这些字段后，同一 cloud_init/disk_boot 检查进一步核验来宾
 根分区、文件系统、地址、路由、DNS 和新实例身份。仅写入受保护 guest evidence。
 
+验收清理中的临时 VM DELETE 有一项**存储插件兜底行为**：仅当原 UPID 明确
+stopped / `unexpected status`，才允许最多追加两次 DELETE，分别等待 5 秒、15 秒。
+每次重新证明原任务停止、VM 停止无锁、UUID/池/完整附件及卷归属不变，等待与查询
+共用原 cleanup 截止和 timeout；对象已消失不再删除。失败 UPID/观察保留，最终成功须
+完整确认 VM/卷/snippet 消失。未知结果、其他错误或证据不足不重试；此例外不用于
+publication、retire、recovery 或其他写操作。这是暂定兜底间隔，未证明存储插件根因已修复。
+
 本目录是 **synthetic contract fixtures**，不代表 PVE 现场验收或可直接执行的授权。域名、UUID、摘要和证据路径均为示例，引用文件并未提供。真实请求须使用原发布/部署材料、准确摘要和独立 execution admission。
 
 `cases.json` 是 IaaS 和 infra-ops 共用入口，列出每个 JSON 的 kind 和预期接受/拒绝；IaaS 的 `tests/python/test_pve_acceptance_contracts.py` 直接加载这份清单。文件名 `reject-*` 表示合同拒绝用例。结果成功样例也只是合同样例。

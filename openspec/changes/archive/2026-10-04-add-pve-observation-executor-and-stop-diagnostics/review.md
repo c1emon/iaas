@@ -1,4 +1,6 @@
-# Planning review
+# Review history and implementation status
+
+Current implementation status: software tasks are complete; [implementation.md](implementation.md) records validation and limits. The planning reviews below describe their dated scope and are retained as history. No OCI release or real PVE acceptance was performed.
 
 ## 需求覆盖
 

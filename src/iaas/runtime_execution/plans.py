@@ -24,7 +24,7 @@ from .root import materialize_root, relative_path
 from .state import S3Backend
 from .pve_contracts import (validate_execution_admission, validate_plan_metadata,
                             validate_verification_requirements, validate_result)
-from .pve_results import machine_review, expectations, verify_configuration, api_client, template_identity
+from .pve_results import machine_review, expectations, verify_configuration, VerificationBudget, stop_diagnostics, api_client, template_identity
 from .pve_policy import vm_policy, bind_policy, admit_reservation, admit_permissions
 from iaas.pve_template.contracts import validate_template_record_v3
 
@@ -366,6 +366,12 @@ def apply_saved_plan(plan: Path, bundle: Path, selected: SelectedConfig, executi
     admission = _json(selected.files["execution_admission"])
     validate_execution_admission(admission, digest=metadata["plan_digest"], target=metadata["target"], execution_id=execution_id)
     admit_reservation(admission, metadata["vm_policy"])
+    # An optional already bound execution cutoff only constrains read-only
+    # verification. Absence never adds an apply-admission gate.
+    verification_bound = getattr(execution, 'observation_budget', None)
+    if admission.get('deadlines') is not None:
+        from iaas.pve_template.deadlines import DeadlineBudget
+        verification_bound = DeadlineBudget(admission['deadlines'])
     require("verification_requirements" not in selected.options
             or _verification(selected) == metadata["verification_requirements"], "verification requirements cannot change after plan")
     state_admission = _json(selected.files["state_admission"])
@@ -463,14 +469,21 @@ def apply_saved_plan(plan: Path, bundle: Path, selected: SelectedConfig, executi
         result["collection"] = {"status": "passed"}
         result["effects"]["collection"] = "known"
         _write(result_path, result)
-        result["verification"] = verify_configuration(result["expectations"], api)
+        result["verification"] = verify_configuration(result["expectations"], api,
+            window=VerificationBudget(selected.options.get('timeout_seconds', 120), enclosing=verification_bound))
+        snippet_observation = retained / 'snippets' / 'snippet-verification.json'
+        if snippet_observation.exists():
+            result['snippet_verification'] = _json(snippet_observation)
         result["phases"] = execution.phases
         result["phase"] = "succeeded" if result["verification"]["status"] == "passed" else "failed"
+        result['stop_diagnostics'] = stop_diagnostics(result)
         _write(result_path, validate_result(result))
         require(result["phase"] == "succeeded", "saved-plan configuration verification incomplete")
         execution.finish({"operation": "apply", "execution_id": execution_id, "native_lifecycle": "success",
-                          "caller_acceptance": result["caller_acceptance"]})
-    except BaseException:
+                          "caller_acceptance": result["caller_acceptance"], "stop_diagnostics": result["stop_diagnostics"]})
+    except BaseException as exc:
+        if isinstance(getattr(exc, 'verification_report', None), dict):
+            result['verification'] = getattr(exc, 'verification_report')
         result["phase"] = "failed"
         if execution.phases and execution.phases[-1]["phase"] == "apply":
             phase = execution.phases[-1]
@@ -478,7 +491,14 @@ def apply_saved_plan(plan: Path, bundle: Path, selected: SelectedConfig, executi
                 result["native_execution"] = {"status": "failed"}
                 if phase.get("recovery_file"):
                     result["state_persistence"] = {"status": "failed"}
+        snippet_observation = retained / 'snippets' / 'snippet-verification.json'
+        if snippet_observation.exists():
+            result['snippet_verification'] = _json(snippet_observation)
         result["phases"] = execution.phases
+        result['stop_diagnostics'] = stop_diagnostics(result)
+        execution.outputs.summary({"operation": "apply", "status": "failed", "execution_id": execution_id,
+                                   "native_execution": result["native_execution"], "state_persistence": result["state_persistence"],
+                                   "collection": result["collection"], "stop_diagnostics": result["stop_diagnostics"]})
         try:
             _write(result_path, result)
         except OSError:
@@ -489,11 +509,15 @@ def apply_saved_plan(plan: Path, bundle: Path, selected: SelectedConfig, executi
 
 def verify_pve(plan: Path, bundle: Path, selected: SelectedConfig, execution: Execution,
                scope: str, image_digest: str) -> None:
+    window = VerificationBudget(selected.options.get('timeout_seconds', 120),
+                                enclosing=getattr(execution, 'observation_budget', None))
     metadata = _json(bundle / "summary.json")
     metadata, _ = admit_plan(plan, bundle, target_selection(selected, scope, image_digest), None)
     _restore_api_ca(metadata, bundle, execution.environ)
     require("verification_requirements" not in selected.options
             or _verification(selected) == metadata["verification_requirements"], "verification requirements cannot change after plan")
+    original: dict | None = None
+    report: dict[str, Any]
     if "execution_result" not in selected.files:
         report = {"status": "unknown", "reason": "original_execution_material_missing"}
     else:
@@ -518,15 +542,29 @@ def verify_pve(plan: Path, bundle: Path, selected: SelectedConfig, execution: Ex
         expected = expectations(metadata["changes"], snapshot)
         if original.get("expectations") is not None:
             require(expected == original["expectations"], "original expectation material conflict")
-        report = (verify_configuration(expected, api_client(metadata["target"], execution.environ)) if snapshot is not None
-                  else {"status": "unknown", "reason": "original_state_snapshot_missing"})
+        try:
+            report = (verify_configuration(expected, api_client(metadata["target"], execution.environ), window=window) if snapshot is not None
+                      else {"status": "unknown", "reason": "original_state_snapshot_missing"})
+        except PveApiTlsError as exc:
+            report = exc.verification_report
+            report.update(execution_id=original['execution_id'], original_native_execution=original['native_execution'],
+                          original_state_persistence=original['state_persistence'], original_collection=original['collection'])
+            report['stop_diagnostics'] = stop_diagnostics(original, report)
+            _write(execution.outputs.path('diagnostics') / 'verification.json', report)
+            execution.outputs.summary({'operation': 'verify', 'status': 'failed', 'stop_diagnostics': report['stop_diagnostics']})
+            raise
         report.update(execution_id=original["execution_id"], original_native_execution=original["native_execution"],
                       original_phase=original["phase"], original_state_persistence=original["state_persistence"],
                       original_collection=original["collection"],
                       caller_acceptance=original.get("caller_acceptance", "incomplete"))
+    report.setdefault('observation_window', window.window)
+    report['stop_diagnostics'] = stop_diagnostics(original if original is not None else report, report)
     _write(execution.outputs.path("diagnostics") / "verification.json", report)
+    if report['status'] != 'passed':
+        execution.outputs.summary({'operation': 'verify', 'status': report['status'], 'stop_diagnostics': report['stop_diagnostics'],
+                                   **{k: v for k, v in report.items() if k.startswith('original_')}})
     require(report["status"] == "passed", "saved-plan configuration verification incomplete")
-    execution.finish({"operation": "verify", "configuration": report["status"], "historical_success_inferred": False,
+    execution.finish({"operation": "verify", "configuration": report["status"], "historical_success_inferred": False, "stop_diagnostics": report["stop_diagnostics"],
                       **{k: v for k, v in report.items() if k.startswith("original_")}})
 
 
@@ -551,6 +589,7 @@ def read_pve(selected: SelectedConfig, execution: Execution, backend: S3Backend,
                 raise
             except Exception:
                 report["objects"].append({"node": node, "vmid": vmid, "status": "unknown"})
+    original: dict | None = None
     if "execution_result" in selected.files:
         original = validate_result(_json(selected.files["execution_result"]))
         require(original["target"] == target["target"] and original.get("backend") == backend.identity()
@@ -561,4 +600,5 @@ def read_pve(selected: SelectedConfig, execution: Execution, backend: S3Backend,
         report["original_result"] = original
     _write(execution.outputs.path("diagnostics") / "observation.json", report)
     require(observation.status != "error", "state read failed")
-    execution.finish({"operation": "read", "state_observation": observation.status, "historical_success_inferred": False})
+    execution.finish({"operation": "read", "state_observation": observation.status, "historical_success_inferred": False,
+                      **({'stop_diagnostics': original['stop_diagnostics']} if original is not None and 'stop_diagnostics' in original else {})})

@@ -1,6 +1,6 @@
 {
   "kind": "pve-template-acceptance-preview",
-  "schema_version": 1,
+  "schema_version": 2,
   "fixed_input": {
     "kind": "pve-template-acceptance-request",
     "schema_version": 3,
@@ -146,5 +146,6 @@
     }
   },
   "facility_writes": "none",
-  "preview_digest": "sha256:8008e4792a0ede832f82bdac2c793e5062e782ef5ecc358abdbd76a8fa16539a"
+  "preview_digest": "sha256:08da6ac629623caee21ed9768890730f3442c1b9a878d0d46b19b48294655f6d",
+  "clone_marker": "iaas-acceptance-clone:11111111-1111-4111-8111-111111111111"
 }

@@ -3,28 +3,28 @@
     "CallerAssociation": {
       "additionalProperties": false,
       "properties": {
+        "plan_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Plan Id",
+          "type": "string"
+        },
         "execution_id": {
           "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
           "title": "Execution Id",
           "type": "string"
-        },
-        "material": {
-          "$ref": "#/$defs/EvidenceRef"
         },
         "pending_record_id": {
           "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$",
           "title": "Pending Record Id",
           "type": "string"
         },
-        "plan_id": {
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
-          "title": "Plan Id",
-          "type": "string"
-        },
         "reservation_id": {
           "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$",
           "title": "Reservation Id",
           "type": "string"
+        },
+        "material": {
+          "$ref": "#/$defs/EvidenceRef"
         }
       },
       "required": [
@@ -40,14 +40,14 @@
     "Deadlines": {
       "additionalProperties": false,
       "properties": {
-        "cleanup_deadline_at": {
-          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
-          "title": "Cleanup Deadline At",
-          "type": "string"
-        },
         "work_deadline_at": {
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
           "title": "Work Deadline At",
+          "type": "string"
+        },
+        "cleanup_deadline_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+          "title": "Cleanup Deadline At",
           "type": "string"
         }
       },
@@ -82,13 +82,6 @@
     "FullOriginalResources": {
       "additionalProperties": false,
       "properties": {
-        "snippets": {
-          "items": {
-            "$ref": "#/$defs/RecoverySnippet"
-          },
-          "title": "Snippets",
-          "type": "array"
-        },
         "vm": {
           "$ref": "#/$defs/RecoveryVM"
         },
@@ -98,6 +91,13 @@
           },
           "minItems": 1,
           "title": "Volumes",
+          "type": "array"
+        },
+        "snippets": {
+          "items": {
+            "$ref": "#/$defs/RecoverySnippet"
+          },
+          "title": "Snippets",
           "type": "array"
         }
       },
@@ -112,10 +112,10 @@
     "OriginalMaterials": {
       "additionalProperties": false,
       "properties": {
-        "journal": {
+        "request": {
           "$ref": "#/$defs/EvidenceRef"
         },
-        "request": {
+        "journal": {
           "$ref": "#/$defs/EvidenceRef"
         },
         "result": {
@@ -174,9 +174,9 @@
     "RecoverySnippet": {
       "additionalProperties": false,
       "properties": {
-        "created_by": {
+        "node": {
           "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
-          "title": "Created By",
+          "title": "Node",
           "type": "string"
         },
         "file_id": {
@@ -184,14 +184,14 @@
           "title": "File Id",
           "type": "string"
         },
-        "node": {
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
-          "title": "Node",
-          "type": "string"
-        },
         "sha256": {
           "pattern": "^[0-9a-f]{64}$",
           "title": "Sha256",
+          "type": "string"
+        },
+        "created_by": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Created By",
           "type": "string"
         }
       },
@@ -207,16 +207,16 @@
     "RecoveryTimeouts": {
       "additionalProperties": false,
       "properties": {
-        "cleanup_seconds": {
-          "exclusiveMinimum": 0,
-          "maximum": 86400,
-          "title": "Cleanup Seconds",
-          "type": "integer"
-        },
         "work_seconds": {
           "exclusiveMinimum": 0,
           "maximum": 86400,
           "title": "Work Seconds",
+          "type": "integer"
+        },
+        "cleanup_seconds": {
+          "exclusiveMinimum": 0,
+          "maximum": 86400,
+          "title": "Cleanup Seconds",
           "type": "integer"
         }
       },
@@ -230,14 +230,24 @@
     "RecoveryVM": {
       "additionalProperties": false,
       "properties": {
-        "created_by": {
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
-          "title": "Created By",
-          "type": "string"
-        },
         "node": {
           "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
           "title": "Node",
+          "type": "string"
+        },
+        "vmid": {
+          "maximum": 999999999,
+          "minimum": 100,
+          "title": "Vmid",
+          "type": "integer"
+        },
+        "smbios_uuid": {
+          "title": "Smbios Uuid",
+          "type": "string"
+        },
+        "created_by": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Created By",
           "type": "string"
         },
         "pool": {
@@ -252,16 +262,6 @@
           ],
           "default": null,
           "title": "Pool"
-        },
-        "smbios_uuid": {
-          "title": "Smbios Uuid",
-          "type": "string"
-        },
-        "vmid": {
-          "maximum": 999999999,
-          "minimum": 100,
-          "title": "Vmid",
-          "type": "integer"
         }
       },
       "required": [
@@ -276,19 +276,13 @@
     "RejectionEvidence": {
       "additionalProperties": false,
       "properties": {
-        "authenticated_principal": {
-          "maxLength": 256,
-          "minLength": 1,
-          "title": "Authenticated Principal",
-          "type": "string"
-        },
-        "authorize_trusted_source": {
-          "const": true,
-          "title": "Authorize Trusted Source",
-          "type": "boolean"
-        },
         "material": {
           "$ref": "#/$defs/EvidenceRef"
+        },
+        "source_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Source Id",
+          "type": "string"
         },
         "provenance": {
           "enum": [
@@ -298,16 +292,22 @@
           "title": "Provenance",
           "type": "string"
         },
+        "authenticated_principal": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Authenticated Principal",
+          "type": "string"
+        },
         "source_description": {
           "maxLength": 1024,
           "minLength": 1,
           "title": "Source Description",
           "type": "string"
         },
-        "source_id": {
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
-          "title": "Source Id",
-          "type": "string"
+        "authorize_trusted_source": {
+          "const": true,
+          "title": "Authorize Trusted Source",
+          "type": "boolean"
         }
       },
       "required": [
@@ -363,46 +363,64 @@
       "type": "object"
     }
   },
-  "$id": "https://iaas.invalid/schemas/pve-acceptance-recovery/v1/pve-acceptance-recovery-request.schema.json",
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
-    "authorization": {
-      "$ref": "#/$defs/RecoveryAuthorization"
+    "kind": {
+      "const": "pve-acceptance-recovery-request",
+      "title": "Kind",
+      "type": "string"
     },
-    "caller_association": {
-      "$ref": "#/$defs/CallerAssociation"
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "evidence_mode": {
+      "anyOf": [
+        {
+          "enum": [
+            "registered",
+            "pre_registration"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Evidence Mode"
+    },
+    "target": {
+      "$ref": "#/$defs/Target"
     },
     "cluster_scope": {
       "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
       "title": "Cluster Scope",
       "type": "string"
     },
+    "runtime": {
+      "$ref": "#/$defs/RuntimeIdentity"
+    },
     "deadlines": {
       "$ref": "#/$defs/Deadlines"
     },
-    "full_original_resources": {
-      "$ref": "#/$defs/FullOriginalResources"
+    "timeouts": {
+      "$ref": "#/$defs/RecoveryTimeouts"
     },
-    "kind": {
-      "const": "pve-acceptance-recovery-request",
-      "title": "Kind",
-      "type": "string"
+    "authorization": {
+      "$ref": "#/$defs/RecoveryAuthorization"
     },
     "original_execution_id": {
       "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
       "title": "Original Execution Id",
       "type": "string"
     },
+    "caller_association": {
+      "$ref": "#/$defs/CallerAssociation"
+    },
     "original_materials": {
       "$ref": "#/$defs/OriginalMaterials"
-    },
-    "previous_recoveries": {
-      "items": {
-        "$ref": "#/$defs/PreviousRecovery"
-      },
-      "title": "Previous Recoveries",
-      "type": "array"
     },
     "rejection_evidence": {
       "items": {
@@ -411,19 +429,15 @@
       "title": "Rejection Evidence",
       "type": "array"
     },
-    "runtime": {
-      "$ref": "#/$defs/RuntimeIdentity"
+    "full_original_resources": {
+      "$ref": "#/$defs/FullOriginalResources"
     },
-    "schema_version": {
-      "const": 1,
-      "title": "Schema Version",
-      "type": "integer"
-    },
-    "target": {
-      "$ref": "#/$defs/Target"
-    },
-    "timeouts": {
-      "$ref": "#/$defs/RecoveryTimeouts"
+    "previous_recoveries": {
+      "items": {
+        "$ref": "#/$defs/PreviousRecovery"
+      },
+      "title": "Previous Recoveries",
+      "type": "array"
     }
   },
   "required": [
@@ -443,5 +457,7 @@
     "previous_recoveries"
   ],
   "title": "RecoveryRequest",
-  "type": "object"
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iaas.invalid/schemas/pve-acceptance-recovery/v1/pve-acceptance-recovery-request.schema.json"
 }

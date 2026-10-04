@@ -1,6 +1,6 @@
 {
   "kind": "pve-template-acceptance-result",
-  "schema_version": 3,
+  "schema_version": 4,
   "execution_id": "accept-001",
   "request_digest": "sha256:e22d06e5e2254975385bdfe2ad92157dac97a605e400a7aae430528c7a5a0968",
   "runtime": {
@@ -105,7 +105,7 @@
     ]
   },
   "pool": "acceptance",
-  "preview_digest": "sha256:8008e4792a0ede832f82bdac2c793e5062e782ef5ecc358abdbd76a8fa16539a",
+  "preview_digest": "sha256:08da6ac629623caee21ed9768890730f3442c1b9a878d0d46b19b48294655f6d",
   "capacity": {
     "disk_limit_bytes": 34359738368,
     "total_required_bytes": 8594128896,
@@ -120,5 +120,29 @@
       }
     ],
     "storage_available_bytes": 107374182400
+  },
+  "stop_diagnostics": {
+    "completed": [
+      "full_clone",
+      "disk_boot",
+      "guest_agent",
+      "cloud_init",
+      "injected_hostname",
+      "source_unchanged"
+    ],
+    "stopping": null,
+    "facility_writes": "issued",
+    "activity": "stopped",
+    "ownership": "registered-owned",
+    "existence": "unknown",
+    "inventory_complete": true,
+    "tasks": [],
+    "observations": [],
+    "recovery": {
+      "supported": true,
+      "disposition": "not_applicable",
+      "reason_code": "independent_recovery_inspection_required",
+      "required_evidence": []
+    }
   }
 }

@@ -21,6 +21,10 @@ import sys
 import tempfile
 import threading
 import time
+import math
+import errno
+import ssl
+from urllib.error import HTTPError, URLError
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
@@ -31,6 +35,7 @@ from iaas.common.errors import ValidationError, require
 from iaas.common.config_checks import checked_input
 from iaas.common.io import load_json, write_text
 from iaas.runtime_execution.execution import Execution, OperationFailed
+from iaas.observation import Decision, ObservationBudget, ObservationExpired, observe
 
 from .contracts import (
     IDENTIFIER,
@@ -155,43 +160,114 @@ def _executor_check(resources: Mapping[str, int]) -> dict[str, Any]:
             "enough_disk": free >= resources["work_min_free_bytes"], "accelerator": "kvm"}
 
 
-def _require_executor(resources: Mapping[str, int]) -> dict[str, Any]:
-    facts = _executor_check(resources)
+def _memory_observation(resources: Mapping[str, int], *, proc: Path = Path("/proc"),
+                        cgroup: Path = Path("/sys/fs/cgroup")) -> dict[str, Any]:
+    """Sample the host and directly visible current cgroup, without admission policy."""
+    requested = resources["memory_mib"] * 1024 ** 2
+    rows: list[dict[str, Any]] = []
+    host: int | None = None
+    try:
+        for line in (proc / "meminfo").read_text().splitlines():
+            fields = line.split()
+            if len(fields) == 3 and fields[0] == "MemAvailable:" and fields[2] == "kB":
+                host = int(fields[1]) * 1024
+                if host < 0:
+                    host = None
+                break
+    except (OSError, ValueError):
+        pass
+    rows.append({"scope": "host", "available_bytes": host,
+                 "status": "unknown" if host is None else "insufficient" if host < requested else "sufficient"})
+    available: int | None = None
+    try:
+        # A container usually mounts its own unified cgroup at the root. A
+        # non-namespaced mount may expose the exact current path instead.
+        entries = (proc / "self/cgroup").read_text().splitlines()
+        relative = next(line[3:] for line in entries if line.startswith("0::"))
+        root = cgroup
+        candidate = (cgroup / relative.lstrip("/")).resolve()
+        if candidate.is_relative_to(cgroup.resolve()) and (candidate / "memory.max").is_file():
+            root = candidate
+        limit_text = (root / "memory.max").read_text().strip()
+        usage = int((root / "memory.current").read_text().strip())
+        if limit_text != "max":
+            limit = int(limit_text)
+            if limit >= 0 and usage >= 0:
+                available = max(0, limit - usage)
+    except (OSError, ValueError, StopIteration):
+        pass
+    rows.append({"scope": "current_container", "available_bytes": available,
+                 "status": "unknown" if available is None else "insufficient" if available < requested else "sufficient"})
+    status = ("insufficient" if any(row["status"] == "insufficient" for row in rows)
+              else "unknown" if any(row["status"] == "unknown" for row in rows) else "sufficient")
+    return {"sampled_at": int(time.time()), "requested_bytes": requested,
+            "requested_memory_mib": resources["memory_mib"], "status": status, "observations": rows}
+
+
+def _require_executor(resources: Mapping[str, int], facts: dict[str, Any] | None = None) -> dict[str, Any]:
+    facts = _executor_check(resources) if facts is None else facts
     require(facts["supported_platform"], "image build/test requires a Linux amd64 executor")
     require(facts["supported_kvm"], "image build/test requires usable /dev/kvm; TCG fallback is unsupported")
     require(facts["enough_disk"], "image executor does not have the requested free disk budget")
+    memory = facts.get("memory_observation")
+    require(not isinstance(memory, Mapping) or memory["status"] != "insufficient",
+            "image executor measured memory is below guest memory_mib")
     return facts
 
 
-def _download_base(request: Mapping[str, Any], destination: Path, resources: Mapping[str, int]) -> None:
+def _download_base(request: Mapping[str, Any], destination: Path, resources: Mapping[str, int],
+                   *, budget: ObservationBudget | None = None) -> None:
     base, checksum = request["base"], request["base"]["checksum"]
-    digest = hashlib.new(checksum["algorithm"])
+    budget = budget or ObservationBudget(resources["timeout_seconds"], source="execution-timeout")
     free = shutil.disk_usage(destination.parent).free
     limit = min(max(0, free - resources["work_min_free_bytes"]), 1 << 40)
-    deadline = time.monotonic() + resources["timeout_seconds"]
-    size = 0
-    try:
-        with (urlopen(Request(base["object_ref"], headers={"Accept": "application/octet-stream"}),
-                      timeout=min(60, resources["timeout_seconds"])) as response,
-              destination.open("xb") as output):
-            declared = response.headers.get("Content-Length")
-            if declared is not None and declared.isdigit() and int(declared) > limit:
-                raise OperationFailed("base image exceeds bounded download budget")
-            while True:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise OperationFailed("base image download exceeded its time budget")
-                chunk = response.read(min(1024 * 1024, max(1, limit - size + 1)))
-                if not chunk:
-                    break
-                size += len(chunk)
-                if size > limit:
-                    raise OperationFailed("base image exceeds bounded download budget")
-                digest.update(chunk)
-                output.write(chunk)
-    except (OSError, TimeoutError):
-        raise OperationFailed("base image download failed; inspect protected task recovery material") from None
-    require(digest.hexdigest() == checksum["value"], "base image checksum does not match request")
+    partial = destination.with_name(destination.name + ".part")
+    require(not destination.exists() and not partial.exists(), "base download destination already exists")
+
+    def transfer(timeout: float) -> Decision:
+        digest = hashlib.new(checksum["algorithm"])
+        size = 0
+        created = False
+        try:
+            with (urlopen(Request(base["object_ref"], headers={"Accept": "application/octet-stream"}),
+                          timeout=min(60, timeout)) as response, partial.open("xb") as output):
+                created = True
+                declared = response.headers.get("Content-Length")
+                if declared is not None and declared.isdigit() and int(declared) > limit:
+                    return Decision("failed", "base image exceeds bounded download budget")
+                while True:
+                    budget.remaining("work")
+                    chunk = response.read(min(1024 * 1024, max(1, limit - size + 1)))
+                    if not chunk:
+                        break
+                    size += len(chunk)
+                    if size > limit:
+                        return Decision("failed", "base image exceeds bounded download budget")
+                    digest.update(chunk)
+                    output.write(chunk)
+            if digest.hexdigest() != checksum["value"]:
+                return Decision("failed", "base image checksum does not match request")
+            budget.remaining("work")
+            partial.rename(destination)
+            return Decision("ready", "base_download_verified", {"size_bytes": size})
+        finally:
+            if created:
+                partial.unlink(missing_ok=True)
+
+    def retry(exc: Exception) -> Decision:
+        if isinstance(exc, HTTPError):
+            transient = exc.code in {408, 429, 500, 502, 503, 504}
+        else:
+            reason = exc.reason if isinstance(exc, URLError) else exc
+            transient = (isinstance(reason, (TimeoutError, ConnectionResetError, ConnectionAbortedError))
+                         or isinstance(reason, OSError) and reason.errno in {errno.ETIMEDOUT, errno.ECONNRESET, errno.ECONNABORTED})
+            if isinstance(reason, ssl.SSLError):
+                transient = False
+        return Decision("pending" if transient else "unknown", "base_download_transient" if transient else "base_download_rejected")
+
+    decision = observe(transfer, lambda value: value, budget, "work", "base-download", {}, retry_error=retry)
+    if decision.status != "ready":
+        raise OperationFailed(decision.reason)
 
 
 def _sha256_file(path: Path) -> str:
@@ -208,6 +284,12 @@ def _current_budget(execution: Execution) -> int:
 
 
 def _current_timeout(execution: Execution) -> int | None:
+    budget = getattr(execution, "image_observation_budget", None)
+    if budget is not None:
+        try:
+            return max(1, math.ceil(budget.remaining("work")))
+        except ObservationExpired:
+            raise OperationFailed("image task execution timeout expired") from None
     value = getattr(execution, "image_timeout_seconds", None)
     return value if type(value) is int and value > 0 else None
 
@@ -311,6 +393,9 @@ def _stop_process(process: subprocess.Popen[bytes], entry: dict[str, Any]) -> No
         os.killpg(process.pid, signal.SIGTERM)
     except ProcessLookupError:
         pass
+    except PermissionError:
+        entry.update(state="unknown", exit_code=process.poll())
+        return
     try:
         process.wait(timeout=PROCESS_GRACE_SECONDS)
     except subprocess.TimeoutExpired:
@@ -318,6 +403,9 @@ def _stop_process(process: subprocess.Popen[bytes], entry: dict[str, Any]) -> No
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
+        except PermissionError:
+            entry.update(state="unknown", exit_code=process.poll())
+            return
         process.wait()
     group_gone = False
     for _ in range(20):
@@ -326,12 +414,17 @@ def _stop_process(process: subprocess.Popen[bytes], entry: dict[str, Any]) -> No
         except ProcessLookupError:
             group_gone = True
             break
+        except PermissionError:
+            # An inaccessible group is not proof that descendants exited.
+            break
         time.sleep(0.05)
     if not group_gone:
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
             group_gone = True
+        except PermissionError:
+            pass
     entry["state"] = "stopped" if group_gone else "unknown"
     entry["exit_code"] = process.returncode
 
@@ -630,6 +723,8 @@ def _build(selected: Any, execution: Execution, execution_id: str, resolved_runt
     runtime_digest = _runtime_digest(selected, resolved_runtime_digest)
     execution.__dict__["image_max_output_bytes"] = request["resources"]["max_output_bytes"]
     execution.__dict__["image_timeout_seconds"] = request["resources"]["timeout_seconds"]
+    budget = ObservationBudget(request["resources"]["timeout_seconds"], source="execution-timeout")
+    execution.__dict__["image_observation_budget"] = budget
     task = _task_dir(execution, execution_id)
     task_path, input_digest = task / "task.json", canonical_digest(request)
     with _resource_lock(task):
@@ -639,8 +734,10 @@ def _build(selected: Any, execution: Execution, execution_id: str, resolved_runt
                     "execution_id is already bound to different image inputs")
             require(previous.get("status") not in {"running", "succeeded", "failed", "unknown", "interrupted"},
                     "existing image execution cannot be replayed")
-        facts = _require_executor(request["resources"])
+        facts = _executor_check(request["resources"])
+        facts["memory_observation"] = _memory_observation(request["resources"])
         task_record = _new_task(execution_id, "build", input_digest, runtime_digest, facts)
+        task_record["observation_window"] = budget.facts()
         base, packer_output, disk = task / "base.img", task / "packer-output", task / "disk.qcow2"
         build_result_path = task / "build-result.json"
         task_record["owned_resources"] = [_relative_resource(task, item)
@@ -651,7 +748,8 @@ def _build(selected: Any, execution: Execution, execution_id: str, resolved_runt
         _write_task(build_result_path, build_result)
         statuses: list[dict[str, Any]] = []
         try:
-            _download_base(request, base, request["resources"])
+            _require_executor(request["resources"], facts)
+            _download_base(request, base, request["resources"], budget=budget)
             base_info = _require_self_contained(base, execution)
             require(type(base_info.get("virtual-size")) is int and base_info["virtual-size"] > 0,
                     "base virtual capacity could not be established")
@@ -692,7 +790,10 @@ def _build(selected: Any, execution: Execution, execution_id: str, resolved_runt
                 packer_command: list[str] = [packer, "build", "-machine-readable", str(profile)]
                 timeout_bin = shutil.which("timeout")
                 if timeout_bin is not None:
-                    packer_command = [timeout_bin, "--signal=TERM", str(request["resources"]["timeout_seconds"]), *packer_command]
+                    packer_command = [timeout_bin, "--signal=TERM", str(_current_timeout(execution)), *packer_command]
+                task_record["resources"]["memory_observation"] = _memory_observation(request["resources"])
+                _write_task(task_path, task_record)
+                _require_executor(request["resources"], task_record["resources"])
                 _run_tracked_tool(execution, task, task_record, "packer-build", packer_command, task)
             finally:
                 execution.environ = old_environ
@@ -778,7 +879,7 @@ def _wait_port(process: subprocess.Popen[bytes], port: int, timeout: int, *, dea
         if process.poll() is not None:
             raise OperationFailed("disposable guest exited before SSH became available")
         try:
-            with socket.create_connection(("127.0.0.1", port), timeout=1):
+            with socket.create_connection(("127.0.0.1", port), timeout=min(1, max(0.001, deadline - time.monotonic()))):
                 return
         except OSError:
             time.sleep(0.5)
@@ -842,6 +943,11 @@ def _boot_guest(execution: Execution, directory: Path, task: dict[str, Any], dis
                "-netdev", f"user,id=n0,hostfwd=tcp:127.0.0.1:{port}-:22", "-device", "virtio-net-pci,netdev=n0"]
     if firmware == "uefi":
         command[1:1] = ["-drive", f"if=pflash,format=raw,readonly=on,file={_find_ovmf('code')}", "-drive", f"if=pflash,format=raw,file={vars_path}"]
+    task.setdefault("resources", {})["memory_observation"] = _memory_observation(resources)
+    _write_task(directory / "task.json", task)
+    require(task["resources"]["memory_observation"]["status"] != "insufficient",
+            "image executor measured memory is below guest memory_mib")
+    _current_timeout(execution)
     entry = {"pid": None, "start_ticks": None, "pid_file": str(pid_file), "state": "starting", "command": [qemu], "phase": phase}
     task.setdefault("processes", []).append(entry)
     _write_task(directory / "task.json", task)
@@ -855,7 +961,9 @@ def _boot_guest(execution: Execution, directory: Path, task: dict[str, Any], dis
                                       resources["max_output_bytes"], watch_stop, watch_overflow), daemon=True)
     watcher.start()
     try:
-        _wait_port(process, port, resources["timeout_seconds"])
+        budget = getattr(execution, "image_observation_budget", None)
+        remaining = budget.remaining("work") if budget is not None else resources["timeout_seconds"]
+        _wait_port(process, port, resources["timeout_seconds"], deadline=time.monotonic() + remaining)
         if watch_overflow.is_set():
             raise OperationFailed("disposable guest exceeded the protected output budget")
         statuses = {"first-boot": "failed", "firmware": "unknown"}
@@ -866,13 +974,13 @@ def _boot_guest(execution: Execution, directory: Path, task: dict[str, Any], dis
         timeout_bin = shutil.which("timeout")
         if timeout_bin is None:
             raise ValidationError("image test requires timeout for the guest command budget")
-        deadline = time.monotonic() + resources["timeout_seconds"]
+        deadline = time.monotonic() + (budget.remaining("work") if budget is not None else resources["timeout_seconds"])
         attempt = 0
         while True:
             if watch_overflow.is_set():
                 raise OperationFailed("disposable guest exceeded the protected output budget")
             try:
-                _run_tool(execution, f"{phase}-first-boot-{attempt}", [timeout_bin, str(resources["timeout_seconds"]), *common, "true"], directory)
+                _run_tool(execution, f"{phase}-first-boot-{attempt}", [timeout_bin, str(_current_timeout(execution) or resources["timeout_seconds"]), *common, "true"], directory)
                 statuses.update({"first-boot": "passed", "firmware": "passed"})
                 break
             except (OperationFailed, ValidationError):
@@ -882,7 +990,7 @@ def _boot_guest(execution: Execution, directory: Path, task: dict[str, Any], dis
                 time.sleep(min(0.5, max(0.0, deadline - time.monotonic())))
         for check_id, remote in (("cloud-init", "cloud-init status --wait"), ("guest-agent", "systemctl is-active --quiet qemu-guest-agent")):
             try:
-                _run_tool(execution, f"{phase}-{check_id}", [timeout_bin, str(resources["timeout_seconds"]), *common, remote], directory)
+                _run_tool(execution, f"{phase}-{check_id}", [timeout_bin, str(_current_timeout(execution) or resources["timeout_seconds"]), *common, remote], directory)
                 statuses[check_id] = "passed"
             except (OperationFailed, ValidationError):
                 statuses[check_id] = "failed"
@@ -911,12 +1019,15 @@ def _test(selected: Any, execution: Execution, execution_id: str, resolved_runti
     runtime_digest = _runtime_digest(selected, resolved_runtime_digest)
     execution.__dict__["image_max_output_bytes"] = request["resources"]["max_output_bytes"]
     execution.__dict__["image_timeout_seconds"] = request["resources"]["timeout_seconds"]
+    budget = ObservationBudget(request["resources"]["timeout_seconds"], source="execution-timeout")
+    execution.__dict__["image_observation_budget"] = budget
     root = Path(request["artifact_root"]).resolve()
     artifact = validate_artifact(request["artifact"], artifact_root=root, require_disk=True)
     disk = resolve_artifact_path(root, artifact)
     before = _sha256_file(disk)
     require(before == artifact["disk"]["sha256"], "test source digest does not match artifact")
-    facts = _require_executor(request["resources"])
+    facts = _executor_check(request["resources"])
+    facts["memory_observation"] = _memory_observation(request["resources"])
     directory, input_digest = _task_dir(execution, execution_id), canonical_digest(request)
     task_path = directory / "task.json"
     with _resource_lock(directory):
@@ -925,9 +1036,11 @@ def _test(selected: Any, execution: Execution, execution_id: str, resolved_runti
             require(isinstance(previous, Mapping) and previous.get("input_digest") == input_digest, "execution_id is already bound to different image inputs")
             require(previous.get("status") not in {"running", "succeeded", "failed", "unknown", "interrupted"}, "existing image execution cannot be replayed")
         task = _new_task(execution_id, "test", input_digest, runtime_digest, facts, disk_sha256=before, source=str(disk), source_root=str(root))
+        task["observation_window"] = budget.facts()
         _write_task(task_path, task)
         result: dict[str, Any] | None = None
         try:
+            _require_executor(request["resources"], facts)
             info = _require_self_contained(disk, execution)
             rows = request["checks"]["required"] + request["checks"]["optional"]
             checks = [{"id": item["id"], "scope": item["scope"], "status": _static_status(item["id"], request=request, artifact=artifact, disk=disk, info=info) if item["id"] in STATIC_CHECKS else "not_performed", "evidence_ref": "test-result.json"} for item in rows]

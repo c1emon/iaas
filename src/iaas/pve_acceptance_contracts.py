@@ -261,7 +261,8 @@ class DeletePlan(Contract):
 
 class AcceptancePreview(Contract):
     kind: Literal['pve-template-acceptance-preview']
-    schema_version: Literal[1]
+    schema_version: Literal[2]
+    clone_marker: Annotated[str, Field(pattern=r'^iaas-acceptance-clone:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')]
     fixed_input: AcceptanceRequest
     request_digest: Digest
     runtime: RuntimeIdentity
@@ -431,6 +432,33 @@ class TemplateIdentity(Contract):
     smbios_uuid: str
 
 
+class StopCheck(Contract):
+    phase: str
+    check: str
+    status: Literal['failed', 'unknown']
+    reason_code: Reason
+
+
+class RecoveryDiagnostic(Contract):
+    supported: bool
+    disposition: Literal['eligible', 'blocked', 'needs_evidence', 'not_applicable']
+    reason_code: Reason
+    required_evidence: list[str]
+
+
+class StopDiagnostics(Contract):
+    completed: list[str]
+    stopping: StopCheck | None
+    facility_writes: Literal['none', 'issued', 'unknown']
+    activity: Literal['running', 'stopped', 'unknown']
+    ownership: Literal['registered-owned', 'candidate-unknown', 'not-owned']
+    existence: Literal['present', 'absent', 'unknown']
+    inventory_complete: bool
+    tasks: list[dict[str, Any]]
+    observations: list[dict[str, Any]]
+    recovery: RecoveryDiagnostic
+
+
 class ResultBase(Contract):
     deadlines: Deadlines
     deadline_outcome: DeadlineOutcome
@@ -452,7 +480,8 @@ class ResultBase(Contract):
 
 
 class AcceptanceResult(ResultBase):
-    schema_version: Literal[3]
+    schema_version: Literal[4]
+    stop_diagnostics: StopDiagnostics
     kind: Literal['pve-template-acceptance-result']
     cluster_scope: Identifier
     pool: Identifier
@@ -498,7 +527,8 @@ class CleanupItem(Snippet):
 
 
 class CleanupResult(ResultBase):
-    schema_version: Literal[2]
+    schema_version: Literal[3]
+    stop_diagnostics: StopDiagnostics
     kind: Literal['pve-snippet-cleanup-result']
     origin: Literal['deployment', 'acceptance']
     original_vm: OriginalVM
