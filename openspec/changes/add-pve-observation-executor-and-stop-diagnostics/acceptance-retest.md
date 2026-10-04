@@ -44,3 +44,22 @@ DELETE 仅派发一次，原生任务 stopped / OK，未触发 5 秒／15 秒存
 成功构建材料在 `/home/clemon/iaas-test-oesd/b3/work/image-tasks/oesd-retest-build-20261004-03/`。
 临时 qcow2 已删除；本轮目录约 14 MiB，`b3` 约 152 KiB。此结果限定于该次真实设施执行，
 未代验 infra-ops 日常部署或业务/生产资格。
+
+## 再次复验（2026-10-04，源码 3012664）
+
+用户再次授权，沿用同一真实路径：ONE 宿主 Docker 本地构建，无 CI、DinD 或 OCI 发布。
+构建、S3 传输、PVE 发布、完整克隆、扩容至 128 GiB、首次启动、验收及模板退役均实际执行。
+导入暂存使用 local，系统盘和 cloud-init 盘使用 memory；cohe、iaas-acceptance、br_dev
+及网络配置沿用上一轮。调用方 plan/admission/pending/reservation 材料与互斥仍由本地测试脚本提供，
+没有代验 infra-ops 集成。本轮无故障注入，未修改产品代码。
+
+- 构建 succeeded，七项构建检查通过；运行镜像 `sha256:84c0ef4c95fe8d8f42d4c7aeff4e2670f9b374dd0937c010ad61c49171e2d15a`，复用缓存 builder 并覆盖当前源码。qcow2 SHA256 `b0633504f29211413261da361792875ef45816213895c13b8cc542f715900d9e`，1563099136 B，虚拟容量 8 GiB。
+- 新模板 9001 发布成功；独立执行 `oesd-retest2-accept-normal-20261004-03` 使用 VM 501，overall passed，六项功能检查与 VM/卷/snippet 清理全部 passed，residuals 为空、inventory_complete 为 true、stopping 为 null。一次 plan/start 完成，未遇到上一轮准备阶段问题。
+- DELETE 一次成功，原生 UPID `UPID:cohe:001D5C2E:104DCD3F:6AC1C640:qmdestroy:501:pve-ops@pve!opentofu:`，终态 succeeded/stopped。仍未触发 5 秒／15 秒插件兜底，不能据此提升该分支的现场证据等级。
+- 模板退役 succeeded、无残留。最终 API 查询无 501/9001 及其 memory 卷，原有 500/9000 保留。本轮 S3 特定版本、四个测试容器、本地运行镜像、临时磁盘和凭据副本均已清理，原生证据保留。
+
+本轮材料：`/home/clemon/iaas-test-oesd/retest2-3012664/`，摘要 `test-summary.json`，
+验收原件 `outputs/accept-normal-03/diagnostics/execution/`，最终查询及清理回执
+`facility-final-observation.json`、`s3-cleanup.json`、`host-cleanup.json`。
+构建材料使用短路径 `/home/clemon/iaas-test-oesd/b4/work/image-tasks/oesd-retest2-build-20261004/`，
+临时 qcow2 已删除。软件源继续使用 `mirrors4.tuna.tsinghua.edu.cn`。
