@@ -8,7 +8,7 @@ import pytest
 
 from iaas.pve_acceptance_contracts import canonical_digest
 from iaas.pve_template.recovery_contracts import build_recovery_preview, validate_recovery_preview, validate_recovery_request
-from iaas.pve_template.recovery_evidence import RecoveryEvidenceError, load_original, reconcile_original
+from iaas.pve_template.recovery_evidence import RecoveryEvidenceError, _task_activity, load_original, reconcile_original
 
 ORIGINAL = '01591395-b75d-4108-a19d-7e5ccdb99acc-accept'
 CALLER = '01591395-b75d-4108-a19d-7e5ccdb99acc'
@@ -16,6 +16,24 @@ VM_UUID = '22222222-2222-4222-8222-222222222222'
 VOLUMES = ['local-lvm:vm-798-disk-0', 'local-lvm:vm-798-cloudinit']
 SNIPPET = 'local:snippets/iaas-accept-fixture-798-user-data.yml'
 PRINCIPAL = 'fixture@pve!automation'
+
+
+@pytest.mark.parametrize('status,activity', [('succeeded', 'inactive'), ('running', 'unknown'), ('unknown', 'unknown'), ('failed', 'unknown')])
+def test_guest_terminal_success_survives_stopped_vm_qga_unavailable(status, activity):
+    class StoppedGuest:
+        def request(self, *args, **kwargs):
+            raise RuntimeError('VM is not running')
+    task = {'phase': 'guest_exec', 'status': status, 'pid': 838,
+            'path': '/api2/json/nodes/cohe/qemu/501/agent/exec'}
+    assert _task_activity(StoppedGuest(), task, 'cohe')[0] == activity
+
+
+def test_live_guest_activity_takes_precedence_over_retained_success():
+    class RunningGuest:
+        def request(self, *args, **kwargs):
+            return {'exited': False}
+    task = {'phase': 'guest_exec', 'status': 'succeeded', 'pid': 838, 'vmid': 501}
+    assert _task_activity(RunningGuest(), task, 'cohe') == ('active', 'guest_process_running')
 
 
 def write(root, name, value):

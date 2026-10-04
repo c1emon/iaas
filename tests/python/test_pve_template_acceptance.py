@@ -294,6 +294,13 @@ def test_failure_cleanup_and_unknown_boundaries(tmp_path, fault, overall, delete
         assert journal['mutation_active'] is True
 
 
+def test_cleanup_only_failure_has_stopping_diagnostics(tmp_path):
+    result, _, _ = execute(tmp_path, 'delete-lost')
+    assert all(row['status'] == 'passed' for row in result['checks'])
+    assert result['stop_diagnostics']['stopping']['phase'] == 'cleanup'
+    assert result['stop_diagnostics']['stopping']['status'] == 'unknown'
+
+
 def test_runtime_observe_different_output_never_constructs_client(tmp_path, monkeypatch):
     value = request()
     api = API(value)

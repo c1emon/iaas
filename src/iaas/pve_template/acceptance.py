@@ -723,9 +723,24 @@ class Acceptance:
         helper = getattr(self.snippets, 'observations', None)
         if helper is not None:
             observations += helper.rows() if hasattr(helper, 'rows') else helper
+        stopped = ({'phase': 'work', 'check': stopping['id'], 'status': stopping['status'],
+                    'reason_code': stopping['reason_code']}
+                   if stopping and stopping['status'] in {'failed', 'unknown'} else None)
+        if stopped is None:
+            terminal = next((r['terminal'] for r in observations
+                             if r['phase'] == 'cleanup' and r.get('terminal', {}).get('status') in {'failed', 'unknown'}), None)
+            if terminal is not None:
+                stopped = {'phase': 'cleanup', 'check': terminal['check'], 'status': terminal['status'],
+                           'reason_code': terminal['reason']}
+            else:
+                failed_cleanup = next(((key, row) for key, row in self.result['cleanup'].items()
+                                       if row['status'] in {'failed', 'unknown'}), None)
+                if failed_cleanup is not None:
+                    key, row = failed_cleanup
+                    stopped = {'phase': 'cleanup', 'check': key, 'status': row['status'],
+                               'reason_code': row['reason_code']}
         return {'completed': [r['id'] for r in self.result['checks'] if r['status'] == 'passed'],
-                'stopping': {'phase': 'work', 'check': stopping['id'], 'status': stopping['status'],
-                             'reason_code': stopping['reason_code']} if stopping and stopping['status'] in {'failed', 'unknown'} else None,
+                'stopping': stopped,
                 'facility_writes': self.journal['facility_writes'],
                 'activity': 'unknown' if self.journal['mutation_active'] else 'stopped',
                 'ownership': 'registered-owned' if self.owned else 'candidate-unknown' if candidate else 'not-owned',

@@ -327,6 +327,10 @@ def _task_activity(client: Any, task: dict, node: str) -> tuple[str, str]:
                 return 'active', 'guest_process_running'
         except Exception:
             pass
+        # A stopped VM cannot answer QGA. Preserve its recorded terminal success;
+        # a PID alone or an unresolved/failed request still needs live evidence.
+        if task.get('status') == 'succeeded':
+            return 'inactive', 'retained_terminal_request'
         return 'unknown', 'guest_process_activity_unknown'
     if task.get('status') == 'running':
         return 'active', 'retained_running_task'
