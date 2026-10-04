@@ -232,7 +232,15 @@ def _vm_fields(expected: dict, config: dict, status: dict) -> dict[str, str]:
     if not values.get("disk"):
         checks["disks"] = "unknown"
     expected_disks = {d.get("interface") for d in values.get("disk") or []}
-    actual_disks = {k for k, v in config.items() if re.fullmatch(r"(?:scsi|sata|virtio|ide)\d+", k)
+    efi_disks = values.get("efi_disk") or []
+    if efi_disks:
+        expected_disks.add("efidisk0")
+        raw = config.get("efidisk0")
+        volume = str(raw).split(",", 1)[0] if raw else None
+        compare("efi_disk.storage", efi_disks[0].get("datastore_id"),
+                volume.split(":", 1)[0] if volume else None)
+        compare("efi_disk.type", efi_disks[0].get("type"), _parts(raw).get("efitype"))
+    actual_disks = {k for k, v in config.items() if re.fullmatch(r"(?:scsi|sata|virtio|ide|efidisk)\d+", k)
                     and "media=cdrom" not in str(v) and "cloudinit" not in str(v)}
     compare("disk_attachments", expected_disks, actual_disks)
     if any(re.fullmatch(r"unused\d+", k) for k in config):
@@ -333,7 +341,9 @@ def verify_configuration(expected: list[dict], api: Any, *, budget: Any = None,
                                       'memory': (values.get('memory') or [{}])[0].get('dedicated'),
                                       'power': 'running' if values.get('started') is True else 'stopped' if values.get('started') is False else None,
                                       'volumes': [{'slot': d.get('interface'), 'storage': d.get('datastore_id'),
-                                                   'volid': d.get('file_id'), 'size': d.get('size')} for d in values.get('disk') or []],
+                                                   'volid': d.get('file_id'), 'size': d.get('size')} for d in values.get('disk') or []]
+                                                 + [{'slot': 'efidisk0', 'storage': d.get('datastore_id'),
+                                                     'type': d.get('type')} for d in values.get('efi_disk') or []],
                                       'exists': not wanted.get('absent')}
             comparison['actual'] = {}
             if wanted["kind"] == "ha":
@@ -372,7 +382,7 @@ def verify_configuration(expected: list[dict], api: Any, *, budget: Any = None,
                                         'power': state.get('status'),
                                         'volumes': [{'slot': slot, 'volid': str(value).split(',', 1)[0],
                                                      'size': _size_gib(_parts(value).get('size'))}
-                                                    for slot, value in config.items() if re.fullmatch(r'(?:scsi|virtio|sata|ide)\d+', slot)
+                                                    for slot, value in config.items() if re.fullmatch(r'(?:scsi|virtio|sata|ide|efidisk)\d+', slot)
                                                     and 'media=cdrom' not in str(value) and 'cloudinit' not in str(value)]}
                 checks = _vm_fields(wanted, config, state)
                 # Explicit conflicting configuration/identity is terminal. Missing

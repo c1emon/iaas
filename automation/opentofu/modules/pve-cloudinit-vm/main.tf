@@ -79,10 +79,14 @@ resource "proxmox_virtual_environment_vm" "protected" {
     network_data_file_id = var.network_data_file_id
   }
 
-  efi_disk {
-    datastore_id = var.disk_datastore_id
-    file_format  = "raw"
-    type         = "4m"
+  dynamic "efi_disk" {
+    for_each = var.template.bios == "ovmf" ? [true] : []
+
+    content {
+      datastore_id = var.disk_datastore_id
+      file_format  = "raw"
+      type         = "4m"
+    }
   }
 
   agent {
@@ -176,10 +180,14 @@ resource "proxmox_virtual_environment_vm" "unprotected" {
     network_data_file_id = var.network_data_file_id
   }
 
-  efi_disk {
-    datastore_id = var.disk_datastore_id
-    file_format  = "raw"
-    type         = "4m"
+  dynamic "efi_disk" {
+    for_each = var.template.bios == "ovmf" ? [true] : []
+
+    content {
+      datastore_id = var.disk_datastore_id
+      file_format  = "raw"
+      type         = "4m"
+    }
   }
 
   agent {
