@@ -1,4 +1,4 @@
-实施分支：`feat/pve-observation-executor-and-stop-diagnostics`。软件任务 1–5 已完成，证据见 [implementation.md](implementation.md)。第 6 节已完成授权范围判断：本次未授权发布或真实设施验收，条件未触发；勾选表示条件处理完成，不表示这些操作已执行。
+实施分支：`feat/pve-observation-executor-and-stop-diagnostics`。全部任务已完成；软件验证见 [implementation.md](implementation.md)，授权范围内的真实验收与复验见 [acceptance.md](acceptance.md)、[acceptance-retest.md](acceptance-retest.md)。未执行 CI/OCI 发布或 infra-ops 集成验收。
 
 ## 1. 当前合同与共享观察组件
 

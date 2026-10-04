@@ -80,7 +80,7 @@ The runtime SHALL produce a versioned result containing template and execution i
 - **AND** original failure facts and unknown effects SHALL remain visible rather than being overwritten by cleanup or current observations
 
 ### Requirement: Absolute deadlines are execution-bound
-Acceptance request/result v3 SHALL carry frozen `deadlines.work_deadline_at` and `deadlines.cleanup_deadline_at` in valid UTC `YYYY-MM-DDTHH:mm:ssZ` format with work not later than cleanup. The runtime SHALL bind both values into the canonical request and preview digests, matching operation-specific execution admission deadlines, execution identity and persisted request/admission/journal/result. Relative timeouts SHALL only impose stricter local limits.
+Current versioned acceptance request/result SHALL carry frozen `deadlines.work_deadline_at` and `deadlines.cleanup_deadline_at` in valid UTC `YYYY-MM-DDTHH:mm:ssZ` format with work not later than cleanup. The runtime SHALL bind both values into the canonical request and preview digests, matching operation-specific execution admission deadlines, execution identity and persisted request/admission/journal/result. Relative timeouts SHALL only impose stricter local limits.
 
 #### Scenario: Deadline binding or format is invalid
 - **WHEN** a required cutoff is missing, malformed, calendar-invalid, incorrectly ordered or conflicts with admission or original materials
@@ -233,3 +233,71 @@ The requested real acceptance SHALL use one temporary full clone in the existing
 - **WHEN** only offline checks, fixtures or software CI pass, or real execution is blocked
 - **THEN** the delivery SHALL explicitly preserve the missing real acceptance conclusion
 - **AND** even successful real template acceptance SHALL NOT imply infra-ops daily apply admission or deployment/business acceptance
+
+### Requirement: Clone ownership waits without premature registration
+Acceptance plan SHALL generate a fresh one-use noncredential correlation marker and bind it to the preview consumed by admission. Start SHALL persist that marker with original clone intent and target/source bindings before dispatch and carry it only in the original native clone description, without a separate configuration write. It SHALL record the returned UPID before ownership checking and incrementally retain safe candidate identity/configuration/storage evidence. After confirmed clone success it SHALL independently read and retain a marker-matching candidate UUID and complete slot-to-volume configuration snapshot before pool/storage-content registration gates, using bounded observation for synchronized views. Snapshot completeness SHALL require the frozen source's expected clone disk slots, target storage and absence of source-volume reuse. Candidate resources SHALL remain ownership unknown until all registration predicates, including pool and matching storage volid/vmid facts, pass. Explicit marker, identity or ownership conflicts SHALL fail immediately and SHALL NOT authorize cleanup.
+
+#### Scenario: Pool and disk rows synchronize after clone success
+- **WHEN** the first post-clone view temporarily lacks pool membership or storage rows under a declared pending condition
+- **THEN** acceptance SHALL continue observation of the same target and task within the original window
+- **AND** it SHALL register ownership only after the complete independent checks pass, with exactly one clone dispatched
+
+#### Scenario: Ownership confirmation stops before journal registration
+- **WHEN** clone completed but ownership checking fails or expires before the full resource record is registered
+- **THEN** original task association, candidate observations and the failed check SHALL remain available for constrained recovery assessment
+- **AND** candidate existence SHALL NOT permit automatic adoption, stop or deletion
+
+#### Scenario: Correlation is supplied with the original clone
+- **WHEN** current acceptance is admitted and its free target and source bindings are established
+- **THEN** the single clone dispatch SHALL carry the preview-bound marker, with its request fields and returned UPID retained in protected original evidence
+- **AND** no later write SHALL add or replace a marker to manufacture historical association
+
+#### Scenario: Candidate configuration is incomplete
+- **WHEN** the post-task view lacks required UUID or disk slots
+- **THEN** partial safe fields SHALL be retained as incomplete while bounded observation continues
+- **AND** expiry before a complete candidate snapshot SHALL leave pre-registration cleanup ineligible rather than fill original identities from later current state
+
+### Requirement: Configuration and guest checks observe convergence safely
+Acceptance SHALL wait for requested configuration and disk capacity after the original modify/resize operation, for QGA/cloud-init readiness, and for required partition/filesystem growth, identity, addresses, routes and DNS within the original work budget. Only declared initialization states SHALL be pending; explicit cloud-init failure, illegal configuration or identity conflicts SHALL stop immediately. Guest exec-status query retries SHALL retain the same PID. A subsequent fixed read-only guest sample SHALL be dispatched only after the preceding sample is confirmed exited.
+
+#### Scenario: Disk and guest growth are not immediately visible
+- **WHEN** the resize task succeeded but configuration capacity or the initializing guest growth facts are not yet ready
+- **THEN** acceptance SHALL perform bounded observation and pass only after required disk, root partition and filesystem capacities are established
+- **AND** it SHALL NOT repeat resize or remediate the guest
+
+#### Scenario: Guest status read temporarily fails
+- **WHEN** a fixed read-only program returned a PID and exec-status suffers an allowed temporary error
+- **THEN** observation SHALL retry only that PID under the original deadline
+- **AND** an unknown exec response or PID SHALL prevent another exec dispatch
+
+#### Scenario: Initialization completes with wrong required facts
+- **WHEN** cloud-init explicitly fails or a complete authoritative guest observation establishes a non-pending wrong identity or invalid network configuration
+- **THEN** the affected check SHALL fail with necessary facts and SHALL NOT be delayed as a generic transient error
+
+### Requirement: Acceptance cleanup waits for resource disappearance
+After a known successful delete task, acceptance SHALL use bounded read-only checks for original VM and exact owned volume absence, including successful queries still showing stale original objects. Permitted query retries SHALL share the original cleanup deadline. Native task failure SHALL stop dependent deletion processing without write replay except the explicitly scoped storage-plugin DELETE fallback below; uncertain activity, ownership, visibility or disappearance SHALL remain explicit.
+
+#### Scenario: VM or storage inventory lags deletion
+- **WHEN** delete completed OK but an initial successful inventory still lists the original VM or owned volumes
+- **THEN** cleanup SHALL wait within the original window for complete absence evidence without issuing delete again
+
+#### Scenario: Delete fails or disappearance cannot be confirmed
+- **WHEN** delete returns an explicit non-OK task outcome outside the scoped storage-plugin fallback or observation reaches cutoff without complete absence evidence
+- **THEN** results SHALL preserve the failed task or unknown disappearance separately with exact known residue identities and last observations
+- **AND** neither case SHALL trigger repeated facility deletion
+
+### Requirement: Acceptance DELETE has a bounded storage-plugin fallback
+Only the registered temporary VM's DELETE in acceptance cleanup SHALL permit a storage-plugin fallback for a retained task confirmed stopped with exitstatus exactly `unexpected status`. It SHALL permit at most two additional DELETE dispatches after fixed waits of 5 and 15 seconds under the original cleanup deadline and local timeout, with the original serialization and exact resource scope retained. It SHALL NOT retry publication, retirement, recovery, clone, stop, resize, configuration, guest execution or snippet mutations. Code comments and documentation SHALL explicitly identify this behavior as a storage-plugin fallback, not a confirmed repair of the plugin or a general mutation retry mechanism.
+
+#### Scenario: A plugin failure is followed by a successful exact delete
+- **WHEN** a qualifying failed task is retained and the temporary VM remains present
+- **THEN** after the applicable wait, cleanup SHALL independently reconfirm the preceding task stopped with the same failure, VM stopped and unlocked, original UUID/pool/complete attachments and complete matching storage volid/vmid ownership before another DELETE
+- **AND** each attempt SHALL retain its own UPID and terminal observation; a successful cleanup SHALL require complete VM/volume/snippet absence, while prior task failures remain visible and SHALL NOT become the stopping point of a completed cleanup
+
+#### Scenario: Failure left no VM
+- **WHEN** independent visibility-qualified inventory confirms VM absence after a qualifying failed delete
+- **THEN** cleanup SHALL NOT send another DELETE, SHALL retain the failed task, SHALL distinguish observed absence from task success and SHALL still confirm exact owned volume/snippet absence
+
+#### Scenario: Fallback is exhausted or unsafe
+- **WHEN** three delete tasks fail, the shared budget expires, a request/UPID/activity is unknown, another error occurs, or fresh identity/pool/lock/VM-state/volume evidence conflicts or is incomplete
+- **THEN** no further DELETE SHALL be sent and the failed/unknown cleanup with retained attempts and resource evidence SHALL remain available for independent recovery

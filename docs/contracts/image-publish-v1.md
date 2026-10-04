@@ -5,7 +5,7 @@ normative OpenSpec source is
 [`contracts/image-publish-v1.md`](../../openspec/changes/archive/2026-09-29-separate-image-build-and-pve-publish/contracts/image-publish-v1.md);
 the JSON schemas shipped below are the current machine-readable subset.
 The current observation/deadline extension is specified in
-[`add-pve-observation-executor-and-stop-diagnostics`](../../openspec/changes/add-pve-observation-executor-and-stop-diagnostics/design.md).
+[`add-pve-observation-executor-and-stop-diagnostics`](../../openspec/changes/archive/2026-10-04-add-pve-observation-executor-and-stop-diagnostics/design.md).
 
 The stable schemas live under `automation/schemas/image-publish/v1/`:
 
