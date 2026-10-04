@@ -117,6 +117,11 @@ check-generated: pve-check services-check foundation-check
 test:
 	$(PYTEST)
 
+.PHONY: check-runtime-contracts
+check-runtime-contracts:
+	$(PYTEST) "$(ROOT)/tests/python/test_runtime_dispatch.py" -k capabilit
+	cd "$(ROOT)/automation/launcher" && go test -tags runtime_integration ./...
+
 test-fast:
 	$(PYTEST) -m fast
 

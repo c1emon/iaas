@@ -24,9 +24,8 @@ jobs:
           version: "0.12.9"
           python-version: "3.12"
       - run: uv sync --locked --dev
-      - name: Verify launcher and runtime integration
-        working-directory: automation/launcher
-        run: go test -tags runtime_integration ./...
+      - name: Verify schemas, runtime capabilities and launcher integration
+        run: make check-runtime-contracts
 
   check:
     runs-on: ubuntu-latest

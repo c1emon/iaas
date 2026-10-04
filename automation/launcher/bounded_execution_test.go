@@ -56,20 +56,20 @@ func TestBoundedExecutionContractsAndReadOnlyInputs(t *testing.T) {
 	for _, target := range [][2]string{{"pve-template", "accept"}, {"pve-template", "recover"}, {"pve", "snippet-cleanup"}} {
 		component, operation := target[0], target[1]
 		prefix := "acceptance"
-		version := 3
+		requestVersion, resultVersion := 3, 4
 		if operation == "recover" {
-			prefix, version = "recovery", 1
+			prefix, requestVersion, resultVersion = "recovery", 1, 2
 		}
 		if operation == "snippet-cleanup" {
 			prefix = "snippet_cleanup"
-			version = 2
+			requestVersion, resultVersion = 2, 3
 		}
 		c := Capabilities{InterfaceVersion: 1, SchemaVersions: []int{1}, Platforms: []string{"linux/amd64"},
 			Operations: map[string]map[string]Effects{component: {operation: {Network: true, InfrastructureWrite: true}}}}
 		if _, err := c.operation(component, operation, "linux/amd64"); err == nil {
 			t.Fatal("missing contract accepted")
 		}
-		c.LifecycleVersions = map[string]map[string]int{component: {prefix + "_request": version, prefix + "_result": version, prefix + "_preview": 1, "one_shot_execution_admission": 2}}
+		c.LifecycleVersions = map[string]map[string]int{component: {prefix + "_request": requestVersion, prefix + "_result": resultVersion, prefix + "_preview": 2, "one_shot_execution_admission": 2}}
 		c.ExecutionModes = map[string]map[string]map[string]Effects{component: {operation: {"start": {Network: true, InfrastructureWrite: true}, "observe": {}}}}
 		if _, err := c.operation(component, operation, "linux/amd64"); err == nil {
 			t.Fatal("missing absolute deadline capability accepted")
@@ -139,8 +139,8 @@ esac
 func TestAcceptanceRecoveryPlanCapabilityGates(t *testing.T) {
 	c := Capabilities{
 		LifecycleVersions: map[string]map[string]int{"pve-template": {
-			"acceptance_request": 3, "acceptance_result": 3, "acceptance_preview": 1,
-			"recovery_request": 1, "recovery_result": 1, "recovery_preview": 1}},
+			"acceptance_request": 3, "acceptance_result": 4, "acceptance_preview": 2,
+			"recovery_request": 1, "recovery_result": 2, "recovery_preview": 2}},
 		OperationCapabilities: map[string]map[string]map[string]bool{"pve-template": {
 			"plan": {"accept": true, "recover": true, "absolute_deadlines": true}, "check": {"accept": true}}},
 	}
