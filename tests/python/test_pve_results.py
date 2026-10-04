@@ -178,6 +178,39 @@ def test_unexpected_attachments_fail(attachment):
     assert verify_configuration(expectations([item], snapshot(item)), Extra())["status"] == "failed"
 
 
+@pytest.mark.parametrize("bios,present,storage,efi_type,passed", [
+    ("seabios", False, "local", "4m", True),
+    ("seabios", True, "local", "4m", False),
+    ("ovmf", True, "local", "4m", True),
+    ("ovmf", False, "local", "4m", False),
+    ("ovmf", True, "wrong", "4m", False),
+    ("ovmf", True, "local", "2m", False),
+])
+def test_efi_configuration_matches_saved_plan(bios, present, storage, efi_type, passed):
+    item = change()
+    values = item["change"]["after"]
+    values["bios"] = bios
+    values["efi_disk"] = [{"datastore_id": "local", "type": "4m"}] if bios == "ovmf" else []
+    state = snapshot(item)
+    # Known plan scope cannot be replaced by a different post-apply snapshot.
+    state["resources"][0]["instances"][0]["attributes"]["efi_disk"] = []
+
+    class EFI(API):
+        def vm_config(self, node, vmid):
+            config = super().vm_config(node, vmid) | {"bios": bios}
+            if present:
+                config["efidisk0"] = f"{storage}:vm-101-disk-1,efitype={efi_type},size=4M"
+            return config
+
+    report = verify_configuration(expectations([item], state), EFI(), timeout=1, interval=0)
+    assert (report["status"] == "passed") is passed
+    checks = report["objects"][0]["checks"]
+    assert checks["disk_attachments"] == ("passed" if present == (bios == "ovmf") else "failed")
+    if bios == "ovmf" and present:
+        assert checks["efi_disk.storage"] == ("passed" if storage == "local" else "failed")
+        assert checks["efi_disk.type"] == ("passed" if efi_type == "4m" else "failed")
+
+
 def test_power_converges_without_reapplying():
     class Converging(API):
         calls = 0
