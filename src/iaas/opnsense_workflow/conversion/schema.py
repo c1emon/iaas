@@ -117,11 +117,15 @@ NATIVE_NESTED_IGNORED: dict[str, set[str]] = {
     "dnat": {"%network"},
 }
 
-# Volatile model fields, scoped to the resource that defines them.
+# Model metadata, scoped to the resource that defines it. JsonAuditField
+# carries audit identities, not declarative configuration.
 NATIVE_METADATA: dict[str, set[str]] = {
     "aliases": {"current_items", "eval_match", "eval_nomatch", "in_block_b", "in_block_p",
                 "in_pass_b", "in_pass_p", "out_block_b", "out_block_p", "out_pass_b", "out_pass_p"},
-    "filter-rules": {"sort_order", "prio_group", "%source_net", "%destination_net"},
+    "vips": {"vhid_txt"},
+    "filter-rules": {"sort_order", "prio_group", "%source_net", "%destination_net", "audit"},
+    "dnat": {"audit"},
+    "one-to-one-nat": {"sort_order", "prio_group", "audit"},
 }
 NATIVE_FALSE_FIELDS: set[str] = {"nosync", "nopfsync", "no_port_forward", "monitor_killstates", "monitor_killstates_priority",
                                   "received-on-not", "tcpflags_any", "counters"}

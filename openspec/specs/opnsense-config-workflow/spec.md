@@ -380,6 +380,18 @@ Conversion SHALL apply only the rules declared for the resource and field. It SH
 - **THEN** the value is retained for expressibility assessment and prevents an unsupported standard reconstruction
 - **AND** known metadata is excluded only under that resource's established metadata policy
 
+#### Scenario: Rule audit metadata does not change configuration
+- **WHEN** a filter rule, DNAT or one-to-one NAT provider row contains the model's `audit` metadata
+- **THEN** the reader reconstructs the same complete standard configuration as an otherwise identical row without that metadata
+- **AND** changes limited to audit identity or timestamp leave the semantic plan unchanged
+- **AND** audit identities are absent from standard declarations, observations, review data and ordinary logs
+- **AND** other unknown substantive fields still prevent reconstruction and selected-object planning; the `audit` exception is not global
+
+#### Scenario: Resource-specific derived display fields are not configuration
+- **WHEN** a one-to-one NAT provider row contains `sort_order` or `prio_group`, or a VIP row contains `vhid_txt`
+- **THEN** those model-defined display fields leave standard configuration and the semantic plan unchanged
+- **AND** actual sequence, VHID and other substantive configuration retain their existing expressibility constraints
+
 #### Scenario: Absent and explicit null differ
 - **WHEN** a provider field is omitted, explicitly null, or explicitly false
 - **THEN** the adapter applies that field's declared policy separately to each representation
