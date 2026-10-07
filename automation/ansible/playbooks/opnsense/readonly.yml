@@ -4,6 +4,8 @@
   gather_facts: false
   connection: local
 
+  environment: "{{ opnsense_api_use_proxy | default(false) | opnsense_api_environment }}"
+
   module_defaults:
     group/oxlorg.opnsense.all:
       firewall: "{{ opnsense_api_host }}"

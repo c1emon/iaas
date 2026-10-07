@@ -23,6 +23,7 @@ import yaml
 from iaas.common.io import load_json, write_text
 from iaas.opnsense_validation import TOP_LEVEL, validate_document
 from iaas.opnsense_validation.lifecycle import resource_arguments
+from .proxy import provider_environment
 
 
 SUPPORTED_RESOURCES = (
@@ -67,6 +68,8 @@ class _AnsibleProvider:
     def __init__(self, execution: Any, target: Mapping[str, Any]) -> None:
         self.execution = execution
         self.target = dict(target)
+        if type(self.target.get('api_use_proxy', False)) is not bool:
+            raise WriterError('target.api_use_proxy must be a boolean')
         self._stage_number = 0
         if not isinstance(self.target.get("host"), str) or not isinstance(self.target.get("endpoint"), str):
             raise WriterError("workflow writer needs a resolved target host and endpoint")
@@ -109,6 +112,7 @@ class _AnsibleProvider:
             "opnsense_api_host": self._collection_host,
             "opnsense_api_port": self._collection_port,
             "opnsense_ssl_verify": self.target.get("ssl_verify", True),
+            "opnsense_api_use_proxy": self.target.get('api_use_proxy', False),
             # Credentials remain in the protected execution environment and
             # are resolved by Ansible at runtime, never written to this file.
             "opnsense_api_key": "{{ lookup('ansible.builtin.env', 'OPNSENSE_API_KEY') }}",
@@ -138,7 +142,8 @@ class _AnsibleProvider:
         phase = f"opnsense-workflow-{action}-{resource}"
         error: Exception | None = None
         try:
-            self.execution.run(phase, command, root)
+            with provider_environment(self.execution.environ, self.target.get('api_use_proxy', False)):
+                self.execution.run(phase, command, root)
         except Exception as exc:
             error = exc
         try:

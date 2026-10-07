@@ -107,6 +107,7 @@ def test_provider_runner_error_overrides_confirmed_facts(tmp_path, error, expect
 
     class Execution:
         outputs = Outputs()
+        environ = {}
 
         def run(self, phase, command, cwd):
             variables = Path(command[command.index('-e') + 1][1:]).read_text()

@@ -45,7 +45,7 @@ def adapter(request, monkeypatch):
                 {'endpoint': 'https://firewall.example', 'ssl_verify': False},
                 {'OPNSENSE_API_KEY': 'test-key', 'OPNSENSE_API_SECRET': 'test-secret'}, session=session)
             return lambda: client._request('GET', 'firewall/alias/get'), session, workflow
-        monkeypatch.setattr(diagnostics.requests, 'Session', lambda: session)
+        monkeypatch.setattr(diagnostics, 'ApiSession', lambda *_args: session)
         client = diagnostics.Transport('https://firewall.example', 'test-key', 'test-secret', verify=False)
         return lambda: client.call('aliases', {'current': 1}), session, diagnostics
     return create

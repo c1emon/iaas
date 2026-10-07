@@ -19,8 +19,6 @@ import time
 from typing import Any, Callable, Iterator, Protocol
 from urllib.parse import urlsplit
 
-import requests
-
 from iaas.opnsense_diagnostics.schema import ALIAS_NAME
 from iaas.opnsense_validation import TOP_LEVEL, validate_document
 from iaas.common.errors import ValidationError
@@ -32,6 +30,7 @@ from .conversion.resources import unexpressed_fields as _unexpressed_fields
 from .conversion.schema import STANDARD_FIELDS, LIST_FIELDS, DEFAULTS
 from .conversion.types import as_list as _as_list
 from .classification import classify_resource, reference_support
+from .proxy import ApiSession
 
 
 MAX_PAGE_ROWS = 1000
@@ -170,7 +169,8 @@ class FixedCollectionTransport:
         self.target = deepcopy(target)
         self._credential_names = tuple(sorted(str(key) for key in credentials))
         self._used = 0
-        self._session = session if session is not None else requests.Session()
+        self._session = session if session is not None else ApiSession(
+            target.get('api_use_proxy', False))
         key = credentials.get("OPNSENSE_API_KEY")
         secret = credentials.get("OPNSENSE_API_SECRET")
         if isinstance(key, str) and isinstance(secret, str) and key and secret:
@@ -909,6 +909,9 @@ def _validate_target(target: dict[str, Any]) -> dict[str, Any]:
     host = target.get("host")
     endpoint = target.get("endpoint")
     ssl_verify = target.get("ssl_verify")
+    api_use_proxy = target.get('api_use_proxy', False)
+    if type(api_use_proxy) is not bool:
+        raise ReaderError('target.api_use_proxy must be a boolean')
     if not isinstance(host, str) or not host or any(ch in host for ch in "\r\n\0"):
         raise ReaderError("target.host must be a non-empty inventory identifier")
     if not isinstance(endpoint, str) or not endpoint:
@@ -926,7 +929,10 @@ def _validate_target(target: dict[str, Any]) -> dict[str, Any]:
         _ = parsed.port
     except (TypeError, ValueError):
         raise ReaderError("target.endpoint must be a host-only HTTP(S) URL") from None
-    return {"host": host, "endpoint": endpoint.rstrip("/"), "ssl_verify": ssl_verify}
+    result = {"host": host, "endpoint": endpoint.rstrip("/"), "ssl_verify": ssl_verify}
+    if 'api_use_proxy' in target:
+        result['api_use_proxy'] = api_use_proxy
+    return result
 
 
 def _validate_credentials(credentials: dict[str, Any]) -> dict[str, Any]:
