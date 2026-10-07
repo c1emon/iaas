@@ -173,6 +173,7 @@ def test_runtime_writer_does_not_reuse_a_previous_stage_fact(tmp_path) -> None:
     class Execution:
         outputs = Outputs()
         calls = 0
+        environ = {}
 
         def run(self, phase, command, cwd):
             self.calls += 1
@@ -437,6 +438,101 @@ def test_activation_failure_classification_does_not_export_backend_data(tmp_path
                             },
                             capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_save_failure_classification_does_not_export_provider_data(tmp_path) -> None:
+    source = yaml.safe_load(SAVE_TASKS.read_text())
+    record_failure = source[1]['rescue'][0]
+    private = 'private-api-secret'
+    cases = [
+        ({'msg': f"API call failed | Response: {{'status_code': 403}} {private}"},
+         ['403'], False, False, False, True),
+        ({'msg': f"API call failed | Response: {{'status_code': 401}} {private}"},
+         ['401'], False, False, False, True),
+        ({'msg': f'User {private} denied for write access (user-config-readonly set)'},
+         [], False, False, True, False),
+        ({'msg': f"API call failed | Error: {{'alias.content': '{private}'}}"},
+         [], False, True, False, True),
+        ({'msg': f'Got timeout calling POST {private}'}, [], True, False, False, False),
+        ({'msg': f"Unable to connect 'GET => {private}' ([Errno 104] Connection reset by peer)"},
+         [], False, False, False, False),
+        ({'msg': 'One or more items failed', 'results': [
+            {'failed': False, 'msg': f'timeout {private}', 'item': {'password': private}},
+            {'failed': True, 'msg': f"API call failed | Response: {{'status_code': 500}} {private}"},
+            {'failed': True, 'msg': f"API call failed | Response: {{'status_code': 500}} {private}"},
+        ]}, ['500'], False, False, False, True),
+        ({'exception': private, 'invocation': {'module_args': {'api_secret': private}}},
+         [], False, False, False, False),
+    ]
+    tasks = []
+    for call, codes, timeout, validation, denied, api_failed in cases:
+        messages = call.get('msg', '')
+        expected = {'http_status_codes': codes, 'timeout_reported': timeout,
+                    'connection_error_reported': 'Unable to connect' in messages,
+                    'validation_reported': validation, 'write_denied_reported': denied,
+                    'api_failure_reported': api_failed}
+        tasks.append({'name': 'Classify protected synthetic save failure', 'vars': {
+            'ansible_failed_result': call, 'expected_failure': expected,
+        }, 'block': [record_failure, {'ansible.builtin.assert': {'that': [
+            'opnsense_workflow_save_result.failure == expected_failure',
+            "'private-api-secret' not in (opnsense_workflow_save_result | to_json)",
+            "opnsense_workflow_save_result.activation.status == 'not_attempted'",
+        ]}}]})
+    playbook = tmp_path / 'classify-save.yml'
+    playbook.write_text(yaml.safe_dump([{
+        'hosts': 'localhost', 'connection': 'local', 'gather_facts': False, 'tasks': tasks,
+    }], sort_keys=False))
+    result = subprocess.run(['uv', 'run', 'ansible-playbook', '-i', 'localhost,', str(playbook)],
+                            cwd=ROOT, env={
+                                **os.environ,
+                                'ANSIBLE_CONFIG': str(ROOT / 'automation/ansible/ansible.cfg'),
+                                'ANSIBLE_LOCAL_TEMP': str(tmp_path / 'ansible'),
+                            }, capture_output=True, text=True, timeout=30)
+    assert private not in result.stdout + result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize('looped', [False, True])
+def test_no_log_save_failure_persists_only_safe_diagnostics(tmp_path, looped) -> None:
+    source = yaml.safe_load(SAVE_TASKS.read_text())
+    result_path = tmp_path / 'save-result.json'
+    library = tmp_path / 'library'
+    library.mkdir()
+    (library / 'synthetic_save_failure.py').write_text(
+        'from ansible.module_utils.basic import AnsibleModule\n'
+        'module = AnsibleModule(argument_spec={})\n'
+        'module.warn("private-api-secret-warning")\n'
+        'module.fail_json(msg="API call failed | Response: '
+        "{'status_code': 403} private-api-secret\")\n"
+    )
+    provider_failure = {'name': 'Synthetic provider rejects save', 'no_log': True,
+                        'synthetic_save_failure': {}}
+    if looped:
+        provider_failure['loop'] = ['synthetic-record']
+    playbook = tmp_path / 'failed-save.yml'
+    playbook.write_text(yaml.safe_dump([{
+        'hosts': 'localhost', 'connection': 'local', 'gather_facts': False,
+        'vars': {'opnsense_workflow_result_path': str(result_path)},
+        'tasks': [source[0], {'block': [provider_failure], 'rescue': source[1]['rescue']}],
+    }], sort_keys=False))
+    result = subprocess.run(['uv', 'run', 'ansible-playbook', '-i', 'localhost,', str(playbook)],
+                            cwd=ROOT, env={
+                                **os.environ,
+                                'ANSIBLE_CONFIG': str(ROOT / 'automation/ansible/ansible.cfg'),
+                                'ANSIBLE_LIBRARY': str(library),
+                                'ANSIBLE_LOCAL_TEMP': str(tmp_path / 'ansible'),
+                            }, capture_output=True, text=True, timeout=30)
+    assert result.returncode != 0
+    assert 'private-api-secret' not in result.stdout + result.stderr + result_path.read_text()
+    facts = json.loads(result_path.read_text())
+    assert facts['status'] == 'failed'
+    assert facts['failure'] == {'http_status_codes': ['403'], 'timeout_reported': False,
+                                'connection_error_reported': False,
+                                'validation_reported': False, 'write_denied_reported': False,
+                                'api_failure_reported': True}
+    assert facts['configuration']['status'] == 'unknown'
+    assert facts['activation']['status'] == 'not_attempted'
+    assert result_path.stat().st_mode & 0o777 == 0o600
 
 
 def test_writer_preserves_action_association_and_separate_content_evidence() -> None:

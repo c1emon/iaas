@@ -141,7 +141,8 @@ def test_missing_auth_secret_fails_before_get_url(tmp_path: Path) -> None:
     result = _run(playbook)
 
     assert result.returncode != 0
-    assert "k3s_protected_secret" in result.stdout + result.stderr
+    assert "censored" in result.stdout + result.stderr
+    assert "k3s_protected_secret" not in result.stdout + result.stderr
     assert "artifact-proxy" not in result.stdout + result.stderr
 
 

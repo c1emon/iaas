@@ -190,6 +190,15 @@
           }}
   rescue:
     - name: Record a failed save stage without attempting activation
+      vars:
+        opnsense_workflow_failure_message: >-
+          {{
+            ([ansible_failed_result.msg | default('')]
+             + (ansible_failed_result.results | default([])
+                | selectattr('failed', 'defined') | selectattr('failed')
+                | map(attribute='msg', default='') | list))
+            | join('\n')
+          }}
       ansible.builtin.set_fact:
         opnsense_workflow_save_result:
           status: failed
@@ -199,6 +208,23 @@
           configuration: {status: unknown}
           activation: {status: not_attempted}
           active_check: {status: not_attempted}
+          failure:
+            http_status_codes: >-
+              {{ opnsense_workflow_failure_message
+                 | regex_findall("'status_code': ([1-5][0-9]{2})") | unique | list }}
+            timeout_reported: >-
+              {{ 'timeout' in (opnsense_workflow_failure_message | lower)
+                 or 'timed out' in (opnsense_workflow_failure_message | lower) }}
+            connection_error_reported: >-
+              {{ 'unable to connect' in (opnsense_workflow_failure_message | lower) }}
+            validation_reported: >-
+              {{ 'API call failed | Error:' in opnsense_workflow_failure_message
+                 or "'validations':" in opnsense_workflow_failure_message }}
+            write_denied_reported: >-
+              {{ 'denied for write access' in (opnsense_workflow_failure_message | lower) }}
+            api_failure_reported: >-
+              {{ 'api call failed' in (opnsense_workflow_failure_message | lower) }}
+      no_log: true
     - name: Persist the protected failed save-stage facts
       ansible.builtin.copy:
         content: "{{ opnsense_workflow_save_result | to_json }}"

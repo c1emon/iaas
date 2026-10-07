@@ -36,7 +36,17 @@ rules、默认防火墙策略和关键公网入口不在本仓库管理范围。
 | `opnsense_api_host` | API 主机或地址。 | 必须与实际管理端点匹配。 |
 | `opnsense_api_url` | 由 host 派生的 HTTPS URL。 | 用于操作者理解；模块默认使用 host。 |
 | `opnsense_ssl_verify` | API TLS 校验开关。 | 由调用方声明；正常使用应启用 TLS 校验并提供可信 CA。 |
+| `opnsense_api_use_proxy` | 是否允许管理 API 使用受控环境代理。 | 布尔值，默认 `false`；IaaS 在 provider 调用边界清空或透传代理环境；本地 workflow target 使用 `api_use_proxy`。 |
 | `OPNSENSE_API_KEY` / `OPNSENSE_API_SECRET` | API 身份。 | 调用方通过 `.env.opnsense.tpl` + `op run` 或传统 Secret 注入相同变量。 |
+
+`opnsense_api_use_proxy: false` 在 IaaS 调用 provider 时清空代理环境，
+管理 API 读取和写入默认直连。`true` 透传现有受控代理环境，让现有客户端
+按原行为访问；不开启新的代理解析或 CIDR 绕过能力。
+plan、read、verify 与 apply 的 save、activate 使用同一开关。
+workflow 的开关在所选静态 inventory 的 host/group vars 中声明；
+本地 workflow 输入使用 `target.api_use_proxy`，缺省同样关闭。
+作用域仅限 OPNsense 管理 API；其他 CI 网络访问保持原策略。
+TLS、CA、认证、超时与已有连接重试设置不变，不新增直连回退或写入/激活重放。
 
 ## 2.3 声明式资源参数
 

@@ -38,6 +38,8 @@ def target_from_inventory(inventory: dict, scope: str) -> dict:
     require(len(matches) == 1, 'scope must resolve exactly one OPNsense inventory host')
     host = matches[0].get('opnsense_api_host')
     tls = matches[0].get('opnsense_ssl_verify', True)
+    use_proxy = matches[0].get('opnsense_api_use_proxy', False)
+    require(type(use_proxy) is bool, 'opnsense_api_use_proxy must be a boolean')
     require(isinstance(host, str) and host and '{{' not in host and type(tls) is bool,
             'workflow requires a literal API endpoint and boolean TLS verification')
     endpoint = host if '://' in host else 'https://' + host
@@ -46,7 +48,10 @@ def target_from_inventory(inventory: dict, scope: str) -> dict:
             and parsed.password is None and parsed.path in {'', '/'} and not parsed.query and not parsed.fragment,
             'invalid workflow API endpoint')
     _ = parsed.port
-    return {'host': scope, 'endpoint': endpoint.rstrip('/'), 'ssl_verify': tls}
+    target = {'host': scope, 'endpoint': endpoint.rstrip('/'), 'ssl_verify': tls}
+    if 'opnsense_api_use_proxy' in matches[0]:
+        target['api_use_proxy'] = use_proxy
+    return target
 
 
 def provenance(selected) -> dict:

@@ -45,7 +45,8 @@ def main():
             config=json.loads(sys.stdin.read(65537))
             if not isinstance(config,dict): raise ValueError
             key=config.get('api_key');secret=config.get('api_secret')
-            client=Transport(config.get('host'),key,secret,config.get('ssl_verify',True))
+            client=Transport(config.get('host'),key,secret,config.get('ssl_verify',True),
+                             config.get('api_use_proxy',False))
         except (ValueError,TypeError,ObservationError):
             result.update(status='error',reason='invalid_runtime_configuration',observation_availability='unknown')
             print(json.dumps(result));return 1

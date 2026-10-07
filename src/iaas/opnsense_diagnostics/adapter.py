@@ -6,9 +6,8 @@ from typing import NoReturn
 from urllib.parse import urlsplit
 from uuid import UUID
 
-import requests
-
 from iaas.http_transport import ReadBudget, TransportFailure, read_json
+from iaas.opnsense_workflow.proxy import ApiSession
 
 from .schema import ALIAS_NAME,utc_time
 
@@ -35,7 +34,7 @@ def problem(reason,status='error') -> NoReturn:
 
 
 class Transport:
-    def __init__(self,host,key,secret,verify=True):
+    def __init__(self,host,key,secret,verify=True,api_use_proxy=False):
         if not isinstance(host,str) or not host or not isinstance(key,str) or not key or not isinstance(secret,str) or not secret or type(verify) is not bool:
             problem('invalid_runtime_configuration')
         base=host if '://' in host else 'https://'+host
@@ -46,7 +45,7 @@ class Transport:
             _=parsed.port
         except ValueError: problem('invalid_runtime_configuration')
         # Preserve caller-selected TLS verification; redirects and arbitrary operations are forbidden.
-        self.base=base.rstrip('/')+'/api/';self.session=requests.Session()
+        self.base=base.rstrip('/')+'/api/';self.session=ApiSession(api_use_proxy)
         self.session.auth=(key,secret);self.verify=verify;self.used=0
 
     def close(self): self.session.close()

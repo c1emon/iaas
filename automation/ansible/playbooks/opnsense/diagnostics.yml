@@ -63,7 +63,8 @@
         argv: "{{ diagnostic_base_command + ['--execute'] }}"
         stdin: >-
           {{ {'host': opnsense_api_host, 'api_key': opnsense_api_key,
-              'api_secret': opnsense_api_secret, 'ssl_verify': opnsense_ssl_verify} | to_json }}
+              'api_secret': opnsense_api_secret, 'ssl_verify': opnsense_ssl_verify,
+              'api_use_proxy': opnsense_api_use_proxy | default(false)} | to_json }}
       vars:
         diagnostic_base_command: *diagnostic_command
       environment:
