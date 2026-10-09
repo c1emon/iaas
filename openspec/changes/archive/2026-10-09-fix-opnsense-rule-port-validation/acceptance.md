@@ -30,3 +30,7 @@ This establishes local software behavior and synthetic-server coverage, not live
 - `3b33d9d`: OPNsense port admission/provider mapping and safe API/task diagnostic primitives, with grouped tests.
 - `ea005e6`: runtime JSON and launcher critical-output propagation, with matching catalog and regression tests.
 - Documentation and OpenSpec acceptance are committed separately after strict validation. Each code group received staged GitNexus analysis (CRITICAL, no partial/truncated marker) and staged diff checks. Commits are local; no push was requested.
+
+## Archive validation
+
+Archived on 2026-10-09 and promoted deltas into the three main specs. All three pass standard spec validation. Strict spec validation reports exactly the same pre-existing long-requirement warnings as before archive (25 workflow, 1 filter-rule, 2 launcher); no new issues were introduced. Repository-wide strict validation reports 32 passed and 20 failed specs, so it is not recorded as a clean global check. The implementation change passed strict validation before archive. Publication of this branch and a PR targeting main were subsequently authorized; merging or replaying apply is outside this step.
