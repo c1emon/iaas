@@ -782,11 +782,17 @@ def test_native_csv_filter_networks_and_ports_are_validated_as_lists():
     transport = FakeCollection()
     row = transport.rows['filter-rules'][0]
     row.update(destination_net='NETS,192.0.2.0/24', source_net='OTHER,198.51.100.1',
-               source_port='1024,1025', destination_port='443,8443')
+               source_port='1024-1025', destination_port='443')
     obj = reader(transport).read(['filter-rules'])['filter-rules']['objects'][0]
     assert obj['configuration']['destination_net'] == ['192.0.2.0/24', 'NETS']
     assert obj['configuration']['source_net'] == ['198.51.100.1', 'OTHER']
-    assert obj['configuration']['destination_port'] == ['443', '8443']
+    assert obj['configuration']['destination_port'] == ['443']
+    assert obj['configuration']['source_port'] == ['1024-1025']
     assert {'aliases:NETS', 'aliases:OTHER'} <= set(obj['references'])
+    row.update(source_port='1024,1025', destination_port='443,8443')
+    invalid = reader(transport).read(['filter-rules'])['filter-rules']['objects'][0]
+    assert invalid['configuration'] is None
+    assert {'aliases:NETS', 'aliases:OTHER'} <= set(invalid['references'])
+    row.update(source_port='1024-1025', destination_port='443')
     row['destination_invert'] = True
     assert reader(transport).read(['filter-rules'])['filter-rules']['objects'][0]['configuration'] is None

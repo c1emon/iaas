@@ -29,6 +29,17 @@ Alias、Gateway 和接口组每次实际激活都会向 stderr 与 result 写入
 动态 Alias 的缓存、刷新和加载交给设备原生机制，结果不声称独立验证了内部步骤。
 独立 `verify` 仅核对已保存配置，不追认历史动作。
 
+规则的 `source_port` / `destination_port` 只接受单端口（1..65535）、明确的连续
+范围（如 `8848-9848`），或 port 类型 alias；单元素列表等价于其中的值。
+`[8848, 9848]`、`"8848,9848"` 等多端口输入会在 check/plan 和发送前被拒绝。
+非连续端口应显式声明 port alias（如 `NACOS_PORTS`，content 为 `['8848', '9848']`），
+再在规则中引用该名称；系统不会扩大范围或自动创建 alias。
+
+API 保存失败时，受保护的阶段文件及 result/recovery 阶段 `save_diagnostics`
+保留脱敏字段与已知静态校验原因；runtime JSON 和 launcher 终端也输出安全错误摘要。
+未知字段或原因明确标为脱敏，不保存响应、原始值或凭据。
+部分写入或 `pending_reconciliation` 必须先核清，再生成新计划并审批，不能重放旧 apply。
+
 `read` 默认隐藏已确认不能独立管理的系统内置／派生对象详情，未知来源、未知管理能力
 和普通配置转换失败仍可见。环境的 `components.opnsense.options.include_system: true`
 可展开当前选择范围内的系统项；该布尔选项仅用于 read。本地开发命令对应

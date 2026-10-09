@@ -24,7 +24,7 @@ def test_target_requires_single_host_and_binds_tls():
 
 @pytest.mark.parametrize('layout', ['flat', 'nested'])
 @pytest.mark.parametrize('missing_evidence', [False, True])
-def test_formal_read_plan_apply_verify_and_fixed_source(tmp_path, monkeypatch, layout, missing_evidence):
+def test_formal_read_plan_apply_verify_and_fixed_source(tmp_path, monkeypatch, capsys, layout, missing_evidence):
     import iaas.opnsense_workflow.reader as reader_module
     import iaas.opnsense_workflow.writer as writer_module
     device = Appliance(aliases=[alias('UNMANAGED')])
@@ -83,6 +83,9 @@ def test_formal_read_plan_apply_verify_and_fixed_source(tmp_path, monkeypatch, l
                'activation_check': {'target': TARGET, 'candidate_sha256': digest, 'execution_id': 'execution-1',
                                     'checked_no_pending': True, 'serialized': True}}
     assert invoke('apply', options=options) == 0
+    public = [json.loads(line) for line in capsys.readouterr().out.splitlines()][-1]
+    assert any(row['code'] == 'opnsense_native_limit' and row['severity'] == 'warning'
+               for row in public['diagnostics'])
     assert {row['name'] for row in device.resources['aliases']} == {'UNMANAGED', 'A'}
     assert invoke('verify') == 0
     for path in (candidate, tmp_path / 'execution-1/recovery/recovery.json'):

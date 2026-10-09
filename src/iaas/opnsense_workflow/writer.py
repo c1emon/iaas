@@ -23,7 +23,9 @@ import yaml
 from iaas.common.io import load_json, write_text
 from iaas.opnsense_validation import TOP_LEVEL, validate_document
 from iaas.opnsense_validation.lifecycle import resource_arguments
+from iaas.opnsense_validation.ports import rule_port
 from .proxy import provider_environment
+from .save_diagnostics import safe_failure
 
 
 SUPPORTED_RESOURCES = (
@@ -228,10 +230,10 @@ def _filter_rule_arguments(record: Mapping[str, Any]) -> dict[str, Any]:
     item["destination_invert"] = item.get("destination_invert", False)
     for field in ("source_net", "source_port", "destination_net", "destination_port"):
         value = item.get(field)
-        if isinstance(value, list):
+        if field.endswith("_port"):
+            item[field] = "" if value is None else rule_port(value, field)
+        elif isinstance(value, list):
             item[field] = ",".join(str(part) for part in value)
-        elif field.endswith("_port") and value is None:
-            item[field] = ""
     item.pop("scope", None)
     item.pop("slug", None)
     return item
@@ -363,6 +365,9 @@ class Writer:
         result["changed"] = changed
         result["status"] = status
         result["save"] = {"status": status, "changed": changed}
+        facts = raw.get('result')
+        if isinstance(facts, Mapping) and isinstance(facts.get('failure'), Mapping):
+            result['save']['failure'] = safe_failure(facts['failure'])
         result["configuration"] = {"status": "not_attempted"}
         if raw.get("error"):
             result["save"]["error"] = raw["error"]
@@ -391,6 +396,9 @@ class Writer:
         status = _provider_status(raw, activation=True, resource=resource)
         result["status"] = status
         result["activation"] = {"status": status}
+        facts = raw.get('result')
+        if isinstance(facts, Mapping) and isinstance(facts.get('failure'), Mapping):
+            result['activation'] = {'status': status, 'failure': safe_failure(facts['failure'])}
         if isinstance(raw.get("action_id"), str) and raw["action_id"]:
             result["action_id"] = raw["action_id"]
         if isinstance(raw.get("content_update"), list):

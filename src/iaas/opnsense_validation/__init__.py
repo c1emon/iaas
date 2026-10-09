@@ -9,6 +9,7 @@ import yaml
 
 from iaas.common.errors import ValidationError
 from .aliases import ALIAS_NAME, validate_frequency, validate_local, validate_url
+from .ports import rule_port
 
 
 DEFAULT_RESOURCE_FILES = {
@@ -279,7 +280,12 @@ def _validate_filter_rule(record: dict[str, Any], path: str, context: dict | Non
     if record["action"] in {"block", "reject"} and own_destinations:
         _error(f"{path}.destination_net", "deny rule must not include its own interface")
     for field in {"source_port", "destination_port"} & record.keys():
-        _ports(record[field], f"{path}.{field}")
+        token = rule_port(record[field], f"{path}.{field}")
+        if context and ALIAS_NAME.fullmatch(token):
+            aliases = {row['name']: row for row in context['aliases']}
+            alias = aliases.get(token)
+            if alias is None or alias['type'] != 'port' or alias['state'] != 'present':
+                _error(f"{path}.{field}", "must reference a present port type alias")
     if "gateway" in record:
         _string(record["gateway"], f"{path}.gateway")
     return (f"iaas:opnsense:filter:{scope}:{slug}",)
@@ -392,7 +398,7 @@ def validate_documents(documents: dict[str, Any]) -> None:
             _error("opnsense_filter_rule_context.aliases", "conflicts with selected alias declaration")
     groups = {row["name"]: row for row in documents.get("interface-groups", {}).get("opnsense_interface_groups", [])}
     for resource in ('filter-rules', 'dnat', 'one-to-one-nat'):
-        for row in documents.get(resource, {}).get(TOP_LEVEL[resource], []):
+        for index, row in enumerate(documents.get(resource, {}).get(TOP_LEVEL[resource], [])):
             if row['state'] != 'present':
                 continue
             interfaces = row['interface'] if isinstance(row['interface'], list) else [row['interface']]
@@ -400,6 +406,14 @@ def validate_documents(documents: dict[str, Any]) -> None:
                 if interface in groups and groups[interface]['state'] == 'absent':
                     _error(resource + '.interface', 'references an interface group selected for deletion')
             if resource == 'filter-rules':
+                for field in ('source_port', 'destination_port'):
+                    if field not in row:
+                        continue
+                    token = rule_port(row[field], f'{TOP_LEVEL[resource]}[{index}].{field}')
+                    alias = selected.get(token)
+                    if alias is not None and (alias['state'] != 'present' or alias['type'] != 'port'):
+                        _error(f'{TOP_LEVEL[resource]}[{index}].{field}',
+                               'must reference a present port type alias')
                 continue
             for field in ('source_net', 'destination_net', 'target', 'external',
                           'source_port', 'destination_port', 'local_port'):

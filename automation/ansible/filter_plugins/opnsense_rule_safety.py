@@ -7,7 +7,8 @@ _AUTOMATION_SRC = Path(__file__).resolve().parents[3] / "src"
 if str(_AUTOMATION_SRC) not in sys.path:
     sys.path.insert(0, str(_AUTOMATION_SRC))
 
-from iaas.opnsense_validation import validate_document
+from iaas.opnsense_validation import validate_document  # noqa: E402
+from iaas.opnsense_validation.ports import rule_port  # noqa: E402
 
 
 def _plain(value):
@@ -35,4 +36,5 @@ def opnsense_rule_safety(rules, context=None):
 
 class FilterModule:
     def filters(self):
-        return {"opnsense_rule_safety": opnsense_rule_safety}
+        return {"opnsense_rule_safety": opnsense_rule_safety,
+                "opnsense_rule_port": lambda value, field: rule_port(_plain(value), field)}

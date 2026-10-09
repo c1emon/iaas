@@ -14,6 +14,7 @@ from typing import cast
 
 from iaas.common.errors import require
 from iaas.common.io import write_text
+from iaas.common.public_diagnostics import exception_diagnostics, safe_diagnostics
 from iaas.pve_inventory.pve_api.errors import PveApiTlsError
 from iaas.runtime_config import InputRequired, SourceReader
 from iaas.runtime_config.compile import compile_documents
@@ -171,6 +172,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             run_component(selected, args.operation, args.scope, execution, image_digest=args.image_digest)
         print(json.dumps({"status": "success", "output": str(outputs.root), "effects": asdict(effects),
+                          'diagnostics': safe_diagnostics(execution.diagnostics),
                           "phases": [{"phase": item["phase"], "exit_code": item.get("exit_code")} for item in execution.phases]}))
         return 0
     except InputRequired as exc:
@@ -183,6 +185,9 @@ def main(argv: list[str] | None = None) -> int:
         phases = []
         retained = False
         public_diagnostic = {}
+        diagnostics = safe_diagnostics(getattr(execution, 'diagnostics', []))
+        if not any(item['severity'] == 'error' for item in diagnostics):
+            diagnostics = safe_diagnostics(diagnostics + exception_diagnostics(exc))
         from iaas.pve_template.admission import AdmissionError
         if isinstance(exc, AdmissionError) and exc.diagnostic.get('stage') == 'storage_permissions':
             allowed_codes = {'permission_missing', 'permission_value_invalid',
@@ -249,6 +254,7 @@ def main(argv: list[str] | None = None) -> int:
                         if isinstance(identity, str) and re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", identity):
                             domain_summary["execution_id"] = identity
                 execution.outputs.summary({**domain_summary, **public_diagnostic, "status": "failed", "phases": phases,
+                                           'diagnostics': diagnostics,
                                            "retain_storage": retained})
             except OSError:
                 retained = True
@@ -305,9 +311,11 @@ def main(argv: list[str] | None = None) -> int:
                   str(exc) if isinstance(exc, (ProxyConfigurationError, InputValidationError)) or str(exc) in safe_reasons else
                   "selected operation failed validation, setup or execution")
         print(json.dumps({"status": "failed", "reason": reason, **public_diagnostic,
+                          'diagnostics': diagnostics,
                           "output": str(outputs.root) if outputs else None,
                           "exit_code": code, "retain_storage": retained,
                           "phases": [{"phase": item["phase"], "exit_code": item.get("exit_code"),
+                                      **({'status': item['status']} if item.get('status') else {}),
                                       "proxy_configured": item.get("proxy_configured", proxy_configured(execution.environ) if execution else False),
                                       "capture": item.get("capture")} for item in phases]}))
         return code

@@ -13,14 +13,15 @@ import (
 )
 
 type discovery struct {
-	Status          string   `json:"status"`
-	Reason          string   `json:"reason"`
-	Path            string   `json:"path"`
-	CredentialNames []string `json:"credential_names"`
-	ExecutionID     string   `json:"execution_id"`
-	Effects         *Effects `json:"effects"`
-	Action          string   `json:"action"`
-	ExecutionMode   string   `json:"execution_mode"`
+	Diagnostics     []PublicDiagnostic `json:"diagnostics"`
+	Status          string             `json:"status"`
+	Reason          string             `json:"reason"`
+	Path            string             `json:"path"`
+	CredentialNames []string           `json:"credential_names"`
+	ExecutionID     string             `json:"execution_id"`
+	Effects         *Effects           `json:"effects"`
+	Action          string             `json:"action"`
+	ExecutionMode   string             `json:"execution_mode"`
 }
 
 func (t *task) runtimeArgs() []string {
@@ -56,6 +57,7 @@ func (t *task) discover() (discovery, error) {
 		return response, nil
 	}
 	if response.Status == "failed" && response.Reason != "" {
+		writePublicDiagnostics(os.Stderr, response.Diagnostics)
 		// The runtime's structured public reason excludes source values and
 		// native stderr. Docker's private diagnostics remain suppressed.
 		return response, errors.New(response.Reason)
@@ -255,12 +257,18 @@ func executeWithCapabilities(options Options, configuration RuntimeConfig, image
 		return err
 	}
 	var report struct {
-		Status        string `json:"status"`
-		Output        string `json:"output"`
-		RetainStorage bool   `json:"retain_storage"`
-		Reason        string `json:"reason"`
+		Phases        []PublicPhase      `json:"phases"`
+		Diagnostics   []PublicDiagnostic `json:"diagnostics"`
+		Status        string             `json:"status"`
+		Output        string             `json:"output"`
+		RetainStorage bool               `json:"retain_storage"`
+		Reason        string             `json:"reason"`
 	}
 	validReport := json.Unmarshal(data, &report) == nil
+	if validReport {
+		writeFailedPhases(os.Stderr, report.Phases)
+		writePublicDiagnostics(os.Stderr, report.Diagnostics)
+	}
 	// Incomplete recovery cannot be upgraded to complete by a successful copy.
 	t.retained = report.RetainStorage || !validReport
 	provenance, _ := json.Marshal(inputProvenance(options.Environment))

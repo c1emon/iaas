@@ -196,6 +196,11 @@ def apply(candidate: dict, digest: str, reader: Any, writer: Any, execution_id: 
                 outcome['save'] = 'unknown'
                 saved = writer.save(stage['resource'], [item['desired'] for item in items])
                 outcome['save'] = saved['status']
+                failure = saved.get('save', {}).get('failure')
+                if failure is not None:
+                    outcome['save_diagnostics'] = deepcopy(failure)
+                    save(output / 'result.json', result)
+                    save(output / 'recovery.json', recovery)
                 require(saved['status'] in {'saved', 'unchanged'}, 'resource save failed or is unknown')
             else:
                 outcome['save'] = 'unchanged'
