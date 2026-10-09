@@ -1,6 +1,7 @@
 import io
 import json
 from pathlib import Path
+import runpy
 import sys
 
 import pytest
@@ -34,6 +35,69 @@ def test_capture_cannot_be_prepared_prevents_spawn(tmp_path):
         run_protected([sys.executable, "-c", f"open({str(marker)!r}, 'w').close()"],
                       cwd=tmp_path, environ={}, capture=capture)
     assert not marker.exists()
+    assert capture.read_text() == "existing"
+
+
+def test_repeated_workflow_phases_keep_every_capture(tmp_path, capfd):
+    outputs = TaskOutputs.create(tmp_path / 'task', tmp_path / 'implementation', [])
+    execution = Execution(outputs, {})
+    resources = ['aliases', 'filter-rules', 'gateways', 'filter-rules']
+    captures = []
+    for number, resource in enumerate(resources):
+        result = execution.run(f'opnsense-workflow-save-{resource}',
+                               [sys.executable, '-c', f"print('private-batch-{number}')"],
+                               outputs.path('work'))
+        assert result.successful
+        captures.append(result.capture)
+    assert len(set(captures)) == 4
+    assert [path.read_text().strip() for path in captures] == [f'private-batch-{n}' for n in range(4)]
+    assert all(path.stat().st_mode & 0o777 == 0o600 for path in captures)
+    summary = json.loads((outputs.root / 'summary.json').read_text())
+    assert [row['phase'] for row in summary['phases']] == [f'opnsense-workflow-save-{r}' for r in resources]
+    assert 'private-batch-' not in json.dumps(summary)
+    assert capfd.readouterr() == ('', '')
+
+
+def test_state_smoke_uses_actual_captures_with_local_tool_substitute(tmp_path, monkeypatch, capsys):
+    tool = tmp_path / 'tofu'
+    tool.write_text(f'#!{sys.executable}\n' + '''
+import json, sys, time
+from pathlib import Path
+args = sys.argv[1:]
+if args[0] == 'apply' and 'plan.tfplan' in args:
+    Path('lock-held').touch()
+    deadline = time.monotonic() + 5
+    while not Path('contention-checked').exists():
+        if time.monotonic() >= deadline:
+            raise SystemExit(2)
+        time.sleep(.01)
+elif '-lock-timeout=1s' in args:
+    Path('contention-checked').touch()
+    print('Error acquiring the state lock')
+    raise SystemExit(1)
+elif args == ['state', 'pull']:
+    print(json.dumps({'serial': 1, 'resources': [{'type': 'terraform_data'}]}))
+elif 'stale.tfplan' in args and args[0] == 'apply':
+    print('Saved plan is stale')
+    raise SystemExit(1)
+''')
+    tool.chmod(0o700)
+    monkeypatch.setenv('PATH', str(tmp_path))
+    monkeypatch.setenv('IAAS_TEST_OUTPUT', str(tmp_path / 'task'))
+    monkeypatch.setenv('IAAS_TEST_S3_ENDPOINT', 'https://unused.invalid')
+    monkeypatch.setenv('IAAS_TEST_S3_BUCKET', 'unused-synthetic-bucket')
+    monkeypatch.setattr(S3Backend, 'initialize', lambda self, root, environ, recovery:
+                        run_protected([sys.executable, '-c', 'pass'], cwd=root,
+                                      environ=environ, capture=recovery / 'backend-init.raw'))
+    script = Path(__file__).resolve().parents[2] / 'automation/oci/checks/state_smoke.py'
+    runpy.run_path(str(script))['main']()
+    assert 'native S3 smoke passed' in capsys.readouterr().out
+    summary = json.loads((tmp_path / 'task/summary.json').read_text())
+    phases = {row['phase']: Path(row['capture']) for row in summary['phases']}
+    assert json.loads(phases['state-read'].read_text())['serial'] == 1
+    assert 'Saved plan is stale' in phases['stale-apply'].read_text()
+    contention = json.loads((tmp_path / 'contention/summary.json').read_text())
+    assert 'Error acquiring the state lock' in Path(contention['phases'][-1]['capture']).read_text()
 
 
 def test_mid_capture_failure_drains_without_public_fallback(capfd):

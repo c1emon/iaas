@@ -196,6 +196,8 @@ def apply(candidate: dict, digest: str, reader: Any, writer: Any, execution_id: 
                 outcome['save'] = 'unknown'
                 saved = writer.save(stage['resource'], [item['desired'] for item in items])
                 outcome['save'] = saved['status']
+                if saved.get('save', {}).get('process_started') is False:
+                    outcome['save_process_started'] = False
                 failure = saved.get('save', {}).get('failure')
                 if failure is not None:
                     outcome['save_diagnostics'] = deepcopy(failure)
@@ -260,6 +262,7 @@ def reverse_documents(recovery: dict, req: dict, observations: dict, target: dic
 
     from iaas.opnsense_validation import validate_documents
     from .contracts import RESOURCES, identity
+    from .save_diagnostics import safe_failure
 
     shape(recovery, {'schema_version', 'kind', 'target', 'runtime', 'candidate_sha256', 'execution_id', 'entries', 'stages'})
     require(type(recovery['schema_version']) is int and recovery['schema_version'] == RECOVERY_VERSION and recovery['kind'] == 'opnsense-recovery'
@@ -341,7 +344,18 @@ def reverse_documents(recovery: dict, req: dict, observations: dict, target: dic
     for stage in recovery['stages']:
         shape(stage, {'resource', 'mode', 'identities', 'attempted', 'save', 'activation',
                       'configuration', 'active'}, {'activation_detail', 'activation_basis', 'warnings',
-                                                  'confirmation', 'content_actions', 'content_update'})
+                                                  'confirmation', 'content_actions', 'content_update',
+                                                  'save_process_started', 'save_diagnostics'})
+        if 'save_diagnostics' in stage:
+            failure = stage['save_diagnostics']
+            require(isinstance(failure, dict) and isinstance(failure.get('validation_details'), list)
+                    and all(isinstance(detail, dict) and isinstance(detail.get('field'), str)
+                            and isinstance(detail.get('reason'), str) for detail in failure['validation_details']),
+                    'malformed recovery save diagnostics')
+            require(failure == safe_failure(failure), 'malformed recovery save diagnostics')
+        if 'save_process_started' in stage:
+            require(stage['save_process_started'] is False and stage['save'] == 'failed',
+                    'malformed recovery process start status')
         require(stage['mode'] in {'save', 'activation_recovery'}
                 and type(stage['attempted']) is bool and stage['attempted'],
                 'malformed recovery stage')

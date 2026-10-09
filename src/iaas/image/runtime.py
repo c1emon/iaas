@@ -297,7 +297,7 @@ def _current_timeout(execution: Execution) -> int | None:
 def _run_tool(execution: Execution, phase: str, command: Sequence[str], cwd: Path) -> int:
     result = execution.run(phase, list(command), cwd, timeout_seconds=_current_timeout(execution),
                           max_output_bytes=_current_budget(execution))
-    capture = execution.outputs.path("recovery") / f"{phase}.raw"
+    capture = result.capture
     if capture.is_file() and capture.stat().st_size > _current_budget(execution):
         raise OperationFailed(f"{phase} exceeded the protected output budget")
     return result.returncode

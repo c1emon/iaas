@@ -186,13 +186,15 @@ def test_runtime_health_retains_tls_failure_in_protected_phase(certificates, tmp
         assert requests == []
     public = json.loads(capsys.readouterr().out)
     assert public["status"] == "failed"
+    capture = Path(public['phases'][0]['capture'])
     assert public["phases"] == [{"phase": "health", "exit_code": 1, "proxy_configured": False,
-                                 "capture": str(output / "recovery" / "health.raw")}]
+                                 "capture": str(capture)}]
     assert public["output"] == str(output)
     assert "synthetic-secret" not in json.dumps(public)
     summary = json.loads((output / "summary.json").read_text())
-    capture = Path(summary["phases"][0]["capture"])
-    assert capture == output / "recovery" / "health.raw"
+    assert Path(summary["phases"][0]["capture"]) == capture
+    assert capture.parent == output / 'recovery'
+    assert capture.name.startswith('health-') and capture.suffix == '.raw'
     assert capture.stat().st_mode & 0o777 == 0o600
     assert (output.stat().st_mode & 0o777) == 0o700
     diagnostic = capture.read_text()

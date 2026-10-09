@@ -148,6 +148,8 @@ class _AnsibleProvider:
                 self.execution.run(phase, command, root)
         except Exception as exc:
             error = exc
+        if error is not None and getattr(error, 'process_started', None) is False:
+            return {"status": "failed", "process_started": False, "error": "protected process not started"}
         try:
             facts = load_json(result_path)
             if not isinstance(facts, dict):
@@ -365,6 +367,10 @@ class Writer:
         result["changed"] = changed
         result["status"] = status
         result["save"] = {"status": status, "changed": changed}
+        if raw.get('process_started') is False:
+            result['attempted'] = False
+            result['changed'] = False
+            result['save'].update(changed=False, process_started=False)
         facts = raw.get('result')
         if isinstance(facts, Mapping) and isinstance(facts.get('failure'), Mapping):
             result['save']['failure'] = safe_failure(facts['failure'])
@@ -396,6 +402,9 @@ class Writer:
         status = _provider_status(raw, activation=True, resource=resource)
         result["status"] = status
         result["activation"] = {"status": status}
+        if raw.get('process_started') is False:
+            result['attempted'] = False
+            result['activation'] = {'status': status, 'process_started': False}
         facts = raw.get('result')
         if isinstance(facts, Mapping) and isinstance(facts.get('failure'), Mapping):
             result['activation'] = {'status': status, 'failure': safe_failure(facts['failure'])}

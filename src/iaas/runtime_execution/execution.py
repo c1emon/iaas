@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from iaas.common.errors import ValidationError
 from iaas.common.public_diagnostics import capture_diagnostics, safe_diagnostics
@@ -17,6 +18,12 @@ from .network_proxy import proxy_configured
 
 class OperationFailed(ValidationError):
     """The public error deliberately contains no raw tool output."""
+
+
+class OperationNotStarted(OperationFailed):
+    """Protected setup failed before the child process was started."""
+
+    process_started = False
 
 
 @dataclass
@@ -54,13 +61,13 @@ class Execution:
             max_output_bytes: int | None = None) -> ProcessResult:
         try:
             result = run_protected(command, cwd=cwd, environ=self.environ,
-                                   capture=self.outputs.path("recovery") / f"{phase}.raw",
+                                   capture=self.outputs.path("recovery") / f"{phase}-{uuid4().hex}.raw",
                                    timeout_seconds=timeout_seconds, max_output_bytes=max_output_bytes)
         except ValidationError:
             self.diagnostics = safe_diagnostics(self.diagnostics + [{'code': 'process_start_failed'}])
             self.phases.append({"phase": phase, "status": "not-started", "reason": "protected process setup failed"})
             self.outputs.summary({"status": "failed", "phases": self.phases, 'diagnostics': self.diagnostics})
-            raise OperationFailed(f"{phase} could not start; preserve task outputs") from None
+            raise OperationNotStarted(f"{phase} could not start; preserve task outputs") from None
         self.record(phase, result, cwd)
         return result
 

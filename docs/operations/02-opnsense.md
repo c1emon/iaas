@@ -419,6 +419,14 @@ PYTHONPATH=src uv run python -m iaas.opnsense_workflow.inspect \
 也不证明内部子动作完成或业务连通性。`--inventory`、`--candidate` 和 `--output`
 必须分别指向匹配的 inventory、已审查候选和新输出路径。
 
+结果与恢复材料的 stage/entry `attempted` 表示已进入执行阶段、纳入潜在影响范围，
+不证明子进程已启动或设备已收到写请求。若受保护进程在启动前失败，save 阶段记录
+`save_process_started: false`，provider save/activation 的 `attempted` 为 false；
+launcher phase 为 `not-started`，公共错误码为 `process_start_failed`。
+每次调用独立保留原始 capture；同名 phase 不覆盖或删除先前输出。
+调用方应读取 launcher 公共结构化诊断及 stderr 中的稳定错误码、阶段和安全描述；
+原始命令输出与配置仍留在私有 task 输出中。
+
 显式恢复按以下步骤执行：
 
 1. 检查失败执行的私有 result/recovery，核清部分保存和后态；不整批重试旧 apply。

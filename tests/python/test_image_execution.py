@@ -323,7 +323,7 @@ def test_image_tool_output_budget_stops_a_chatty_process(tmp_path: Path) -> None
     execution.image_max_output_bytes = 128
     with pytest.raises(OperationFailed, match="spam failed"):
         runtime._run_tool(execution, "spam", [sys.executable, "-c", "print('x' * 100000)"], tmp_path)
-    capture = execution.outputs.path("recovery") / "spam.raw"
+    capture = Path(execution.phases[-1]['capture'])
     assert capture.stat().st_size <= 128
 
 
