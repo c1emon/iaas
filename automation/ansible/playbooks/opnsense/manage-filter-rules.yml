@@ -151,11 +151,8 @@
                       else item.source_net
                     ),
                     'source_port': (
-                      item.source_port | join(',')
-                      if item.source_port is defined
-                      and item.source_port is sequence
-                      and item.source_port is not string
-                      else item.source_port | default('')
+                      item.source_port | opnsense_rule_port('source_port')
+                      if item.source_port is defined else ''
                     ),
                     'destination_invert': item.destination_invert | default(false),
                     'destination_net': (
@@ -164,11 +161,8 @@
                       else item.destination_net
                     ),
                     'destination_port': (
-                      item.destination_port | join(',')
-                      if item.destination_port is defined
-                      and item.destination_port is sequence
-                      and item.destination_port is not string
-                      else item.destination_port | default('')
+                      item.destination_port | opnsense_rule_port('destination_port')
+                      if item.destination_port is defined else ''
                     )
                   }
                 )

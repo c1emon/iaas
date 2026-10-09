@@ -467,7 +467,7 @@ def test_save_failure_classification_does_not_export_provider_data(tmp_path) -> 
     tasks = []
     for call, codes, timeout, validation, denied, api_failed in cases:
         messages = call.get('msg', '')
-        expected = {'http_status_codes': codes, 'timeout_reported': timeout,
+        expected = {'validation_details': [], 'http_status_codes': codes, 'timeout_reported': timeout,
                     'connection_error_reported': 'Unable to connect' in messages,
                     'validation_reported': validation, 'write_denied_reported': denied,
                     'api_failure_reported': api_failed}
@@ -493,17 +493,22 @@ def test_save_failure_classification_does_not_export_provider_data(tmp_path) -> 
 
 
 @pytest.mark.parametrize('looped', [False, True])
-def test_no_log_save_failure_persists_only_safe_diagnostics(tmp_path, looped) -> None:
+@pytest.mark.parametrize('validation', [False, True])
+def test_no_log_save_failure_persists_only_safe_diagnostics(tmp_path, looped, validation) -> None:
     source = yaml.safe_load(SAVE_TASKS.read_text())
     result_path = tmp_path / 'save-result.json'
     library = tmp_path / 'library'
     library.mkdir()
+    reason = 'Please specify a valid portnumber, name, alias or range.'
+    message = (f"API call failed | Error: {{'rule.destination_port': {reason!r}, "
+               "'rule.source_port': 'private-api-secret'} | Response: "
+               "{'status_code': 400} private-api-secret" if validation else
+               "API call failed | Response: {'status_code': 403} private-api-secret")
     (library / 'synthetic_save_failure.py').write_text(
         'from ansible.module_utils.basic import AnsibleModule\n'
         'module = AnsibleModule(argument_spec={})\n'
         'module.warn("private-api-secret-warning")\n'
-        'module.fail_json(msg="API call failed | Response: '
-        "{'status_code': 403} private-api-secret\")\n"
+        f'module.fail_json(msg={message!r})\n'
     )
     provider_failure = {'name': 'Synthetic provider rejects save', 'no_log': True,
                         'synthetic_save_failure': {}}
@@ -526,13 +531,22 @@ def test_no_log_save_failure_persists_only_safe_diagnostics(tmp_path, looped) ->
     assert 'private-api-secret' not in result.stdout + result.stderr + result_path.read_text()
     facts = json.loads(result_path.read_text())
     assert facts['status'] == 'failed'
-    assert facts['failure'] == {'http_status_codes': ['403'], 'timeout_reported': False,
+    assert facts['failure'] == {'validation_details': ([
+        {'field': 'destination_port', 'reason': reason},
+        {'field': 'source_port', 'reason': 'unrecognized API validation reason (redacted)'},
+    ] if validation else []), 'http_status_codes': ['400' if validation else '403'], 'timeout_reported': False,
                                 'connection_error_reported': False,
-                                'validation_reported': False, 'write_denied_reported': False,
+                                'validation_reported': validation, 'write_denied_reported': False,
                                 'api_failure_reported': True}
     assert facts['configuration']['status'] == 'unknown'
     assert facts['activation']['status'] == 'not_attempted'
     assert result_path.stat().st_mode & 0o777 == 0o600
+    output = result.stdout + result.stderr
+    assert 'protected_task_failed' in output and 'protected_warning' in output
+    if validation:
+        assert 'api_port_invalid' in output and 'destination_port' in output
+    else:
+        assert 'permission_denied' in output and '403' in output
 
 
 def test_writer_preserves_action_association_and_separate_content_evidence() -> None:

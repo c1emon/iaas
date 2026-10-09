@@ -90,11 +90,8 @@
                     else item.source_net
                   ),
                   'source_port': (
-                    item.source_port | join(',')
-                    if item.source_port is defined
-                    and item.source_port is sequence
-                    and item.source_port is not string
-                    else item.source_port | default('')
+                    item.source_port | opnsense_rule_port('source_port')
+                    if item.source_port is defined else ''
                   ),
                   'destination_invert': item.destination_invert | default(false),
                   'destination_net': (
@@ -103,11 +100,8 @@
                     else item.destination_net
                   ),
                   'destination_port': (
-                    item.destination_port | join(',')
-                    if item.destination_port is defined
-                    and item.destination_port is sequence
-                    and item.destination_port is not string
-                    else item.destination_port | default('')
+                    item.destination_port | opnsense_rule_port('destination_port')
+                    if item.destination_port is defined else ''
                   )
                 })
               | dict2items
@@ -209,6 +203,7 @@
           activation: {status: not_attempted}
           active_check: {status: not_attempted}
           failure:
+            validation_details: "{{ ansible_failed_result | opnsense_validation_details }}"
             http_status_codes: >-
               {{ opnsense_workflow_failure_message
                  | regex_findall("'status_code': ([1-5][0-9]{2})") | unique | list }}
@@ -231,6 +226,12 @@
         dest: "{{ opnsense_workflow_result_path }}"
         mode: '0600'
       no_log: true
+    - name: Report safe save-stage failure diagnostics
+      ansible.builtin.debug:
+        msg:
+          iaas_public_diagnostics: >-
+            {{ opnsense_workflow_save_result.failure |
+               opnsense_public_failure_diagnostics(opnsense_workflow_resource | default(none)) }}
     - name: Stop after a failed workflow save stage
       ansible.builtin.fail:
         msg: >-
