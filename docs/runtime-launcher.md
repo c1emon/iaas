@@ -295,6 +295,13 @@ current-object identities and caller ownership/dependency admission. The old
 entrypoints are rejected with migration guidance.
 
 Results contain `generated`, `diagnostics`, `plan`, `recovery`, `work` and summaries.
+Runtime public JSON includes bounded `diagnostics`; the launcher displays approved
+errors and warnings, including failed phase/exit status, known validation fields,
+HTTP authentication/permission failures and timeouts. Protected Ansible tasks keep
+`no_log`: failure status, recognized static gate reasons and warning counts remain
+visible, while original arguments, response bodies and unknown message text stay
+private. Raw subprocess captures are referenced by the phase summary. A success
+status does not suppress warnings or the OPNsense native-evidence limitation.
 `input-provenance.json` records the environment repository revision and dirty
 status when optional Git is available; otherwise it explicitly reports unavailable.
 It does not attest referenced files outside that repository or prove input bytes.
