@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from iaas.common.errors import ValidationError
+from iaas.common.public_diagnostics import capture_diagnostics, safe_diagnostics
 
 from .outputs import TaskOutputs
 from .process import ProcessResult, run_protected
@@ -23,6 +24,7 @@ class Execution:
     outputs: TaskOutputs
     environ: dict[str, str]
     phases: list[dict[str, Any]] = field(default_factory=list)
+    diagnostics: list[dict[str, Any]] = field(default_factory=list)
 
     def record(self, phase: str, result: ProcessResult, cwd: Path) -> None:
         recovery = self.outputs.retain_state(cwd)
@@ -30,12 +32,21 @@ class Execution:
                 "proxy_configured": proxy_configured(self.environ),
                 "capture_complete": result.capture_complete, "interrupted": result.interrupted,
                 "capture": str(result.capture), **recovery}
+        entries = capture_diagnostics(result.capture)
+        if result.returncode and not any(entry['severity'] == 'error' for entry in entries):
+            entries.extend(safe_diagnostics([{'code': 'timeout' if result.returncode == 124 else
+                'process_interrupted' if result.interrupted else 'process_failed', 'exit_code': result.returncode}]))
         if not result.capture_complete:
+            entries.extend(safe_diagnostics([{'code': 'capture_incomplete'}]))
             item.update(recovery_complete=False, retain_storage=True,
                         reason="protected capture failed; recovery completeness unconfirmed")
         self.phases.append(item)
+        if entries:
+            item['diagnostics'] = entries
+            self.diagnostics = safe_diagnostics(self.diagnostics + entries)
         successful = result.successful and not recovery.get("retain_storage", False)
-        self.outputs.summary({"status": "running" if successful else "failed", "phases": self.phases})
+        self.outputs.summary({"status": "running" if successful else "failed", "phases": self.phases,
+                              'diagnostics': self.diagnostics})
         if not successful:
             raise OperationFailed(f"{phase} failed; inspect protected task recovery material")
 
@@ -46,11 +57,12 @@ class Execution:
                                    capture=self.outputs.path("recovery") / f"{phase}.raw",
                                    timeout_seconds=timeout_seconds, max_output_bytes=max_output_bytes)
         except ValidationError:
+            self.diagnostics = safe_diagnostics(self.diagnostics + [{'code': 'process_start_failed'}])
             self.phases.append({"phase": phase, "status": "not-started", "reason": "protected process setup failed"})
-            self.outputs.summary({"status": "failed", "phases": self.phases})
+            self.outputs.summary({"status": "failed", "phases": self.phases, 'diagnostics': self.diagnostics})
             raise OperationFailed(f"{phase} could not start; preserve task outputs") from None
         self.record(phase, result, cwd)
         return result
 
     def finish(self, summary: dict[str, Any]) -> None:
-        self.outputs.summary({**summary, "status": "success", "phases": self.phases})
+        self.outputs.summary({**summary, "status": "success", "phases": self.phases, 'diagnostics': self.diagnostics})

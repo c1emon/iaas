@@ -9,6 +9,8 @@ from urllib.parse import urlsplit
 import yaml
 
 from iaas.common.errors import require
+from iaas.common.public_diagnostics import safe_diagnostics
+from .save_diagnostics import public_failure_diagnostics
 from iaas.runtime_config.selection import runtime_platform
 from iaas.runtime_execution.execution import OperationFailed
 from .contracts import RESULT_VERSION, load_candidate, request, save, selected_records, selectors
@@ -166,9 +168,21 @@ def run(selected, operation: str, scope: str, execution, image_digest: str) -> N
             base.update(schema_version=RESULT_VERSION, kind='opnsense-result', operation=operation,
                         observation_scope=CONFIGURATION_SCOPE, display_projection=False)
         save(directory / 'result.json', base)
+        entries = []
+        for warning in base.get('warnings', []):
+            if warning.get('code') == 'IAAS-OPNSENSE-RESULT-LIMITATION':
+                entries.append({'code': 'opnsense_native_limit', 'resource': warning.get('resource')})
+        for stage in base.get('stages', []):
+            entries.extend(public_failure_diagnostics(stage.get('save_diagnostics'), stage.get('resource')))
+            activation = stage.get('activation_detail', {}).get('activation', {})
+            entries.extend(public_failure_diagnostics(activation.get('failure'), stage.get('resource')))
+            if stage.get('activation') in {'failed', 'unknown', 'unconfirmed'}:
+                entries.append({'code': 'activation_failed', 'resource': stage.get('resource')})
+        execution.diagnostics = safe_diagnostics(getattr(execution, 'diagnostics', []) + entries)
         execution.outputs.summary({'component': 'opnsense', 'operation': operation, 'scope': scope,
                                    'status': base['status'], 'result': str(directory / 'result.json'),
-                                   'retain_storage': base.get('retain_storage', False), 'phases': execution.phases})
+                                   'retain_storage': base.get('retain_storage', False), 'phases': execution.phases,
+                                   'diagnostics': execution.diagnostics})
         if base['status'] in {'failed', 'blocked'}:
             if base.get('retain_storage'):
                 execution.phases.append({'phase': 'opnsense-recovery', 'exit_code': 2,
