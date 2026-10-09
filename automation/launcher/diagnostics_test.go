@@ -41,3 +41,26 @@ func TestFailedPhaseOutputPreservesStageAndExitStatus(t *testing.T) {
 		t.Fatal(text)
 	}
 }
+
+func TestProcessSetupReportDisplaysSafeCodeAndPhase(t *testing.T) {
+	var report struct {
+		Phases      []PublicPhase      `json:"phases"`
+		Diagnostics []PublicDiagnostic `json:"diagnostics"`
+	}
+	data := `{"phases":[{"phase":"opnsense-workflow-save-filter-rules","status":"not-started","exit_code":null}],"diagnostics":[{"code":"process_start_failed","message":"private-setup-sentinel"}]}`
+	if err := json.Unmarshal([]byte(data), &report); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	writeFailedPhases(&output, report.Phases)
+	writePublicDiagnostics(&output, report.Diagnostics)
+	text := output.String()
+	for _, required := range []string{"phase=opnsense-workflow-save-filter-rules status=not-started", "[process_start_failed]", "Child process could not start"} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("missing %q: %s", required, text)
+		}
+	}
+	if strings.Contains(text, "private-setup-sentinel") {
+		t.Fatal(text)
+	}
+}

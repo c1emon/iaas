@@ -104,6 +104,58 @@ def test_fixed_candidate_and_digest(tmp_path):
         load_candidate(path, reviewed)
 
 
+def test_native_stage_distinguishes_entry_from_save_process_start(tmp_path):
+    device = Appliance()
+    cand = candidate(device, documents(aliases=[alias()]))
+    device.save = lambda *_: {'status': 'failed', 'attempted': False,
+                              'save': {'process_started': False}}
+    result = execute(tmp_path, device, cand)
+    assert result['status'] == 'failed'
+    stage = result['stages'][-1]
+    assert stage['attempted'] is True  # entered the durable conservative recovery scope
+    assert stage['save_process_started'] is False
+    assert stage['activation'] == 'not_attempted'
+    recovery = json.loads((tmp_path / 'recovery.json').read_text())
+    assert recovery['stages'][-1]['save_process_started'] is False
+    assert not device.calls
+    req = {'schema_version': 1, 'selection': {'aliases': 'all'}}
+    restored = reverse_documents(recovery, req, device.read(['aliases']), TARGET)
+    assert restored['aliases'][TOP_LEVEL['aliases']][0]['state'] == 'absent'
+    recovery['stages'][-1]['save_process_started'] = True
+    with pytest.raises(ValidationError, match='process start status'):
+        reverse_documents(recovery, req, device.read(['aliases']), TARGET)
+
+
+def test_failed_save_diagnostics_survive_recovery_without_weakening_admission(tmp_path):
+    from iaas.opnsense_workflow.save_diagnostics import safe_failure
+    device = Appliance(aliases=[alias()])
+    cand = candidate(device, documents(aliases=[alias(content=['198.51.100.0/24'])]))
+    failure = safe_failure({'validation_details': [{'field': 'destination_port',
+                            'reason': 'Please specify a valid portnumber, name, alias or range.'}],
+                            'http_status_codes': ['400'], 'validation_reported': True})
+    device.save = lambda *_: {'status': 'failed', 'save': {'failure': failure}}
+    assert execute(tmp_path, device, cand)['status'] == 'failed'
+    recovery = json.loads((tmp_path / 'recovery.json').read_text())
+    assert recovery['stages'][0]['save_diagnostics'] == failure
+    req = {'schema_version': 1, 'selection': {'aliases': 'all'}}
+    restored = reverse_documents(recovery, req, device.read(['aliases']), TARGET)
+    assert restored['aliases'][TOP_LEVEL['aliases']][0]['content'] == alias()['content']
+    for invalid in ({**failure, 'raw_response': 'private-secret'},
+                    {**failure, 'validation_details': [{'field': [], 'reason': 'bad'}]},
+                    {**failure, 'validation_details': [{'field': 'destination_port', 'reason': 'private-secret'}]}):
+        broken = deepcopy(recovery)
+        broken['stages'][0]['save_diagnostics'] = invalid
+        with pytest.raises(ValidationError, match='save diagnostics'):
+            reverse_documents(broken, req, device.read(['aliases']), TARGET)
+    unknown = deepcopy(recovery)
+    unknown['entries'][0].update(after_status='unknown', after=None, after_classification=None)
+    with pytest.raises(ValidationError, match='reconciled evidence'):
+        reverse_documents(unknown, req, device.read(['aliases']), TARGET)
+    device.resources['aliases'][0]['content'] = ['203.0.113.0/24']
+    with pytest.raises(ValidationError, match='later configuration change'):
+        reverse_documents(recovery, req, device.read(['aliases']), TARGET)
+
+
 def test_live_rule_without_recreation_context_is_manual_recovery():
     from iaas.opnsense_workflow.executor import recovery_document
     device = Appliance(filter_rules=[rule('192.0.2.0/24', action='block', protocol='any', destination_invert=True)])

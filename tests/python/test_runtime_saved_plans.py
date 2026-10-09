@@ -252,7 +252,7 @@ def test_collection_failure_preserves_native_success(setup_plan, monkeypatch):
     assert result["native_execution"]["status"] == "success"
     assert result["state_persistence"]["status"] == "passed"
     assert result["collection"]["status"] == "unknown"
-    assert (apply.outputs.path("recovery") / "apply.raw").exists()
+    assert any(Path(phase['capture']).exists() for phase in apply.phases if phase['phase'] == 'apply')
 
 
 def test_independent_verify_keeps_original_and_never_initializes(setup_plan, monkeypatch):

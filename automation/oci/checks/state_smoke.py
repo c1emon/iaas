@@ -60,19 +60,19 @@ def main() -> None:
     try:
         contention.run("lock-conflict", ["tofu", "plan", "-input=false", "-lock-timeout=1s"], root)
     except OperationFailed:
-        assert "Error acquiring the state lock" in (contention_outputs.path("recovery") / "lock-conflict.raw").read_text()
+        assert "Error acquiring the state lock" in Path(contention.phases[-1]['capture']).read_text()
     else:
         raise AssertionError("concurrent native state operation unexpectedly acquired the lock")
     worker.join(timeout=30)
     assert not worker.is_alive() and not errors, "native apply failed"
-    execution.run("state-read", ["tofu", "state", "pull"], root)
-    state = json.loads((outputs.path("recovery") / "state-read.raw").read_text())
+    state_read = execution.run("state-read", ["tofu", "state", "pull"], root)
+    state = json.loads(state_read.capture.read_text())
     assert state["resources"][0]["type"] == "terraform_data"
     assert state["serial"] >= 1
     try:
         execution.run("stale-apply", ["tofu", "apply", "-input=false", "stale.tfplan"], root)
     except OperationFailed:
-        assert "Saved plan is stale" in (outputs.path("recovery") / "stale-apply.raw").read_text()
+        assert "Saved plan is stale" in Path(execution.phases[-1]['capture']).read_text()
     else:
         raise AssertionError("stale native plan was not rejected")
     print("native S3 smoke passed: state read/write, lock contention, stale saved-plan rejection; synthetic resource only")

@@ -29,7 +29,7 @@ def test_safe_error_survives_real_subprocess_and_phase_summary(tmp_path, capfd, 
     assert summary['phases'][0]['exit_code'] == 2
     assert not any(value in json.dumps(summary) for value in ('private-api-secret', 'private-password', 'private-config'))
     assert capfd.readouterr() == ('', '')
-    assert 'private-config' in (outputs.path('recovery') / 'opnsense-workflow-save-filter-rules.raw').read_text()
+    assert 'private-config' in Path(summary['phases'][0]['capture']).read_text()
 
 
 def test_warning_survives_success_and_errors_take_priority_over_warning_volume(tmp_path):

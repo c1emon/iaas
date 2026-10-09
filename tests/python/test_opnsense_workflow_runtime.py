@@ -24,7 +24,8 @@ def test_target_requires_single_host_and_binds_tls():
 
 @pytest.mark.parametrize('layout', ['flat', 'nested'])
 @pytest.mark.parametrize('missing_evidence', [False, True])
-def test_formal_read_plan_apply_verify_and_fixed_source(tmp_path, monkeypatch, capsys, layout, missing_evidence):
+@pytest.mark.parametrize('setup_failure', [False, True])
+def test_formal_read_plan_apply_verify_and_fixed_source(tmp_path, monkeypatch, capsys, layout, missing_evidence, setup_failure):
     import iaas.opnsense_workflow.reader as reader_module
     import iaas.opnsense_workflow.writer as writer_module
     device = Appliance(aliases=[alias('UNMANAGED')])
@@ -39,7 +40,15 @@ def test_formal_read_plan_apply_verify_and_fixed_source(tmp_path, monkeypatch, c
     device.read = read
     device.close = lambda: None
     monkeypatch.setattr(reader_module, 'Reader', lambda *_args: device)
-    monkeypatch.setattr(writer_module, 'Writer', lambda *_args, **_kwargs: device)
+    if setup_failure:
+        import iaas.runtime_execution.execution as execution_module
+
+        def unavailable(*args, **kwargs):
+            raise ValidationError('private-setup-sentinel')
+
+        monkeypatch.setattr(execution_module, 'run_protected', unavailable)
+    else:
+        monkeypatch.setattr(writer_module, 'Writer', lambda *_args, **_kwargs: device)
     root = tmp_path / layout
     root.mkdir()
     declarations = root if layout == 'flat' else root / 'declarations' / 'firewall'
@@ -82,6 +91,19 @@ def test_formal_read_plan_apply_verify_and_fixed_source(tmp_path, monkeypatch, c
     options = {'candidate_sha256': digest, 'execution_id': 'execution-1',
                'activation_check': {'target': TARGET, 'candidate_sha256': digest, 'execution_id': 'execution-1',
                                     'checked_no_pending': True, 'serialized': True}}
+    if setup_failure:
+        assert invoke('apply', options=options) == 2
+        captured = capsys.readouterr()
+        public = [json.loads(line) for line in captured.out.splitlines()][-1]
+        assert public['status'] == 'failed'
+        assert any(row['code'] == 'process_start_failed' for row in public['diagnostics'])
+        assert any(row['phase'] == 'opnsense-workflow-save-aliases' and row.get('status') == 'not-started'
+                   for row in public['phases'])
+        assert 'private-setup-sentinel' not in captured.out + captured.err
+        native = json.loads((tmp_path / 'execution-1/recovery/result.json').read_text())
+        assert native['stages'][-1]['save_process_started'] is False
+        assert not device.calls
+        return
     assert invoke('apply', options=options) == 0
     public = [json.loads(line) for line in capsys.readouterr().out.splitlines()][-1]
     assert any(row['code'] == 'opnsense_native_limit' and row['severity'] == 'warning'
@@ -122,3 +144,29 @@ def test_provider_runner_error_overrides_confirmed_facts(tmp_path, error, expect
     result = provider.activate('aliases')
     assert result['status'] == expected
     assert result['result']['status'] == 'confirmed'
+
+
+@pytest.mark.parametrize('action', ['save', 'activate'])
+def test_provider_setup_failure_is_not_a_device_attempt(tmp_path, monkeypatch, action):
+    from iaas.opnsense_workflow.writer import Writer
+    from iaas.runtime_execution.execution import Execution
+    from iaas.runtime_execution.outputs import TaskOutputs
+    from test_opnsense_workflow import alias
+    import iaas.runtime_execution.execution as execution_module
+
+    outputs = TaskOutputs.create(tmp_path / 'task', tmp_path / 'implementation', [])
+    execution = Execution(outputs, {})
+
+    def unavailable(*args, **kwargs):
+        raise ValidationError('private-setup-sentinel')
+
+    monkeypatch.setattr(execution_module, 'run_protected', unavailable)
+    writer = Writer(execution, TARGET)
+    result = writer.save('aliases', [alias()]) if action == 'save' else writer.activate('aliases')
+    assert result['status'] == 'failed'
+    assert result['attempted'] is False
+    detail = result['save'] if action == 'save' else result['activation']
+    assert detail['process_started'] is False
+    assert execution.phases[-1]['status'] == 'not-started'
+    assert execution.diagnostics[0]['code'] == 'process_start_failed'
+    assert 'private-setup-sentinel' not in json.dumps(result)
